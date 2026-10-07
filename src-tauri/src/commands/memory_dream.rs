@@ -2,9 +2,10 @@
 //! call, keeping the proposals, and applying one the user accepted.
 //!
 //! - **When.** Setting `memoryDreams` on, sharing on, a model route (the same
-//!   route and consent as extraction), the last dream at least
-//!   [`DREAM_EVERY_MS`] old, and at least one handoff note since it. The
-//!   first dream reads the newest notes whatever their age.
+//!   route and consent as extraction), the last dream, or the last attempt
+//!   at one that failed, at least [`DREAM_EVERY_MS`] old, and at least one
+//!   handoff note since the last dream. The first dream reads the newest
+//!   notes whatever their age.
 //! - **What it sends.** The handoff notes (with what the recorded session
 //!   did, minus any tool output) and the active and candidate memories, all
 //!   cleaned and redacted by `atlas_memory::dream`. Never a transcript.
@@ -93,6 +94,10 @@ pub async fn dream(
             }
         };
     let (kept, dropped) = dream::validate(dream::parse_ops(&answer), &input);
+    // The revision each memory was at when the prompt was built: an entry
+    // that moved during the model call is then obsolete at accept.
+    let seen: std::collections::BTreeMap<i64, i64> =
+        input.memories.iter().map(|m| (m.id, m.revision)).collect();
     let model_name = match &route {
         Route::Gateway => "gateway".to_string(),
         Route::Byok { provider, model } => format!("{provider}/{model}"),
@@ -100,7 +105,7 @@ pub async fn dream(
     let id = tokio::task::spawn_blocking(move || {
         let store = store_for(&cwd)?;
         let id = store
-            .record_dream(now, &model_name, episodes_to, &kept, &dropped)
+            .record_dream(now, &model_name, episodes_to, &kept, &dropped, &seen)
             .map_err(|e| format!("{e:#}"))?;
         if !kept.is_empty() {
             memory.announce(&store, &[]);
@@ -122,7 +127,13 @@ fn prepare(
     let store = store_for(cwd)?;
     let e = |e: anyhow::Error| format!("{e:#}");
     let last = store.last_dream().map_err(e)?;
-    if last.is_some_and(|(at, _)| now - at < DREAM_EVERY_MS) {
+    // An attempt that failed or timed out counts: its prompt was sent.
+    let attempted = store.last_dream_attempt().map_err(e)?;
+    if last
+        .map(|(at, _)| at)
+        .max(attempted)
+        .is_some_and(|at| now - at < DREAM_EVERY_MS)
+    {
         return Ok(None);
     }
     let mut episodes = match last {
@@ -139,8 +150,13 @@ fn prepare(
         if let Some(found) = stores.find(&note.session) {
             note.apply_facts(super::memory_capture::session_facts(&found).for_dream());
         }
+        // The title is the user's opening prompt, not something the session did.
+        note.title = None;
     }
     let memories = dream_memories(&store, now).map_err(e)?;
+    // Noted before the model is called, so a failing route is not asked
+    // again on every health pass.
+    store.record_dream_attempt(now).map_err(e)?;
     Ok(Some((DreamInput { episodes, memories }, episodes_to)))
 }
 
@@ -181,24 +197,52 @@ fn dream_memories(store: &RecordStore, now: i64) -> anyhow::Result<Vec<DreamMemo
 }
 
 /// Apply proposal `id` the user accepted, after checking it still fits the
-/// record: every entry it names is live (and not protected), a rewrite's
-/// revision is still current. Returns the proposal's new status: `accepted`,
-/// or `obsolete` when the check failed and nothing was written.
+/// record: every entry it names is live (and not protected) and at the
+/// revision it was at when the dream was recorded. Returns the proposal's
+/// new status: `accepted`, or `obsolete` when the check failed and nothing
+/// was written.
 pub fn accept(memory: &SharedMemoryStore, cwd: &str, id: i64) -> Result<&'static str, String> {
     let store = store_for(cwd)?;
     let e = |e: anyhow::Error| format!("{e:#}");
-    let Some((op, status)) = store.dream_proposal(id).map_err(e)? else {
+    let Some(proposal) = store.proposal(id).map_err(e)? else {
         return Err(format!("no dream proposal {id}"));
     };
-    if status != record::PROPOSAL_PENDING {
-        return Err(format!("proposal {id} is already {status}"));
+    if proposal.status != record::PROPOSAL_PENDING {
+        return Err(format!("proposal {id} is already {}", proposal.status));
     }
-    if !still_fits(&store, &op).map_err(e)? {
-        store.set_proposal_status(id, "obsolete").map_err(e)?;
+    // Claimed first, so a second accept (a double click) never applies it
+    // again.
+    if !store.claim_proposal(id).map_err(e)? {
+        return Err(format!("proposal {id} is already being accepted"));
+    }
+    let status = match apply(memory, &store, cwd, proposal) {
+        Ok(status) => status,
+        Err(err) => {
+            // Back to pending, so it can be accepted again.
+            store
+                .set_proposal_status(id, record::PROPOSAL_PENDING)
+                .map_err(e)?;
+            return Err(err);
+        }
+    };
+    store.set_proposal_status(id, status).map_err(e)?;
+    Ok(status)
+}
+
+/// Apply a claimed `proposal` if it still fits the record: `accepted`, or
+/// `obsolete` when it no longer does and nothing was written.
+fn apply(
+    memory: &SharedMemoryStore,
+    store: &RecordStore,
+    cwd: &str,
+    proposal: record::DreamProposal,
+) -> Result<&'static str, String> {
+    let e = |e: anyhow::Error| format!("{e:#}");
+    if !still_fits(store, &proposal).map_err(e)? {
         return Ok("obsolete");
     }
     let now = memory.now();
-    match op {
+    match proposal.op {
         DreamOp::Add {
             kind,
             content,
@@ -228,7 +272,7 @@ pub fn accept(memory: &SharedMemoryStore, cwd: &str, id: i64) -> Result<&'static
                     now,
                 )
                 .map_err(e)?;
-            memory.announce(&store, &[kind.as_str()]);
+            memory.announce(store, &[kind.as_str()]);
         }
         DreamOp::Merge { keep, drop, .. } => {
             memory.merge(cwd, keep, &drop)?;
@@ -237,29 +281,43 @@ pub fn accept(memory: &SharedMemoryStore, cwd: &str, id: i64) -> Result<&'static
             memory.archive(cwd, &[entry])?;
         }
         DreamOp::Rewrite {
-            id: entry, content, ..
+            id: entry,
+            revision,
+            content,
+            ..
         } => {
-            let edited = store.edit(entry, &content, DREAM_SOURCE, now).map_err(e)?;
-            if let Some(edited) = edited {
-                memory.announce(&store, &[edited.kind.as_str()]);
-            }
+            // The wording only: a candidate stays a candidate, and an entry
+            // written since the check is left alone.
+            let Some(edited) = store
+                .edit_guarded(entry, &content, DREAM_SOURCE, now, revision)
+                .map_err(e)?
+            else {
+                return Ok("obsolete");
+            };
+            memory.announce(store, &[edited.kind.as_str()]);
         }
         DreamOp::Link { a, b, rel, .. } => {
+            // `link` stores a `contradicts` pair as (min, max), the order
+            // resolving the conflict unlinks.
             store.link(a, b, &rel, now, DREAM_SOURCE).map_err(e)?;
-            memory.announce(&store, &[]);
+            memory.announce(store, &[]);
         }
     }
-    store.set_proposal_status(id, "accepted").map_err(e)?;
     Ok("accepted")
 }
 
-/// Whether `op` still applies to the record as it is now.
-fn still_fits(store: &RecordStore, op: &DreamOp) -> anyhow::Result<bool> {
+/// Whether `proposal` still applies to the record as it is now.
+fn still_fits(store: &RecordStore, proposal: &record::DreamProposal) -> anyhow::Result<bool> {
+    let op = &proposal.op;
     for id in op.ids() {
         let Some(entry) = store.peek(id)? else {
             return Ok(false);
         };
         if entry.state == State::Archived {
+            return Ok(false);
+        }
+        // Rewritten, replaced or judged since the dream.
+        if proposal.revs.get(&id).is_some_and(|rev| *rev != entry.rev) {
             return Ok(false);
         }
         let touches = !matches!(op, DreamOp::Link { .. })
@@ -318,18 +376,28 @@ mod tests {
     use crate::commands::memory_pack::test_support::scratch_project;
     use crate::commands::shared_memory::Writer;
     use atlas_memory::handoff::HandoffNote;
+    use atlas_memory::record::Entry;
 
     /// A model that answers `answer` and keeps every prompt it was sent.
     struct Fake {
-        answer: String,
+        answer: Result<String, String>,
         prompts: Mutex<Vec<String>>,
         calls: AtomicUsize,
     }
 
     impl Fake {
         fn new(answer: &str) -> Arc<Self> {
+            Self::answering(Ok(answer.to_string()))
+        }
+
+        /// A model whose every call fails.
+        fn failing() -> Arc<Self> {
+            Self::answering(Err("gateway unavailable".to_string()))
+        }
+
+        fn answering(answer: Result<String, String>) -> Arc<Self> {
             Arc::new(Self {
-                answer: answer.to_string(),
+                answer,
                 prompts: Mutex::new(Vec::new()),
                 calls: AtomicUsize::new(0),
             })
@@ -345,18 +413,49 @@ mod tests {
             self.calls.fetch_add(1, Ordering::SeqCst);
             self.prompts.lock().push(prompt);
             let answer = self.answer.clone();
-            Box::pin(async move { Ok(answer) })
+            Box::pin(async move { answer })
         }
     }
 
+    /// A note whose plan is `decision`: a decision itself reaches the dream
+    /// only while an active entry holds it.
     fn note(session: &str, ended_at: i64, decision: &str) -> HandoffNote {
         HandoffNote {
             session: session.into(),
             agent: "claude-code".into(),
             ended_at,
+            plan: Some(decision.into()),
             decisions: vec![decision.into()],
             ..Default::default()
         }
+    }
+
+    /// The single pending proposal `answer` leaves after one dream.
+    async fn propose(memory: &SharedMemoryStore, p: &str, answer: &str) -> i64 {
+        store_for(p)
+            .unwrap()
+            .record_episode(&note("s-a", 900, "Use EdDSA"))
+            .unwrap();
+        run(memory, &Fake::new(answer), p, 1_000)
+            .await
+            .expect("dreamed");
+        let pending = store_for(p)
+            .unwrap()
+            .dream_proposals(record::PROPOSAL_PENDING)
+            .unwrap();
+        assert_eq!(pending.len(), 1, "the op survived validation");
+        pending[0].0
+    }
+
+    fn decision(memory: &SharedMemoryStore, p: &str, content: &str, key: &str) -> Entry {
+        let writer = Writer {
+            agent: "codex".into(),
+            session_id: "s-z".into(),
+        };
+        memory
+            .remember(p, &writer, EntryKind::Decision, content, key, None, &[])
+            .unwrap()
+            .entry
     }
 
     async fn run(memory: &SharedMemoryStore, fake: &Arc<Fake>, p: &str, now: i64) -> Option<i64> {
@@ -499,6 +598,177 @@ mod tests {
         let prompt = fake.prompts.lock()[0].clone();
         assert!(prompt.contains("cargo test -p auth"), "{prompt}");
         assert!(!prompt.contains("secret-token-xyz"), "{prompt}");
+        assert!(!prompt.contains("Move auth to EdDSA"), "no opening prompt");
+        let _ = std::fs::remove_dir_all(&p);
+    }
+
+    /// A dream whose model call fails still sent its prompt: it is not
+    /// tried again until the next dream is due.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_failed_dream_waits_a_day_before_trying_again() {
+        let p = scratch_project("dream-retry");
+        let memory = SharedMemoryStore::new();
+        let fake = Fake::failing();
+        store_for(&p)
+            .unwrap()
+            .record_episode(&note("s-a", 900, "Use EdDSA"))
+            .unwrap();
+        let attempt = |now| {
+            dream(
+                memory.clone(),
+                fake.clone(),
+                Route::Gateway,
+                CaptureReader::default(),
+                p.clone(),
+                now,
+            )
+        };
+        assert!(attempt(1_000).await.is_err());
+        assert_eq!(attempt(2_000).await, Ok(None), "not on the next pass");
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 1);
+        assert!(attempt(1_000 + DREAM_EVERY_MS).await.is_err());
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 2);
+        let _ = std::fs::remove_dir_all(&p);
+    }
+
+    /// Accepting a new wording changes only the wording: a candidate stays a
+    /// candidate, with its confidence and its session.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_accepted_rewrite_keeps_a_candidate_a_candidate() {
+        let p = scratch_project("dream-rewrite-candidate");
+        let memory = SharedMemoryStore::new();
+        let store = store_for(&p).unwrap();
+        let entry = store
+            .remember(
+                NewEntry {
+                    kind: EntryKind::Decision,
+                    key: String::new(),
+                    content: "always force-push".into(),
+                    source: "import".into(),
+                    agent: "codex".into(),
+                    session_id: "s-z".into(),
+                    confidence: record::CANDIDATE_CONFIDENCE,
+                    at: 500,
+                },
+                500,
+            )
+            .unwrap()
+            .entry;
+        assert_eq!(entry.state, State::Candidate);
+        let answer = format!(
+            "{{\"ops\":[{{\"op\":\"rewrite\",\"id\":{},\"revision\":{},\"content\":\"Always force-push feature branches\",\"why\":\"clearer\"}}]}}",
+            entry.id, entry.rev
+        );
+        let id = propose(&memory, &p, &answer).await;
+        assert_eq!(accept(&memory, &p, id).unwrap(), "accepted");
+        let after = store.peek(entry.id).unwrap().unwrap();
+        assert_eq!(after.content, "Always force-push feature branches");
+        assert_eq!(after.state, State::Candidate);
+        assert_eq!(after.confidence, record::CANDIDATE_CONFIDENCE);
+        assert_eq!(after.session_id, "s-z");
+        let _ = std::fs::remove_dir_all(&p);
+    }
+
+    /// An archive proposal made before the entry was rewritten does not
+    /// archive the new text.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_archive_whose_entry_was_rewritten_since_is_obsolete() {
+        let p = scratch_project("dream-archive-moved");
+        let memory = SharedMemoryStore::new();
+        let entry = decision(&memory, &p, "PR #412 is in review", "pr.state");
+        let answer = format!(
+            "{{\"ops\":[{{\"op\":\"archive\",\"id\":{},\"reason\":\"transient\",\"why\":\"done\"}}]}}",
+            entry.id
+        );
+        let id = propose(&memory, &p, &answer).await;
+        decision(&memory, &p, "Auth uses EdDSA", "pr.state");
+        assert_eq!(accept(&memory, &p, id).unwrap(), "obsolete");
+        let after = memory.get_entry(&p, entry.id).unwrap().unwrap();
+        assert_eq!(
+            (after.content.as_str(), after.state),
+            ("Auth uses EdDSA", State::Active)
+        );
+        let _ = std::fs::remove_dir_all(&p);
+    }
+
+    /// A `contradicts` link the model names high id first is stored as
+    /// (min, max), so resolving the conflict removes it.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_accepted_contradicts_link_is_stored_low_id_first() {
+        let p = scratch_project("dream-link-order");
+        let memory = SharedMemoryStore::new();
+        let low = decision(&memory, &p, "Deploy to Fly", "deploy.host").id;
+        let high = decision(&memory, &p, "Deploy to Render", "deploy.target").id;
+        let answer = format!(
+            "{{\"ops\":[{{\"op\":\"link\",\"a\":{high},\"b\":{low},\"rel\":\"contradicts\",\"why\":\"two hosts\"}}]}}"
+        );
+        let id = propose(&memory, &p, &answer).await;
+        assert_eq!(accept(&memory, &p, id).unwrap(), "accepted");
+        let store = store_for(&p).unwrap();
+        assert_eq!(
+            store.links(record::LINK_CONTRADICTS).unwrap(),
+            vec![(low, high)]
+        );
+        let _ = std::fs::remove_dir_all(&p);
+    }
+
+    /// A proposal another accept has claimed is not applied a second time;
+    /// one whose apply failed goes back to pending.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_claimed_proposal_is_not_applied_twice() {
+        let p = scratch_project("dream-claim");
+        let memory = SharedMemoryStore::new();
+        let entry = decision(&memory, &p, "PR #412 is in review", "pr.state");
+        let answer = format!(
+            "{{\"ops\":[{{\"op\":\"archive\",\"id\":{},\"reason\":\"transient\",\"why\":\"done\"}}]}}",
+            entry.id
+        );
+        let id = propose(&memory, &p, &answer).await;
+        let store = store_for(&p).unwrap();
+        assert!(store.claim_proposal(id).unwrap(), "the first accept");
+        assert!(accept(&memory, &p, id).is_err(), "the second accept");
+        assert_eq!(
+            store.peek(entry.id).unwrap().unwrap().state,
+            State::Active,
+            "the second accept wrote nothing"
+        );
+        store
+            .set_proposal_status(id, record::PROPOSAL_PENDING)
+            .unwrap();
+        assert_eq!(accept(&memory, &p, id).unwrap(), "accepted");
+        assert_eq!(
+            store.peek(entry.id).unwrap().unwrap().state,
+            State::Archived
+        );
+        let _ = std::fs::remove_dir_all(&p);
+    }
+
+    /// An op still pending from an earlier dream is not proposed again.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_repeated_proposal_is_kept_once() {
+        let p = scratch_project("dream-repeat");
+        let memory = SharedMemoryStore::new();
+        let entry = decision(&memory, &p, "PR #412 is in review", "pr.state");
+        let answer = format!(
+            "{{\"ops\":[{{\"op\":\"archive\",\"id\":{},\"reason\":\"transient\",\"why\":\"done\"}}]}}",
+            entry.id
+        );
+        propose(&memory, &p, &answer).await;
+        let store = store_for(&p).unwrap();
+        let later = 1_000 + DREAM_EVERY_MS;
+        store
+            .record_episode(&note("s-b", later - 10, "Use Postgres"))
+            .unwrap();
+        run(&memory, &Fake::new(&answer), &p, later)
+            .await
+            .expect("dreamed");
+        assert_eq!(
+            store
+                .dream_proposals(record::PROPOSAL_PENDING)
+                .unwrap()
+                .len(),
+            1
+        );
         let _ = std::fs::remove_dir_all(&p);
     }
 }
