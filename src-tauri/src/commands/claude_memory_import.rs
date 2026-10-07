@@ -694,7 +694,7 @@ mod tests {
             "---\nname: ci.md\ndescription: CI runs on GitHub Actions\nmetadata:\n  node_type: memory\n  type: project\n---\n\nMoved off Jenkins.\n",
         )
         .unwrap();
-        let second = store.claude_import_preview(&p, &[dir.clone()]).unwrap();
+        let second = store.claude_import_preview(&p, &[dir]).unwrap();
         assert!(!second.already_imported);
         let fresh: Vec<&str> = second
             .lines
