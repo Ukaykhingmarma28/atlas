@@ -1,7 +1,8 @@
 // Shared Cross-Agent Memory (v2) — TS bindings for the per-project event log
-// + derived state view. The capture/injection happen Rust-side
-// (`agents_send` + `TauriDeltaSink::emit`); these commands let the Memory panel
-// read the current view, run an on-demand query, and clear a project's memory.
+// + derived state view. Capture happens Rust-side (the delta middleware in
+// `agents.rs`); agents pull memory through the `atlas_memory` tools, nothing is
+// injected (ADR-0010). These commands let the Memory panel read the current
+// view, run an on-demand query, and clear a project's memory.
 // Mirrors the plain-invoke pattern in `memory-sharing-api.ts`.
 
 import { invoke } from "@tauri-apps/api/core";

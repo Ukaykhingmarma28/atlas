@@ -404,6 +404,9 @@ where
     SF: std::future::Future<Output = String>,
 {
     let (raw_body, turns) = raw?;
+    // Redacted before it is summarised by a provider or handed to the next
+    // agent (decision 2).
+    let raw_body = atlas_memory::record::redact(&raw_body);
     let (text, attribution) =
         if pref.mode == "provider" && !pref.provider.is_empty() && !pref.model.is_empty() {
             let summary =
@@ -902,6 +905,36 @@ mod tests {
         .await;
         assert_eq!(fell_back, handoff("User: hi\nAssistant: yo", "raw"));
         assert_eq!(handoff_block(None, &provider, never).await, None);
+    }
+
+    #[tokio::test]
+    async fn the_handoff_is_redacted_before_it_is_summarized_or_returned() {
+        use super::super::memory_sharing::SummarizerPref;
+        let secret = "sk-proj-AbCdEf0123456789GhIjKlMnOpQrStUv";
+        let raw = Some((format!("[user] use {secret}"), 1));
+        let pref = SummarizerPref {
+            mode: "provider".into(),
+            provider: "openai".into(),
+            model: "m".into(),
+        };
+        let sent = std::sync::Arc::new(parking_lot::Mutex::new(String::new()));
+        let seen = sent.clone();
+        let h = handoff_block(raw.clone(), &pref, |text, _, _| async move {
+            *seen.lock() = text.clone();
+            text // the summariser's failure fallback: the input back
+        })
+        .await
+        .unwrap();
+        assert!(!sent.lock().contains(secret));
+        assert!(!h.text.contains(secret));
+        let raw_pref = SummarizerPref {
+            mode: "raw".into(),
+            ..pref
+        };
+        let h = handoff_block(raw, &raw_pref, |t, _, _| async move { t })
+            .await
+            .unwrap();
+        assert!(!h.text.contains(secret));
     }
 
     #[test]

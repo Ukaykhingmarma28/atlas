@@ -210,7 +210,14 @@ where
 fn build_prompt<'a>(turns: impl Iterator<Item = &'a TranscriptTurn>) -> String {
     let mut body = String::new();
     for turn in turns {
-        body.push_str(&format!("[{}] {}\n", turn.role, turn.text.trim()));
+        // Redacted before it can leave the machine (decision 2): the record
+        // redacts what it stores, but the prompt goes to the gateway or a
+        // provider first.
+        body.push_str(&format!(
+            "[{}] {}\n",
+            turn.role,
+            crate::record::redact(turn.text.trim())
+        ));
     }
     if body.len() > MAX_PROMPT_CHARS {
         let start = body.len() - MAX_PROMPT_CHARS;
@@ -276,6 +283,34 @@ pub fn parse_extracted(output: &str) -> Vec<Extracted> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Whatever leaves for the model is redacted first: the gateway and BYOK
+    /// providers never see a secret the transcript carried.
+    #[tokio::test]
+    async fn extraction_prompt_is_redacted_before_it_is_sent() {
+        let secret = "sk-proj-AbCdEf0123456789GhIjKlMnOpQrStUv";
+        let turns = vec![
+            turn("user", &format!("deploy with {secret}"), 0),
+            turn("assistant", "done", 0),
+        ];
+        let sent = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let mut state = ExtractState::default();
+        let seen = sent.clone();
+        extract(
+            &turns,
+            &mut state,
+            Trigger::SessionEnd,
+            |prompt| async move {
+                *seen.lock().unwrap() = prompt;
+                Ok(r#"{"entries":[]}"#.to_string())
+            },
+        )
+        .await
+        .unwrap();
+        let prompt = sent.lock().unwrap().clone();
+        assert!(!prompt.contains(secret), "{prompt}");
+        assert!(prompt.contains("deploy with"));
+    }
 
     fn turn(role: &str, text: &str, tool_calls: usize) -> TranscriptTurn {
         TranscriptTurn {
