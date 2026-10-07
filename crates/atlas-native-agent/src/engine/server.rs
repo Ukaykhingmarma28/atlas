@@ -111,6 +111,9 @@ impl AgentServer for EngineAgentServer {
         if let Some(root) = options.root_dir.clone() {
             settings.cwd = root;
         }
+        if !options.client_version.is_empty() {
+            settings.client_version = options.client_version.clone();
+        }
         // Built here, not in the constructor, for the ordering reason above:
         // the fetcher reads the registered token source when it fetches.
         let catalogue = self.catalogue.clone().or_else(|| {

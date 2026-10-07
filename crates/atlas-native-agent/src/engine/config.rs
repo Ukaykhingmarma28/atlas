@@ -219,6 +219,14 @@ pub struct EngineSettings {
     /// — the engine's stream-error notification does not carry it (D8).
     /// `5` is the engine's own `DEFAULT_STREAM_MAX_RETRIES`.
     pub stream_max_retries: usize,
+    /// The version Atlas tells the engine it is, at `initialize`.
+    ///
+    /// The engine puts it in the User-Agent of every gateway request
+    /// (`atlas; <version>`), so it must be the app's version, not this
+    /// crate's. Only the app knows that: the server overwrites this field
+    /// from `ConnectOptions::client_version` at connect time. This crate's
+    /// own version is the fallback for settings built outside a host.
+    pub client_version: String,
 }
 
 impl EngineSettings {
@@ -253,6 +261,7 @@ impl EngineSettings {
                 WireDialect::Chat => GATEWAY_STREAM_MAX_RETRIES,
                 WireDialect::Responses => DEFAULT_STREAM_MAX_RETRIES,
             },
+            client_version: env!("CARGO_PKG_VERSION").to_string(),
         }
     }
 

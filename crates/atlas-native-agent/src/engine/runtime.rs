@@ -229,7 +229,7 @@ async fn start_engine_inner(
         // choose.
         enable_atlas_engine_api_key_env: false,
         client_name: ATLAS_CLIENT_NAME.to_string(),
-        client_version: env!("CARGO_PKG_VERSION").to_string(),
+        client_version: settings.client_version.clone(),
         // On, deliberately. 76 protocol methods are gated behind this flag,
         // and the ones Atlas cannot do without are among them —
         // `thread/settings/update` is the only per-thread lever for permission

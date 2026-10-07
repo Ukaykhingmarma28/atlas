@@ -1479,7 +1479,7 @@ impl AgentConnection for EngineConnection {
     }
 
     fn agent_version(&self) -> Option<Arc<str>> {
-        Some(env!("CARGO_PKG_VERSION").into())
+        Some(self.settings.client_version.as_str().into())
     }
 
     fn new_session(
