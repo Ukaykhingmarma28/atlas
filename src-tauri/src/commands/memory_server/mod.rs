@@ -23,6 +23,8 @@
 //! - **Failure is "no memory", never a crash.** A read that fails returns an
 //!   empty result; a write that fails returns a tool error the agent can read.
 
+#[cfg(test)]
+mod bench;
 mod briefing;
 mod host;
 mod offers;

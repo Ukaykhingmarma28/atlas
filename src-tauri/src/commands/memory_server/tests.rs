@@ -27,7 +27,7 @@ use crate::commands::shared_memory::{
     store_for, EventKind, MemoryChanged, RawEvent, SharedMemoryStore,
 };
 
-fn temp_project(label: &str) -> String {
+pub(super) fn temp_project(label: &str) -> String {
     let dir = std::env::temp_dir().join(format!(
         "atlas-memory-server-{label}-{}",
         uuid::Uuid::new_v4()
@@ -38,16 +38,16 @@ fn temp_project(label: &str) -> String {
 
 /// A store whose clock advances one second per read, so every write has its
 /// own `updated_at`.
-fn ticking_memory() -> SharedMemoryStore {
+pub(super) fn ticking_memory() -> SharedMemoryStore {
     let t = Arc::new(AtomicI64::new(1_000));
     SharedMemoryStore::with_clock(Arc::new(move || t.fetch_add(1_000, Ordering::SeqCst)))
 }
 
-fn always_on() -> SharingGate {
+pub(super) fn always_on() -> SharingGate {
     Arc::new(|_| true)
 }
 
-async fn serve(
+pub(super) async fn serve(
     memory: SharedMemoryStore,
     tokens: Arc<MemoryTokens>,
     gate: SharingGate,
@@ -65,7 +65,10 @@ async fn serve(
     .unwrap()
 }
 
-async fn connect(url: &str, token: &str) -> Result<RunningService<RoleClient, ()>, String> {
+pub(super) async fn connect(
+    url: &str,
+    token: &str,
+) -> Result<RunningService<RoleClient, ()>, String> {
     let transport = StreamableHttpClientTransport::from_config(
         StreamableHttpClientTransportConfig::with_uri(url.to_string())
             .auth_header(token.to_string()),
@@ -73,7 +76,7 @@ async fn connect(url: &str, token: &str) -> Result<RunningService<RoleClient, ()
     ().serve(transport).await.map_err(|e| format!("{e:?}"))
 }
 
-async fn call(
+pub(super) async fn call(
     client: &RunningService<RoleClient, ()>,
     name: &'static str,
     args: Value,
@@ -95,7 +98,7 @@ async fn call(
 }
 
 /// A captured event, as the delta path appends it for a session.
-fn capture(
+pub(super) fn capture(
     memory: &SharedMemoryStore,
     p: &str,
     agent: &str,
