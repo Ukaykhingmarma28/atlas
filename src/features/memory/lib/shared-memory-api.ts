@@ -153,6 +153,17 @@ export interface ExportPreview {
   after: string;
 }
 
+/** One line importing an Agent Memory Repo would write. */
+export interface RepoImportLine {
+  id: string;
+  kind: EntryKind;
+  content: string;
+  /** The file it came from, relative to the chosen folder. */
+  file: string;
+  /** `false` when memory already holds it: confirm skips it. */
+  isNew: boolean;
+}
+
 /** A verdict on a memory after using it. */
 export type Verdict = "useful" | "wrong" | "stale";
 
@@ -230,6 +241,12 @@ export const sharedMemory = {
   /** The user's verdict on one entry. `null` for an unknown id. */
   feedback: (projectPath: string, id: number, verdict: Verdict) =>
     invoke<MemoryEntry | null>("memory_feedback_entry", { projectPath, id, verdict }),
+  /** What importing the Agent Memory Repo at `dir` would write. Writes nothing. */
+  previewRepoImport: (projectPath: string, dir: string) =>
+    invoke<RepoImportLine[]>("memory_repo_import_preview", { projectPath, dir }),
+  /** Import the chosen lines as candidates. Returns how many were written. */
+  confirmRepoImport: (projectPath: string, dir: string, ids: string[]) =>
+    invoke<number>("memory_repo_import_confirm", { projectPath, dir, ids }),
   /** What importing the project's Claude auto-memory would write. Writes nothing. */
   previewClaudeImport: (projectPath: string) =>
     invoke<ClaudeImportPreview>("memory_claude_import_preview", { projectPath }),

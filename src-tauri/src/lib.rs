@@ -897,6 +897,8 @@ pub fn run() {
             commands::shared_memory::memory_resolve_conflict,
             commands::memory_dream::memory_dream_accept,
             commands::memory_dream::memory_dream_dismiss,
+            commands::memory_repo::memory_repo_import_preview,
+            commands::memory_repo::memory_repo_import_confirm,
             commands::claude_memory_import::memory_claude_import_preview,
             commands::claude_memory_import::memory_claude_import_confirm,
             commands::memory_indexer::force_reindex,

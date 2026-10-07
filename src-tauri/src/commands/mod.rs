@@ -52,6 +52,7 @@ pub mod memory_graph;
 pub mod memory_indexer;
 pub mod memory_pack;
 pub mod memory_policy;
+pub mod memory_repo;
 pub mod memory_retrieve;
 pub mod memory_server;
 pub mod memory_sharing;

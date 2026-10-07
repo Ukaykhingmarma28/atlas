@@ -36,6 +36,7 @@ import {
   Download,
   Eraser,
   Inbox,
+  FolderInput,
 } from "lucide-react";
 import { Dialog } from "@base-ui/react/dialog";
 import { DialogOverlay } from "@/ui/dialog";
@@ -55,6 +56,7 @@ import type {
   ClaudeImportPreview,
   ExportPreview,
   MemoryEntry,
+  RepoImportLine,
   MemoryEvent,
   Provenance,
 } from "../lib/shared-memory-api";
@@ -155,6 +157,7 @@ export function SharedMemoryView({ projectPath, className }: Props) {
   const [tab, setTab] = useState<Tab>("events");
   const [query, setQuery] = useState("");
   const [importing, setImporting] = useState(false);
+  const [importingRepo, setImportingRepo] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
 
   useEffect(() => {
@@ -291,6 +294,9 @@ export function SharedMemoryView({ projectPath, className }: Props) {
           <IconButton label="Import Claude memory" onClick={() => setImporting(true)}>
             <Download size={12} />
           </IconButton>
+          <IconButton label="Import memory repo" onClick={() => setImportingRepo(true)}>
+            <FolderInput size={12} />
+          </IconButton>
           <IconButton label="Clear shared memory" onClick={() => setConfirmClear(true)}>
             <Trash2 size={12} />
           </IconButton>
@@ -300,6 +306,15 @@ export function SharedMemoryView({ projectPath, className }: Props) {
         open={importing}
         onOpenChange={setImporting}
         onImported={() => setTab("memories")}
+      />
+      <ImportRepoModal
+        projectPath={projectPath}
+        open={importingRepo}
+        onOpenChange={setImportingRepo}
+        onImported={() => {
+          setTab("review");
+          void refresh();
+        }}
       />
       <FileTreeConfirmDelete
         open={confirmClear}
@@ -971,6 +986,153 @@ function ExportAgentsModal({
               )}
             >
               {writing ? "Writing…" : "Write"}
+            </button>
+          </div>
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+/** Import an Agent Memory Repo folder: pick it, see every line it would
+ *  write, then Import. Lines land as unconfirmed candidates (Review tab). */
+function ImportRepoModal({
+  projectPath,
+  open,
+  onOpenChange,
+  onImported,
+}: {
+  projectPath: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onImported: () => void;
+}) {
+  const [dir, setDir] = useState<string | null>(null);
+  const [lines, setLines] = useState<RepoImportLine[] | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setDir(null);
+      setLines(null);
+      setError(null);
+    }
+  }, [open]);
+
+  const choose = async () => {
+    setError(null);
+    try {
+      const { open: pick } = await import("@tauri-apps/plugin-dialog");
+      const picked = await pick({ directory: true });
+      if (typeof picked !== "string") return;
+      setDir(picked);
+      const found = await sharedMemory.previewRepoImport(projectPath, picked);
+      setLines(found);
+      setSelected(new Set(found.filter((l) => l.isNew).map((l) => l.id)));
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const runImport = async () => {
+    if (!dir) return;
+    setBusy(true);
+    try {
+      const count = await sharedMemory.confirmRepoImport(projectPath, dir, [...selected]);
+      toast.success(`Imported ${count} ${count === 1 ? "line" : "lines"} to review`);
+      onImported();
+      onOpenChange(false);
+    } catch (e) {
+      toast.error(`Import failed: ${String(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggle = (id: string) =>
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <DialogOverlay className="backdrop-blur-sm" />
+        <Dialog.Popup
+          aria-describedby={undefined}
+          className={cn(
+            "fixed left-1/2 top-1/2 z-modal -translate-x-1/2 -translate-y-1/2",
+            "flex max-h-[80vh] w-[520px] max-w-[92vw] flex-col overflow-hidden rounded-md",
+            "border border-border bg-card shadow-lg animate-scale-in",
+          )}
+        >
+          <div className="flex items-center gap-3 border-b border-border px-4 py-2.5">
+            <Dialog.Title className="text-base font-semibold text-foreground">
+              Import memory repo
+            </Dialog.Title>
+            <Dialog.Close
+              className="ml-auto flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-element-hover hover:text-foreground transition-colors"
+              aria-label="Close"
+            >
+              <X size={13} />
+            </Dialog.Close>
+          </div>
+          <p className="px-4 pt-3 text-xs leading-relaxed text-muted-foreground">
+            Bring in an Agent Memory Repo (a folder with a MEMORY.md). Lines land as unconfirmed
+            candidates: no agent is briefed on them until you approve them in Review.
+          </p>
+          <div className="flex items-center gap-2 px-4 pt-2 text-xs">
+            <button
+              type="button"
+              onClick={() => void choose()}
+              className="h-6 rounded-md border border-border px-2 text-secondary-foreground hover:bg-element-hover"
+            >
+              Choose folder…
+            </button>
+            <span className="min-w-0 truncate text-muted-foreground">{dir ?? ""}</span>
+          </div>
+          <div className="flex-1 overflow-auto px-4 py-2">
+            {error ? (
+              <div className="text-xs text-muted-foreground">{error}</div>
+            ) : lines && lines.length === 0 ? (
+              <div className="text-xs text-muted-foreground">No memory lines in that folder.</div>
+            ) : (
+              lines?.map((l) => (
+                <label key={l.id} className="flex items-baseline gap-2 py-1 text-xs">
+                  <input
+                    type="checkbox"
+                    disabled={!l.isNew}
+                    checked={selected.has(l.id)}
+                    onChange={() => toggle(l.id)}
+                  />
+                  <span className="w-20 shrink-0 text-2xs text-muted-foreground">{l.kind}</span>
+                  <span className={cn("min-w-0 flex-1", !l.isNew && "text-muted-foreground")}>
+                    {l.content}
+                  </span>
+                </label>
+              ))
+            )}
+          </div>
+          <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-2.5">
+            <Dialog.Close className="rounded px-2.5 py-1 text-xs text-secondary-foreground hover:bg-element-hover transition-colors cursor-pointer">
+              Cancel
+            </Dialog.Close>
+            <button
+              type="button"
+              disabled={busy || selected.size === 0}
+              onClick={() => void runImport()}
+              className={cn(
+                "rounded px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer",
+                "bg-primary text-primary-foreground hover:bg-primary",
+                "disabled:opacity-40 disabled:cursor-not-allowed",
+              )}
+            >
+              {busy ? "Importing…" : selected.size > 0 ? `Import ${selected.size}` : "Import"}
             </button>
           </div>
         </Dialog.Popup>

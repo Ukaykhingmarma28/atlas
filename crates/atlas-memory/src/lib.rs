@@ -63,6 +63,9 @@ pub mod handoff;
 // The dream pass: a daily model review that only proposes (M4).
 pub mod dream;
 
+// The Agent Memory Repo line format, for the mirror and its import (M4).
+pub mod amr;
+
 // ─── Ported-from-the-old-SDK modules ───────────────────────────────────────────────
 //
 // These were the old SDK's embeddings and memory crates until 2026-08-22; they are

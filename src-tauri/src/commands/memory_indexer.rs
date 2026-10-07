@@ -685,6 +685,24 @@ async fn health_one(app: &AppHandle, registry: &MemoryRegistry, cwd: &str) -> Re
         recent.into_iter().map(|s| (cwd.to_string(), s)).collect(),
     )
     .await;
+    // The Agent Memory Repo mirror, when the user turned it on: rewritten
+    // and committed only when memory changed.
+    let mirror = app
+        .try_state::<crate::state::AtlasConfigHandle>()
+        .is_some_and(|config| config.lock().effective().memory_repo_mirror);
+    if let (true, Some(home)) = (mirror, dirs::home_dir()) {
+        let owned = cwd.to_string();
+        let refreshed = tokio::task::spawn_blocking(move || {
+            let store = super::shared_memory::store_for(&owned)?;
+            super::memory_repo::refresh_mirror(&home, &store)
+        })
+        .await
+        .map_err(|e| e.to_string())
+        .and_then(|r| r);
+        if let Err(e) = refreshed {
+            tracing::warn!(target: "atlas::memory_indexer", "memory mirror not refreshed: {e}");
+        }
+    }
     // The daily dream, when the user turned it on; it decides itself
     // whether it is due.
     let dreams = app

@@ -925,6 +925,35 @@ impl SharedMemoryStore {
         )
     }
 
+    /// Record a line imported from another tool's memory as a candidate:
+    /// `source` names the import (`import:amr`), low confidence, redacted,
+    /// deduplicated, announced, never briefed until confirmed.
+    pub fn record_import_candidate(
+        &self,
+        project_path: &str,
+        kind: EntryKind,
+        content: &str,
+        source: &str,
+    ) -> Result<Remembered, String> {
+        if !kind.is_durable() || content.trim().is_empty() {
+            return Err("an imported line is a non-empty durable memory".into());
+        }
+        self.write_durable(
+            project_path,
+            NewEntry {
+                kind,
+                key: String::new(),
+                content: content.to_string(),
+                source: source.to_string(),
+                agent: String::new(),
+                session_id: String::new(),
+                confidence: atlas_memory::record::CANDIDATE_CONFIDENCE,
+                at: 0,
+            },
+            How::Candidate,
+        )
+    }
+
     /// Write one durable entry through the record (stamped now) and announce
     /// it, the way `how` says.
     fn write_durable(
@@ -1038,6 +1067,15 @@ impl SharedMemoryStore {
         let forgotten = self.forget(project_path, id, "")?;
         let store = store_for(project_path)?;
         let erased = store.purge(id).map_err(|e| format!("{e:#}"))?;
+        // A mirror's git history would still hold the words: rebuild it
+        // with fresh history.
+        if let Some(home) = dirs::home_dir() {
+            if super::memory_repo::mirror_dir(&home, store.root()).exists() {
+                if let Err(e) = super::memory_repo::rebuild_mirror(&home, &store) {
+                    tracing::warn!(target: "atlas::shared_memory", "memory mirror not rebuilt: {e}");
+                }
+            }
+        }
         if let Some(entry) = &forgotten {
             self.announce(&store, &[entry.kind.as_str()]);
         }

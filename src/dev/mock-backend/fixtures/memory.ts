@@ -40,6 +40,7 @@ import type {
   MemoryEvent,
   Provenance,
   ExportPreview,
+  RepoImportLine,
   ReviewQueue,
   SharedState,
 } from "@/features/memory/lib/shared-memory-api";
@@ -1307,6 +1308,8 @@ export interface MemoryResponses {
   memory_dream_accept: string;
   memory_export_preview: ExportPreview;
   memory_export_apply: string;
+  memory_repo_import_preview: RepoImportLine[];
+  memory_repo_import_confirm: number;
   memory_dream_dismiss: Unit;
   memory_claude_import_preview: ClaudeImportPreview;
   memory_claude_import_confirm: number;
@@ -1498,6 +1501,8 @@ export const memoryHandlers: TypedHandlers<MemoryResponses> = {
     };
   },
   memory_export_apply: ({ projectPath }): string => `${String(projectPath)}/AGENTS.md`,
+  memory_repo_import_preview: (): RepoImportLine[] => [],
+  memory_repo_import_confirm: (): number => 0,
   memory_dream_dismiss: (): null => null,
   memory_health_status: (): HealthStatus => ({
     checkedAt: Date.now(),
