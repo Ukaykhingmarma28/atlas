@@ -2,8 +2,8 @@
 //! SPEC.md): one bullet per entry, optional trailing `[key: value; ...]`
 //! metadata, `[[path]]` links between files. Render and parse only (M4).
 //!
-//! The spec has no escaping: in values Atlas writes, `;` becomes `,` and
-//! `]` becomes `)`.
+//! The spec has no escaping: in values Atlas writes, `;` becomes `,`, `[`
+//! becomes `(` and `]` becomes `)`, so a value never opens or closes a group.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AmrEntry {
@@ -13,6 +13,7 @@ pub struct AmrEntry {
 
 fn safe_value(v: &str) -> String {
     v.replace(';', ",")
+        .replace('[', "(")
         .replace(']', ")")
         .replace(['\n', '\r'], " ")
 }
@@ -140,6 +141,26 @@ mod tests {
             meta: vec![("code".into(), "a;b]c".into())],
         };
         assert_eq!(render_line(&e), "- x [code: a,b)c]");
+    }
+
+    #[test]
+    fn a_bracketed_path_keeps_the_metadata_parseable() {
+        let e = AmrEntry {
+            text: "Auth guard lives in the page".into(),
+            meta: vec![
+                ("atlas-id".into(), "3".into()),
+                ("code".into(), "app/[id]/page.tsx#L1-5".into()),
+            ],
+        };
+        let parsed = parse_line(&render_line(&e)).unwrap();
+        assert_eq!(parsed.text, "Auth guard lives in the page");
+        assert_eq!(
+            parsed.meta,
+            vec![
+                ("atlas-id".to_string(), "3".to_string()),
+                ("code".to_string(), "app/(id)/page.tsx#L1-5".to_string()),
+            ]
+        );
     }
 
     #[test]

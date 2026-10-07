@@ -154,7 +154,10 @@ impl HandoffNote {
 
 /// The note `session` leaves, from the events it logged (not the entries:
 /// an entry's session is its last writer). A merge logs nothing, so a
-/// restatement of an older memory is not "left" by this session.
+/// restatement of an older memory is not "left" by this session. The note
+/// is stored as built; reading it back (`RecordStore::last_episode` and the
+/// rest) drops each decision, failure, fact and architecture item that is
+/// no longer an active entry.
 pub fn build_handoff(
     store: &RecordStore,
     session: &str,

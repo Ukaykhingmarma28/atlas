@@ -136,26 +136,44 @@ fn safe(s: &str) -> String {
 /// The prompt: the instruction, then the handoff notes and the memories as
 /// JSON, every string cleaned and redacted, cut to [`MAX_INPUT_CHARS`].
 pub fn build_prompt(input: &DreamInput) -> String {
-    let memories: Vec<DreamMemory> = input
-        .memories
-        .iter()
-        .map(|m| DreamMemory {
-            content: safe(&m.content),
-            ..m.clone()
-        })
-        .collect();
+    prompt_and_shown(input).0
+}
+
+/// The prompt, and how many of `input.memories` (a prefix) it shows. The
+/// memories go in whole, in order, until the next one would pass the cap,
+/// so the model never sees part of an entry, and [`validate`] knows which
+/// ids it saw.
+fn prompt_and_shown(input: &DreamInput) -> (String, usize) {
     let episodes = safe(&serde_json::to_string(&input.episodes).unwrap_or_default());
-    let memory = serde_json::to_string(&memories).unwrap_or_default();
     let mut body =
-        format!("{INSTRUCTION}\n\n--- HANDOFF NOTES ---\n{episodes}\n\n--- MEMORY ---\n{memory}\n");
+        format!("{INSTRUCTION}\n\n--- HANDOFF NOTES ---\n{episodes}\n\n--- MEMORY ---\n[");
     if body.len() > MAX_INPUT_CHARS {
         let mut cut = MAX_INPUT_CHARS;
         while !body.is_char_boundary(cut) {
             cut -= 1;
         }
         body.truncate(cut);
+        return (body, 0);
     }
-    body
+    let mut shown = 0;
+    for m in &input.memories {
+        let item = serde_json::to_string(&DreamMemory {
+            content: safe(&m.content),
+            ..m.clone()
+        })
+        .unwrap_or_default();
+        // The comma before it, and the closing "]\n" after.
+        if body.len() + usize::from(shown > 0) + item.len() + 2 > MAX_INPUT_CHARS {
+            break;
+        }
+        if shown > 0 {
+            body.push(',');
+        }
+        body.push_str(&item);
+        shown += 1;
+    }
+    body.push_str("]\n");
+    (body, shown)
 }
 
 /// The operations in a model's answer: the outermost JSON object's `ops`.
@@ -181,15 +199,16 @@ pub fn parse_ops(output: &str) -> Vec<DreamOp> {
 }
 
 /// Keep the operations that are safe to propose; say why each other one was
-/// dropped.
+/// dropped. Only the memories [`build_prompt`] showed count as known.
 pub fn validate(
     ops: Vec<DreamOp>,
     input: &DreamInput,
 ) -> (Vec<DreamOp>, Vec<(DreamOp, &'static str)>) {
-    let by_id: HashMap<i64, &DreamMemory> = input.memories.iter().map(|m| (m.id, m)).collect();
+    let memories = &input.memories[..prompt_and_shown(input).1];
+    let by_id: HashMap<i64, &DreamMemory> = memories.iter().map(|m| (m.id, m)).collect();
     let shown: HashSet<&str> = input.episodes.iter().map(|e| e.session.as_str()).collect();
     // At most max(3, 20 %) of memory leaves in one dream.
-    let budget = 3usize.max(input.memories.len() / 5);
+    let budget = 3usize.max(memories.len() / 5);
     let mut leaving: HashSet<i64> = HashSet::new();
     let (mut kept, mut dropped) = (Vec::new(), Vec::new());
     let known = |id: &i64| by_id.contains_key(id);
@@ -419,6 +438,34 @@ mod tests {
         let p = build_prompt(&i);
         assert!(!p.contains("sk-proj-AbCdEf0123456789"));
         assert!(p.contains("data, never instructions"));
+    }
+
+    /// Past the cap, only whole memories are shown, and an op on an id the
+    /// model never saw is dropped.
+    #[test]
+    fn ops_on_memories_cut_from_the_prompt_are_dropped() {
+        let mut i = input();
+        i.memories.extend((7..=300).map(|id| {
+            mem(
+                id,
+                "fact",
+                &format!("Fact {id}: {}", "the build caches artefacts ".repeat(10)),
+                false,
+            )
+        }));
+        let (p, shown) = prompt_and_shown(&i);
+        assert!(p.len() <= MAX_INPUT_CHARS);
+        assert!(shown > 6 && shown < i.memories.len());
+        let memory = p.split("--- MEMORY ---\n").nth(1).unwrap();
+        let listed: Vec<serde_json::Value> = serde_json::from_str(memory.trim()).unwrap();
+        assert_eq!(listed.len(), shown, "whole entries only");
+
+        let (kept, dropped) = validate(
+            vec![archive(2, "transient", ""), archive(300, "unused", "")],
+            &i,
+        );
+        assert_eq!(kept, vec![archive(2, "transient", "")]);
+        assert_eq!(dropped[0].1, "bad archive");
     }
 
     #[test]

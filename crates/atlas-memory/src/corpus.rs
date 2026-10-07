@@ -65,6 +65,13 @@ fn vector_path(dir: &Path, model: &str) -> PathBuf {
     dir.join(format!("corpus.{}.usearch", slug(model)))
 }
 
+/// The `meta` row present while `model`'s vector file may be behind the
+/// cache: a pass committed vectors its save has not written yet (a failed
+/// save, or a crash in between). Heal rebuilds while it is set.
+fn dirty_key(model: &str) -> String {
+    format!("vectors_dirty:{model}")
+}
+
 /// Open `corpus.sqlite` in `dir` with its schema, or fail (a damaged file).
 fn open_db(dir: &Path) -> Result<Connection> {
     let conn = Connection::open(dir.join(DB_FILE))?;
@@ -161,9 +168,34 @@ impl CorpusIndex {
         self.dims
     }
 
+    fn vectors_dirty(&self) -> bool {
+        self.conn()
+            .query_row(
+                "SELECT 1 FROM meta WHERE k = ?1",
+                [dirty_key(&self.model)],
+                |_| Ok(()),
+            )
+            .optional()
+            .ok()
+            .flatten()
+            .is_some()
+    }
+
+    /// The vector file was saved: it holds what the cache holds.
+    fn mark_vectors_saved(&self) {
+        if let Err(e) = self
+            .conn()
+            .execute("DELETE FROM meta WHERE k = ?1", [dirty_key(&self.model)])
+        {
+            tracing::warn!(target: "atlas_memory", "corpus vector flag not cleared: {e}");
+        }
+    }
+
     /// Make the vector file hold exactly the docs that have a cached vector
-    /// for the current model; rebuild it from the cache when they differ.
-    /// Returns how many vectors a rebuild wrote (0 when it was in step).
+    /// for the current model; rebuild it from the cache when they differ or
+    /// an earlier pass did not save it. A failed save is logged and retried
+    /// later, never an error. Returns how many vectors a rebuild wrote (0
+    /// when it was in step).
     pub fn heal(&mut self) -> Result<usize> {
         let want: Vec<(i64, Vec<f32>)> = {
             let conn = self.conn();
@@ -183,12 +215,18 @@ impl CorpusIndex {
             }
             out
         };
-        let in_step =
-            self.vectors.len() == want.len() && want.iter().all(|(k, _)| self.vectors.contains(*k));
+        let in_step = !self.vectors_dirty()
+            && self.vectors.len() == want.len()
+            && want.iter().all(|(k, _)| self.vectors.contains(*k));
         if in_step {
             // A save an earlier pass could not finish is retried here.
             if self.vectors.has_unsaved() {
-                self.vectors.save()?;
+                if let Err(e) = self.vectors.save() {
+                    tracing::warn!(
+                        target: "atlas_memory",
+                        "corpus vector save failed (retried later): {e}"
+                    );
+                }
             }
             return Ok(0);
         }
@@ -200,8 +238,16 @@ impl CorpusIndex {
                 fresh.add(*k, v)?;
             }
         }
-        fresh.save()?;
+        // Kept even when the save fails: it stays unsaved, so the next pass
+        // retries it, and the dirty flag makes the next open rebuild again.
         self.vectors = fresh;
+        match self.vectors.save() {
+            Ok(()) => self.mark_vectors_saved(),
+            Err(e) => tracing::warn!(
+                target: "atlas_memory",
+                "corpus vector save failed (retried later): {e}"
+            ),
+        }
         tracing::info!(target: "atlas_memory", "corpus vectors rebuilt from cache: {}", want.len());
         Ok(want.len())
     }
@@ -273,7 +319,8 @@ impl CorpusIndex {
 
     /// Write a plan: docs, FTS rows and fresh vectors in one transaction,
     /// then the vector file (saved only when it changed). A failed save
-    /// leaves the file behind the database; the next pass or open retries it.
+    /// leaves the file behind the database, flagged dirty until a save
+    /// succeeds; the next pass or open retries it.
     pub fn apply(
         &mut self,
         plan: &Plan,
@@ -360,6 +407,12 @@ impl CorpusIndex {
                 "INSERT OR REPLACE INTO meta (k, v) VALUES ('model', ?1), ('dims', ?2)",
                 params![self.model, self.dims.to_string()],
             )?;
+            if !added_vectors.is_empty() || !plan.delete.is_empty() {
+                tx.execute(
+                    "INSERT OR REPLACE INTO meta (k, v) VALUES (?1, '1')",
+                    [dirty_key(&self.model)],
+                )?;
+            }
             tx.commit()?;
         }
         for id in &plan.delete {
@@ -377,6 +430,9 @@ impl CorpusIndex {
                     "corpus vector save failed (retried by the next pass): {e}"
                 );
             }
+        }
+        if !self.vectors.has_unsaved() {
+            self.mark_vectors_saved();
         }
         Ok(IndexStats {
             added,
@@ -511,5 +567,60 @@ impl CorpusIndex {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn unit(i: usize) -> Vec<f32> {
+        let mut v = vec![0.0; DIM];
+        v[i] = 1.0;
+        v
+    }
+
+    fn index(idx: &mut CorpusIndex, hash: &str, v: Vec<f32>) {
+        let docs = vec![CorpusDoc {
+            id: "note:a".into(),
+            text: "a note".into(),
+            content_hash: hash.into(),
+            corpus: "note".into(),
+        }];
+        let plan = idx.plan(&docs).unwrap();
+        let fresh = HashMap::from([("note:a".to_string(), v)]);
+        idx.apply(&plan, &docs, &fresh).unwrap();
+    }
+
+    /// An edit committed to the database whose vector file save never
+    /// happened (a crash, a locked file) is rebuilt on the next open, though
+    /// the file still holds the same keys.
+    #[test]
+    fn an_unsaved_vector_edit_is_rebuilt_on_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut idx = CorpusIndex::open(dir.path()).unwrap();
+        index(&mut idx, "h1", unit(0));
+        let file = vector_path(dir.path(), idx.model());
+        let old = std::fs::read(&file).unwrap();
+        index(&mut idx, "h2", unit(1));
+        assert!(!idx.vectors_dirty(), "a saved pass clears the flag");
+        let model = idx.model().to_string();
+        drop(idx);
+
+        // As a crash between the commit and the save leaves it.
+        std::fs::write(&file, old).unwrap();
+        let conn = Connection::open(dir.path().join(DB_FILE)).unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO meta (k, v) VALUES (?1, '1')",
+            [dirty_key(&model)],
+        )
+        .unwrap();
+        drop(conn);
+
+        let idx = CorpusIndex::open(dir.path()).unwrap();
+        let hits = idx.search_dense(&unit(1), 1);
+        assert_eq!(hits.first().map(|h| h.0.as_str()), Some("note:a"));
+        assert!(hits[0].1 > 0.9, "the edited vector, not the old one");
+        assert!(!idx.vectors_dirty());
     }
 }

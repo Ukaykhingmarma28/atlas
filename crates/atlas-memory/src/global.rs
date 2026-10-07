@@ -55,7 +55,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::record::{self, EntryKind, Origin, RecordStore};
+use crate::record::{self, EntryKind, Origin, RecordStore, State};
 
 /// Minimum confidence for a Fact to be eligible for global promotion.
 pub const PROMOTION_MIN_CONFIDENCE: f64 = 0.8;
@@ -185,7 +185,7 @@ pub fn promote_facts_in(global_dir: &Path, store: &RecordStore) -> Result<usize>
     let facts = store.list(EntryKind::Fact, store.count(EntryKind::Fact)?, Origin::Any)?;
     let items: Vec<Candidate> = facts
         .into_iter()
-        .filter(|e| e.confidence >= PROMOTION_MIN_CONFIDENCE)
+        .filter(|e| e.state == State::Active && e.confidence >= PROMOTION_MIN_CONFIDENCE)
         .map(|e| Candidate {
             content_hash: e.content_hash,
             content: e.content,
@@ -204,7 +204,7 @@ pub fn promote_facts_in(global_dir: &Path, store: &RecordStore) -> Result<usize>
 }
 
 /// Drop `repository_root` from every ledger row it no longer holds (the fact
-/// was forgotten, edited away or fell below the confidence floor). A
+/// was forgotten, archived, edited away or fell below the confidence floor). A
 /// promoted row left in fewer than [`PROMOTION_MIN_REPOSITORIES`] is
 /// demoted: unmarked, and removed from the recall archive and `MEMORY.md`.
 /// Rows from before the record store (no repository roots) are untouched.
@@ -783,6 +783,28 @@ mod tests {
             "demoted"
         );
         assert!(!md(&dir).contains("Tabs over spaces"));
+        std::fs::remove_dir_all(&dir).ok();
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    /// A promoted fact one repository archives (state changes, confidence is
+    /// kept) is demoted the same way as a forgotten one.
+    #[test]
+    fn archiving_a_promoted_fact_demotes_it() {
+        let dir = tmp_dir("demote-archived");
+        let base = tmp_dir("demote-archived-repos");
+        let a = repository(&base, "a", &[("CI runs on Jenkins", 1.0)]);
+        let b = repository(&base, "b", &[("CI runs on Jenkins", 1.0)]);
+        promote_facts_in(&dir, &a).unwrap();
+        assert_eq!(promote_facts_in(&dir, &b).unwrap(), 1);
+        assert_eq!(global_recall_in(&dir, "jenkins", 5).len(), 1);
+
+        let id = a.list(EntryKind::Fact, 10, Origin::Any).unwrap()[0].id;
+        a.archive(&[id], 5).unwrap();
+        promote_facts_in(&dir, &a).unwrap();
+
+        assert!(global_recall_in(&dir, "jenkins", 5).is_empty(), "demoted");
+        assert!(!md(&dir).contains("CI runs on Jenkins"));
         std::fs::remove_dir_all(&dir).ok();
         std::fs::remove_dir_all(&base).ok();
     }

@@ -52,14 +52,16 @@ store promotes Facts seen in two or more repositories.
     `MemorySearch = Fn(cwd, query, limit) -> Vec<MemDoc>` callback that
     `commands/agents.rs` installs with
     `atlas_native_agent::engine::memory::register_search`;
-  - the per-send `--- RELEVANT PROJECT MEMORY ---` block, pushed into every
-    agent's prompt when memory sharing is enabled for the project.
+  - the memory MCP server's `memory_search` tool, which every ACP agent is
+    offered (over HTTP, or the stdio bridge, ADR-0019) when memory sharing is
+    enabled for the project: `commands/agents.rs` passes it an `IndexSearch`
+    callback over `retrieve`, so its answer includes the indexed documents.
 
   Changing the engine never touches the agents.
 
 ```
-native agent ──search_memory──▶ MemorySearch callback ──┐
-any agent ──send (sharing on)──▶ pushed memory block ────┴─▶ memory_retrieve::retrieve
+native agent ──search_memory──▶ MemorySearch callback ────┐
+ACP agent ──memory_search (MCP)──▶ IndexSearch callback ──┴─▶ memory_retrieve::retrieve
                                                                 └─▶ registry.engine_for(cwd)
                                                                       └─▶ MemoryEngine::retrieve   (atlas-memory)
 ```
@@ -70,9 +72,9 @@ any agent ──send (sharing on)──▶ pushed memory block ────┴�
 
 ### 3a. "I just want the agents to recall project memory"
 Nothing to do — it's wired. The **native agent** has a `search_memory` tool it
-calls on demand; with memory sharing enabled for the project, **every agent**
-(ACP agents have no pull tool) also gets the top hits *pushed* into its prompt
-on each send. Indexing happens automatically: on project open
+calls on demand; with memory sharing enabled for the project, **every ACP
+agent** gets the memory MCP tools and pulls the same hits through
+`memory_search`. Nothing is pushed into a prompt. Indexing happens automatically: on project open
 (cold index), on file changes (watched + debounced), and after each finished turn.
 
 ### 3b. "I want to force a reindex"

@@ -81,17 +81,17 @@ pub trait Resolver: Send + Sync {
     }
 }
 
+/// A line with its whitespace collapsed, as [`span_hash`] reads it.
+fn normalized(line: &str) -> String {
+    line.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// blake3 hex of the lines, each with its whitespace collapsed (so a
 /// re-indent is not a change of meaning).
 pub fn span_hash(lines: &[&str]) -> String {
     let mut h = blake3::Hasher::new();
     for l in lines {
-        h.update(
-            l.split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ")
-                .as_bytes(),
-        );
+        h.update(normalized(l).as_bytes());
         h.update(b"\n");
     }
     h.finalize().to_hex().to_string()
@@ -125,9 +125,16 @@ impl Resolver for FileResolver {
         let Some(rel) = safe_rel(rel) else {
             return Read::Unreadable;
         };
+        // Only a file that isn't there is gone; any other failure (no
+        // permission, a sharing lock) can't be judged.
+        let failed = |e: std::io::Error| match e.kind() {
+            std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory => Read::Missing,
+            _ => Read::Unreadable,
+        };
         let path = self.root.join(rel);
-        let Ok(meta) = std::fs::metadata(&path) else {
-            return Read::Missing;
+        let meta = match std::fs::metadata(&path) {
+            Ok(meta) => meta,
+            Err(e) => return failed(e),
         };
         if !meta.is_file() || meta.len() > MAX_FILE_BYTES {
             return Read::Unreadable;
@@ -138,7 +145,7 @@ impl Resolver for FileResolver {
                 Err(_) => Read::Unreadable,
             },
             Ok(_) => Read::Unreadable,
-            Err(_) => Read::Missing,
+            Err(e) => failed(e),
         }
     }
 
@@ -228,12 +235,25 @@ pub fn validate(c: &Citation, r: &dyn Resolver) -> (Validity, Citation) {
             return (Validity::Moved, moved(s, e));
         }
     }
-    let len = c.end_line.saturating_sub(c.start_line) + 1;
-    let count = lines.len() as u32;
-    if count >= len {
-        for start in 1..=count - len + 1 {
-            if span(&lines, start, start + len - 1).is_some_and(|x| span_hash(&x) == c.hash) {
-                return (Validity::Moved, moved(start, start + len - 1));
+    let len = c.end_line.saturating_sub(c.start_line) as usize + 1;
+    let Ok(want) = blake3::Hash::from_hex(&c.hash) else {
+        return (Validity::Stale, c.clone());
+    };
+    if lines.len() >= len {
+        // Each line normalized once; a window's hash is then one slice of
+        // the bytes span_hash would feed for those lines.
+        let mut text = String::new();
+        let mut at = Vec::with_capacity(lines.len() + 1);
+        at.push(0);
+        for l in &lines {
+            text.push_str(&normalized(l));
+            text.push('\n');
+            at.push(text.len());
+        }
+        for (start, w) in at.windows(len + 1).enumerate() {
+            if blake3::hash(&text.as_bytes()[w[0]..w[len]]) == want {
+                let first = start as u32 + 1;
+                return (Validity::Moved, moved(first, first + len as u32 - 1));
             }
         }
     }
@@ -283,6 +303,11 @@ impl ValidationCache {
             return hit.clone();
         }
         let out = validate(c, r);
+        // Unverifiable may be passing (a lock, a permission later fixed)
+        // without the stamp changing: judged again next time.
+        if out.0 == Validity::Unverifiable {
+            return out;
+        }
         let mut seen = self
             .seen
             .lock()
@@ -418,6 +443,39 @@ mod tests {
         let c = cite(&r, "src/ttl.rs", 3, 5, None).unwrap();
         std::fs::remove_file(dir.path().join("src/ttl.rs")).unwrap();
         assert_eq!(validate(&c, &r).0, Validity::Stale);
+    }
+
+    #[test]
+    fn a_path_through_a_file_is_stale() {
+        let dir = project(&[("src/ttl.rs", SRC)]);
+        let r = FileResolver::new(dir.path());
+        assert!(matches!(r.read("src/ttl.rs/inner"), Read::Missing));
+    }
+
+    /// A file that exists but can't be read is unverifiable, not stale, and
+    /// that verdict isn't cached: once it is readable again (same size and
+    /// mtime) it is valid.
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_file_is_unverifiable_and_not_cached() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = project(&[("src/ttl.rs", SRC)]);
+        let r = FileResolver::new(dir.path());
+        let c = cite(&r, "src/ttl.rs", 3, 5, None).unwrap();
+        let file = dir.path().join("src/ttl.rs");
+        let mode = |m: u32| {
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(m)).unwrap();
+        };
+        mode(0o000);
+        if std::fs::read(&file).is_ok() {
+            // Root reads it anyway: nothing to check.
+            mode(0o644);
+            return;
+        }
+        let cache = ValidationCache::new();
+        assert_eq!(cache.check(&c, &r).0, Validity::Unverifiable);
+        mode(0o644);
+        assert_eq!(cache.check(&c, &r).0, Validity::Valid);
     }
 
     #[test]

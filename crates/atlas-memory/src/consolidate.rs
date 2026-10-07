@@ -7,12 +7,11 @@ use std::collections::{BTreeSet, HashMap};
 
 use anyhow::Result;
 
-use crate::record::{
-    Entry, RecordStore, LINK_CONTRADICTS, LINK_DISTINCT, LINK_SUPERSEDES, NEAR_DUPLICATE,
-};
+use crate::record::{Entry, RecordStore, LINK_CONTRADICTS, LINK_DISTINCT, LINK_SUPERSEDES};
 
-/// Two memories this similar are proposed as one (above [`NEAR_DUPLICATE`]
-/// they already merged when written).
+/// Two memories this similar are proposed as one. No upper bound: keyed,
+/// folded, imported and pre-model entries never merged when written, and a
+/// pair that did is one entry now.
 pub const PROPOSE_MERGE_AT: f32 = 0.85;
 /// Two memories this similar that disagree on a number, a key or a negation
 /// contradict each other.
@@ -51,12 +50,11 @@ fn negated(s: &str) -> bool {
     let words: String = s
         .to_lowercase()
         .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '\'' {
-                c
-            } else {
-                ' '
-            }
+        .map(|c| match c {
+            // Typographic apostrophes, as models often write them.
+            '\'' | '\u{2018}' | '\u{2019}' => '\'',
+            c if c.is_alphanumeric() => c,
+            _ => ' ',
         })
         .collect();
     let padded = format!(
@@ -66,10 +64,15 @@ fn negated(s: &str) -> bool {
     NEGATIONS.iter().any(|n| padded.contains(&format!(" {n} ")))
 }
 
+/// Whether two texts disagree on a number or a negation: the conflict
+/// signal without the key (texts carry none) and without any similarity.
+pub(crate) fn contradicts_text(a: &str, b: &str) -> bool {
+    numbers(a) != numbers(b) || negated(a) != negated(b)
+}
+
 fn conflicts(a: &Entry, b: &Entry) -> bool {
     (!a.key.is_empty() && a.key == b.key && a.content != b.content)
-        || numbers(&a.content) != numbers(&b.content)
-        || negated(&a.content) != negated(&b.content)
+        || contradicts_text(&a.content, &b.content)
 }
 
 fn cos(a: &[f32], b: &[f32]) -> f32 {
@@ -105,7 +108,7 @@ pub fn proposals(store: &RecordStore) -> Result<(Vec<MergeProposal>, Conflicts)>
             let sim = cos(va, vb);
             if sim >= CONFLICT_AT && conflicts(a, b) {
                 conflicts_out.push((a.clone(), b.clone()));
-            } else if (PROPOSE_MERGE_AT..NEAR_DUPLICATE).contains(&sim) {
+            } else if sim >= PROPOSE_MERGE_AT {
                 edges.entry(a.id).or_default().push(b.id);
                 edges.entry(b.id).or_default().push(a.id);
             }
@@ -228,7 +231,41 @@ mod tests {
         assert_ne!(numbers("main needs Java 21"), numbers("main needs Java 17"));
         assert_eq!(numbers("Release 1.2."), vec!["1.2".to_string()]);
         assert!(negated("We don't use Redis."));
+        assert!(negated("The worker doesn\u{2019}t use Redis"));
         assert!(!negated("Notes live in docs/"));
+    }
+
+    #[test]
+    fn texts_contradict_on_a_number_or_a_negation() {
+        assert!(contradicts_text("main needs Java 21", "main needs Java 17"));
+        assert!(contradicts_text(
+            "The worker doesn\u{2019}t use Redis",
+            "The worker uses Redis"
+        ));
+        assert!(!contradicts_text(
+            "Keep pull requests small",
+            "Prefer small PRs"
+        ));
+    }
+
+    /// Entries that never merged when written (here: two keys) are proposed
+    /// however close they are.
+    #[test]
+    fn a_pair_above_the_write_time_threshold_is_proposed() {
+        let (root, store) = store_with(
+            "close",
+            vec![
+                ("Use tabs for indentation", vec![1.0, 0.0, 0.0]),
+                ("Indent with tabs", vec![0.95, 0.312, 0.0]),
+            ],
+        );
+        fact(&store, "indent.a", "Use tabs for indentation", "s1", 1);
+        fact(&store, "indent.b", "Indent with tabs", "s1", 2);
+        let (merges, conflicts) = proposals(&store).unwrap();
+        assert!(conflicts.is_empty());
+        assert_eq!(merges.len(), 1);
+        assert_eq!(merges[0].drop.len(), 1);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

@@ -401,6 +401,9 @@ pub(crate) fn fts_query(text: &str) -> Option<String> {
 /// Provenance of a memory captured from an assistant's own words by a
 /// marker (`note:`, `we will use`, …) rather than recorded on purpose.
 pub const CAPTURE_SOURCE: &str = "capture";
+/// Provenance of a memory the extractor distilled from a session (the app's
+/// extraction pass writes with it).
+pub const EXTRACTOR_SOURCE: &str = "extractor";
 /// Confidence a captured line lands with: a candidate, not a trusted fact.
 pub const CANDIDATE_CONFIDENCE: f64 = 0.3;
 /// At or above this an entry is trusted (briefed, promotable); below it is
@@ -515,6 +518,25 @@ fn is_retry(tx: &Transaction<'_>, e: &NewEntry, id: i64) -> Result<bool> {
         && session == e.session_id
         && state == State::Active.as_str()
         && (e.at - updated_at).abs() < RETRY_WINDOW_MS)
+}
+
+/// Whether entry `id` already cites every one of `evidence` (by path and
+/// hash).
+fn holds_evidence(
+    tx: &Transaction<'_>,
+    id: i64,
+    evidence: &[crate::citation::Citation],
+) -> Result<bool> {
+    if evidence.is_empty() {
+        return Ok(true);
+    }
+    let raw: String = tx.query_row("SELECT evidence FROM entries WHERE id = ?1", [id], |r| {
+        r.get(0)
+    })?;
+    let held: Vec<crate::citation::Citation> = serde_json::from_str(&raw).unwrap_or_default();
+    Ok(evidence
+        .iter()
+        .all(|c| held.iter().any(|h| h.path == c.path && h.hash == c.hash)))
 }
 
 /// Refuse a keyed replace of entry `id` that `guard` does not allow.
@@ -681,6 +703,13 @@ impl RecordStore {
         if quick != "ok" {
             anyhow::bail!("quick_check: {quick}");
         }
+        // One handle per scope per process, and a claim lives only while one
+        // accept runs: a proposal still applying here was left by a run that
+        // stopped mid-accept.
+        conn.execute(
+            "UPDATE dream_proposals SET status = ?1 WHERE status = ?2",
+            params![PROPOSAL_PENDING, PROPOSAL_APPLYING],
+        )?;
         Ok(Self {
             root: root.to_path_buf(),
             conn: Mutex::new(conn),
@@ -866,23 +895,28 @@ impl RecordStore {
         Ok(())
     }
 
-    /// The newest handoff note left by any session but `except_session`.
+    /// The newest handoff note left by any session but `except_session`,
+    /// holding only what memory still trusts (see `live_note`).
     pub fn last_episode(
         &self,
         except_session: &str,
     ) -> Result<Option<crate::handoff::HandoffNote>> {
-        let note: Option<String> = self
-            .conn()
+        let conn = self.conn();
+        let note: Option<String> = conn
             .query_row(
                 "SELECT note FROM episodes WHERE session <> ?1 ORDER BY ended_at DESC LIMIT 1",
                 [except_session],
                 |r| r.get(0),
             )
             .optional()?;
-        Ok(note.and_then(|n| serde_json::from_str(&n).ok()))
+        match note {
+            Some(n) => live_note(&conn, &n),
+            None => Ok(None),
+        }
     }
 
-    /// Handoff notes that ended after `since`, oldest first, at most `limit`.
+    /// Handoff notes that ended after `since`, oldest first, at most `limit`,
+    /// each holding only what memory still trusts (see `live_note`).
     pub fn episodes_since(
         &self,
         since: i64,
@@ -892,10 +926,8 @@ impl RecordStore {
         let mut stmt = conn
             .prepare("SELECT note FROM episodes WHERE ended_at > ?1 ORDER BY ended_at LIMIT ?2")?;
         let rows = stmt.query_map(params![since, limit as i64], |r| r.get::<_, String>(0))?;
-        Ok(rows
-            .filter_map(Result::ok)
-            .filter_map(|n| serde_json::from_str(&n).ok())
-            .collect())
+        let raws: Vec<String> = rows.filter_map(Result::ok).collect();
+        live_notes(&conn, raws)
     }
 
     /// Events whose payload, key or agent contains `query` (case-insensitive,
@@ -956,9 +988,12 @@ impl RecordStore {
         Ok(n as usize)
     }
 
-    /// Entries of `kind` written after `since` by any session but
+    /// Entries of `kind` changed after `since` by any session but
     /// `exclude_session`, oldest first by `(updated_at, id)`, at most `limit`.
-    /// What a changes call pages through.
+    /// What a changes call pages through. The session is whoever made the
+    /// latest change (`changed_by`), not the entry's last content writer: an
+    /// archive, a verdict or a rewind by another session reaches the writer,
+    /// and a session never hears its own.
     pub fn changed_since(
         &self,
         kind: EntryKind,
@@ -968,7 +1003,7 @@ impl RecordStore {
     ) -> Result<Vec<Entry>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT * FROM entries WHERE kind = ?1 AND updated_at > ?2 AND session <> ?3 \
+            "SELECT * FROM entries WHERE kind = ?1 AND updated_at > ?2 AND changed_by <> ?3 \
              ORDER BY updated_at ASC, id ASC LIMIT ?4",
         )?;
         let rows = stmt.query_map(
@@ -1084,10 +1119,14 @@ impl RecordStore {
                 if !e.key.is_empty() && found.content_hash != content_hash(&e.content) {
                     check_guard(&tx, &e, found.id, guard)?;
                 }
-                if found.content_hash == content_hash(&e.content) && is_retry(&tx, &e, found.id)? {
+                if found.content_hash == content_hash(&e.content)
+                    && is_retry(&tx, &e, found.id)?
+                    && holds_evidence(&tx, found.id, evidence)?
+                {
                     // The same writer saying the same thing again moments
                     // later (a retried tool call) is not a restatement: no
-                    // revision, no use bump.
+                    // revision, no use bump. A repeat that brings new
+                    // evidence goes on as a merge, so the evidence is kept.
                     let entry = tx.query_row(
                         "SELECT * FROM entries WHERE id = ?1",
                         [found.id],
@@ -1184,7 +1223,9 @@ impl RecordStore {
 
     /// The stored entry of `e`'s kind most similar to `v`, if at or above
     /// [`NEAR_DUPLICATE`]. Keyed entries only merge with keyless ones (two
-    /// different keys are two different memories).
+    /// different keys are two different memories), and an entry the write
+    /// contradicts (a different number, one side negated) is never merged
+    /// into: the write is stored, and consolidation pairs the two.
     fn near_duplicate(
         &self,
         tx: &Transaction<'_>,
@@ -1220,7 +1261,10 @@ impl RecordStore {
             let Some((kind, key, content)) = row else {
                 continue;
             };
-            if kind != e.kind.as_str() || (!e.key.is_empty() && !key.is_empty()) {
+            if kind != e.kind.as_str()
+                || (!e.key.is_empty() && !key.is_empty())
+                || crate::consolidate::contradicts_text(&e.content, &content)
+            {
                 continue;
             }
             let Some(stored) = cached(tx, model, &content)? else {
@@ -1242,6 +1286,37 @@ impl RecordStore {
     /// retracted, as on forget. Key and kind stay; the id stays. `None` when no entry
     /// has that id; an error for empty content (forget removes an entry).
     pub fn edit(&self, id: i64, content: &str, source: &str, ts: i64) -> Result<Option<Entry>> {
+        self.edit_with(id, content, source, ts, None)
+    }
+
+    /// A content-only rewrite of entry `id` by `source` (an accepted dream
+    /// proposal), only while the entry is still at revision `expected_rev`:
+    /// redacted, logged and retracted like [`edit`](Self::edit), but its
+    /// confidence, state, provenance (source, agent, session) and key stay
+    /// as they are. The revision is an `edit` by `source` in no session.
+    /// `Ok(None)` when no entry has that id or it has moved on from
+    /// `expected_rev` (nothing is written); `Ok(Some(entry))` as stored.
+    pub fn edit_guarded(
+        &self,
+        id: i64,
+        content: &str,
+        source: &str,
+        ts: i64,
+        expected_rev: i64,
+    ) -> Result<Option<Entry>> {
+        self.edit_with(id, content, source, ts, Some(expected_rev))
+    }
+
+    /// [`edit`](Self::edit) (`expected_rev` none) or
+    /// [`edit_guarded`](Self::edit_guarded).
+    fn edit_with(
+        &self,
+        id: i64,
+        content: &str,
+        source: &str,
+        ts: i64,
+        expected_rev: Option<i64>,
+    ) -> Result<Option<Entry>> {
         let content = redact_text(content.trim());
         if content.is_empty() {
             anyhow::bail!("an edit needs content; forget the entry to remove it");
@@ -1271,6 +1346,10 @@ impl RecordStore {
         else {
             return Ok(None);
         };
+        if expected_rev.is_some_and(|rev| rev != old.rev) {
+            return Ok(None);
+        }
+        let archived = old.state == State::Archived;
         // A correction: the wording it replaces no longer surfaces from the
         // log (retracted before the edit's own event is written).
         retract_events_of(&tx, &old)?;
@@ -1288,12 +1367,31 @@ impl RecordStore {
                 payload,
             },
         )?;
-        tx.execute(
-            "UPDATE entries SET content = ?2, content_hash = ?3, source = ?4, agent = ?4, session = '', \
-             confidence = 1.0, updated_at = ?5, seq = ?6 WHERE id = ?1",
-            params![id, content, content_hash(&content), source, ts, seq as i64],
-        )?;
-        after_write(&tx, id, "edit", false, None)?;
+        if expected_rev.is_some() {
+            tx.execute(
+                "UPDATE entries SET content = ?2, content_hash = ?3, updated_at = ?4, seq = ?5 \
+                 WHERE id = ?1",
+                params![id, content, content_hash(&content), ts, seq as i64],
+            )?;
+            after_write(
+                &tx,
+                id,
+                "edit",
+                archived,
+                Some(By {
+                    source,
+                    agent: source,
+                    session: "",
+                }),
+            )?;
+        } else {
+            tx.execute(
+                "UPDATE entries SET content = ?2, content_hash = ?3, source = ?4, agent = ?4, session = '', \
+                 confidence = 1.0, updated_at = ?5, seq = ?6 WHERE id = ?1",
+                params![id, content, content_hash(&content), source, ts, seq as i64],
+            )?;
+            after_write(&tx, id, "edit", false, None)?;
+        }
         if let Some((model, v)) = &vector {
             put_cache(&tx, model, &content, v)?;
         }
@@ -1727,7 +1825,7 @@ impl RecordStore {
              DELETE FROM retracted_events; DELETE FROM forgotten; DELETE FROM revisions; \
              DELETE FROM entries_fts; DELETE FROM embed_cache; DELETE FROM links; \
              DELETE FROM episodes; DELETE FROM feedback; DELETE FROM dreams; \
-             DELETE FROM dream_proposals;",
+             DELETE FROM dream_proposals; DELETE FROM dream_attempt;",
         )?;
         tx.commit()?;
         *self.vectors() = None;
@@ -1776,19 +1874,29 @@ impl RecordStore {
     /// Rebuild `entries` (and its FTS rows) from the revisions: each entry's
     /// latest revision, unless that revision is a tombstone. The repair the
     /// reconciler runs when the current-state table and the history
-    /// disagree. `uses`, `last_used_at` and `seq` are not revisioned: they
-    /// come back as their defaults (0, null, null); `created_at` is the
-    /// entry's first revision's time.
+    /// disagree. `uses`, `last_used_at`, `seq` and `changed_by` are not
+    /// revisioned: a row that was still there keeps its own, so a repair
+    /// neither makes a used memory look unused (expiry) nor empties the
+    /// Shared tab's state view; a row that was missing takes its `seq` from
+    /// the live log (the newest event that carried its words) and the
+    /// defaults (0, null) for the rest. `created_at` is the entry's first
+    /// revision's time.
     pub fn rebuild_entries_from_revisions(&self) -> Result<usize> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
-        tx.execute_batch("DELETE FROM entries; DELETE FROM entries_fts;")?;
+        tx.execute_batch(
+            "DROP TABLE IF EXISTS temp.rebuild_keep;
+             CREATE TEMP TABLE rebuild_keep AS \
+               SELECT id, uses, last_used_at, seq, changed_by FROM entries;
+             DELETE FROM entries; DELETE FROM entries_fts;",
+        )?;
         let n = tx.execute(
             &format!(
-                "INSERT INTO entries (id, {SNAPSHOT_COLUMNS}, created_at, updated_at, rev) \
+                "INSERT INTO entries (id, {SNAPSHOT_COLUMNS}, created_at, updated_at, rev, changed_by) \
                  SELECT r.entry_id, r.kind, r.key, r.content, r.content_hash, r.status, r.source, \
                         r.agent, r.session, r.confidence, r.state, r.scope, r.evidence, \
-                        (SELECT MIN(f.at) FROM revisions f WHERE f.entry_id = r.entry_id), r.at, r.rev \
+                        (SELECT MIN(f.at) FROM revisions f WHERE f.entry_id = r.entry_id), r.at, r.rev, \
+                        r.session \
                  FROM revisions r \
                  WHERE r.rev = (SELECT MAX(m.rev) FROM revisions m WHERE m.entry_id = r.entry_id) \
                    AND r.state <> 'tombstoned'"
@@ -1796,8 +1904,29 @@ impl RecordStore {
             [],
         )?;
         tx.execute(
-            "INSERT INTO entries_fts (rowid, key, content) SELECT id, key, content FROM entries",
+            "UPDATE entries SET uses = k.uses, last_used_at = k.last_used_at, seq = k.seq, \
+             changed_by = k.changed_by FROM temp.rebuild_keep k WHERE k.id = entries.id",
             [],
+        )?;
+        let missing: Vec<i64> = {
+            let mut stmt = tx.prepare(
+                "SELECT id FROM entries WHERE id NOT IN (SELECT id FROM temp.rebuild_keep)",
+            )?;
+            let rows = stmt.query_map([], |r| r.get(0))?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        for id in missing {
+            let e = tx.query_row("SELECT * FROM entries WHERE id = ?1", [id], entry_from_row)?;
+            if let Some(seq) = logged_seq(&tx, &e)? {
+                tx.execute(
+                    "UPDATE entries SET seq = ?2 WHERE id = ?1",
+                    params![id, seq],
+                )?;
+            }
+        }
+        tx.execute_batch(
+            "DROP TABLE temp.rebuild_keep;
+             INSERT INTO entries_fts (rowid, key, content) SELECT id, key, content FROM entries;",
         )?;
         tx.commit()?;
         drop(conn);
@@ -1808,20 +1937,7 @@ impl RecordStore {
     /// The first revision whose chain link doesn't match its row and the link
     /// before it, or `None` when the whole history verifies. One pass.
     pub fn verify_chain(&self) -> Result<Option<i64>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(&format!(
-            "SELECT {CHAIN_COLUMNS}, chain FROM revisions ORDER BY rev"
-        ))?;
-        let mut rows = stmt.query([])?;
-        let mut prev = vec![0u8; 32];
-        while let Some(r) = rows.next()? {
-            let stored: Vec<u8> = r.get(16)?;
-            if chain_link(&prev, &chain_bytes(r)?)[..] != stored[..] {
-                return Ok(Some(r.get(0)?));
-            }
-            prev = stored;
-        }
-        Ok(None)
+        first_bad(&self.conn())
     }
 
     /// The distinct writers of each entry, oldest first, at most five each:
@@ -1889,9 +2005,12 @@ impl RecordStore {
     /// with SQLite's secure delete on and the WAL truncated, so the bytes are
     /// overwritten rather than left in free pages. The tombstone row stays,
     /// textless, and history keeps one textless `purge` marker; the hash
-    /// chain is re-sealed from the first removed revision. For secrets.
-    /// Refused for a live entry (forget it first). Returns whether anything
-    /// was erased.
+    /// chain is re-sealed from the first removed revision. The full-text
+    /// index is merged so no segment keeps its words, and the daily snapshot
+    /// is removed. For secrets. Refused for a live entry (forget it first),
+    /// and while a revision from the entry's first on was edited outside
+    /// Atlas (re-sealing would hide that). Returns whether anything was
+    /// erased.
     pub fn purge(&self, id: i64) -> Result<bool> {
         let mut conn = self.conn();
         if conn
@@ -1913,6 +2032,25 @@ impl RecordStore {
             };
             if texts.is_empty() {
                 return Ok(false);
+            }
+            let (first, kind, at): (i64, String, i64) = tx.query_row(
+                "SELECT MIN(rev), \
+                        (SELECT kind FROM revisions WHERE entry_id = ?1 ORDER BY rev DESC LIMIT 1), \
+                        (SELECT MAX(at) FROM revisions WHERE entry_id = ?1) \
+                 FROM revisions WHERE entry_id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )?;
+            // Re-sealing from `first` would seal over an outside edit of any
+            // later revision too, and the reconciler would then rebuild the
+            // view from it. Only the user's accept may do that.
+            if let Some(bad) = first_bad(&tx)? {
+                if bad >= first {
+                    anyhow::bail!(
+                        "history was edited outside Atlas at revision {bad}; accept or restore \
+                         it before purging"
+                    );
+                }
             }
             let mut seqs: Vec<i64> = tx
                 .query_row("SELECT seqs FROM forgotten WHERE id = ?1", [id], |r| {
@@ -1968,14 +2106,6 @@ impl RecordStore {
                     )?;
                 }
             }
-            let (first, kind, at): (i64, String, i64) = tx.query_row(
-                "SELECT MIN(rev), \
-                        (SELECT kind FROM revisions WHERE entry_id = ?1 ORDER BY rev DESC LIMIT 1), \
-                        (SELECT MAX(at) FROM revisions WHERE entry_id = ?1) \
-                 FROM revisions WHERE entry_id = ?1",
-                [id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-            )?;
             tx.execute("DELETE FROM revisions WHERE entry_id = ?1", [id])?;
             tx.execute(
                 "INSERT INTO revisions (entry_id, op, kind, key, content, content_hash, source, agent, \
@@ -2009,6 +2139,41 @@ impl RecordStore {
                     tx.execute("DELETE FROM episodes WHERE session = ?1", [session])?;
                 }
             }
+            // A dream's dropped operations quote what the model was shown.
+            let dreams: Vec<(i64, String)> = {
+                let mut stmt = tx.prepare("SELECT id, dropped FROM dreams")?;
+                let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+                rows.collect::<rusqlite::Result<Vec<_>>>()?
+            };
+            for (dream, dropped) in dreams {
+                let kept = match serde_json::from_str::<Vec<serde_json::Value>>(&dropped) {
+                    Ok(items) => {
+                        let kept: Vec<&serde_json::Value> = items
+                            .iter()
+                            .filter(|item| {
+                                !json_names_id(&item["op"], id)
+                                    && !texts.iter().any(|t| json_mentions(&item.to_string(), t))
+                            })
+                            .collect();
+                        if kept.len() == items.len() {
+                            continue;
+                        }
+                        serde_json::to_string(&kept)?
+                    }
+                    Err(_) if texts.iter().any(|t| json_mentions(&dropped, t)) => "[]".to_string(),
+                    Err(_) => continue,
+                };
+                tx.execute(
+                    "UPDATE dreams SET dropped = ?2 WHERE id = ?1",
+                    params![dream, kept],
+                )?;
+            }
+            // Tombstoned FTS rows keep their terms in the index's segments
+            // until a merge; merge them now, while secure delete is on.
+            tx.execute(
+                "INSERT INTO entries_fts(entries_fts) VALUES('optimize')",
+                [],
+            )?;
             tx.commit()?;
             Ok(true)
         })();
@@ -2016,6 +2181,19 @@ impl RecordStore {
         let erased = erased?;
         if erased {
             let _ = conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()));
+            // The daily snapshot still holds the entry, and an open that
+            // finds the database damaged would restore it from there. The
+            // next health pass takes a fresh one.
+            let snapshot = memory_dir(&self.root).join(crate::health::SNAPSHOT_FILE);
+            if let Err(e) = std::fs::remove_file(&snapshot) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    tracing::warn!(
+                        target: "atlas::memory",
+                        "purged, but the snapshot at {} was not removed: {e}",
+                        snapshot.display()
+                    );
+                }
+            }
         }
         Ok(erased)
     }
@@ -2059,6 +2237,9 @@ impl RecordStore {
             )? == 1
             {
                 after_write(&tx, *id, op, true, None)?;
+                // No session archived it (expiry, the user, a dream): every
+                // session hears about it, the writer's included.
+                tx.execute("UPDATE entries SET changed_by = '' WHERE id = ?1", [id])?;
                 n += 1;
             }
         }
@@ -2129,10 +2310,20 @@ pub const LINK_SUPERSEDES: &str = "supersedes";
 pub const LINK_CONTRADICTS: &str = "contradicts";
 pub const LINK_DISTINCT: &str = "distinct";
 
+/// How a link between `a` and `b` is stored: `(min, max)` for the
+/// symmetric relations, as given for `supersedes`.
+fn link_order(a: i64, b: i64, rel: &str) -> (i64, i64) {
+    if rel == LINK_CONTRADICTS || rel == LINK_DISTINCT {
+        (a.min(b), a.max(b))
+    } else {
+        (a, b)
+    }
+}
+
 impl RecordStore {
     /// An agent's or the user's verdict on a memory it used. Useful: counted,
     /// and a candidate another session vouches for is promoted. Wrong:
-    /// archived, kept in history. Stale: back to a candidate until confirmed
+    /// archived at a candidate's confidence, kept in history. Stale: back to a candidate until confirmed
     /// again. Every verdict is kept as a `feedback` row. `None` for an
     /// unknown id.
     pub fn feedback(
@@ -2186,9 +2377,13 @@ impl RecordStore {
                 }
             }
             Verdict::Wrong => {
+                // Down to a candidate's confidence as well, so a later merge
+                // (a captured echo, an extractor line) can bring it back at
+                // most as a candidate; only a trusted write makes it active.
                 tx.execute(
-                    "UPDATE entries SET updated_at = ?2 WHERE id = ?1",
-                    params![id, at],
+                    "UPDATE entries SET confidence = MIN(confidence, ?2), updated_at = ?3 \
+                     WHERE id = ?1",
+                    params![id, CANDIDATE_CONFIDENCE, at],
                 )?;
                 after_write(&tx, id, "feedback", true, Some(who))?;
             }
@@ -2251,8 +2446,11 @@ impl RecordStore {
     }
 
     /// Record that `a` relates to `b` (`supersedes`, `contradicts`,
-    /// `distinct`). Idempotent; returns whether the link is new.
+    /// `distinct`). Idempotent; returns whether the link is new. The
+    /// symmetric relations are stored as `(min, max)`, so either order names
+    /// the same link; `supersedes` keeps its direction.
     pub fn link(&self, a: i64, b: i64, rel: &str, at: i64, by: &str) -> Result<bool> {
+        let (a, b) = link_order(a, b, rel);
         Ok(self.conn().execute(
             "INSERT OR IGNORE INTO links (a, b, rel, at, by) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![a, b, rel, at, by],
@@ -2292,8 +2490,10 @@ impl RecordStore {
         cached(&self.conn(), &model, text).ok().flatten()
     }
 
-    /// Remove one link. Returns whether it existed.
+    /// Remove one link (a symmetric one in either order). Returns whether it
+    /// existed.
     pub fn unlink(&self, a: i64, b: i64, rel: &str) -> Result<bool> {
+        let (a, b) = link_order(a, b, rel);
         Ok(self.conn().execute(
             "DELETE FROM links WHERE a = ?1 AND b = ?2 AND rel = ?3",
             params![a, b, rel],
@@ -2329,24 +2529,31 @@ pub struct SessionWrite {
     pub op: String,
     pub kind: String,
     pub content: String,
+    /// The state at this revision.
     pub state: String,
     pub at: i64,
+    /// Whether the entry is still live now (exists and is not archived),
+    /// whoever changed it since.
+    pub live: bool,
 }
 
 impl RecordStore {
     /// What one session wrote to memory after `since`, newest first, at most
     /// 20 (the "Memory updated" card). Read from the revisions, so replaced
-    /// and forgotten entries are listed too.
+    /// and forgotten entries are listed too; `live` says whether each entry
+    /// still stands.
     pub fn session_writes(&self, session: &str, since: i64) -> Result<Vec<SessionWrite>> {
         if session.is_empty() {
             return Ok(Vec::new());
         }
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT entry_id, rev, op, kind, content, state, at FROM revisions \
-             WHERE session = ?1 AND at > ?2 \
-               AND op IN ('insert','replace','merge','edit','forget','feedback','rewind') \
-             ORDER BY rev DESC LIMIT 20",
+            "SELECT r.entry_id, r.rev, r.op, r.kind, r.content, r.state, r.at, \
+                    e.id IS NOT NULL AND e.state <> 'archived' \
+             FROM revisions r LEFT JOIN entries e ON e.id = r.entry_id \
+             WHERE r.session = ?1 AND r.at > ?2 \
+               AND r.op IN ('insert','replace','merge','edit','forget','feedback','rewind') \
+             ORDER BY r.rev DESC LIMIT 20",
         )?;
         let rows = stmt.query_map(params![session, since], |r| {
             Ok(SessionWrite {
@@ -2357,6 +2564,7 @@ impl RecordStore {
                 content: r.get(4)?,
                 state: r.get(5)?,
                 at: r.get(6)?,
+                live: r.get(7)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -2365,7 +2573,10 @@ impl RecordStore {
     /// Drop to candidates the active entries whose latest content write was
     /// made by `session` inside one of `windows` (ms, inclusive): turns the
     /// agent took back. An entry written again afterwards (by anyone) is
-    /// left alone. Idempotent. Returns the ids demoted, ascending.
+    /// left alone, and so is an extractor write: it lands whenever the model
+    /// answers, and it was distilled from earlier turns. The `rewind`
+    /// revision is filed under `session` and the write it takes back.
+    /// Idempotent. Returns the ids demoted, ascending.
     pub fn demote_rewound(
         &self,
         session: &str,
@@ -2377,34 +2588,53 @@ impl RecordStore {
         }
         let mut conn = self.conn();
         let tx = conn.transaction()?;
-        let mut ids: Vec<i64> = Vec::new();
+        // (id, the taken-back write's source and agent)
+        let mut found: Vec<(i64, String, String)> = Vec::new();
         {
             let mut stmt = tx.prepare(
-                "SELECT e.id FROM entries e JOIN revisions r ON r.entry_id = e.id \
+                "SELECT e.id, r.source, r.agent FROM entries e JOIN revisions r ON r.entry_id = e.id \
                  WHERE r.session = ?1 AND r.at BETWEEN ?2 AND ?3 AND e.state = 'active' \
+                   AND r.source <> ?4 \
                    AND r.rev = (SELECT MAX(m.rev) FROM revisions m WHERE m.entry_id = e.id \
                                 AND m.op IN ('insert','replace','merge','edit')) \
                  ORDER BY e.id",
             )?;
             for (from, to) in windows {
-                for id in stmt.query_map(params![session, from, to], |r| r.get::<_, i64>(0))? {
-                    let id = id?;
-                    if !ids.contains(&id) {
-                        ids.push(id);
+                let rows = stmt.query_map(params![session, from, to, EXTRACTOR_SOURCE], |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                    ))
+                })?;
+                for row in rows {
+                    let row = row?;
+                    if !found.iter().any(|(id, ..)| *id == row.0) {
+                        found.push(row);
                     }
                 }
             }
         }
-        ids.sort_unstable();
-        for id in &ids {
+        found.sort_unstable_by_key(|(id, ..)| *id);
+        for (id, source, agent) in &found {
             tx.execute(
                 "UPDATE entries SET confidence = MIN(confidence, ?2), updated_at = ?3 WHERE id = ?1",
                 params![id, CANDIDATE_CONFIDENCE, at],
             )?;
-            after_write(&tx, *id, "rewind", false, None)?;
+            after_write(
+                &tx,
+                *id,
+                "rewind",
+                false,
+                Some(By {
+                    source,
+                    agent,
+                    session,
+                }),
+            )?;
         }
         tx.commit()?;
-        Ok(ids)
+        Ok(found.into_iter().map(|(id, ..)| id).collect())
     }
 
     /// Live (not archived) entries that `sessions` wrote (any content
@@ -2439,25 +2669,32 @@ impl RecordStore {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
-    /// The handoff note `session` left, if it left one.
+    /// The handoff note `session` left, if it left one, holding only what
+    /// memory still trusts (see `live_note`).
     pub fn episode_of(&self, session: &str) -> Result<Option<crate::handoff::HandoffNote>> {
-        let note: Option<String> = self
-            .conn()
+        let conn = self.conn();
+        let note: Option<String> = conn
             .query_row(
                 "SELECT note FROM episodes WHERE session = ?1",
                 [session],
                 |r| r.get(0),
             )
             .optional()?;
-        Ok(note.and_then(|n| serde_json::from_str(&n).ok()))
+        match note {
+            Some(n) => live_note(&conn, &n),
+            None => Ok(None),
+        }
     }
 
-    /// Sessions that started or ended at or after `since`.
+    /// Sessions still live, or that started or ended at or after `since`,
+    /// most recent first. A live session that started long ago is included:
+    /// it may still be working.
     pub fn sessions_since(&self, since: i64, limit: usize) -> Result<Vec<String>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT session_id FROM sessions WHERE COALESCE(ended_at, started_at) >= ?1 \
-             ORDER BY session_id LIMIT ?2",
+            "SELECT session_id FROM sessions \
+             WHERE ended_at IS NULL OR ended_at >= ?1 OR started_at >= ?1 \
+             ORDER BY COALESCE(ended_at, started_at) DESC, session_id LIMIT ?2",
         )?;
         let rows = stmt.query_map(params![since, limit as i64], |r| r.get::<_, String>(0))?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -2467,6 +2704,29 @@ impl RecordStore {
 /// A pending dream proposal is `pending` until the user accepts or dismisses
 /// it, or an accept finds it `obsolete` (an id gone, a revision moved on).
 pub const PROPOSAL_PENDING: &str = "pending";
+/// A proposal an accept has claimed ([`RecordStore::claim_proposal`]) and is
+/// applying; it ends `accepted` or `obsolete`, or goes back to `pending`.
+pub const PROPOSAL_APPLYING: &str = "applying";
+
+/// One stored dream proposal.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DreamProposal {
+    pub id: i64,
+    pub op: crate::dream::DreamOp,
+    pub status: String,
+    /// The revision each entry the op names was at when the dream was
+    /// recorded, by entry id (an id already gone then is absent).
+    pub revs: std::collections::BTreeMap<i64, i64>,
+}
+
+/// A proposed operation as JSON without the model's `why`, so the same
+/// operation proposed twice compares equal.
+fn without_why(mut op: serde_json::Value) -> serde_json::Value {
+    if let Some(fields) = op.as_object_mut() {
+        fields.remove("why");
+    }
+    op
+}
 
 impl RecordStore {
     /// The newest dream: `(at, episodes_to)`, the newest episode end it read.
@@ -2481,21 +2741,47 @@ impl RecordStore {
             .optional()?)
     }
 
-    /// The newest `limit` handoff notes, oldest first.
+    /// The newest `limit` handoff notes, oldest first, each holding only what
+    /// memory still trusts (see `live_note`).
     pub fn recent_episodes(&self, limit: usize) -> Result<Vec<crate::handoff::HandoffNote>> {
         let conn = self.conn();
         let mut stmt = conn.prepare("SELECT note FROM episodes ORDER BY ended_at DESC LIMIT ?1")?;
         let rows = stmt.query_map([limit as i64], |r| r.get::<_, String>(0))?;
-        let mut notes: Vec<crate::handoff::HandoffNote> = rows
-            .filter_map(Result::ok)
-            .filter_map(|n| serde_json::from_str(&n).ok())
-            .collect();
-        notes.reverse();
-        Ok(notes)
+        let mut raws: Vec<String> = rows.filter_map(Result::ok).collect();
+        raws.reverse();
+        live_notes(&conn, raws)
+    }
+
+    /// Note that a dream was attempted at `at`, before the model is called,
+    /// so a dream that fails or times out is not retried on every health
+    /// pass. One row: a later attempt replaces it.
+    pub fn record_dream_attempt(&self, at: i64) -> Result<()> {
+        self.conn().execute(
+            "INSERT OR REPLACE INTO dream_attempt (id, at) VALUES (1, ?1)",
+            [at],
+        )?;
+        Ok(())
+    }
+
+    /// When a dream was last attempted ([`record_dream_attempt`](Self::record_dream_attempt)),
+    /// whether or not it finished.
+    pub fn last_dream_attempt(&self) -> Result<Option<i64>> {
+        Ok(self
+            .conn()
+            .query_row("SELECT at FROM dream_attempt WHERE id = 1", [], |r| {
+                r.get(0)
+            })
+            .optional()?)
     }
 
     /// Keep one dream and its surviving operations as pending proposals, in
-    /// one transaction. Returns the dream id.
+    /// one transaction. Each proposal keeps the revision every entry it
+    /// names was at when the model saw it (`seen`, by id; the current one for
+    /// an entry the model was not shown), so an accept can tell the entry
+    /// changed since. An
+    /// operation the same as one already pending or applying (ignoring the
+    /// model's `why`) is not proposed again: it joins the dropped ones as
+    /// `already proposed`. Returns the dream id.
     pub fn record_dream(
         &self,
         at: i64,
@@ -2503,28 +2789,63 @@ impl RecordStore {
         episodes_to: i64,
         kept: &[crate::dream::DreamOp],
         dropped: &[(crate::dream::DreamOp, &str)],
+        seen: &std::collections::BTreeMap<i64, i64>,
     ) -> Result<i64> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
-        let dropped_json: Vec<serde_json::Value> = dropped
+        let mut dropped_json: Vec<serde_json::Value> = dropped
             .iter()
             .map(|(op, why)| serde_json::json!({ "op": op, "why": why }))
             .collect();
+        let mut open: Vec<serde_json::Value> = {
+            let mut stmt =
+                tx.prepare("SELECT op FROM dream_proposals WHERE status IN (?1, ?2) ORDER BY id")?;
+            let rows = stmt.query_map([PROPOSAL_PENDING, PROPOSAL_APPLYING], |r| {
+                r.get::<_, String>(0)
+            })?;
+            rows.filter_map(Result::ok)
+                .filter_map(|op| serde_json::from_str(&op).ok())
+                .map(without_why)
+                .collect()
+        };
+        let mut fresh: Vec<(String, String)> = Vec::new();
+        for op in kept {
+            let same = without_why(serde_json::to_value(op)?);
+            if open.contains(&same) {
+                dropped_json.push(serde_json::json!({ "op": op, "why": "already proposed" }));
+                continue;
+            }
+            open.push(same);
+            let mut revs: Vec<(i64, i64)> = Vec::new();
+            for id in op.ids() {
+                let rev: Option<i64> = match seen.get(&id) {
+                    Some(rev) => Some(*rev),
+                    None => tx
+                        .query_row("SELECT rev FROM entries WHERE id = ?1", [id], |r| r.get(0))
+                        .optional()?,
+                };
+                if let Some(rev) = rev {
+                    revs.push((id, rev));
+                }
+            }
+            fresh.push((serde_json::to_string(op)?, serde_json::to_string(&revs)?));
+        }
         tx.execute(
             "INSERT INTO dreams (at, model, episodes_to, kept, dropped) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![
                 at,
                 model,
                 episodes_to,
-                kept.len() as i64,
+                fresh.len() as i64,
                 serde_json::to_string(&dropped_json)?
             ],
         )?;
         let dream = tx.last_insert_rowid();
-        for op in kept {
+        for (op, revs) in &fresh {
             tx.execute(
-                "INSERT INTO dream_proposals (dream_id, op, status, at) VALUES (?1, ?2, ?3, ?4)",
-                params![dream, serde_json::to_string(op)?, PROPOSAL_PENDING, at],
+                "INSERT INTO dream_proposals (dream_id, op, status, at, revs) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![dream, op, PROPOSAL_PENDING, at, revs],
             )?;
         }
         tx.commit()?;
@@ -2559,28 +2880,112 @@ impl RecordStore {
         Ok(row.and_then(|(op, status)| serde_json::from_str(&op).ok().map(|op| (op, status))))
     }
 
-    /// Set a proposal's status (`accepted`, `dismissed`, `obsolete`).
+    /// One proposal with its status and the revisions it was made against.
+    /// `None` for an unknown id or an op that no longer parses.
+    pub fn proposal(&self, id: i64) -> Result<Option<DreamProposal>> {
+        let row: Option<(String, String, String)> = self
+            .conn()
+            .query_row(
+                "SELECT op, status, revs FROM dream_proposals WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?;
+        Ok(row.and_then(|(op, status, revs)| {
+            let op = serde_json::from_str(&op).ok()?;
+            let revs: Vec<(i64, i64)> = serde_json::from_str(&revs).unwrap_or_default();
+            Some(DreamProposal {
+                id,
+                op,
+                status,
+                revs: revs.into_iter().collect(),
+            })
+        }))
+    }
+
+    /// Claim a pending proposal for applying: `pending` → `applying` in one
+    /// statement, so of two concurrent accepts only one goes ahead. Returns
+    /// whether this call claimed it (false when it was not pending).
+    pub fn claim_proposal(&self, id: i64) -> Result<bool> {
+        Ok(self.conn().execute(
+            "UPDATE dream_proposals SET status = ?2 WHERE id = ?1 AND status = ?3",
+            params![id, PROPOSAL_APPLYING, PROPOSAL_PENDING],
+        )? == 1)
+    }
+
+    /// Set a proposal's status (`accepted`, `dismissed`, `obsolete`, or back
+    /// to `pending`) while it is still undecided (`pending` or `applying`);
+    /// a decided proposal keeps its status.
     pub fn set_proposal_status(&self, id: i64, status: &str) -> Result<()> {
         self.conn().execute(
-            "UPDATE dream_proposals SET status = ?2 WHERE id = ?1",
-            params![id, status],
+            "UPDATE dream_proposals SET status = ?2 WHERE id = ?1 AND status IN (?3, ?4)",
+            params![id, status, PROPOSAL_PENDING, PROPOSAL_APPLYING],
         )?;
         Ok(())
     }
 
-    /// Whether the latest revision of `id` was written by the user (a dream
-    /// never touches it).
+    /// Whether the words `id` holds now were written by the user (a dream
+    /// never touches it): its latest revision that set its content. A
+    /// restatement (merge), a verdict or a promotion by an agent keeps the
+    /// user's words, so it keeps them protected.
     pub fn last_written_by_user(&self, id: i64) -> Result<bool> {
         let agent: Option<String> = self
             .conn()
             .query_row(
-                "SELECT agent FROM revisions WHERE entry_id = ?1 ORDER BY rev DESC LIMIT 1",
+                "SELECT agent FROM revisions WHERE entry_id = ?1 \
+                   AND op IN ('insert','replace','edit','fold','import','baseline') \
+                 ORDER BY rev DESC LIMIT 1",
                 [id],
                 |r| r.get(0),
             )
             .optional()?;
         Ok(agent.as_deref() == Some("user"))
     }
+}
+
+/// A stored handoff note as it may be handed on: every decision, failure,
+/// fact and architecture item that no active entry of that kind holds any
+/// more (by content hash) is dropped. The note is a snapshot of what the
+/// session logged; since then an item may have been forgotten, marked wrong,
+/// taken back with its turn, or never been more than a candidate. `None`
+/// when the stored JSON no longer parses.
+fn live_note(conn: &Connection, raw: &str) -> Result<Option<crate::handoff::HandoffNote>> {
+    let Ok(mut note) = serde_json::from_str::<crate::handoff::HandoffNote>(raw) else {
+        return Ok(None);
+    };
+    let mut held = conn.prepare_cached(
+        "SELECT EXISTS(SELECT 1 FROM entries WHERE kind = ?1 AND content_hash = ?2 \
+         AND state = 'active')",
+    )?;
+    for (kind, items) in [
+        (EntryKind::Decision, &mut note.decisions),
+        (EntryKind::Failure, &mut note.failures),
+        (EntryKind::Fact, &mut note.facts),
+        (EntryKind::Architecture, &mut note.architecture),
+    ] {
+        let mut kept = Vec::with_capacity(items.len());
+        for item in items.drain(..) {
+            if held.query_row(params![kind.as_str(), content_hash(&item)], |r| {
+                r.get::<_, bool>(0)
+            })? {
+                kept.push(item);
+            }
+        }
+        *items = kept;
+    }
+    Ok(Some(note))
+}
+
+/// [`live_note`] over several stored notes, in order; unreadable ones are
+/// skipped.
+fn live_notes(conn: &Connection, raws: Vec<String>) -> Result<Vec<crate::handoff::HandoffNote>> {
+    let mut out = Vec::with_capacity(raws.len());
+    for raw in raws {
+        if let Some(note) = live_note(conn, &raw)? {
+            out.push(note);
+        }
+    }
+    Ok(out)
 }
 
 /// Whether a stored JSON document carries `text` (as JSON spells it).
@@ -2664,11 +3069,16 @@ fn migrate_schema(conn: &Connection) -> Result<()> {
     }
     if version < 6 {
         // v6 (M4): links between memories, one handoff note per finished
-        // session, agents' verdicts, and the dream pass's proposals. The
-        // session index serves memory_why, the rewound-turn check and the
-        // "Memory updated" card.
+        // session, agents' verdicts, and the dream pass's proposals (with
+        // the revisions of the entries each names, and when a dream was
+        // last attempted). The session index serves memory_why, the
+        // rewound-turn check and the "Memory updated" card. `changed_by` is
+        // the session of an entry's latest change, which memory_changes
+        // filters on.
         conn.execute_batch(
             "BEGIN;
+             ALTER TABLE entries ADD COLUMN changed_by TEXT NOT NULL DEFAULT '';
+             UPDATE entries SET changed_by = session;
              CREATE TABLE IF NOT EXISTS links (
                  a    INTEGER NOT NULL,
                  b    INTEGER NOT NULL,
@@ -2705,7 +3115,12 @@ fn migrate_schema(conn: &Connection) -> Result<()> {
                  dream_id  INTEGER NOT NULL,
                  op        TEXT NOT NULL,
                  status    TEXT NOT NULL DEFAULT 'pending',
-                 at        INTEGER NOT NULL
+                 at        INTEGER NOT NULL,
+                 revs      TEXT NOT NULL DEFAULT '[]'
+             );
+             CREATE TABLE IF NOT EXISTS dream_attempt (
+                 id  INTEGER PRIMARY KEY CHECK (id = 1),
+                 at  INTEGER NOT NULL
              );
              CREATE INDEX IF NOT EXISTS revisions_session ON revisions(session, at);
              PRAGMA user_version = 6;
@@ -2821,9 +3236,11 @@ impl<'a> By<'a> {
 
 /// After a write to entry `id`: settle its state (`archive` archives it;
 /// otherwise its confidence decides, so a real write revives an archived
-/// entry), append its row as a new immutable revision `op` (by `by` when the
-/// writer is not the row's own), seal it into the chain, point `entries.rev`
-/// at it, and rewrite its FTS row. Returns the new revision number.
+/// entry), note who changed it (`changed_by`: `by`'s session, else the
+/// row's own), append its row as a new immutable revision `op` (by `by` when
+/// the writer is not the row's own), seal it into the chain, point
+/// `entries.rev` at it, and rewrite its FTS row. Returns the new revision
+/// number.
 fn after_write(
     tx: &Transaction<'_>,
     id: i64,
@@ -2833,8 +3250,9 @@ fn after_write(
 ) -> Result<i64> {
     tx.execute(
         "UPDATE entries SET state = CASE WHEN ?3 THEN 'archived' \
-         WHEN confidence < ?2 THEN 'candidate' ELSE 'active' END WHERE id = ?1",
-        params![id, TRUSTED_CONFIDENCE, archive],
+         WHEN confidence < ?2 THEN 'candidate' ELSE 'active' END, \
+         changed_by = COALESCE(?4, session) WHERE id = ?1",
+        params![id, TRUSTED_CONFIDENCE, archive, by.map(|b| b.session)],
     )?;
     tx.execute(
         "INSERT INTO revisions (entry_id, op, kind, key, content, content_hash, status, source, agent, \
@@ -2940,6 +3358,24 @@ fn seal(conn: &Connection, rev: i64) -> Result<()> {
     Ok(())
 }
 
+/// The first revision whose chain link doesn't match its row and the link
+/// before it, or `None` when the whole history verifies. One pass.
+fn first_bad(conn: &Connection) -> Result<Option<i64>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {CHAIN_COLUMNS}, chain FROM revisions ORDER BY rev"
+    ))?;
+    let mut rows = stmt.query([])?;
+    let mut prev = vec![0u8; 32];
+    while let Some(r) = rows.next()? {
+        let stored: Vec<u8> = r.get(16)?;
+        if chain_link(&prev, &chain_bytes(r)?)[..] != stored[..] {
+            return Ok(Some(r.get(0)?));
+        }
+        prev = stored;
+    }
+    Ok(None)
+}
+
 /// Re-seal every revision from `rev` on, in order: the migration's
 /// baselines, purge (which removes revisions on purpose), and the user's
 /// acceptance of an outside edit.
@@ -3024,6 +3460,40 @@ fn retract_events_of(tx: &Transaction<'_>, e: &Entry) -> Result<Vec<i64>> {
         )?;
     }
     Ok(seqs)
+}
+
+/// The newest live event that carried `e`'s words: for a file change, the
+/// newest on its path; else the newest of its kind whose text is the same
+/// memory (by normalised hash). What a rebuilt row's `seq` is.
+fn logged_seq(tx: &Transaction<'_>, e: &Entry) -> Result<Option<i64>> {
+    let mut stmt = tx.prepare(&format!(
+        "SELECT seq, key, payload FROM events {LIVE_EVENTS} AND kind = ?1 ORDER BY seq DESC"
+    ))?;
+    let rows = stmt.query_map([e.kind.event_kind().as_str()], |r| {
+        Ok((
+            r.get::<_, i64>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+        ))
+    })?;
+    for row in rows {
+        let (seq, key, payload) = row?;
+        let payload: serde_json::Value =
+            serde_json::from_str(&payload).unwrap_or(serde_json::Value::Null);
+        let carried = if e.kind == EntryKind::FileChanged {
+            payload.get("path").and_then(|v| v.as_str()).unwrap_or(&key) == e.key
+        } else {
+            payload
+                .get(content_field(e.kind))
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .is_some_and(|t| !t.is_empty() && content_hash(t) == e.content_hash)
+        };
+        if carried {
+            return Ok(Some(seq));
+        }
+    }
+    Ok(None)
 }
 
 fn migrate_v1(conn: &Connection) -> Result<()> {
@@ -4637,6 +5107,14 @@ pub(crate) mod tests {
                 .len(),
             1
         );
+        assert_eq!(
+            store
+                .list(EntryKind::Decision, 50, Origin::EventLog)
+                .unwrap()
+                .len(),
+            1,
+            "the state view keeps its entries"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -4811,6 +5289,26 @@ pub(crate) mod tests {
             store.purge(e.entry.id).is_err(),
             "only a forgotten entry can be purged"
         );
+        // A dream dropped a rewrite that repeats it, and a snapshot holds it.
+        store
+            .record_dream(
+                2,
+                "m",
+                2,
+                &[],
+                &[(
+                    crate::dream::DreamOp::Rewrite {
+                        id: e.entry.id,
+                        revision: 0,
+                        content: secret.into(),
+                        why: String::new(),
+                    },
+                    "stale revision",
+                )],
+                &Default::default(),
+            )
+            .unwrap();
+        assert!(store.snapshot_if_due(2).unwrap());
         store.forget(e.entry.id, 3, "").unwrap();
         assert!(store.purge(e.entry.id).unwrap());
         {
@@ -4831,6 +5329,19 @@ pub(crate) mod tests {
                 0,
                 "fts"
             );
+            assert_eq!(
+                count(
+                    "SELECT COUNT(*) FROM entries_fts_data \
+                     WHERE instr(block, CAST('hunter2' AS BLOB)) > 0"
+                ),
+                0,
+                "fts segments"
+            );
+            assert_eq!(
+                count("SELECT COUNT(*) FROM dreams WHERE dropped LIKE '%hunter2%'"),
+                0,
+                "a dream's dropped ops"
+            );
             let secret_key = atlas_retrieval::codec::cache_key("table-3", secret);
             let cached: i64 = conn
                 .query_row(
@@ -4841,6 +5352,12 @@ pub(crate) mod tests {
                 .unwrap();
             assert_eq!(cached, 0, "the secret's cached vector");
         }
+        assert!(
+            !memory_dir(store.root())
+                .join(crate::health::SNAPSHOT_FILE)
+                .exists(),
+            "the snapshot that held it"
+        );
         let h = store.history(e.entry.id).unwrap();
         assert_eq!(
             h.iter()
@@ -5109,6 +5626,7 @@ pub(crate) mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(after.state, State::Archived);
+        assert_eq!(after.confidence, CANDIDATE_CONFIDENCE);
         let last = store.history(e.id).unwrap().pop().unwrap();
         assert_eq!(
             (last.op.as_str(), last.agent.as_str()),
@@ -5118,6 +5636,26 @@ pub(crate) mod tests {
             .feedback(e.id + 99, Verdict::Useful, "", "codex", "s2", 3)
             .unwrap()
             .is_none());
+        // codex's verdict reaches the writer's session, never codex's own.
+        assert!(store
+            .changed_since(EntryKind::Fact, 1, "s1", 10)
+            .unwrap()
+            .iter()
+            .any(|c| c.id == e.id));
+        assert!(store
+            .changed_since(EntryKind::Fact, 1, "s2", 10)
+            .unwrap()
+            .is_empty());
+        // A captured echo of it comes back as a candidate at most.
+        store
+            .upsert(NewEntry {
+                source: CAPTURE_SOURCE.into(),
+                session_id: "s3".into(),
+                confidence: CANDIDATE_CONFIDENCE,
+                ..tool_write(EntryKind::Fact, "", "CI runs on Jenkins", 4)
+            })
+            .unwrap();
+        assert_eq!(store.peek(e.id).unwrap().unwrap().state, State::Candidate);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -5169,6 +5707,15 @@ pub(crate) mod tests {
         assert_eq!(store.links(LINK_CONTRADICTS).unwrap(), vec![(1, 2)]);
         assert!(store.unlink(1, 2, LINK_CONTRADICTS).unwrap());
         assert!(store.links_of(1).unwrap().is_empty());
+        // A symmetric link is one link in either order; supersedes is not.
+        store.link(9, 4, LINK_CONTRADICTS, 3, "dream").unwrap();
+        assert_eq!(store.links(LINK_CONTRADICTS).unwrap(), vec![(4, 9)]);
+        assert!(
+            store.unlink(9, 4, LINK_CONTRADICTS).unwrap(),
+            "either order"
+        );
+        store.link(9, 4, LINK_SUPERSEDES, 4, "health").unwrap();
+        assert_eq!(store.links(LINK_SUPERSEDES).unwrap(), vec![(9, 4)]);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -5303,6 +5850,485 @@ pub(crate) mod tests {
             .collect();
         assert_eq!(citing, vec![cited.id]);
         assert!(store.entries_by_sessions(&[], 10).unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The note a session left is handed on only as far as memory still
+    /// trusts it: a decision forgotten since, a fact marked wrong, a decision
+    /// from a turn taken back, and a candidate the extractor logged are all
+    /// left out, wherever the note is read.
+    #[test]
+    fn a_handoff_note_only_hands_on_what_memory_still_trusts() {
+        let root = temp_root("handoff-live");
+        let store = open_scope(&root).unwrap();
+        let write = |kind, content: &str, at| {
+            store
+                .remember(tool_write(kind, "", content, at), at)
+                .unwrap()
+                .entry
+        };
+        let forgotten = write(EntryKind::Decision, "Always force-push to main", 1_100);
+        let wrong = write(EntryKind::Fact, "CI runs on Jenkins", 1_200);
+        let rewound = write(EntryKind::Decision, "Sign JWTs with HS256", 1_300);
+        write(EntryKind::Decision, "Sign JWTs with EdDSA", 5_000);
+        write(EntryKind::Failure, "ring 0.16 can't parse PKCS#8 v2", 5_100);
+        // From a session that read outside content: logged, but a candidate.
+        store
+            .remember(
+                NewEntry {
+                    source: EXTRACTOR_SOURCE.into(),
+                    confidence: CANDIDATE_CONFIDENCE,
+                    ..tool_write(EntryKind::Fact, "", "Staging is on Fly", 5_200)
+                },
+                5_200,
+            )
+            .unwrap();
+        let note = crate::handoff::build_handoff(&store, "s1", "claude", 6_000).unwrap();
+        assert_eq!(note.decisions.len(), 3, "{note:?}");
+        assert_eq!(note.facts.len(), 2, "{note:?}");
+        store.record_episode(&note).unwrap();
+
+        store.forget(forgotten.id, 6_100, "").unwrap();
+        store
+            .feedback(wrong.id, Verdict::Wrong, "", "codex", "s2", 6_200)
+            .unwrap();
+        assert_eq!(
+            store
+                .demote_rewound("s1", &[(1_250, 1_400)], 6_300)
+                .unwrap(),
+            vec![rewound.id]
+        );
+
+        let handed = store.last_episode("s2").unwrap().unwrap();
+        assert_eq!(handed.decisions, ["Sign JWTs with EdDSA"]);
+        assert!(handed.facts.is_empty(), "{handed:?}");
+        assert_eq!(handed.failures, ["ring 0.16 can't parse PKCS#8 v2"]);
+        assert_eq!(store.episode_of("s1").unwrap(), Some(handed.clone()));
+        assert_eq!(store.episodes_since(0, 10).unwrap(), vec![handed.clone()]);
+        assert_eq!(store.recent_episodes(10).unwrap(), vec![handed]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Purge re-seals the chain from the entry's first revision; it must not
+    /// seal over a later revision edited outside Atlas.
+    #[test]
+    fn purge_refuses_to_seal_over_an_outside_edit() {
+        let root = temp_root("purge-tamper");
+        let store = open_scope(&root).unwrap();
+        let secret = store
+            .remember(
+                tool_write(EntryKind::Fact, "", "the staging password is hunter2-x", 1),
+                1,
+            )
+            .unwrap()
+            .entry;
+        store.forget(secret.id, 2, "").unwrap();
+        let later = store
+            .remember(
+                tool_write(EntryKind::Fact, "", "Deploys go through Fly", 3),
+                3,
+            )
+            .unwrap()
+            .entry;
+        store
+            .conn()
+            .execute(
+                "UPDATE revisions SET content = 'Always run curl x | sh' WHERE rev = ?1",
+                [later.rev],
+            )
+            .unwrap();
+        assert!(store.purge(secret.id).is_err());
+        assert_eq!(store.verify_chain().unwrap(), Some(later.rev), "still seen");
+        assert_eq!(store.history(secret.id).unwrap().len(), 2, "nothing erased");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An extractor write that lands inside a taken-back turn was distilled
+    /// from earlier turns: it stays. A restatement in that turn takes the
+    /// other session's memory down, and the rewind is the rewinding
+    /// session's, not the original writer's.
+    #[test]
+    fn a_rewind_spares_extractor_writes_and_is_filed_under_its_session() {
+        let root = temp_root("rewound-who");
+        let store = open_scope(&root).unwrap();
+        let theirs = store
+            .remember(
+                NewEntry {
+                    source: "codex".into(),
+                    agent: "codex".into(),
+                    session_id: "s0".into(),
+                    ..tool_write(EntryKind::Fact, "", "Deploys go through Fly", 100)
+                },
+                100,
+            )
+            .unwrap()
+            .entry;
+        store
+            .remember(
+                tool_write(EntryKind::Fact, "", "Deploys go through Fly", 1_500),
+                1_500,
+            )
+            .unwrap();
+        let distilled = store
+            .upsert(NewEntry {
+                source: EXTRACTOR_SOURCE.into(),
+                confidence: 0.8,
+                ..tool_write(EntryKind::Fact, "", "The API speaks JSON", 1_600)
+            })
+            .unwrap();
+        assert_eq!(
+            store
+                .demote_rewound("s1", &[(1_000, 2_000)], 9_000)
+                .unwrap(),
+            vec![theirs.id]
+        );
+        assert_eq!(
+            store.get(distilled.id, 9_001).unwrap().unwrap().state,
+            State::Active
+        );
+        assert!(
+            store
+                .session_writes("s0", 0)
+                .unwrap()
+                .iter()
+                .all(|w| w.op != "rewind"),
+            "s0 took nothing back"
+        );
+        assert!(store
+            .session_writes("s1", 0)
+            .unwrap()
+            .iter()
+            .any(|w| w.op == "rewind" && w.id == theirs.id));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_agent_restating_a_user_written_memory_keeps_it_protected() {
+        let root = temp_root("protected");
+        let store = open_scope(&root).unwrap();
+        let e = store
+            .remember(
+                tool_write(EntryKind::Fact, "", "Staging is on Render", 1),
+                1,
+            )
+            .unwrap()
+            .entry;
+        assert!(!store.last_written_by_user(e.id).unwrap());
+        store.edit(e.id, "Staging is on Fly", USER, 2).unwrap();
+        assert!(store.last_written_by_user(e.id).unwrap());
+        let codex = NewEntry {
+            source: "codex".into(),
+            agent: "codex".into(),
+            session_id: "s2".into(),
+            ..tool_write(EntryKind::Fact, "", "Staging is on Fly", 3)
+        };
+        assert_eq!(
+            store.remember(codex, 3).unwrap().outcome,
+            WriteOutcome::Merged
+        );
+        store
+            .feedback(e.id, Verdict::Stale, "", "codex", "s2", 4)
+            .unwrap();
+        assert!(
+            store.last_written_by_user(e.id).unwrap(),
+            "the words are still the user's"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_contradicting_near_duplicate_is_stored_beside_the_other() {
+        let root = temp_root("near-dup-conflict");
+        let store = open_scope(&root).unwrap();
+        store.set_embedder(Some(Arc::new(TableEmbedder(vec![
+            ("main needs Java 21", vec![1.0, 0.0, 0.0]),
+            // cosine 0.96: close enough to merge, but the number differs.
+            ("main needs Java 17", vec![0.96, 0.28, 0.0]),
+        ]))));
+        let first = store
+            .remember(tool_write(EntryKind::Fact, "", "main needs Java 21", 1), 1)
+            .unwrap();
+        let second = store
+            .remember(
+                NewEntry {
+                    session_id: "s2".into(),
+                    ..tool_write(EntryKind::Fact, "", "main needs Java 17", 2)
+                },
+                2,
+            )
+            .unwrap();
+        assert_eq!(second.outcome, WriteOutcome::Inserted);
+        assert_ne!(second.entry.id, first.entry.id);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A repair of the view keeps what revisions don't carry: a row that was
+    /// still there keeps its use and its place in the log, and a row that
+    /// was gone finds its place in the log again.
+    #[test]
+    fn a_rebuild_keeps_use_and_the_state_view() {
+        let root = temp_root("rebuild-keep");
+        let store = open_scope(&root).unwrap();
+        let used = store
+            .remember(tool_write(EntryKind::Fact, "", "The API speaks JSON", 1), 1)
+            .unwrap()
+            .entry;
+        let gone = store
+            .remember(tool_write(EntryKind::Decision, "", "Use Postgres", 2), 2)
+            .unwrap()
+            .entry;
+        store
+            .feedback(used.id, Verdict::Useful, "", "codex", "s2", 60)
+            .unwrap();
+        store
+            .conn()
+            .execute(
+                "UPDATE entries SET content = 'tampered' WHERE id = ?1",
+                [used.id],
+            )
+            .unwrap();
+        store
+            .conn()
+            .execute("DELETE FROM entries WHERE id = ?1", [gone.id])
+            .unwrap();
+        assert_eq!(store.rebuild_entries_from_revisions().unwrap(), 2);
+        let back = store.peek(used.id).unwrap().unwrap();
+        assert_eq!(back.content, "The API speaks JSON");
+        assert_eq!((back.uses, back.last_used_at), (1, Some(60)));
+        assert_eq!(back.seq, used.seq);
+        assert_eq!(
+            store.peek(gone.id).unwrap().unwrap().seq,
+            gone.seq,
+            "from the log"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_session_still_open_is_swept_however_long_ago_it_started() {
+        let root = temp_root("sessions-since");
+        let store = open_scope(&root).unwrap();
+        store.session_started("s-old-live", "codex", 10).unwrap();
+        store.session_started("s-old-done", "codex", 10).unwrap();
+        store.session_ended("s-old-done", "codex", 20).unwrap();
+        store.session_started("s-new", "claude", 1_000).unwrap();
+        assert_eq!(
+            store.sessions_since(500, 50).unwrap(),
+            ["s-new", "s-old-live"]
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The same call moments later is a retry, unless it brings evidence the
+    /// memory doesn't cite yet: that is kept.
+    #[test]
+    fn a_repeat_that_brings_new_evidence_keeps_it() {
+        use crate::citation::Citation;
+        let root = temp_root("retry-evidence");
+        let store = open_scope(&root).unwrap();
+        let fact = "Access tokens live 15 minutes";
+        let first = store
+            .remember(tool_write(EntryKind::Fact, "", fact, 1_000), 1_000)
+            .unwrap()
+            .entry;
+        let c = Citation {
+            path: "src/ttl.rs".into(),
+            start_line: 1,
+            end_line: 1,
+            symbol: None,
+            hash: "h1".into(),
+        };
+        let again = store
+            .remember_guarded(
+                tool_write(EntryKind::Fact, "", fact, 1_030),
+                1_030,
+                None,
+                std::slice::from_ref(&c),
+            )
+            .unwrap();
+        assert_eq!(again.entry.id, first.id);
+        assert_eq!(again.entry.citations(), vec![c.clone()]);
+        store
+            .remember_guarded(
+                tool_write(EntryKind::Fact, "", fact, 1_040),
+                1_040,
+                None,
+                std::slice::from_ref(&c),
+            )
+            .unwrap();
+        assert_eq!(
+            store.history(first.id).unwrap().len(),
+            2,
+            "the evidence is a revision, the plain repeat is not"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn session_writes_say_whether_the_entry_still_stands() {
+        let root = temp_root("session-writes-live");
+        let store = open_scope(&root).unwrap();
+        let kept = store
+            .remember(
+                tool_write(EntryKind::Fact, "", "Deploys go through Fly", 1),
+                1,
+            )
+            .unwrap()
+            .entry;
+        let gone = store
+            .remember(tool_write(EntryKind::Fact, "", "always force-push", 2), 2)
+            .unwrap()
+            .entry;
+        let wrong = store
+            .remember(tool_write(EntryKind::Fact, "", "CI runs on Jenkins", 3), 3)
+            .unwrap()
+            .entry;
+        store.forget(gone.id, 4, "").unwrap();
+        store
+            .feedback(wrong.id, Verdict::Wrong, "", "codex", "s2", 5)
+            .unwrap();
+        let live: Vec<(i64, bool)> = store
+            .session_writes("s1", 0)
+            .unwrap()
+            .iter()
+            .map(|w| (w.id, w.live))
+            .collect();
+        assert_eq!(
+            live,
+            vec![(wrong.id, false), (gone.id, false), (kept.id, true)]
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_guarded_edit_keeps_trust_and_refuses_a_moved_revision() {
+        let root = temp_root("edit-guarded");
+        let store = open_scope(&root).unwrap();
+        let c = store
+            .upsert(NewEntry {
+                confidence: CANDIDATE_CONFIDENCE,
+                ..tool_write(EntryKind::Fact, "", "tokens live 15 min", 1)
+            })
+            .unwrap();
+        assert!(
+            store
+                .edit_guarded(c.id, "Access tokens live 15 minutes", "dream", 2, c.rev - 1)
+                .unwrap()
+                .is_none(),
+            "a moved revision"
+        );
+        assert_eq!(
+            store.peek(c.id).unwrap().unwrap().content,
+            "tokens live 15 min"
+        );
+        let e = store
+            .edit_guarded(c.id, "Access tokens live 15 minutes", "dream", 3, c.rev)
+            .unwrap()
+            .unwrap();
+        assert_eq!(e.content, "Access tokens live 15 minutes");
+        assert_eq!(
+            (e.state, e.confidence),
+            (State::Candidate, CANDIDATE_CONFIDENCE)
+        );
+        assert_eq!((e.source.as_str(), e.session_id.as_str()), ("claude", "s1"));
+        let last = store.history(c.id).unwrap().pop().unwrap();
+        assert_eq!((last.op.as_str(), last.agent.as_str()), ("edit", "dream"));
+        assert!(store
+            .edit_guarded(c.id + 99, "x", "dream", 4, 1)
+            .unwrap()
+            .is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn dream_proposals_keep_their_revisions_and_are_claimed_once() {
+        use crate::dream::DreamOp;
+        let root = temp_root("dream-proposals");
+        let store = open_scope(&root).unwrap();
+        assert_eq!(store.last_dream_attempt().unwrap(), None);
+        store.record_dream_attempt(10).unwrap();
+        store.record_dream_attempt(20).unwrap();
+        assert_eq!(store.last_dream_attempt().unwrap(), Some(20));
+
+        let e = store
+            .remember(tool_write(EntryKind::Fact, "", "Logs rotate daily", 1), 1)
+            .unwrap()
+            .entry;
+        let archive = |why: &str| DreamOp::Archive {
+            id: e.id,
+            reason: "unused".into(),
+            why: why.into(),
+        };
+        store
+            .record_dream(
+                30,
+                "m",
+                25,
+                &[archive("never used")],
+                &[],
+                &Default::default(),
+            )
+            .unwrap();
+        let pending = store.dream_proposals(PROPOSAL_PENDING).unwrap();
+        assert_eq!(pending.len(), 1);
+        let id = pending[0].0;
+        let p = store.proposal(id).unwrap().unwrap();
+        assert_eq!(p.revs.get(&e.id), Some(&e.rev));
+        assert_eq!(p.status, PROPOSAL_PENDING);
+
+        // The same op again, whatever the model's why: not proposed twice.
+        store
+            .record_dream(
+                40,
+                "m",
+                35,
+                &[archive("still unused")],
+                &[],
+                &Default::default(),
+            )
+            .unwrap();
+        assert_eq!(store.dream_proposals(PROPOSAL_PENDING).unwrap().len(), 1);
+
+        assert!(store.claim_proposal(id).unwrap());
+        assert!(!store.claim_proposal(id).unwrap(), "claimed once");
+        store
+            .record_dream(50, "m", 45, &[archive("again")], &[], &Default::default())
+            .unwrap();
+        assert!(
+            store.dream_proposals(PROPOSAL_PENDING).unwrap().is_empty(),
+            "nor while it is being applied"
+        );
+        // A run that stops mid-accept leaves the claim; the next open of
+        // the store hands the proposal back to Review.
+        drop(RecordStore::open(&root).unwrap());
+        assert_eq!(
+            store.proposal(id).unwrap().unwrap().status,
+            PROPOSAL_PENDING
+        );
+        assert!(store.claim_proposal(id).unwrap());
+        store.set_proposal_status(id, "accepted").unwrap();
+        store.set_proposal_status(id, "dismissed").unwrap();
+        assert_eq!(
+            store.proposal(id).unwrap().unwrap().status,
+            "accepted",
+            "a decided proposal keeps its status"
+        );
+
+        // The revision kept is the one the model was shown, not the one at
+        // record time.
+        let seen = std::collections::BTreeMap::from([(e.id, e.rev - 1)]);
+        let other = DreamOp::Archive {
+            id: e.id,
+            reason: "transient".into(),
+            why: String::new(),
+        };
+        store
+            .record_dream(60, "m", 55, &[other], &[], &seen)
+            .unwrap();
+        let fresh = store.dream_proposals(PROPOSAL_PENDING).unwrap();
+        assert_eq!(fresh.len(), 1);
+        let p = store.proposal(fresh[0].0).unwrap().unwrap();
+        assert_eq!(p.revs.get(&e.id), Some(&(e.rev - 1)));
         let _ = std::fs::remove_dir_all(&root);
     }
 }
