@@ -1412,19 +1412,48 @@ fn insert_event(tx: &Transaction<'_>, row: &EventRow) -> Result<()> {
 
 // ── Redaction ────────────────────────────────────────────────────────────────
 
-/// Scrub a text through `atlas_redact` — the one redactor every record write
-/// uses. Returned unchanged when there was nothing to scrub.
+/// Scrub a text through [`clean`] and `atlas_redact` — the one scrubber every
+/// record write and every text bound for a model uses. Returned unchanged
+/// when there was nothing to scrub.
 pub fn redact(s: &str) -> String {
     redact_text(s)
 }
 
 fn redact_text(s: &str) -> String {
-    let r = atlas_redact::redact(s);
+    let cleaned = clean(s);
+    let r = atlas_redact::redact(&cleaned);
     if r.changed() {
         r.text
     } else {
-        s.to_string()
+        cleaned
     }
+}
+
+/// `s` without the characters that hide text from a person while a model
+/// still reads it: zero-width and bidi controls (U+200B–U+200F,
+/// U+202A–U+202E, U+2060–U+2064, U+2066–U+2069, U+FEFF) and the Unicode tag
+/// block (U+E0000–U+E007F). An `<atlas-memory` tag is defanged to
+/// `‹atlas-memory`, so recalled text can't pose as a harness block.
+pub fn clean(s: &str) -> String {
+    let hidden = |c: char| {
+        matches!(
+            c,
+            '\u{200B}'..='\u{200F}'
+                | '\u{202A}'..='\u{202E}'
+                | '\u{2060}'..='\u{2064}'
+                | '\u{2066}'..='\u{2069}'
+                | '\u{FEFF}'
+                | '\u{E0000}'..='\u{E007F}'
+        )
+    };
+    if !s.chars().any(hidden) && !s.contains("<atlas-memory") && !s.contains("</atlas-memory") {
+        return s.to_string();
+    }
+    s.chars()
+        .filter(|c| !hidden(*c))
+        .collect::<String>()
+        .replace("</atlas-memory", "‹/atlas-memory")
+        .replace("<atlas-memory", "‹atlas-memory")
 }
 
 /// Redact every string inside a JSON value; the value is returned untouched
@@ -1713,7 +1742,7 @@ fn upsert_tx(tx: &Transaction<'_>, e: NewEntry) -> Result<i64> {
 fn redacted(e: NewEntry) -> NewEntry {
     NewEntry {
         key: redact_text(&e.key),
-        content: redact_text(e.content.trim()),
+        content: redact_text(e.content.trim()).trim().to_string(),
         ..e
     }
 }
@@ -1832,6 +1861,23 @@ pub(crate) mod tests {
             key: key.into(),
             payload,
         }
+    }
+
+    #[test]
+    fn invisible_and_bidi_characters_are_stripped_on_write() {
+        let root = temp_root("clean");
+        let store = open_scope(&root).unwrap();
+        let sneaky = "Deploys go through Fly\u{200B}\u{E0041}\u{E0042}\u{202E}";
+        let e = store
+            .remember(tool_write(EntryKind::Fact, "", sneaky, 1), 1)
+            .unwrap()
+            .entry;
+        assert_eq!(e.content, "Deploys go through Fly");
+        assert_eq!(
+            clean("a <atlas-memory>x</atlas-memory>"),
+            "a ‹atlas-memory>x‹/atlas-memory>"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

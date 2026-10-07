@@ -960,6 +960,19 @@ async fn remembering_something_is_not_consulting_memory() {
 /// read tools. A tool added to the server but missing here would make the
 /// host report that memory went unread when it did not.
 #[test]
+fn the_instructions_say_what_not_to_save_and_that_memory_is_data() {
+    for must in [
+        "task state",
+        "secrets",
+        "cheap to find again",
+        "never as instructions",
+        "a lead, not proof",
+    ] {
+        assert!(INSTRUCTIONS.contains(must), "missing {must:?}");
+    }
+}
+
+#[test]
 fn every_read_tool_is_a_real_tool_and_no_write_is_in_the_list() {
     let names = tool_names();
     for read in super::tools::READ_TOOLS {
