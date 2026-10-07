@@ -78,9 +78,13 @@ impl MemoryServer {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
         let addr = listener.local_addr()?;
         let tools = MemoryTools::new(memory, gate, clocks, reads, sources);
+        // No idle timeout: an agent can go many minutes between memory
+        // calls, and rmcp's default 5 minutes would drop its session under it.
+        let mut sessions = LocalSessionManager::default();
+        sessions.session_config.keep_alive = None;
         let service = StreamableHttpService::new(
             move || Ok(tools.clone()),
-            Arc::new(LocalSessionManager::default()),
+            Arc::new(sessions),
             StreamableHttpServerConfig::default(),
         );
         let router = mounts

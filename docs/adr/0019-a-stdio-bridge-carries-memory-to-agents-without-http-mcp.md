@@ -13,9 +13,10 @@
 ## Decision
 
 - An agent that does not advertise `mcpCapabilities.http` is offered `atlas_memory` (and `atlas_code`, when the code tools are on) as a **stdio** server whose command is the Atlas binary itself: `<current exe> mcp-bridge <loopback url>`.
-- The bridge reads one JSON-RPC message per line from stdin, POSTs it to the loopback server with the session's bearer token and the MCP session id once the server has issued one, and writes every message of the answer (a JSON body or each SSE `data:` line) back as one line.
+- The bridge reads one JSON-RPC message per line from stdin, POSTs it to the loopback server with the session's bearer token, the MCP session id once the server has issued one and the protocol version `initialize` negotiated, and writes every message of the answer (a JSON body or each SSE `data:` line) back as one line, whatever the HTTP status. A JSON-RPC error goes back to the agent instead of ending the bridge.
+- When the server no longer knows the session (a 404 that is not JSON-RPC), the bridge replays the agent's `initialize` and `notifications/initialized`, takes the new session id and retries the request once. The memory and code servers also keep idle sessions (no keep-alive timeout), so an agent that goes quiet for a while keeps its tools.
 - The token is passed in the environment variable `ATLAS_MCP_TOKEN`, never in argv (argv is visible to other users through `ps`). It is minted, bound and revoked exactly as for an HTTP offer, and it is the same one token for every server the session is offered.
-- The bridge refuses any URL that is not `http://127.0.0.1:` or `http://localhost:`.
+- The bridge refuses any URL that is not plain `http` to `localhost` or a loopback IP, and any URL with userinfo (`http://127.0.0.1:1@example.com` is refused). It ignores `HTTP_PROXY` and `HTTPS_PROXY`: loopback traffic never goes through a proxy.
 - The UI and organisation servers stay HTTP-only: they are offered only to connections that ask for them.
 
 ## Consequences
