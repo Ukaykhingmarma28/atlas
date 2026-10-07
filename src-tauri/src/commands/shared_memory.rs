@@ -837,7 +837,7 @@ impl SharedMemoryStore {
         if content.trim().is_empty() {
             return Err("nothing to remember: content is empty".into());
         }
-        let evidence = citations_for(&store_for(project_path)?, project_path, evidence)?;
+        let evidence = citations_for(&*store_for(project_path)?, project_path, evidence)?;
         self.write_durable(
             project_path,
             NewEntry {
