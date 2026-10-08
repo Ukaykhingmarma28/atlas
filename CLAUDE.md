@@ -270,9 +270,10 @@ Team work is tracked in **Linear**: product work on the Atlas team (`ATL`), inta
 records about outside people (leads, beta signups, credits requests) on Growth (`GRO`).
 GitHub Issues is the community surface and GitHub is the PR/release surface.
 
-**Read `docs/agents/issue-tracker.md` before creating, labelling or moving a Linear
-issue, or posting a status update.** It holds the four single-select label groups
-(Type, Area, Readiness, Origin), the issue shape agents write, the rule that
-`handwritten` issues are the founders' voice and are not rewritten, and which Linear
-feature (projects, milestones, updates, customers, views, agent guidance) does which
-job. Domain-doc conventions: `docs/agents/domain.md`.
+**Read `docs/agents/issue-tracker.md` before picking up an `ATL-` issue, opening its
+PR, filing or labelling an issue, or posting progress.** It walks the workflow: where
+each kind of content goes (issue, project, update, document, Growth), branching from
+the issue, what Done means on a version branch, the issue shape agents write, and the
+rule that `handwritten` issues keep their wording. Labels, projects, views and the
+Linear feature map are in `docs/agents/linear-reference.md`. Domain-doc conventions:
+`docs/agents/domain.md`.

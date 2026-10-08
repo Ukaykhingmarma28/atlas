@@ -40,6 +40,9 @@ skills-lock.json
 *.md
 !README.md
 !CLAUDE.md
+# A symlink to CLAUDE.md, for the agents that read AGENTS.md instead.
+# Atlas's instruction sync leaves a linked AGENTS.md alone.
+!AGENTS.md
 !TELEMETRY.md
 !CONTRIBUTING.md
 !.github/SECURITY.md
@@ -54,6 +57,7 @@ skills-lock.json
 !docs/reference/*.md
 # How agents file and label Linear work; CLAUDE.md points every session here.
 !docs/agents/issue-tracker.md
+!docs/agents/linear-reference.md
 # Requests to other teams (the server team's gateway changes): the desktop
 # code cites them, so they have to be in the repo it lives in.
 !docs/requests/*.md
