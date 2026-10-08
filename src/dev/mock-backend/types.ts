@@ -99,6 +99,9 @@ export interface Scenario {
    * right tab, or to fire events with `emit()` so the screen shows live changes.
    */
   setup?: () => void | Promise<void>;
-  /** Named triggers, callable from the console as `__atlasMock.actions.<name>()`. */
-  actions?: Record<string, () => void | Promise<void>>;
+  /**
+   * Named triggers, callable from the console as `__atlasMock.actions.<name>()`.
+   * One may return (or resolve to) why it did nothing.
+   */
+  actions?: Record<string, () => void | string | Promise<void | string | undefined>>;
 }

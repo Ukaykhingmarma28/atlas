@@ -355,9 +355,10 @@ let liveTimer: ReturnType<typeof setInterval> | null = null;
  * the board each time (`atlas:capture-changed`, as the capture worker does).
  * The Session keeps its pulsing dot until the last step lands.
  */
-export function streamLiveSession(everyMs = 9_000): void {
+export function streamLiveSession(everyMs = 9_000): string | undefined {
   const live = sessions().find((s) => s.live);
-  if (!live || liveTimer) return;
+  if (!live) return "no live session to stream";
+  if (liveTimer) return "the live session is already streaming";
   const id = live.content.id;
   const tick = () => {
     const next = advanceLive(id);
@@ -369,6 +370,7 @@ export function streamLiveSession(everyMs = 9_000): void {
   };
   tick();
   liveTimer = setInterval(tick, everyMs);
+  return undefined;
 }
 
 /**

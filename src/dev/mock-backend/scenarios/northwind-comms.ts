@@ -495,6 +495,9 @@ function seedDraft(d: DraftContent): void {
 }
 for (const d of CONTENT.drafts) seedDraft(d);
 
+/** The draft most recently opened on screen: the one cue 5 types into. */
+let lastOpenedDraft: string | null = null;
+
 function draftDoc(draftId: string): Y.Doc {
   let doc = draftDocs.get(draftId);
   if (!doc) {
@@ -909,6 +912,7 @@ export const northwindCommsCommands: Partial<TypedHandlers<MockResponses>> = {
     const id = String(draftId);
     const draft = draftMeta.get(id);
     if (!draft) return null;
+    lastOpenedDraft = id;
     const snapshot = toBase64(Y.encodeStateAsUpdate(draftDoc(id)));
     // Answered by event, never by return value — as the socket answers it.
     setTimeout(() => push({ kind: "draftOpened", draft_id: id, draft, snapshot, updates: [] }), 40);
@@ -1005,29 +1009,28 @@ export function postAsMe(
 }
 
 /**
- * Zuhayer types `text` into the draft titled `draftTitle`, character by
- * character, after `afterText` (or at the end). Each keystroke goes into the
+ * Zuhayer types `text` into a draft, character by character, after
+ * `afterText` (or at the end): the draft open on screen, else the one titled
+ * `draftTitle`, else the newest unsent one. So a draft titled a little
+ * differently on camera still gets his edit. Each keystroke goes into the
  * server document and out as a `draftUpdate`; his cursor travels with it as
  * `draftAwareness`, restated on a heartbeat so it never expires mid-edit and
- * lingers a few seconds after he stops.
+ * lingers a few seconds after he stops. Returns why nothing happened, if so.
  */
 export async function zuhayerDraftEdit(
   draftTitle: string,
   text: string,
   afterText?: string,
-): Promise<void> {
+): Promise<string | undefined> {
+  const unsent = [...draftMeta.values()]
+    .filter((d) => d.sent_at === null)
+    .sort((a, b) => b.updated_at - a.updated_at);
   const wanted = draftTitle.trim().toLowerCase();
-  const meta = [...draftMeta.values()]
-    .filter((d) => d.title.trim().toLowerCase() === wanted)
-    .sort((a, b) => b.updated_at - a.updated_at)[0];
-  if (!meta) {
-    console.warn(`[northwind] zuhayerDraftEdit: no draft titled "${draftTitle}"`);
-    return;
-  }
-  if (meta.sent_at !== null) {
-    console.warn(`[northwind] zuhayerDraftEdit: "${draftTitle}" is sent and locked`);
-    return;
-  }
+  const meta =
+    unsent.find((d) => d.id === lastOpenedDraft) ??
+    unsent.find((d) => d.title.trim().toLowerCase() === wanted) ??
+    unsent[0];
+  if (!meta) return "no unsent draft to edit";
   const id = meta.id;
   const doc = draftDoc(id);
   const ytext = doc.getText(PROMPT_TEXT_KEY);
@@ -1083,4 +1086,5 @@ export async function zuhayerDraftEdit(
     // The named cursor stays where he stopped for a while, then ages out.
     setTimeout(() => clearInterval(heartbeat), 8_000);
   }
+  return undefined;
 }

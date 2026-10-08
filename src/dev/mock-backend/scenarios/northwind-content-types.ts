@@ -259,7 +259,7 @@ export type Beat =
 
 export interface ScriptedRun {
   id: string;
-  /** Lower-case substrings; the first run whose every entry is in the prompt wins. */
+  /** Phrases whose every word the prompt must have, loosely (`northwind-match.ts`). */
   match: string[];
   /** Restrict to one agent; omit for any. */
   agent?: AgentKey;

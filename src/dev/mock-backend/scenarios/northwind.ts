@@ -49,7 +49,8 @@
 
 import type { Scenario } from "../types";
 import { CONTENT } from "./northwind-content";
-import { installNorthwindAgent } from "./northwind-agent";
+import { flashCueMiss } from "../badge";
+import { ensureVideo1Session, installNorthwindAgent } from "./northwind-agent";
 import {
   northwindCommsCommands,
   postAsMe,
@@ -79,13 +80,17 @@ const cues = CONTENT.cues;
 const actions = {
   zuhayerOnline,
   zuhayerSessionLive: () => streamLiveSession(),
-  zuhayerComments: () =>
+  // Video 1's Session is made by the prompt; if the prompt missed, the cue
+  // makes it, so the comment still has its row to land on.
+  zuhayerComments: () => {
+    ensureVideo1Session(cues.zuhayerComment.session);
     commentAs(
       "zuhayer",
       cues.zuhayerComment.session,
       cues.zuhayerComment.step,
       cues.zuhayerComment.body,
-    ),
+    );
+  },
   zuhayerMessage: () => zuhayerMessage(cues.zuhayerMessage.body, cues.zuhayerMessage.sessionRef),
   zuhayerDraftEdit: () =>
     zuhayerDraftEdit(
@@ -93,7 +98,10 @@ const actions = {
       cues.zuhayerDraftEdit.text,
       cues.zuhayerDraftEdit.afterText,
     ),
-  zuhayerShare: () => zuhayerMessage(cues.zuhayerShare.body, cues.zuhayerShare.sessionRef),
+  zuhayerShare: () => {
+    if (cues.zuhayerShare.sessionRef) ensureVideo1Session(cues.zuhayerShare.sessionRef.session);
+    zuhayerMessage(cues.zuhayerShare.body, cues.zuhayerShare.sessionRef);
+  },
   zuhayerTyping: () => zuhayerTyping("shop"),
   zuhayerMovesNote: () => zuhayerMovesNote(),
   // Clear what the last take left in browser storage, then reload: the
@@ -128,7 +136,12 @@ function installShortcuts(): void {
       event.preventDefault();
       event.stopImmediatePropagation();
       console.info(`[northwind] cue: ${cue}`);
-      void actions[cue]();
+      // A cue returns why it did nothing, if it did nothing.
+      void Promise.resolve(actions[cue]()).then((miss) => {
+        if (typeof miss !== "string") return;
+        console.warn(`[northwind] cue ${cue}: ${miss}`);
+        flashCueMiss(`cue ${event.code.replace("Digit", "")} missed: ${miss}`);
+      });
     },
     { capture: true },
   );

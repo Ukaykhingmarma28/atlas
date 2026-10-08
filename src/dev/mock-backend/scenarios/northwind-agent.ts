@@ -33,6 +33,7 @@ import {
 import { NORTHWIND_FILES } from "../fixtures/northwind-repo";
 import type { AgentKey, Beat, ScriptedRun, Step, ToolStep } from "./northwind-content-types";
 import { CONTENT } from "./northwind-content";
+import { matchRun } from "./northwind-match";
 import { NORTHWIND_NATIVE_MODELS } from "./northwind-models";
 import {
   abs,
@@ -506,13 +507,23 @@ function pendingFrom(sessionId: string): PendingChange[] {
   return [...out.values()];
 }
 
+/**
+ * Record a Session video 1 makes on camera, if this take hasn't yet: on the
+ * Timeline, with its edits uncommitted in the git panel. The prompt that makes
+ * it does this; so do the cues that point at it (3, 6), in case that prompt
+ * went to the fallback answer.
+ */
+export function ensureVideo1Session(id: string, startedAt = Date.now()): void {
+  if (!BEFORE_VIDEO_1 || session(id)) return;
+  createSession(id, startedAt);
+  setPending(pendingFrom(id), [id]);
+  void emit("atlas:capture-changed", {});
+}
+
 async function finish(run: ScriptedRun, sid: string, startedAt: number): Promise<void> {
   if (run.afterwards === "discountSession") {
     const id = run.replay ?? "s-discount";
-    if (BEFORE_VIDEO_1 && !session(id)) {
-      createSession(id, startedAt);
-      setPending(pendingFrom(id), [id]);
-    }
+    ensureVideo1Session(id, startedAt);
     bindings.set(sid, id);
     // What the capture worker emits after a turn: the board and this chat's
     // comment target both re-read.
@@ -578,12 +589,7 @@ export function readablePrompt(text: string): string {
 }
 
 function findRun(text: string, agent: AgentKey): ScriptedRun | undefined {
-  const lower = readablePrompt(text).toLowerCase();
-  return (
-    CONTENT.runs.find(
-      (run) => (!run.agent || run.agent === agent) && run.match.every((m) => lower.includes(m)),
-    ) ?? CONTENT.runs.find((run) => run.match.every((m) => lower.includes(m)))
-  );
+  return matchRun(CONTENT.runs, readablePrompt(text), agent);
 }
 
 // ── Wiring ────────────────────────────────────────────────────────────────
