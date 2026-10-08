@@ -48,6 +48,60 @@ impl CliLaunchState {
     }
 }
 
+/// A flag the binary answers on the terminal instead of launching the app.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InfoFlag {
+    Version,
+    Help,
+}
+
+/// Recognise `--version` / `--help` (and their short forms) as the first
+/// argument. `args` must already have the program name stripped.
+///
+/// The `~/.local/bin/atlas` shell helper answers these itself, but the binary
+/// is launched directly too — the system package's `/usr/bin` entry on Linux,
+/// where the helper is not installed at all, or a terminal pointed at the app
+/// bundle. Without this, `--version` fell through `parse_project_path` (a flag,
+/// so no project) and booted a full window, which could then swallow later
+/// launches as second-instance forwards.
+pub fn parse_info_flag(args: &[String]) -> Option<InfoFlag> {
+    match args.first().map(String::as_str) {
+        Some("--version" | "-v" | "-V") => Some(InfoFlag::Version),
+        Some("--help" | "-h") => Some(InfoFlag::Help),
+        _ => None,
+    }
+}
+
+/// What the binary prints for an [`InfoFlag`]. The version line matches the
+/// shell helper's (`atlas <version>`), so scripts get the same answer from
+/// either entry point.
+pub fn info_flag_text(flag: InfoFlag) -> String {
+    match flag {
+        InfoFlag::Version => format!("atlas {}", env!("CARGO_PKG_VERSION")),
+        InfoFlag::Help => "\
+Usage:
+  atlas              open Atlas
+  atlas <path>       open the directory <path> in Atlas
+  atlas --version    print the version and exit
+  atlas --help       print this message and exit"
+            .to_string(),
+    }
+}
+
+/// Answer `--version` / `--help` on stdout and report whether the process
+/// should exit. Called first thing in `lib.rs::run()`, before Tauri, logging
+/// or any profile directory is touched.
+pub fn handle_info_flag() -> bool {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match parse_info_flag(&args) {
+        Some(flag) => {
+            println!("{}", info_flag_text(flag));
+            true
+        }
+        None => false,
+    }
+}
+
 /// Parse the process argv for a project path. Called once at startup
 /// from `lib.rs::run()` before Tauri builds. Returns `Some(abs_path)`
 /// when:
@@ -419,4 +473,48 @@ pub async fn cli_install_helper() -> Result<CliStatus, String> {
         path.display()
     );
     cli_status().await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn version_and_help_flags_are_recognised() {
+        for flag in ["--version", "-v", "-V"] {
+            assert_eq!(parse_info_flag(&args(&[flag])), Some(InfoFlag::Version));
+        }
+        for flag in ["--help", "-h"] {
+            assert_eq!(parse_info_flag(&args(&[flag])), Some(InfoFlag::Help));
+        }
+    }
+
+    #[test]
+    fn anything_else_is_left_to_the_normal_launch() {
+        assert_eq!(parse_info_flag(&args(&[])), None);
+        assert_eq!(parse_info_flag(&args(&["."])), None);
+        assert_eq!(parse_info_flag(&args(&["./--version"])), None);
+        assert_eq!(parse_info_flag(&args(&["--verbose"])), None);
+        assert_eq!(parse_info_flag(&args(&["some-dir", "--version"])), None);
+    }
+
+    #[test]
+    fn version_line_matches_the_shell_helper() {
+        // The helper answers `--version` with `atlas {{VERSION}}`; the binary
+        // gives the same line, so either entry point reads the same.
+        assert!(HELPER_TEMPLATE.contains("echo \"atlas {{VERSION}}\""));
+        assert_eq!(
+            info_flag_text(InfoFlag::Version),
+            HELPER_TEMPLATE
+                .lines()
+                .find_map(|l| l.trim().strip_prefix("echo \"")?.strip_suffix('"'))
+                .unwrap()
+                .replace("{{VERSION}}", env!("CARGO_PKG_VERSION"))
+        );
+        assert!(info_flag_text(InfoFlag::Help).starts_with("Usage:\n"));
+    }
 }

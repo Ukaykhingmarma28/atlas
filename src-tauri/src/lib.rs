@@ -71,6 +71,13 @@ pub fn run_bridge_if_asked() -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // `--version` / `--help` print and exit before anything else runs, so a
+    // headless version check never boots a window (or, in a release build,
+    // forwards itself to a running instance). See `commands::cli`.
+    if commands::cli::handle_info_flag() {
+        return;
+    }
+
     // Whose data this process owns, fixed before ANYTHING resolves a path —
     // the log file below is the first thing that does. The profile is read
     // off the identifier this binary was built with: `dev:app` builds with
