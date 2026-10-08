@@ -9,8 +9,8 @@ import { cn } from "@/lib/utils";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { useGitStore } from "@/features/git/stores/git-store";
-import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { CommitRowView } from "./commit-node";
+import { openCommit } from "../lib/open-commit";
 import { ROW_HEIGHT, commitCountLabel, type BuiltGraph } from "../lib/git-graph";
 
 const DEFAULT_LIMIT = 1000;
@@ -73,14 +73,17 @@ export function GitGraphPanel() {
     };
   }, [path, queryClient]);
 
-  const onSelect = useCallback((sha: string) => {
-    setSelectedSha(sha);
-    // Jump to Source Control → History and open this commit's detail view.
-    const layout = useLayoutStore.getState();
-    layout.actions.setRightSection("changes");
-    if (!layout.rightPanel.visible) layout.actions.toggleRightPanel();
-    void useGitStore.getState().actions.loadCommit(sha);
-  }, []);
+  // Read through a ref so `onSelect` keeps one identity across graph refetches
+  // — every memoised row takes it as a prop.
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+  const onSelect = useCallback(
+    (sha: string) => {
+      setSelectedSha(sha);
+      openCommit(path, sha, rowsRef.current.find((r) => r.sha === sha)?.message);
+    },
+    [path],
+  );
 
   if (!path || !isRepo) {
     return (
@@ -259,6 +262,7 @@ function GraphView({
                   >
                     <CommitRowView
                       row={row}
+                      repoPath={path}
                       selected={row.sha === selectedSha}
                       compact={compact}
                       onSelect={onSelect}

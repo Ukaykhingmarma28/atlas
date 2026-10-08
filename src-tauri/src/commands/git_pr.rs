@@ -34,7 +34,7 @@ use tokio::sync::Semaphore;
 /// How long `gh` gets before it is killed. It goes to the network, so a
 /// captive portal or a dead VPN would otherwise hold a blocking thread for as
 /// long as the TCP stack cares to wait.
-const GH_TIMEOUT: Duration = Duration::from_secs(5);
+pub(crate) const GH_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// How many of the repository's PRs to ask for, newest first. Enough to cover
 /// every branch a sidebar realistically lists; one page of GitHub's API.
@@ -42,8 +42,8 @@ const GH_LIMIT: &str = "100";
 
 /// The most `gh` processes this module runs at once, across all repositories.
 /// A sidebar listing threads from many worktrees would otherwise spawn one per
-/// repository in the same instant.
-static GH_PERMITS: Semaphore = Semaphore::const_new(2);
+/// repository in the same instant. Shared with `git_avatars`.
+pub(crate) static GH_PERMITS: Semaphore = Semaphore::const_new(2);
 
 /// `gh`'s documented exit code for "authentication required".
 const GH_EXIT_AUTH_REQUIRED: i32 = 4;
@@ -147,7 +147,7 @@ fn gh_pr_list_args() -> Vec<&'static str> {
 
 /// How one run of `gh` ended.
 #[derive(Debug, PartialEq, Eq)]
-enum GhOutcome {
+pub(crate) enum GhOutcome {
     /// Exit 0; its stdout.
     Output(String),
     /// The binary could not be started (not installed, not on `PATH`).
@@ -160,7 +160,7 @@ enum GhOutcome {
 
 /// Run `program` with `args` in `cwd`, killing it after `timeout`. The
 /// program is a parameter so tests can point it at a fake `gh`.
-fn run_gh(program: &OsStr, cwd: &str, args: &[&str], timeout: Duration) -> GhOutcome {
+pub(crate) fn run_gh(program: &OsStr, cwd: &str, args: &[&str], timeout: Duration) -> GhOutcome {
     // A directory that is gone (a removed worktree) fails the spawn with the
     // same NotFound as a missing binary; it must not read as "no `gh`".
     if !std::path::Path::new(cwd).is_dir() {
@@ -212,7 +212,7 @@ fn run_gh(program: &OsStr, cwd: &str, args: &[&str], timeout: Duration) -> GhOut
             return GhOutcome::Failed;
         }
         Err(_) => {
-            tracing::debug!(cwd, "gh pr list timed out; killed");
+            tracing::debug!(cwd, "gh timed out; killed");
             let _ = child.kill();
             let _ = child.wait();
             return GhOutcome::Failed;
@@ -225,11 +225,11 @@ fn run_gh(program: &OsStr, cwd: &str, args: &[&str], timeout: Duration) -> GhOut
         Ok(status) if status.code() == Some(GH_EXIT_AUTH_REQUIRED) => GhOutcome::AuthRequired,
         Ok(status) => {
             // Not a GitHub remote, not a repository: nothing for this repo.
-            tracing::debug!(cwd, ?status, "gh pr list exited non-zero");
+            tracing::debug!(cwd, ?status, "gh exited non-zero");
             GhOutcome::Failed
         }
         Err(e) => {
-            tracing::debug!(error = %e, "gh pr list wait failed");
+            tracing::debug!(error = %e, "gh wait failed");
             GhOutcome::Failed
         }
     }

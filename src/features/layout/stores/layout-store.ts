@@ -352,6 +352,17 @@ export function persistsInEditorState(t: { type: TabType; closable: boolean }): 
 }
 
 /**
+ * A saved tab whose surface no longer exists in that form, dropped on restore.
+ *
+ * A Git Diff tab with no file is the retired standalone Git Diff module (a
+ * file tree plus commit picker, opened from the new-tab menu). The commit tab
+ * replaced it; a "diff" tab now always shows one file.
+ */
+export function isRetiredTab(tab: { type: string; data?: Record<string, unknown> }): boolean {
+  return tab.type === "diff" && !tab.data?.file;
+}
+
+/**
  * Restore side: the type a saved tab comes back as, or `null` when it is
  * dropped. Renamed types (mission-control → usage) map forward; a type this
  * build no longer knows is dropped; and org-scoped types are dropped because
@@ -512,6 +523,8 @@ export const useLayoutStore = createSelectors(
               const allowMultiple =
                 tab.type === "editor" ||
                 tab.type === "diff" ||
+                // One per COMMIT (id is `commit:{repoPath}:{sha}`).
+                tab.type === "commit" ||
                 tab.type === "chat" ||
                 tab.type === "media" ||
                 tab.type === "svg" ||
@@ -911,7 +924,7 @@ export const useLayoutStore = createSelectors(
                     // Renamed types map forward; unknown and org-scoped
                     // types are dropped (see `restoredTabType`).
                     const type = restoredTabType(saved.type);
-                    if (type === null) continue;
+                    if (type === null || isRetiredTab(saved)) continue;
                     const id = saved.id in LEGACY_TAB_TYPES ? LEGACY_TAB_TYPES[saved.id] : saved.id;
                     if (s.tabs.find((t) => t.id === id)) continue;
                     let gid = saved.groupId ?? DEFAULT_GROUP;
@@ -1013,7 +1026,7 @@ export const useLayoutStore = createSelectors(
               const id = t.id in LEGACY_TAB_TYPES ? LEGACY_TAB_TYPES[t.id] : t.id;
               return { ...t, id, type };
             })
-            .filter((t) => validTypes.has(t.type));
+            .filter((t) => validTypes.has(t.type) && !isRetiredTab(t));
           let activeTabId = p.activeTabId ?? current.activeTabId;
           if (activeTabId !== null && !tabs.some((t) => t.id === activeTabId)) {
             activeTabId = tabs[0]?.id ?? null;

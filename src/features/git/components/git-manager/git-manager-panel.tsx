@@ -39,13 +39,6 @@ export function GitManagerPanel() {
     if (repoPath) void actions.refreshAll(repoPath).catch(() => {});
   }, [repoPath, actions]);
 
-  // When a commit is selected elsewhere (e.g. clicking a node in the Git Graph),
-  // jump this panel to History so its commit-detail view shows.
-  const selectedCommit = useGitStore.use.selectedCommit();
-  useEffect(() => {
-    if (selectedCommit) setView("history");
-  }, [selectedCommit]);
-
   // The toolbar buttons are the user-started remote operations — the only
   // callers that notify (auto-fetch and the merge dialog's fetch never do).
   const run = async (label: "fetch" | "pull" | "push" | "publish", fn: () => Promise<void>) => {

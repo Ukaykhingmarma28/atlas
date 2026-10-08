@@ -46,7 +46,7 @@ export function GitDiffModal({
 }) {
   const first = initialFile || files[0] || "";
   // The modal owns which file is shown. The tree cannot use its default click
-  // behaviour here — that opens the standalone Git Diff module tab, which both
+  // behaviour here — that opens a Git Diff tab, which both
   // left this modal stuck on one file and dropped a workbench tab behind it.
   const [active, setActive] = useState(first);
   // Reopening on a different file (or a different turn) must retarget.

@@ -31,6 +31,7 @@ export interface GitLogEntry {
   short_hash: string;
   message: string;
   author: string;
+  email: string;
   date: string;
 }
 
@@ -304,7 +305,6 @@ interface GitState {
   stashes: StashEntry[];
   remotes: RemoteInfo[];
   tags: string[];
-  selectedCommit: CommitDetail | null;
   inProgress: InProgress | null;
   /** Live streaming git operation (commit with hooks, later push/pull). */
   activeOp: ActiveGitOp | null;
@@ -335,8 +335,6 @@ interface GitActions {
     loadRemotes: () => Promise<void>;
     loadTags: () => Promise<void>;
     loadInProgress: () => Promise<void>;
-    loadCommit: (sha: string) => Promise<void>;
-    clearSelectedCommit: () => void;
     /** Load everything (mount / panel open). */
     refreshAll: (path: string) => Promise<void>;
     // mutations
@@ -409,7 +407,6 @@ export const useGitStore = createSelectors(
         stashes: [],
         remotes: [],
         tags: [],
-        selectedCommit: null,
         inProgress: null,
         activeOp: null,
         errorDialog: null,
@@ -569,22 +566,6 @@ export const useGitStore = createSelectors(
               /* ignore */
             }
           },
-          loadCommit: async (sha) => {
-            const p = repo();
-            if (!p) return;
-            try {
-              const detail = await invoke<CommitDetail>("git_show", { path: p, sha });
-              set((s) => {
-                s.selectedCommit = detail;
-              });
-            } catch {
-              /* ignore */
-            }
-          },
-          clearSelectedCommit: () =>
-            set((s) => {
-              s.selectedCommit = null;
-            }),
           refreshAll: async (path) => {
             const a = get().actions;
             // The snapshot covers status/branches/stashes/in-progress;

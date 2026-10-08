@@ -23,6 +23,7 @@
 import { emit } from "@tauri-apps/api/event";
 import type { BlameLine } from "@/features/git/lib/git-blame-api";
 import type { RepoPullRequests } from "@/features/git/lib/git-pr-api";
+import type { RepoAvatars } from "@/features/git/lib/git-avatars-api";
 import type { CommitFile, DiffLineStatus, FileDiff } from "@/features/git/lib/git-diff-api";
 import type { GitErrorCode, GitErrorPayload } from "@/features/git/lib/git-errors";
 import type { BuiltGraph, CommitRow, LaneSegment } from "@/features/git/lib/git-graph";
@@ -43,7 +44,7 @@ import type {
   ConflictFile,
   ConflictState,
 } from "@/features/git/components/git-manager/conflicts-view";
-import type { CommitSession } from "@/features/git/components/git-manager/history-view";
+import type { CommitSession } from "@/features/git/components/commit-view";
 import type { RawGitStatus } from "@/features/terminal/components/block-terminal";
 import type { GitSummary } from "@/features/projects/stores/project-git-store";
 import type { TypedHandlers, Unread } from "../types";
@@ -1038,6 +1039,7 @@ export interface GitResponses {
   git_diff_all: string;
   git_blame_file: BlameLine[];
   git_repo_pull_requests: RepoPullRequests;
+  git_repo_avatars: RepoAvatars;
   git_stage: Unread;
   git_unstage: Unread;
   // `runHunkOp` in `changes-view.tsx` picks the command name at run time.
@@ -1185,6 +1187,7 @@ export const gitHandlers: TypedHandlers<GitResponses> = {
       short_hash: shortSha(commit.sha),
       message: commit.message,
       author: commit.author,
+      email: commit.email,
       date: commit.date,
     })),
   git_show: ({ sha }): CommitDetail => {
@@ -1253,6 +1256,7 @@ export const gitHandlers: TypedHandlers<GitResponses> = {
   git_blame_file: ({ file }): BlameLine[] => blame(String(file)),
   // The default repository has no GitHub remote, so `gh` has nothing to say.
   git_repo_pull_requests: (): RepoPullRequests => ({ kind: "failed" }),
+  git_repo_avatars: (): RepoAvatars => ({ kind: "failed" }),
 
   // ── index ───────────────────────────────────────────────────────────────
   git_stage: ({ files }): null => {

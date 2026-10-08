@@ -62,6 +62,9 @@ const NotebookViewer = lazy(() =>
     default: m.NotebookViewer,
   })),
 );
+const CommitView = lazy(() =>
+  import("@/features/git/components/commit-view").then((m) => ({ default: m.CommitView })),
+);
 const GitDiffPanel = lazy(() =>
   import("@/features/git/components/git-diff-panel").then((m) => ({ default: m.GitDiffPanel })),
 );
@@ -113,6 +116,7 @@ import {
   Network,
   Terminal,
   GitCompare,
+  GitCommitHorizontal,
   Settings,
   Plus,
   X,
@@ -144,6 +148,7 @@ const tabIcons: Record<TabType, FallbackIcon> = {
   memory: BrainCircuit,
   terminal: Terminal,
   diff: GitCompare,
+  commit: GitCommitHorizontal,
   settings: Settings,
   log: ScrollText,
   media: Code,
@@ -995,6 +1000,8 @@ function TabContent({ tab }: { tab: Tab }) {
           commit={(tab.data.commit as string | null | undefined) ?? null}
         />
       );
+    case "commit":
+      return <CommitView repoPath={tab.data.repoPath as string} sha={tab.data.sha as string} />;
     case "comms-draft":
       return (
         <CommsDraftTab convId={tab.data.convId as string} draftId={tab.data.draftId as string} />
@@ -1029,7 +1036,6 @@ const NEW_TAB_OPTIONS: Array<{ type: TabType; label: string; icon: React.Element
   { type: "chat", label: "Agents", icon: AtlasIcon },
   { type: "canvas", label: "Spaces", icon: Map },
   { type: "terminal", label: "Terminal", icon: Terminal },
-  { type: "diff", label: "Git Diff", icon: GitCompare },
   { type: "browser", label: "Browser", icon: Globe },
   { type: "knowledge", label: "Knowledge", icon: Brain },
   { type: "memory", label: "Memory", icon: BrainCircuit },

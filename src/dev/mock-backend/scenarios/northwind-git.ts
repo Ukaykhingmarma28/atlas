@@ -44,7 +44,7 @@ import type {
   StashEntry,
 } from "@/features/git/stores/git-store";
 import type { ConflictState } from "@/features/git/components/git-manager/conflicts-view";
-import type { CommitSession } from "@/features/git/components/git-manager/history-view";
+import type { CommitSession } from "@/features/git/components/commit-view";
 import type { RawGitStatus } from "@/features/terminal/components/block-terminal";
 import type { GitSummary } from "@/features/projects/stores/project-git-store";
 import type { MockArgs, MockHandlers, MockResponses, TypedHandlers } from "../types";
@@ -885,6 +885,7 @@ export const northwindGitCommands: Partial<TypedHandlers<MockResponses>> = {
             short_hash: shortSha(commit.sha),
             message: messageOf(commit),
             author: PEOPLE[commit.author].name,
+            email: PEOPLE[commit.author].email,
             date: gitRelative(commitMs(commit)),
           }))
       : gitHandlers.git_log(args),

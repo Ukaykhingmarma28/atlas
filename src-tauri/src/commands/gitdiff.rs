@@ -19,10 +19,22 @@ fn run_git_diff(
     let ctx = format!("-U{context}");
     // Commit mode: the diff INTRODUCED by `commit` for this file. `git show`
     // diffs the commit against its parent (and against the empty tree for the
-    // root commit), so it works uniformly.
+    // root commit), so it works uniformly. `-m --first-parent` makes a merge
+    // show what it brought into its branch, matching `git_show` — without it a
+    // merge prints a combined diff, empty for a clean merge.
     if let Some(sha) = commit {
         let output = atlas_process::command("git")
-            .args(["show", "--no-color", &ctx, "--format=", sha, "--", file])
+            .args([
+                "show",
+                "--no-color",
+                &ctx,
+                "--format=",
+                "-m",
+                "--first-parent",
+                sha,
+                "--",
+                file,
+            ])
             .current_dir(path)
             .output()
             .map_err(|e| e.to_string())?;
@@ -234,7 +246,16 @@ pub async fn git_commit_changed_files(
 ) -> Result<Vec<CommitFile>, String> {
     tokio::task::spawn_blocking(move || {
         let output = atlas_process::command("git")
-            .args(["show", "--no-color", "--name-status", "--format=", &sha])
+            // `-m --first-parent`: a merge lists the files it brought in.
+            .args([
+                "show",
+                "--no-color",
+                "--name-status",
+                "--format=",
+                "-m",
+                "--first-parent",
+                &sha,
+            ])
             .current_dir(&path)
             .output()
             .map_err(|e| e.to_string())?;

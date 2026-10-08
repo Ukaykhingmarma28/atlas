@@ -9,6 +9,7 @@ export const TAB_TYPES = [
   "memory",
   "terminal",
   "diff",
+  "commit",
   "settings",
   "log",
   "media",

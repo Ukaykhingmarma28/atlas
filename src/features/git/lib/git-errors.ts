@@ -38,7 +38,7 @@ export interface GitErrorPayload {
   hint?: string | null;
 }
 
-function isGitError(e: unknown): e is GitErrorPayload {
+export function isGitError(e: unknown): e is GitErrorPayload {
   return (
     typeof e === "object" &&
     e !== null &&
