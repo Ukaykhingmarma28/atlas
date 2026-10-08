@@ -46,7 +46,7 @@ Completed: Atlas Session Artifacts, Atlas Team Chat, Atlas Spaces. New work on o
 
 ## Views
 
-Shared views, for the whole team: `Agent queue` (open, `ready-for-agent`), `Needs a human` (`needs-decision` or `needs-spec`), `Handwritten`, and `Stuck` (started Atlas work untouched for 14 days, in the Atlas team's views). Filter any view by **Delegate** to see what agents hold.
+Shared views, for the whole team: `Agent queue` (open, `ready-for-agent`), `Needs a human` (`needs-decision` or `needs-spec`), `Handwritten`, `Stuck` (started Atlas work untouched for 14 days, in the Atlas team's views), and `Roadmap by pillar` (live projects grouped by their Pillar label, with lead and health). Filter any view by **Delegate** to see what agents hold.
 
 ## Linear features, and what each one is for here
 
