@@ -11,7 +11,7 @@ The two trackers split by **audience**: Linear (workspace `tryatlas`) is where t
 | one deliverable: build, fix, change, write, decide              | an **issue** on the Atlas team (`ATL`), in the project it belongs to                          |
 | a body of work with its own goal                                | a **project**; its phases are **milestones**, never separate projects                         |
 | a slice of a larger issue                                       | a **sub-issue** of that issue                                                                 |
-| progress: what's done, what's next, what's blocked              | a **project update** (or initiative update), with a health. Never an issue                    |
+| progress: what's done, what's next, what's blocked              | a **project update**, with a health. Never an issue                                           |
 | reference: a runbook, a direction note, a plan, a decision      | a **document** on the project. A long spec may stay in its issue and be linked from Resources |
 | a record about someone outside the team (lead, signup, request) | an issue on the **Growth** team (`GRO`), never Atlas                                          |
 
