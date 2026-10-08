@@ -14,7 +14,6 @@ import {
   Code,
   Settings,
   Search,
-  GitCompare,
   type LucideProps,
 } from "lucide-react";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
@@ -56,7 +55,6 @@ const MODULES: ModuleEntry[] = [
   { id: "knowledge", type: "knowledge", label: "Knowledge", icon: Brain },
   { id: "knowledge-graph", type: "knowledge-graph", label: "Knowledge Graph", icon: Network },
   { id: "memory", type: "memory", label: "Memory", icon: BrainCircuit },
-  { id: "diff", type: "diff", label: "Git Diff", icon: GitCompare },
   { id: "browser", type: "browser", label: "Browser", icon: Globe },
   {
     id: "editor",

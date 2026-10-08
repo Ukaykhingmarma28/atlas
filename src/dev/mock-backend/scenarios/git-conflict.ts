@@ -121,6 +121,7 @@ export const gitConflict: Scenario = {
         short_hash: "a1b2c3d",
         message: "Tighten header spacing",
         author: "Dev",
+        email: "dev@acme.dev",
         date: "2026-09-17T09:12:00Z",
       },
       {
@@ -128,6 +129,7 @@ export const gitConflict: Scenario = {
         short_hash: "9f8e7d6",
         message: "Add Button disabled state",
         author: "Dev",
+        email: "dev@acme.dev",
         date: "2026-09-16T15:03:00Z",
       },
     ],

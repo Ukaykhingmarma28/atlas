@@ -12,6 +12,8 @@ import { CommitAvatar } from "./commit-avatar";
 
 interface CommitRowViewProps {
   row: CommitRow;
+  /** The repository the graph shows — avatars are looked up there. */
+  repoPath: string;
   selected: boolean;
   compact: boolean;
   onSelect: (sha: string) => void;
@@ -48,6 +50,7 @@ function badgeClass(kind: RefBadge["kind"], isCurrent: boolean) {
 
 export const CommitRowView = memo(function CommitRowView({
   row,
+  repoPath,
   selected,
   compact,
   onSelect,
@@ -126,7 +129,7 @@ export const CommitRowView = memo(function CommitRowView({
           <>
             {/* Author column — fixed width, avatar + name, aligned across all rows */}
             <div className="flex items-center gap-1.5 w-[200px] shrink-0">
-              <CommitAvatar email={row.email} size={16} />
+              <CommitAvatar email={row.email} repoPath={repoPath} size={16} />
               <span className="text-xs text-[var(--secondary-foreground)] truncate">
                 {row.author}
               </span>

@@ -961,8 +961,21 @@ pub async fn git_show(path: String, sha: String) -> Result<CommitDetail, GitErro
             ],
         )?;
         let p: Vec<&str> = meta.trim_end().split(US).collect();
-        // Diff only (empty --format suppresses the header).
-        let diff = git_out(&path, &["show", "--no-color", "--format=", &sha])?;
+        // Diff only (empty --format suppresses the header). `-m --first-parent`
+        // shows a merge as what it brought into its branch — the default is a
+        // combined `diff --cc`, which is empty for a clean merge and not a
+        // unified diff the viewer can read. No effect on ordinary commits.
+        let diff = git_out(
+            &path,
+            &[
+                "show",
+                "--no-color",
+                "--format=",
+                "-m",
+                "--first-parent",
+                &sha,
+            ],
+        )?;
         Ok(CommitDetail {
             hash: p.first().copied().unwrap_or("").to_string(),
             short_hash: p.get(1).copied().unwrap_or("").to_string(),

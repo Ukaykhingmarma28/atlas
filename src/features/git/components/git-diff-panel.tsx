@@ -68,9 +68,10 @@ function sideLen(side: DiffSide | null): number {
 const TREE_LAYOUT_ID = "git-diff-tree";
 
 interface GitDiffPanelProps {
-  /** Falls back to the active repo when opened as a standalone module. */
+  /** Falls back to the active repo when not given. */
   repoPath?: string;
-  /** Empty when opened as a module — the tree is shown and the pane prompts. */
+  /** The file to diff. Empty only while a host (the chat's modal) has no
+   *  file to show yet — the tree is shown and the pane prompts. */
   file?: string;
   staged?: boolean;
   /** When set, the diff for this file at a specific commit (via `git show`). */
@@ -90,7 +91,7 @@ interface GitDiffPanelProps {
    * computed from these strings instead of from the repository.
    */
   textSources?: Record<string, { old: string; new: string }>;
-  /** Handle tree clicks instead of opening the Git Diff module tab — see
+  /** Handle tree clicks instead of opening a Git Diff tab — see
    *  `ChangedFilesTree.onSelect`. */
   onSelectFile?: (path: string) => void;
   /** Fired after "Open in editor" — a modal host closes itself here, or the
@@ -562,7 +563,7 @@ export function GitDiffPanel({
           {/* Body */}
           {!file ? (
             <div className="flex flex-1 items-center justify-center px-3 text-center text-xs text-[var(--muted-foreground)]">
-              Pick a file from the left to view its diff — or choose a commit to browse.
+              Pick a file from the left to view its diff.
             </div>
           ) : isLoading ? (
             <div className="px-3 py-8 text-center text-xs text-[var(--muted-foreground)]">

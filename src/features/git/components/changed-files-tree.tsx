@@ -147,8 +147,8 @@ interface ChangedFilesTreeProps {
   /**
    * Take over what a click does.
    *
-   * Without it a click calls `openGitDiff`, which opens the standalone Git Diff
-   * MODULE TAB — correct when the tree IS that tab, wrong everywhere else. The
+   * Without it a click calls `openGitDiff`, which opens that file's Git Diff
+   * TAB — correct when the tree sits in one, wrong everywhere else. The
    * chat's modal passes this so a click retargets the modal in place instead of
    * spawning a workbench tab behind it.
    */
