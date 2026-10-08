@@ -63,11 +63,11 @@ export function agentKeyOf(pluginId: string): AgentKey | null {
 
 const MODELS: Record<AgentKey, AgentModels> = {
   "claude-code": {
-    current: "claude-opus-4",
+    current: "claude-opus-5-5",
     available: [
-      { id: "claude-opus-4", name: "Opus 4" },
-      { id: "claude-sonnet-4", name: "Sonnet 4" },
-      { id: "claude-haiku-4", name: "Haiku 4" },
+      { id: "claude-opus-5-5", name: "Opus 5.5" },
+      { id: "claude-sonnet-5-5", name: "Sonnet 5.5" },
+      { id: "claude-haiku-4-5", name: "Haiku 4.5" },
     ],
   },
   codex: {
@@ -79,7 +79,7 @@ const MODELS: Record<AgentKey, AgentModels> = {
     ],
   },
   "atlas-agent": {
-    current: "claude-sonnet-4",
+    current: "claude-sonnet-5-5",
     // The gateway's list — the same one the picker's Refresh returns.
     available: NORTHWIND_NATIVE_MODELS,
   },

@@ -104,7 +104,7 @@ export interface SessionContent {
   title: string;
   author: PersonKey;
   agent: AgentKey;
-  /** Model id as the agent reports it ("claude-opus-4", "gpt-5", "claude-sonnet-4"). */
+  /** Model id as the agent reports it ("claude-opus-5-5", "gpt-5", "claude-sonnet-5-5"). */
   model: string;
   started: When;
   /** Wall-clock length of the Session in minutes (last step ≤ this). */

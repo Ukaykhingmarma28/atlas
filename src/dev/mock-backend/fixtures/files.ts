@@ -815,6 +815,18 @@ export function listDir(absPath: string): FileEntry[] {
 }
 
 /**
+ * Binary files outside any project that `convertFileSrc` must still resolve —
+ * a scenario's cached avatar photos. Kept apart from `files` so they never show
+ * up in the explorer, search or git.
+ */
+const outsideTree = new Map<string, MockFile>();
+
+/** Serve `base64` at the absolute `path` through the `convertFileSrc` stand-in. */
+export function seedAsset(path: string, mime: string, base64: string): void {
+  outsideTree.set(path, { text: null, base64, mime, mtimeMs: T0 });
+}
+
+/**
  * Stand in for Tauri's `convertFileSrc`, which the media viewer uses instead of
  * `invoke()`: its `asset://` URL resolves to nothing in a plain browser, so a
  * seeded binary is served as a `data:` URL and everything else keeps the
@@ -822,7 +834,8 @@ export function listDir(absPath: string): FileEntry[] {
  * state).
  */
 export function mockAssetUrl(path: string, fallback: (p: string) => string): string {
-  const file = files.get(path.split("?")[0]);
+  const key = path.split("?")[0];
+  const file = files.get(key) ?? outsideTree.get(key);
   if (!file?.base64) return fallback(path);
   // The trailing `#` matters: the media viewer appends its own `?v=<mtime>`
   // cache-buster to whatever comes back, and that would otherwise land inside

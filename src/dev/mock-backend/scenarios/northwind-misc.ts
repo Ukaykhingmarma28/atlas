@@ -244,8 +244,8 @@ function sessionSummary(sessionId: string): SessionSummary {
 
 /** USD per 1M tokens: input, output, cache read, cache write. */
 const PRICE: Record<string, [number, number, number, number]> = {
-  "claude-opus-4": [15, 75, 1.5, 18.75],
-  "claude-sonnet-4": [3, 15, 0.3, 3.75],
+  "claude-opus-5-5": [15, 75, 1.5, 18.75],
+  "claude-sonnet-5-5": [3, 15, 0.3, 3.75],
   "gpt-5": [1.25, 10, 0.125, 0],
 };
 
@@ -298,9 +298,9 @@ const BACKFILL_TITLES = [
  * Never Codex: Uzayer installs it on camera in video 9.
  */
 function pickAgent(r: number): { agent: AgentKey; model: string } {
-  if (r < 0.55) return { agent: "claude-code", model: "claude-opus-4" };
-  if (r < 0.8) return { agent: "claude-code", model: "claude-sonnet-4" };
-  return { agent: "atlas-agent", model: "claude-sonnet-4" };
+  if (r < 0.55) return { agent: "claude-code", model: "claude-opus-5-5" };
+  if (r < 0.8) return { agent: "claude-code", model: "claude-sonnet-5-5" };
+  return { agent: "atlas-agent", model: "claude-sonnet-5-5" };
 }
 
 /**
@@ -1282,7 +1282,7 @@ const LOG_SEEDS: LogSeed[] = [
     "turn",
     "Make discount codes case-insensitive",
     {
-      model: "claude-opus-4",
+      model: "claude-opus-5-5",
       tokens: 27_800,
     },
   ],

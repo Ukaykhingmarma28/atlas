@@ -58,6 +58,11 @@ import {
   type CommsMessage,
   type PromptDraft,
 } from "@/features/comms/types";
+import { seedAsset } from "../fixtures/files";
+import {
+  UZAYER_AVATAR_JPEG_BASE64,
+  ZUHAYER_AVATAR_JPEG_BASE64,
+} from "../fixtures/northwind-avatars";
 import type { MockResponses, TypedHandlers } from "../types";
 import type {
   ChannelKey,
@@ -76,6 +81,7 @@ import {
   nowWhen,
   ME,
   ORG_NAME,
+  HOME,
   ORG_REMOTE_ID,
   PEOPLE,
   personByUserId,
@@ -109,10 +115,19 @@ function fail(message: string): never {
  */
 const NORTHWIND: AccountOrg = { id: ORG_REMOTE_ID, name: ORG_NAME, role: "admin" };
 
+/** Each person's photo, where Rust's avatar cache would have put it. Every
+ *  avatar in the app (titlebar, members, chat, presence, comments) reaches it
+ *  through `avatarPath` and `convertFileSrc`, which `seedAsset` answers. */
+const AVATAR_PATH: Record<PersonKey, string> = {
+  uzayer: `${HOME}/Library/Application Support/dev.atlas.ide/avatar-uzayer.jpg`,
+  zuhayer: `${HOME}/Library/Application Support/dev.atlas.ide/avatar-zuhayer.jpg`,
+};
+seedAsset(AVATAR_PATH.uzayer, "image/jpeg", UZAYER_AVATAR_JPEG_BASE64);
+seedAsset(AVATAR_PATH.zuhayer, "image/jpeg", ZUHAYER_AVATAR_JPEG_BASE64);
+
 const SIGNED_IN: AuthSnapshot = {
   status: "signed-in",
-  // No photo: Uzayer renders as initials, like every teammate.
-  user: { id: ME.userId, name: ME.name, email: ME.email, avatarPath: null },
+  user: { id: ME.userId, name: ME.name, email: ME.email, avatarPath: AVATAR_PATH[ME.key] },
   orgs: [NORTHWIND],
   activeOrgId: ORG_REMOTE_ID,
   commsOrgId: ORG_REMOTE_ID,
@@ -137,7 +152,7 @@ let members: OrgMember[] = Object.values(PEOPLE).map((p) => ({
   email: p.email,
   role: p.role,
   createdAt: isoDaysAgo(p.joinedDaysAgo),
-  avatarPath: null,
+  avatarPath: AVATAR_PATH[p.key],
   isOwner: p.isOwner,
 }));
 
