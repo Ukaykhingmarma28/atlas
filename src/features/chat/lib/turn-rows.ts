@@ -425,7 +425,7 @@ export function toolIconFor(kind: string | null | undefined, toolName: string): 
 // Where the fragment for a bucket is unobserved (`edit`), or where a glyph has
 // no obviously right bucket (`fetch`, `think`), the choice below is ours.
 
-type SummaryBucket = "tool" | "read" | "edit" | "run";
+type SummaryBucket = "org" | "tool" | "read" | "edit" | "run";
 
 /** Which sentence fragment each row glyph counts toward. */
 const SUMMARY_BUCKET: Record<MarkerTool, SummaryBucket> = {
@@ -443,11 +443,13 @@ const SUMMARY_BUCKET: Record<MarkerTool, SummaryBucket> = {
   tool: "tool",
   fetch: "tool",
   think: "tool",
-  org: "tool",
+  // Ours, not the app's: an organisation call loads nothing. "Loaded a tool"
+  // over "Listed recorded sessions by …" read as a different call entirely.
+  org: "org",
 };
 
-/** Fixed order — note 2 above. `edit`'s slot is the one we chose. */
-const SUMMARY_ORDER: readonly SummaryBucket[] = ["tool", "read", "edit", "run"];
+/** Fixed order — note 2 above. `edit`'s and `org`'s slots are the ones we chose. */
+const SUMMARY_ORDER: readonly SummaryBucket[] = ["org", "tool", "read", "edit", "run"];
 
 /** [one, several]. The singular is load-bearing: "Loaded a tool" is what a
  *  single call reads as, and it is how note 1's plural was diagnosed.
@@ -458,6 +460,7 @@ const SUMMARY_ORDER: readonly SummaryBucket[] = ["tool", "read", "edit", "run"];
  *  differentiator — "Read files, ran commands" and "Edited files" are
  *  recognisably different lines. */
 const SUMMARY_PHRASE: Record<SummaryBucket, [string, string]> = {
+  org: ["checked your organization", "checked your organization"],
   tool: ["loaded a tool", "loaded tools"],
   read: ["read a file", "read files"],
   edit: ["edited a file", "edited files"],

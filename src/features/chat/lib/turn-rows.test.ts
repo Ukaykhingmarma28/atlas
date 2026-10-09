@@ -400,6 +400,19 @@ describe("the folded block's one-line summary", () => {
     const g = rows.find((r): r is MarkerGroupRow => r.kind === RowKind.MarkerGroup);
     expect(g?.summary).toBe("Loaded a tool, edited a file, ran a command");
   });
+
+  it("says an organisation call checked the organization, not that it loaded a tool", () => {
+    const rows = projectRows(
+      turn(
+        toolCall({ id: "a", kind: null, toolName: "atlas_org.org_sessions" }),
+        toolCall({ id: "b", kind: "execute", arguments: { command: "make" } }),
+      ),
+      OPTS,
+    ).rows;
+    const g = rows.find((r): r is MarkerGroupRow => r.kind === RowKind.MarkerGroup);
+    expect(g?.summary).toBe("Checked your organization, ran a command");
+    expect(g?.tool).toBe("org");
+  });
 });
 
 describe("tool activity in the transcript", () => {

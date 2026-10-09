@@ -419,6 +419,28 @@ async function runTool(
   await sleep(250);
 }
 
+/**
+ * The audit record Rust broadcasts for every organisation call, refusals
+ * included, so this take's calls land in the Log like the real thing's.
+ */
+function auditOrgCall(
+  sid: string,
+  agent: AgentKey,
+  tool: string,
+  args: Record<string, unknown> | undefined,
+  ok: boolean,
+  text: string,
+): void {
+  void emit("atlas:org-action", {
+    sessionId: sid,
+    agent,
+    tool,
+    arguments: args ?? {},
+    ok,
+    text,
+  });
+}
+
 async function playBeat(sid: string, agent: AgentKey, beat: Beat): Promise<"waiting" | void> {
   switch (beat.kind) {
     case "thinking":
@@ -429,9 +451,13 @@ async function playBeat(sid: string, agent: AgentKey, beat: Beat): Promise<"wait
       return;
     case "tool":
       await runTool(sid, agent, `nw:run:${++callSeq}`, beat, beat.ms ?? 700);
+      if (beat.tool === "org" && beat.command) {
+        auditOrgCall(sid, agent, beat.command, beat.args, true, beat.result ?? "");
+      }
       return;
     case "approval": {
       const effect = beat.effect;
+      const command = effect === "replyToComment" ? "org_comment_reply" : "org_send";
       await raisePermission({
         sessionId: sid,
         transcriptCall: toolCallOf(
@@ -441,7 +467,7 @@ async function playBeat(sid: string, agent: AgentKey, beat: Beat): Promise<"wait
             tool: "org",
             title: beat.title,
             args: beat.args,
-            command: effect === "replyToComment" ? "org_comment_reply" : "org_send",
+            command,
           },
           "pending",
         ),
@@ -453,6 +479,14 @@ async function playBeat(sid: string, agent: AgentKey, beat: Beat): Promise<"wait
         reply: (_decision, option) => {
           const allowed = option?.kind === "allow_once" || option?.kind === "allow_always";
           if (allowed) hooks?.effects[effect](beat.args);
+          auditOrgCall(
+            sid,
+            agent,
+            command,
+            beat.args,
+            allowed,
+            allowed ? "Done." : "Declined by user.",
+          );
           return allowed ? beat.allowed : beat.declined;
         },
       });
