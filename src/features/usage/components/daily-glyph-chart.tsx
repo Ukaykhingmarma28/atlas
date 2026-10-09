@@ -13,6 +13,17 @@ const fmtFor = (metric: Metric) =>
 const GROUP_LABEL: Record<GroupBy, string> = { project: "project", agent: "agent", model: "model" };
 
 /**
+ * Whether column `i` of `n` carries a date on the x axis: every `every`th, and
+ * always the last. A label overflows its column (a day's column is narrower
+ * than "Sep 10"), so a regular label too close to the last one is dropped
+ * rather than drawn on top of it.
+ */
+export function axisLabelAt(i: number, n: number, every: number): boolean {
+  if (i === n - 1) return true;
+  return i % every === 0 && n - 1 - i >= Math.ceil(every / 2);
+}
+
+/**
  * The daily series as a glyph chart (the reference's bar-glyph area): one column per day (or
  * week, past 120 days), stacked by the group-by key in the theme's series palette, hovered
  * column brightened with a breakdown card beside it. Pure divs, no SVG, so html-to-image
@@ -165,9 +176,20 @@ export function DailyGlyphChart({
 
       {/* x axis */}
       <div className="ml-[48px] mt-1 flex gap-px text-3xs tabular-nums text-[var(--muted-foreground)]">
+        {/* Each label hangs off its column rather than fitting inside it: at
+            30 columns a day is ~20px and "Sep 10" truncated to "S…". */}
         {columns.map((c, i) => (
-          <span key={c.date} className="min-w-0 flex-1 truncate">
-            {i % labelEvery === 0 || i === n - 1 ? fmtDay(c.date) : ""}
+          <span key={c.date} className="relative h-3 min-w-0 flex-1">
+            {axisLabelAt(i, n, labelEvery) && (
+              <span
+                className={cn(
+                  "absolute top-0 whitespace-nowrap",
+                  i === n - 1 && n > 1 ? "right-0" : "left-0",
+                )}
+              >
+                {fmtDay(c.date)}
+              </span>
+            )}
           </span>
         ))}
       </div>
