@@ -26,6 +26,21 @@ import { DOCK_TRIGGER } from "./header-dock";
 
 import type { BoardCheckpoint } from "../types";
 
+/**
+ * The shas that more than one row carries. A commit two Sessions produced is
+ * one Checkpoint per Session, so it lists twice with the same subject, sha and
+ * diffstat — two rows that read as a duplicate unless each names its Session.
+ */
+export function sharedShas(rows: readonly Pick<BoardCheckpoint, "commitSha">[]): Set<string> {
+  const seen = new Set<string>();
+  const shared = new Set<string>();
+  for (const row of rows) {
+    if (seen.has(row.commitSha)) shared.add(row.commitSha);
+    else seen.add(row.commitSha);
+  }
+  return shared;
+}
+
 export function CheckpointsPicker({
   projects,
   onOpen,
@@ -72,6 +87,8 @@ export function CheckpointsPicker({
       (field) => field?.toLowerCase().includes(q),
     );
   });
+
+  const shared = sharedShas(filtered);
 
   return (
     <Popover.Root
@@ -166,11 +183,15 @@ export function CheckpointsPicker({
                           </span>
                           <span className="mt-0.5 flex items-center gap-1.5 text-3xs leading-tight text-[var(--muted-foreground)]">
                             <span className="shrink-0 font-mono">{row.commitSha.slice(0, 7)}</span>
-                            {row.branch && (
-                              <>
-                                <GitBranch size={8} className="shrink-0" />
-                                <span className="min-w-0 truncate font-mono">{row.branch}</span>
-                              </>
+                            {shared.has(row.commitSha) && row.sessionTitle ? (
+                              <span className="min-w-0 truncate">{row.sessionTitle}</span>
+                            ) : (
+                              row.branch && (
+                                <>
+                                  <GitBranch size={8} className="shrink-0" />
+                                  <span className="min-w-0 truncate font-mono">{row.branch}</span>
+                                </>
+                              )
                             )}
                             <span className="ml-auto flex shrink-0 items-center gap-1 font-mono">
                               {row.insertions > 0 && (
