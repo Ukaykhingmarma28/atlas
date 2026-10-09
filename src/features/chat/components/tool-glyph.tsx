@@ -12,6 +12,7 @@ import {
   ArrowRightLeft,
   BookOpen,
   Brain,
+  BrainCircuit,
   Building2,
   File,
   FolderClosed,
@@ -50,6 +51,8 @@ const TOOL_ICON: Record<MarkerTool, LucideIcon> = {
   // An organisation call (ADR-0014): the building the organisation screens
   // already use.
   org: Building2,
+  // Atlas memory: the Memory tab's own icon.
+  memory: BrainCircuit,
   tool: Wrench,
 };
 

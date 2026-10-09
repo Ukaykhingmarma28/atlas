@@ -7,6 +7,7 @@ import {
   type ProjectOptions,
   type WorkHeaderRow,
   toolDisplayName,
+  memoryToolOf,
 } from "./turn-rows";
 import type { ChatMessage, ToolCallDisplay } from "@/types/agent";
 
@@ -241,14 +242,22 @@ describe("the icon a marker leads with", () => {
 
   /// The native agent reports MCP calls as kind "other" (Atlas's own servers
   /// are not fetches), so the name decides: a UI action is the generic tool,
-  /// a memory search is a search.
+  /// and a memory call wears the Memory tab's icon. It used to be a search,
+  /// which folded "Searched memory" into "Read a file".
   it("gives Atlas's own tool servers the icon their names earn", () => {
     const ui = markers(turn(toolCall({ kind: "other", toolName: "atlas_ui.ui_focus" })))[0];
     expect(ui.tool).toBe("tool");
     const memory = markers(
-      turn(toolCall({ kind: "other", toolName: "atlas_memory.memory_search" })),
+      turn(
+        toolCall({
+          kind: "other",
+          toolName: "atlas_memory.memory_search",
+          arguments: { query: "discount" },
+        }),
+      ),
     )[0];
-    expect(memory.tool).toBe("search");
+    expect(memory.tool).toBe("memory");
+    expect(memory.verb).toBe("Searched memory for");
   });
 
   /// An organisation call (ADR-0014) is one row like a UI action, wearing the
@@ -412,6 +421,31 @@ describe("the folded block's one-line summary", () => {
     const g = rows.find((r): r is MarkerGroupRow => r.kind === RowKind.MarkerGroup);
     expect(g?.summary).toBe("Checked your organization, ran a command");
     expect(g?.tool).toBe("org");
+  });
+
+  it("says a memory call used Atlas memory, not that it read a file or loaded a tool", () => {
+    const rows = projectRows(
+      turn(
+        toolCall({
+          id: "a",
+          kind: null,
+          toolName: "mcp__atlas_memory__memory_search",
+          arguments: { query: "discount code" },
+        }),
+      ),
+      OPTS,
+    ).rows;
+    const g = rows.find((r): r is MarkerGroupRow => r.kind === RowKind.MarkerGroup);
+    expect(g?.summary).toBe("Used Atlas memory");
+    expect(g?.tool).toBe("memory");
+  });
+});
+
+describe("memory calls", () => {
+  it("names what a search looked for and what remember kept, under either spelling", () => {
+    expect(memoryToolOf("mcp__atlas_memory__memory_search")).toBe("memory_search");
+    expect(memoryToolOf("atlas_memory.memory_remember")).toBe("memory_remember");
+    expect(memoryToolOf("mcp__atlas_code__find_symbol")).toBeNull();
   });
 });
 

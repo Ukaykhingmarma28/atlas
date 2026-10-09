@@ -119,6 +119,7 @@ export type MarkerTool =
   | "move"
   | "file"
   | "org"
+  | "memory"
   | "tool";
 
 export interface MarkerRow extends RowBase {
@@ -348,6 +349,35 @@ function diffEditOf(tc: ToolCallDisplay): FileEdit | null {
   };
 }
 
+/**
+ * An Atlas memory call's tool, from either spelling of its name:
+ * `mcp__atlas_memory__memory_search` (an ACP agent's) or
+ * `atlas_memory.memory_search` (Atlas Agent's).
+ */
+export function memoryToolOf(toolName: string): string | null {
+  return /^(?:mcp__atlas_memory__|atlas_memory\.)(memory_[a-z_]+)$/.exec(toolName)?.[1] ?? null;
+}
+
+/** The line a memory call reads as: what it looked for, or what it kept. */
+function memoryToolRow(
+  tool: string,
+  args: Record<string, unknown>,
+): { verb: string; detail: string } {
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  switch (tool) {
+    case "memory_search":
+      return str(args.query)
+        ? { verb: "Searched memory for", detail: str(args.query) }
+        : { verb: "Searched memory", detail: "" };
+    case "memory_remember":
+      return str(args.kind)
+        ? { verb: "Remembered a", detail: str(args.kind) }
+        : { verb: "Remembered", detail: "" };
+    default:
+      return { verb: "Read memory", detail: "" };
+  }
+}
+
 /** Trim a path to something that reads in one line without the eye scanning. */
 export function shortPath(p: string): string {
   const parts = p.split("/").filter(Boolean);
@@ -425,7 +455,7 @@ export function toolIconFor(kind: string | null | undefined, toolName: string): 
 // Where the fragment for a bucket is unobserved (`edit`), or where a glyph has
 // no obviously right bucket (`fetch`, `think`), the choice below is ours.
 
-type SummaryBucket = "org" | "tool" | "read" | "edit" | "run";
+type SummaryBucket = "org" | "memory" | "tool" | "read" | "edit" | "run";
 
 /** Which sentence fragment each row glyph counts toward. */
 const SUMMARY_BUCKET: Record<MarkerTool, SummaryBucket> = {
@@ -446,10 +476,13 @@ const SUMMARY_BUCKET: Record<MarkerTool, SummaryBucket> = {
   // Ours, not the app's: an organisation call loads nothing. "Loaded a tool"
   // over "Listed recorded sessions by …" read as a different call entirely.
   org: "org",
+  // Same reasoning: a memory search is not reading a file, and remembering
+  // loads nothing. One phrase covers both, since a turn often does both.
+  memory: "memory",
 };
 
 /** Fixed order — note 2 above. `edit`'s and `org`'s slots are the ones we chose. */
-const SUMMARY_ORDER: readonly SummaryBucket[] = ["org", "tool", "read", "edit", "run"];
+const SUMMARY_ORDER: readonly SummaryBucket[] = ["org", "memory", "tool", "read", "edit", "run"];
 
 /** [one, several]. The singular is load-bearing: "Loaded a tool" is what a
  *  single call reads as, and it is how note 1's plural was diagnosed.
@@ -461,6 +494,7 @@ const SUMMARY_ORDER: readonly SummaryBucket[] = ["org", "tool", "read", "edit", 
  *  recognisably different lines. */
 const SUMMARY_PHRASE: Record<SummaryBucket, [string, string]> = {
   org: ["checked your organization", "checked your organization"],
+  memory: ["used Atlas memory", "used Atlas memory"],
   tool: ["loaded a tool", "loaded tools"],
   read: ["read a file", "read files"],
   edit: ["edited a file", "edited files"],
@@ -585,7 +619,13 @@ function markerFor(tc: ToolCallDisplay, turnId: string, first: boolean): MarkerR
   const path = argsPath ?? edit?.path ?? null;
 
   const orgTool = orgToolOf(tc.toolName);
-  if (orgTool) {
+  const memoryTool = memoryToolOf(tc.toolName);
+  if (memoryTool) {
+    const row = memoryToolRow(memoryTool, args);
+    tool = "memory";
+    verb = row.verb;
+    detail = row.detail;
+  } else if (orgTool) {
     // An organisation call (ADR-0014): the organisation icon, and the line
     // that names what it was about — the member, conversation or recorded
     // session — from the table the Logs row reads too. A failed call's text
