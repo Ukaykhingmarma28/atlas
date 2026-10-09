@@ -57,6 +57,7 @@ import {
   agentLabel,
   formatDuration,
   prettyModel,
+  sessionState,
   sessionTitle,
   tokenBreakdown,
   tokenLabel,
@@ -809,6 +810,7 @@ function Masthead({ detail, comments }: { detail: Detail; comments: RowComments 
       </div>
 
       <div className="mt-[22px] flex min-w-0 flex-wrap items-center gap-2">
+        {sessionState(s) === "live" && <LiveChip />}
         {s.agent && <AgentChip agent={s.agent} />}
         {s.source === "external_jsonl" && (
           <Chip>
@@ -1015,6 +1017,27 @@ function Chip({ children }: { children: ReactNode }) {
   return (
     <span className="flex h-[22px] items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--card)] px-2.5 font-mono text-xs text-[var(--muted-foreground)]">
       {children}
+    </span>
+  );
+}
+
+/**
+ * Still being written: the same breathing green dot as the Session's node on
+ * the Timeline, with the word, because a dot alone in a row of grey chips read
+ * as decoration. First in the row — it is the one chip that is status.
+ */
+function LiveChip() {
+  return (
+    <span className="flex h-[22px] items-center gap-1.5 rounded-full border border-[var(--atlas-status-success-foreground)]/25 bg-[var(--atlas-status-success-background)] px-2.5 font-mono text-xs text-[var(--atlas-status-success-foreground)]">
+      <span
+        aria-hidden
+        className="atlas-live-pulse size-1.5 rounded-full bg-[var(--atlas-status-success-foreground)]"
+        style={{
+          ["--atlas-pulse-color" as string]:
+            "color-mix(in oklab, var(--atlas-status-success-foreground) 40%, transparent)",
+        }}
+      />
+      live
     </span>
   );
 }

@@ -603,7 +603,12 @@ const SessionRow = memo(function SessionRow({
       >
         {title ?? "Untitled session"}
       </FadingTitle>
-      <SessionMeta session={session} directory={directory} authorOnline={authorOnline} />
+      <SessionMeta
+        session={session}
+        live={state === "live"}
+        directory={directory}
+        authorOnline={authorOnline}
+      />
     </button>
   );
 });
@@ -618,10 +623,13 @@ const SessionRow = memo(function SessionRow({
  */
 const SessionMeta = memo(function SessionMeta({
   session,
+  live,
   directory,
   authorOnline,
 }: {
   session: BoardSession;
+  /** Still being written. The node's dot already pulses; this says it in words. */
+  live: boolean;
   directory: AuthorDirectory;
   authorOnline: boolean;
 }) {
@@ -641,6 +649,11 @@ const SessionMeta = memo(function SessionMeta({
       />
       {/* The Project first, because it is what a reader scanning the day is
        *  grouping by. It is the part that gives way when the pane is narrow. */}
+      {live && (
+        <span className="shrink-0 font-medium text-[var(--atlas-status-success-foreground)]">
+          Live ·
+        </span>
+      )}
       <span className="min-w-0 truncate">{session.projectName}</span>
       {/* Whose work it is, pinned right by `ml-auto` rather than by letting the
        *  Project grow into the gap: a Project name short enough not to truncate
