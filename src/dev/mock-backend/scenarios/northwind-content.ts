@@ -1267,7 +1267,7 @@ export const CONTENT: NorthwindContent = {
         },
         {
           kind: "text",
-          text: "It isn't stuck. It listed every export in `cart.ts` and `orders.ts`, checked which ones the tests call, and found two gaps: `CartStore` has no tests, and nothing tries `OrderBook.get` with an unknown id. It's writing the `CartStore` tests in `tests/cart.test.ts` now, then the orders one.",
+          text: "Nothing is blocking it. Zuhayer's Codex session is a few minutes in and moving:\n\n1. It listed every export in `cart.ts` and `orders.ts` and checked which ones the tests already call.\n2. It found two gaps: `CartStore` has no tests at all, and nothing calls `OrderBook.get` with an id that doesn't exist.\n3. It's writing the `CartStore` tests in `tests/cart.test.ts` now. The `OrderBook.get` test comes after.\n\nNo need to interrupt Zuhayer.",
         },
       ],
     },
@@ -1289,6 +1289,18 @@ export const CONTENT: NorthwindContent = {
           ms: 900,
         },
         {
+          kind: "tool",
+          tool: "read",
+          title: "Read src/server/discounts.ts",
+          path: "src/server/discounts.ts",
+          result: read("x", 0, "c-validate", "src/server/discounts.ts", 1, 25).result,
+          ms: 600,
+        },
+        {
+          kind: "text",
+          text: "Zuhayer asked on your `src/server/api.ts` edit: *“Did you check what happens with an expired code?”*\n\nCodes can't expire yet. `CODES` in `src/server/discounts.ts` has a percent and a label for each code, and no date, so `checkDiscount` only knows valid or unknown. Here's a reply. I'll post it under your name if you allow it.",
+        },
+        {
           kind: "approval",
           title: "Reply to Zuhayer Masud's comment",
           args: {
@@ -1298,7 +1310,7 @@ export const CONTENT: NorthwindContent = {
               "Codes don't expire yet: checkDiscount only knows valid or unknown. I'll add an expiry date per code and a test for an expired one.",
           },
           effect: "replyToComment",
-          allowed: "Replied to Zuhayer's comment.",
+          allowed: "Replied to Zuhayer's comment on *Make discount codes case-insensitive*.",
           declined: "Okay, I won't reply.",
         },
       ],
@@ -1319,6 +1331,10 @@ export const CONTENT: NorthwindContent = {
           result:
             "Make discount codes case-insensitive · Uzayer Masud · Claude Code · today · 6 min\nFiles: src/server/api.ts, tests/discounts.test.ts\nCheckpoint: Make discount codes case-insensitive (3f6b8d0)\nComments: 1, from Zuhayer Masud",
           ms: 900,
+        },
+        {
+          kind: "text",
+          text: "Here's a short report for #shop, with the session attached so anyone can open it on the Timeline.",
         },
         {
           kind: "approval",
