@@ -1359,6 +1359,10 @@ export const CONTENT: NorthwindContent = {
       match: ["post", "discount code", "shop"],
       beats: [
         {
+          kind: "text",
+          text: "Here's the post for #shop. *Add a discount code field to checkout* goes with it as a card, so Zuhayer can open the exact run from the message.",
+        },
+        {
           kind: "approval",
           title: "Post a message to #shop",
           args: {
@@ -1368,7 +1372,8 @@ export const CONTENT: NorthwindContent = {
             session: "Add a discount code field to checkout",
           },
           effect: "postDiscountSession",
-          allowed: "Posted to #shop with the session attached.",
+          allowed:
+            "Posted to #shop, asking Zuhayer to check the validation, with *Add a discount code field to checkout* attached.",
           declined: "Okay, nothing was posted.",
         },
       ],
