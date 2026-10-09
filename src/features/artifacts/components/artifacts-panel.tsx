@@ -35,7 +35,7 @@ import {
   type FacetSelection,
   type GroupPeriod,
 } from "../lib/board";
-import { boardKey } from "../lib/board-key";
+import { boardKey, rowForCheckout } from "../lib/board-key";
 import { clearDetailCache, readCachedDetail, writeCachedDetail } from "../lib/detail-cache";
 import { readSessionDetail } from "../lib/read-session-detail";
 import { DockButton, DOCK_ACTIVE, DOCK_TRIGGER, HeaderDock } from "./header-dock";
@@ -268,6 +268,15 @@ export function ArtifactsPanel() {
       openSession({ sessionId, projectPath, remoteProjectId: remoteProjectId ?? null }),
     [openSession],
   );
+  // A Session opened from outside the board — a commit's "Produced by" card,
+  // Atlas Agent's open action — names its checkout but not its server Project,
+  // and without that the Session reads as unshared: no comments, no link. The
+  // board row knows it, so take it from there once the board has it.
+  useEffect(() => {
+    if (!open || open.remoteProjectId !== undefined) return;
+    const row = rowForCheckout(sessions, open.sessionId, open.projectPath);
+    if (row) openSession({ ...open, remoteProjectId: row.remoteProjectId });
+  }, [open, sessions, openSession]);
   /** True once the first board read has landed. */
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
