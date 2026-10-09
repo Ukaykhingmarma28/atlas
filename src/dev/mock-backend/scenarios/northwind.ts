@@ -36,7 +36,7 @@
 //   Ctrl+Option+2  zuhayerSessionLive   Zuhayer's live Codex Session streams its next steps
 //   Ctrl+Option+3  zuhayerComments      Zuhayer comments on your discount-code edit
 //                                       (videos 1 and 4: it lands in the agent chat)
-//   Ctrl+Option+4  zuhayerMessage       Zuhayer posts "server-side check is in" in #shop,
+//   Ctrl+Option+4  zuhayerMessage       Zuhayer posts "Server-side check is in, tests included." in #shop,
 //                                       with the checkpoint card (video 4 beat 5)
 //   Ctrl+Option+5  zuhayerDraftEdit     Zuhayer types his lines into "Move discount
 //                                       pricing to the server", named cursor and all (video 5)

@@ -558,7 +558,12 @@ export function ensureVideo1Session(id: string, startedAt = Date.now()): void {
   void emit("atlas:capture-changed", {});
 }
 
-async function finish(run: ScriptedRun, sid: string, startedAt: number): Promise<void> {
+async function finish(
+  run: ScriptedRun,
+  sid: string,
+  agent: AgentKey,
+  startedAt: number,
+): Promise<void> {
   if (run.afterwards === "discountSession") {
     const id = run.replay ?? "s-discount";
     ensureVideo1Session(id, startedAt);
@@ -568,6 +573,15 @@ async function finish(run: ScriptedRun, sid: string, startedAt: number): Promise
     void emit("atlas:capture-changed", {});
   } else if (run.afterwards === "rememberDecision") {
     hooks?.rememberDecision();
+  } else if (run.afterwards === "recordSession" && run.replay) {
+    // The capture worker's job in the real app: the turn the viewer just
+    // watched becomes a Session on the Timeline, under its agent's glyph.
+    // Only from the agent it was written for: a Codex prompt sent to Claude
+    // Code must not land on the Timeline as Codex.
+    if (sessionContent(run.replay)?.agent !== agent) return;
+    if (!session(run.replay)) createSession(run.replay, startedAt);
+    bindings.set(sid, run.replay);
+    void emit("atlas:capture-changed", {});
   }
 }
 
@@ -583,7 +597,7 @@ async function play(run: ScriptedRun, sid: string, agent: AgentKey): Promise<voi
       break;
     }
   }
-  await finish(run, sid, startedAt);
+  await finish(run, sid, agent, startedAt);
   if (!waiting) await finishTurn(sid);
 }
 

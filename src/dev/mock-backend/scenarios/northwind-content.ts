@@ -947,6 +947,93 @@ export const CONTENT: NorthwindContent = {
         { kind: "checkpoint", id: "cp1", min: 6, commit: "c-normalize" },
       ],
     },
+    // Video 9's two small prompts. They exist only once their runs play,
+    // so the Timeline shows the take's own Claude Code and Codex Sessions.
+    {
+      id: "s-readme-tests",
+      createdOnCamera: "onRun",
+      title: "add a README section on running the tests",
+      author: "uzayer",
+      agent: "claude-code",
+      model: "claude-opus-5-5",
+      started: { daysAgo: 0, at: "now-1" },
+      durationMin: 1,
+      branch: "main",
+      tokens: { input: 9_400, output: 620, cacheRead: 41_000, cacheWrite: 3_100 },
+      costUsd: 0.21,
+      steps: [
+        {
+          kind: "prompt",
+          id: "p1",
+          min: 0,
+          text: "add a README section on running the tests",
+        },
+        {
+          kind: "tool",
+          id: "r-readme",
+          min: 0,
+          tool: "read",
+          title: "Read README.md",
+          path: "README.md",
+          result:
+            "## Check your work\n\n```bash\nbun test            # unit and API tests\nbun run typecheck   # tsc, no emit\nbun run check       # both of the above, in that order\n```\n\nRun `bun run check` before every commit.",
+        },
+        {
+          kind: "tool",
+          id: "e-readme",
+          min: 1,
+          tool: "edit",
+          title: "Edit README.md",
+          path: "README.md",
+          diff: {
+            before: "bun run check       # both of the above, in that order\n```",
+            after:
+              "bun run check       # both of the above, in that order\nbun test tests/cart.test.ts   # one file\nbun test --watch              # rerun on every save\n```",
+          },
+        },
+        {
+          kind: "response",
+          id: "resp1",
+          min: 1,
+          text: "The README already has a **Check your work** section with the test commands, so I added to it rather than starting a second one: how to run a single test file, and how to rerun the tests on every save.",
+        },
+      ],
+    },
+    {
+      id: "s-checkout-exports",
+      createdOnCamera: "onRun",
+      title: "what does the checkout module export?",
+      author: "uzayer",
+      agent: "codex",
+      model: "gpt-5",
+      started: { daysAgo: 0, at: "now-1" },
+      durationMin: 1,
+      branch: "main",
+      tokens: { input: 7_900, output: 310, cacheRead: 22_000, cacheWrite: 0 },
+      costUsd: 0.08,
+      steps: [
+        {
+          kind: "prompt",
+          id: "p1",
+          min: 0,
+          text: "what does the checkout module export?",
+        },
+        {
+          kind: "tool",
+          id: "r-checkout",
+          min: 0,
+          tool: "read",
+          title: "Read src/client/checkout.ts",
+          path: "src/client/checkout.ts",
+        },
+        {
+          kind: "response",
+          id: "resp1",
+          min: 1,
+          text: "Nothing. `src/client/checkout.ts` is a page script: when it loads it renders the order summary, applies discount codes and submits the form. It imports `api`, `ApiError` and `showCartCount` from `api.ts` and `totalsHtml` from `summary.ts`, but nothing imports it.",
+        },
+      ],
+    },
     {
       id: "s-live-tests",
       title: "Add tests for the cart and order helpers",
@@ -1451,55 +1538,24 @@ export const CONTENT: NorthwindContent = {
         },
       ],
     },
-    // Video 9 beat 1. "add a README section on running the tests".
+    // Video 9 beat 1. "add a README section on running the tests". The run
+    // IS `s-readme-tests`, recorded on the Timeline when it finishes.
     {
       id: "run-readme-tests",
       match: ["readme section"],
-      beats: [
-        {
-          kind: "tool",
-          tool: "read",
-          title: "Read README.md",
-          path: "README.md",
-          result:
-            "## Check your work\n\n```bash\nbun test            # unit and API tests\nbun run typecheck   # tsc, no emit\nbun run check       # both of the above, in that order\n```\n\nRun `bun run check` before every commit.",
-          ms: 500,
-        },
-        {
-          kind: "tool",
-          tool: "edit",
-          title: "Edit README.md",
-          path: "README.md",
-          diff: {
-            before: "bun run check       # both of the above, in that order\n```",
-            after:
-              "bun run check       # both of the above, in that order\nbun test tests/cart.test.ts   # one file\nbun test --watch              # rerun on every save\n```",
-          },
-          ms: 900,
-        },
-        {
-          kind: "text",
-          text: "The README already has a **Check your work** section with the test commands, so I added to it rather than starting a second one: how to run a single test file, and how to rerun the tests on every save.",
-        },
-      ],
+      agent: "claude-code",
+      replay: "s-readme-tests",
+      beats: [],
+      afterwards: "recordSession",
     },
-    // Video 9 beat 3. "what does the checkout module export?"
+    // Video 9 beat 3. "what does the checkout module export?", in Codex.
     {
       id: "run-checkout-exports",
       match: ["checkout module export"],
-      beats: [
-        {
-          kind: "tool",
-          tool: "read",
-          title: "Read src/client/checkout.ts",
-          path: "src/client/checkout.ts",
-          ms: 500,
-        },
-        {
-          kind: "text",
-          text: "Nothing. `src/client/checkout.ts` is a page script: when it loads it renders the order summary, applies discount codes and submits the form. It imports `api`, `ApiError` and `showCartCount` from `api.ts` and `totalsHtml` from `summary.ts`, but nothing imports it.",
-        },
-      ],
+      agent: "codex",
+      replay: "s-checkout-exports",
+      beats: [],
+      afterwards: "recordSession",
     },
     // Video 11 beat 1. "/remember the discount code rule".
     {
@@ -1655,7 +1711,7 @@ export const CONTENT: NorthwindContent = {
       body: "<@usr_uzayer> Should this validate the code server-side?",
     },
     zuhayerMessage: {
-      body: "server-side check is in",
+      body: "Server-side check is in, tests included.",
       sessionRef: { session: "s-server-discounts", checkpoint: "c-validate" },
     },
     zuhayerShare: {

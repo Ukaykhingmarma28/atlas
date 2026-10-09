@@ -127,9 +127,12 @@ export interface SessionContent {
   /**
    * The Session only exists AFTER a given video's live beat. `video1` = the
    * discount-code run video 1 does on camera: with `?video=1` it is left out,
-   * and the scripted run creates it instead.
+   * and the scripted run creates it instead. `onRun` = absent at load in
+   * every take, and recorded on the Timeline when the run that replays it
+   * finishes (the agents video's two small prompts), so the take's own work
+   * is what lands there.
    */
-  createdOnCamera?: "video1";
+  createdOnCamera?: "video1" | "onRun";
   /**
    * The Session happens after video 1 in the story (it builds on the
    * discount-code field), so `?video=1` leaves it out too, with its commit.
@@ -276,8 +279,9 @@ export interface ScriptedRun {
    * Timeline and leaves its edits uncommitted in the git panel, so committing
    * them there shows "Produced by 1 session". `rememberDecision` adds
    * `memoryOnRemember` to Memory → Shared → Memories (video 11).
+   * `recordSession` records the `replay` Session on the Timeline (`onRun`).
    */
-  afterwards?: "discountSession" | "rememberDecision";
+  afterwards?: "discountSession" | "rememberDecision" | "recordSession";
 }
 
 // ── Memory, policy, skills (video 11) ───────────────────────────────────

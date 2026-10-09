@@ -182,6 +182,7 @@ function initSession(content: SessionContent): SessionState {
 
 /** Whether a Session exists in the current world (video options applied). */
 function exists(content: SessionContent): boolean {
+  if (content.createdOnCamera === "onRun") return false;
   return !(BEFORE_VIDEO_1 && (content.createdOnCamera === "video1" || content.afterVideo1));
 }
 
