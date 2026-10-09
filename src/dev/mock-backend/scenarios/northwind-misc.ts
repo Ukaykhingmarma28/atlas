@@ -78,6 +78,7 @@ import { CONTENT } from "./northwind-content";
 import { transcriptOf } from "./northwind-agent";
 import { NORTHWIND_NATIVE_MODELS } from "./northwind-models";
 import { lineStats } from "./northwind-timeline";
+import { northwindFileText, northwindWriteFile } from "./northwind-git";
 import {
   addMemory,
   CODEX_INSTALLED,
@@ -1433,6 +1434,13 @@ export const northwindMiscCommands: Partial<TypedHandlers<MockResponses>> = {
       (policy) => policy.file_path === String(filePath) && policy.value === String(oldText),
     );
     if (!row) throw new Error("original text not found in file");
+    // The real command rewrites that span of the file, so CLAUDE.md and the
+    // git panel show the edit too.
+    const rel = row.file_path.slice(PROJECT.path.length + 1);
+    const text = northwindFileText(rel);
+    if (text?.includes(String(oldText))) {
+      northwindWriteFile(rel, text.replace(String(oldText), String(newText)));
+    }
     row.value = String(newText);
     return null;
   },

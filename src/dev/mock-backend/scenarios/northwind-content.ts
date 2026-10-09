@@ -1510,10 +1510,11 @@ export const CONTENT: NorthwindContent = {
           kind: "tool",
           tool: "memory",
           title: "remember",
-          command: "atlas_memory_remember",
+          command: "memory_remember",
           args: {
             kind: "decision",
-            text: "Discount codes are case-insensitive: normalize them to uppercase once, at the API boundary (src/server/api.ts), not in the UI.",
+            content:
+              "Discount codes are case-insensitive: normalize them to uppercase once, at the API boundary (src/server/api.ts), not in the UI.",
           },
           result: "Stored as a decision.",
           ms: 800,
@@ -1535,7 +1536,7 @@ export const CONTENT: NorthwindContent = {
           kind: "tool",
           tool: "memory",
           title: "search memory",
-          command: "atlas_memory_search",
+          command: "memory_search",
           args: { query: "discount code normalize" },
           result:
             "decision · Claude Code · 0.92\nDiscount codes are case-insensitive: normalize them to uppercase once, at the API boundary (src/server/api.ts), not in the UI.",

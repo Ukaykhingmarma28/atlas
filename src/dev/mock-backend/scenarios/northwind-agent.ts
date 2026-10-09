@@ -135,7 +135,11 @@ function toolNameOf(agent: AgentKey, tool: ToolStep["tool"], command?: string): 
     const name = command ?? "org";
     return agent === "atlas-agent" ? `atlas_org.${name}` : `mcp__atlas_org__${name}`;
   }
-  if (tool === "memory") return command ?? tool;
+  // Atlas memory is the `atlas_memory` MCP server, named the same two ways.
+  if (tool === "memory") {
+    const name = command ?? "memory_search";
+    return agent === "atlas-agent" ? `atlas_memory.${name}` : `mcp__atlas_memory__${name}`;
+  }
   const names: Record<AgentKey, Record<string, string>> = {
     "claude-code": { read: "Read", edit: "Edit", write: "Write", bash: "Bash", grep: "Grep" },
     codex: {

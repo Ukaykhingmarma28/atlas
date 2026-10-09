@@ -1097,3 +1097,14 @@ export const northwindGitRawCommands: MockHandlers = {
 export function northwindFileText(path: string): string | undefined {
   return worktreeText(path);
 }
+
+/**
+ * Save a repo file the way the editor does (`write_file_content`): it shows as
+ * modified in the git panel and an open editor rereads it. Policy edits use it,
+ * because the Policy table writes its rule back into CLAUDE.md.
+ */
+export function northwindWriteFile(path: string, text: string): void {
+  if (head.get(path)?.text === text) edits.delete(path);
+  else edits.set(path, { text, mtimeMs: Date.now() });
+  notifyChanged();
+}
