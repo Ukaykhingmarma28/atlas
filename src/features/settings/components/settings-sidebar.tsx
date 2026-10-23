@@ -1,6 +1,7 @@
 /**
- * The Settings sidebar: a search box over every setting, then the sections in
- * two groups. Collapses to an icon rail, with labels as tooltips.
+ * The Settings screen's sidebar: the window's bar slice on
+ * top (under the traffic lights), a search box over every setting, the
+ * sections in two foldable groups, and `Back` to the workspace at the foot.
  *
  * Search is the registry's: each `config.toml` key with a row is an item,
  * titled exactly as its row is (`settings-sections.ts`). Picking a result
@@ -8,8 +9,12 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, Search, X } from "lucide-react";
+import { ArrowLeft, ChevronDown, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useWindowDrag } from "@/components/titlebar";
+import { useFullscreen } from "@/hooks/use-fullscreen";
+import { isMac } from "@/lib/platform";
+import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { Hint } from "@/ui/tooltip";
 import { Icon } from "@/ui/icon";
 import { IconButton } from "@/ui/icon-button";
@@ -26,15 +31,13 @@ export function SettingsSidebar({
   active,
   onSelect,
   onSearchPick,
-  collapsed,
-  onToggleCollapsed,
+  onBack,
   badges,
 }: {
   active: SettingsSection;
   onSelect: (section: SettingsSection) => void;
   onSearchPick: (item: SearchItem) => void;
-  collapsed: boolean;
-  onToggleCollapsed: () => void;
+  onBack: () => void;
   badges: Partial<Record<SettingsSection, number>>;
 }) {
   const [query, setQuery] = useState("");
@@ -55,12 +58,16 @@ export function SettingsSidebar({
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
       event.preventDefault();
-      if (collapsed) onToggleCollapsed();
-      requestAnimationFrame(() => inputRef.current?.focus());
+      inputRef.current?.focus();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [collapsed, onToggleCollapsed]);
+  }, []);
+
+  const drag = useWindowDrag();
+  const isFullscreen = useFullscreen();
+  // The key that opened Settings closes it again (`app.settings` toggles).
+  const backShortcut = useActionShortcut("app.settings")?.label;
 
   const pick = (item: SearchItem) => {
     onSearchPick(item);
@@ -89,123 +96,104 @@ export function SettingsSidebar({
     <nav
       ref={rootRef}
       aria-label="Settings sections"
-      className={cn(
-        "flex shrink-0 flex-col border-r border-border bg-background",
-        collapsed ? "w-12" : "w-64",
-      )}
+      className="flex w-64 shrink-0 flex-col border-r border-border bg-background"
     >
-      {/* The same height and hairline as the page header beside it, so the
-          search and the breadcrumb read as one bar across the panel. */}
+      {/* This column's slice of the window bar: it drags the window and sits
+          under the macOS traffic lights, which it clears the same way the
+          workspace bar does. */}
       <div
+        {...drag}
         className={cn(
-          "flex h-10 shrink-0 items-center border-b border-border",
-          collapsed ? "justify-center" : "px-2",
+          "flex h-titlebar shrink-0 select-none items-center text-sm font-medium text-foreground",
+          isMac && !isFullscreen ? "pl-[calc(78px/var(--ui-zoom,1))]" : "pl-4",
         )}
       >
-        {collapsed ? (
-          <Hint label="Search settings" shortcut="/" side="right">
-            <IconButton
-              icon={Search}
-              size="sm"
-              label="Search settings"
-              onClick={onToggleCollapsed}
+        Atlas
+      </div>
+      <div className="shrink-0 px-2 pb-1">
+        <div className="relative w-full">
+          {/* Shaped like a nav row (height, inset, icon column), so the
+                search icon lines up with the section icons below it. */}
+          <div
+            className={cn(
+              "flex h-control-lg items-center gap-2.5 rounded-md px-2",
+              "transition-colors duration-fast ease-out-strong",
+              "hover:bg-element-hover focus-within:bg-element-hover",
+            )}
+          >
+            <Icon icon={Search} size="md" className="shrink-0 text-muted-foreground" />
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setCursor(0);
+              }}
+              onKeyDown={onSearchKey}
+              placeholder="Search settings"
+              aria-label="Search settings"
+              role="combobox"
+              aria-expanded={query.length > 0}
+              aria-controls="settings-search-results"
+              className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-disabled"
             />
-          </Hint>
-        ) : (
-          <div className="relative w-full">
-            {/* No border of its own: it sits in a bar that already has one. Shaped
-                like a nav row (height, inset, icon column), so the search icon
-                lines up with the section icons below it. */}
-            <div
-              className={cn(
-                "flex h-control-md items-center gap-2.5 rounded-md px-2",
-                "transition-colors duration-fast ease-out-strong",
-                "hover:bg-element-hover focus-within:bg-element-hover",
-              )}
-            >
-              <Icon icon={Search} size="md" className="shrink-0 text-muted-foreground" />
-              <input
-                ref={inputRef}
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  setCursor(0);
-                }}
-                onKeyDown={onSearchKey}
-                placeholder="Search settings"
-                aria-label="Search settings"
-                role="combobox"
-                aria-expanded={query.length > 0}
-                aria-controls="settings-search-results"
-                className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-disabled"
-              />
-              {query ? (
-                <IconButton icon={X} size="xs" label="Clear search" onClick={() => setQuery("")} />
-              ) : (
-                <Kbd>/</Kbd>
-              )}
-            </div>
-            {query && (
-              <ul
-                id="settings-search-results"
-                role="listbox"
-                className="absolute inset-x-0 top-full z-popover mt-1 max-h-80 overflow-y-auto rounded-lg border border-border bg-popover p-0.5 shadow-md"
-              >
-                {results.length === 0 ? (
-                  <li className="px-2 py-2 caption">No settings found</li>
-                ) : (
-                  results.map((item, index) => (
-                    <li
-                      key={item.id}
-                      role="option"
-                      aria-selected={index === cursor}
-                      onMouseEnter={() => setCursor(index)}
-                      onMouseDown={(e) => {
-                        // Before the input blurs, which would hide the list.
-                        e.preventDefault();
-                        pick(item);
-                      }}
-                      className={cn(
-                        "flex cursor-pointer flex-col rounded px-2 py-1.5",
-                        index === cursor && "bg-element-hover",
-                      )}
-                    >
-                      <span className="text-xs text-foreground">{item.title}</span>
-                      <span className="caption">{item.where}</span>
-                    </li>
-                  ))
-                )}
-              </ul>
+            {query ? (
+              <IconButton icon={X} size="xs" label="Clear search" onClick={() => setQuery("")} />
+            ) : (
+              <Kbd>/</Kbd>
             )}
           </div>
-        )}
+          {query && (
+            <ul
+              id="settings-search-results"
+              role="listbox"
+              className="absolute inset-x-0 top-full z-popover mt-1 max-h-80 overflow-y-auto rounded-lg border border-border bg-popover p-0.5 shadow-md"
+            >
+              {results.length === 0 ? (
+                <li className="px-2 py-2 caption">No settings found</li>
+              ) : (
+                results.map((item, index) => (
+                  <li
+                    key={item.id}
+                    role="option"
+                    aria-selected={index === cursor}
+                    onMouseEnter={() => setCursor(index)}
+                    onMouseDown={(e) => {
+                      // Before the input blurs, which would hide the list.
+                      e.preventDefault();
+                      pick(item);
+                    }}
+                    className={cn(
+                      "flex cursor-pointer flex-col rounded px-2 py-1.5",
+                      index === cursor && "bg-element-hover",
+                    )}
+                  >
+                    <span className="text-xs text-foreground">{item.title}</span>
+                    <span className="caption">{item.where}</span>
+                  </li>
+                ))
+              )}
+            </ul>
+          )}
+        </div>
       </div>
 
-      <div
-        className={cn(
-          "flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto py-2",
-          collapsed ? "items-center px-1.5" : "px-2",
-        )}
-      >
+      <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-2 py-2">
         {SIDEBAR.map((group) => {
-          // The icon rail has no headings to fold with, so it shows every row.
-          const shut = !collapsed && !!folded[group.label];
+          const shut = !!folded[group.label];
           return (
             <div key={group.label} className="flex flex-col gap-0.5">
-              {!collapsed && (
-                <GroupHeader
-                  label={group.label}
-                  shut={shut}
-                  onToggle={() => setFolded((f) => ({ ...f, [group.label]: !f[group.label] }))}
-                />
-              )}
+              <GroupHeader
+                label={group.label}
+                shut={shut}
+                onToggle={() => setFolded((f) => ({ ...f, [group.label]: !f[group.label] }))}
+              />
               {!shut &&
                 group.entries.map((entry) => (
                   <NavItem
                     key={entry.id}
                     entry={entry}
                     active={active === entry.id}
-                    collapsed={collapsed}
                     badge={badges[entry.id] ?? 0}
                     onSelect={onSelect}
                   />
@@ -215,24 +203,18 @@ export function SettingsSidebar({
         })}
       </div>
 
-      <div
-        className={cn(
-          "flex flex-col border-t border-border py-2",
-          collapsed ? "items-center px-1.5" : "px-2",
-        )}
-      >
-        <Hint label={collapsed ? "Show sidebar" : "Hide sidebar"} side="right">
+      <div className="flex flex-col border-t border-border px-2 py-2">
+        <Hint label="Back to the workspace" shortcut={backShortcut} side="right">
           <button
             type="button"
-            onClick={onToggleCollapsed}
+            onClick={onBack}
             className={cn(
-              "flex h-7 items-center rounded-md text-sm text-muted-foreground",
+              "flex h-7 items-center gap-2.5 rounded-md px-2 text-sm text-muted-foreground",
               "transition-colors duration-fast ease-out-strong hover:bg-element-hover hover:text-foreground",
-              collapsed ? "w-full justify-center" : "gap-2.5 px-2",
             )}
           >
-            <Icon icon={collapsed ? ChevronRight : ChevronLeft} size="md" />
-            {!collapsed && "Hide"}
+            <Icon icon={ArrowLeft} size="md" />
+            Back
           </button>
         </Hint>
       </div>
@@ -279,17 +261,15 @@ function GroupHeader({
 function NavItem({
   entry,
   active,
-  collapsed,
   badge,
   onSelect,
 }: {
   entry: SidebarEntry;
   active: boolean;
-  collapsed: boolean;
   badge: number;
   onSelect: (section: SettingsSection) => void;
 }) {
-  const item = (
+  return (
     <button
       type="button"
       aria-current={active ? "page" : undefined}
@@ -297,41 +277,29 @@ function NavItem({
       // The project rail's row (`NavItem` in project-sidebar.tsx): the same
       // height, type and icon colours, so the two sidebars read as one app.
       className={cn(
-        "group/nav flex h-7 w-full items-center rounded-md text-sm leading-none whitespace-nowrap",
+        "group/nav flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-sm leading-none whitespace-nowrap",
         "transition-colors duration-fast ease-out-strong",
-        collapsed ? "justify-center" : "gap-2.5 px-2",
         active
           ? "bg-element-active text-foreground"
           : "text-secondary-foreground hover:bg-element-hover hover:text-foreground",
       )}
     >
-      <span
+      <Icon
+        icon={entry.icon}
+        size="md"
         className={cn(
-          "relative flex shrink-0",
+          "shrink-0",
           active
             ? "text-foreground"
             : "text-muted-foreground group-hover/nav:text-secondary-foreground",
         )}
-      >
-        <Icon icon={entry.icon} size="md" />
-        {collapsed && badge > 0 && (
-          <span className="pointer-events-none absolute -top-1 -right-1 size-1.5 rounded-full bg-primary" />
-        )}
-      </span>
-      {!collapsed && entry.label}
-      {!collapsed && badge > 0 && (
+      />
+      {entry.label}
+      {badge > 0 && (
         <span className="ml-auto h-4 min-w-4 rounded-full bg-primary px-1 text-center text-3xs leading-4 text-primary-foreground tabular-nums">
           {badge}
         </span>
       )}
     </button>
-  );
-  if (!collapsed) return item;
-  const label =
-    badge > 0 ? `${entry.label}: ${badge} update${badge === 1 ? "" : "s"} waiting` : entry.label;
-  return (
-    <Hint label={label} side="right">
-      {item}
-    </Hint>
   );
 }

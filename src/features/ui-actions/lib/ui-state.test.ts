@@ -45,10 +45,10 @@ describe("buildUiState", () => {
   it("reports the panels", () => {
     expect(buildUiState(uiRequest("ui_state")).panels).toEqual({
       left: { visible: true, section: "files" },
-      right: { visible: false, section: "changes", mode: "source-control" },
+      right: { visible: false },
+      sourceControl: { visible: false, section: "changes" },
       chatSidebar: true,
       terminalVisible: true,
-      tabBar: true,
       zen: false,
     });
   });

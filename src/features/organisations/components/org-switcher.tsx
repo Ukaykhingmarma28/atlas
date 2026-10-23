@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Menu as DropdownMenu } from "@base-ui/react/menu";
+import { BreadcrumbButton } from "@/components/breadcrumb-button";
 import { Dialog } from "@base-ui/react/dialog";
 import {
   Check,
@@ -119,7 +120,13 @@ function OrgAvatar({
  * title bar's account menu, which is backed by real auth; duplicating them here
  * as disabled rows only advertised things this menu cannot do.
  */
-export function OrgSwitcher() {
+/**
+ * `rail` is the project rail's org row: avatar, name and chevron, with the
+ * add-project and search actions beside it. `breadcrumb` is the same menu
+ * behind the org half of the top bar's `org / project` breadcrumb — just the
+ * name and a chevron, so the bar's text reads as a control.
+ */
+export function OrgSwitcher({ variant = "rail" }: { variant?: "rail" | "breadcrumb" } = {}) {
   const organisations = useOrgStore.use.organisations();
   const activeOrganisationId = useOrgStore.use.activeOrganisationId();
   const { rename, enableSync } = useOrgStore.use.actions();
@@ -230,7 +237,12 @@ export function OrgSwitcher() {
     // The visual top of the rail: avatar, name, chevron on the left; two ghost
     // icon actions on the right. No rule beneath it — the gradient surface
     // and the spacing do the separating.
-    <div className="h-[32px] shrink-0 flex items-center px-2">
+    <div
+      className={cn(
+        "flex items-center",
+        variant === "rail" ? "h-[32px] shrink-0 px-2" : "min-w-0 shrink",
+      )}
+    >
       <DropdownMenu.Root
         open={open}
         onOpenChange={(o) => {
@@ -243,14 +255,18 @@ export function OrgSwitcher() {
       >
         <DropdownMenu.Trigger
           render={
-            <button
-              className="flex h-7 items-center gap-2 px-1.5 rounded-md outline-none text-sm font-medium text-[var(--foreground)] hover:bg-[var(--atlas-element-hover)] transition-colors cursor-pointer min-w-0"
-              title="Switch organization"
-            >
-              <OrgAvatar org={active} size={18} />
-              <span className="text-left truncate">{active.name}</span>
-              <ChevronDown size={11} className="text-[var(--muted-foreground)] shrink-0" />
-            </button>
+            variant === "rail" ? (
+              <button
+                className="flex h-7 items-center gap-2 px-1.5 rounded-md outline-none text-sm font-medium text-[var(--foreground)] hover:bg-[var(--atlas-element-hover)] transition-colors cursor-pointer min-w-0"
+                title="Switch organization"
+              >
+                <OrgAvatar org={active} size={18} />
+                <span className="text-left truncate">{active.name}</span>
+                <ChevronDown size={11} className="text-[var(--muted-foreground)] shrink-0" />
+              </button>
+            ) : (
+              <BreadcrumbButton title="Switch organization">{active.name}</BreadcrumbButton>
+            )
           }
         />
 
@@ -260,17 +276,19 @@ export function OrgSwitcher() {
          *  list below. Usage moved up to the titlebar band with the rest of
          *  the rail chrome; Settings is reachable from the account menu and
          *  the command palette, so it no longer spends a slot here. */}
-        <div className="ml-auto flex items-center gap-0.5 shrink-0">
-          <AddProjectMenu />
-          <Hint label="Search" shortcut={paletteHint}>
-            <button
-              onClick={() => window.dispatchEvent(new CustomEvent("atlas:command-palette"))}
-              className="flex size-6 items-center justify-center rounded-md text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] outline-none transition-colors cursor-pointer"
-            >
-              <Search size={13} />
-            </button>
-          </Hint>
-        </div>
+        {variant === "rail" && (
+          <div className="ml-auto flex items-center gap-0.5 shrink-0">
+            <AddProjectMenu />
+            <Hint label="Search" shortcut={paletteHint}>
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent("atlas:command-palette"))}
+                className="flex size-6 items-center justify-center rounded-md text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] outline-none transition-colors cursor-pointer"
+              >
+                <Search size={13} />
+              </button>
+            </Hint>
+          </div>
+        )}
 
         <DropdownMenu.Portal>
           {/* The house menu surface (chat's session picker, the pin rail):

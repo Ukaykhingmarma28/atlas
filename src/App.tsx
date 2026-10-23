@@ -15,6 +15,7 @@ import {
 import { KeymapOnboarding } from "@/features/keybindings/components/keymap-onboarding";
 import { useNativeMenu } from "@/features/menu/lib/use-native-menu";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
+import { OPEN_SURFACE_MENU_EVENT } from "@/features/layout/lib/surfaces";
 import { useTerminalStore } from "@/features/terminal/stores/terminal-store";
 import {
   useAppStore,
@@ -110,6 +111,8 @@ import { comms, listenComms, type CommsEnvelope } from "@/features/comms/lib/com
 import { startTeamPresenceListener } from "@/features/artifacts/lib/team-presence";
 import { useTeamPresenceStore } from "@/features/artifacts/stores/team-presence-store";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
+import { useSettingsNav } from "@/features/settings/stores/settings-nav-store";
+import { closeSettings, openSettingsSection } from "@/features/settings/lib/open-settings";
 import { commsActions, pruneTyping } from "@/features/comms/stores/comms-store";
 import { useUpdaterStore } from "@/features/updater/stores/updater-store";
 import {
@@ -139,6 +142,7 @@ import { clampScale, SCALE_STEP, DEFAULT_SCALE } from "@/features/settings/lib/u
 import { listenModelDone } from "@/features/settings/lib/models-api";
 import { useModelsStore } from "@/features/settings/stores/models-store";
 import { useLoadProjectSettings } from "@/features/settings/lib/use-scoped-setting";
+import { toggleSourceControl } from "@/features/layout/lib/source-control";
 
 /** Minimum gap between two wake-triggered account re-pulls. Long enough that a
  *  burst of focus edges (Space switches) costs one pull; short enough that a
@@ -592,10 +596,8 @@ export function App() {
   const [filePickerOpen, setFilePickerOpen] = useState(false);
   const {
     toggleLeftPanel,
-    toggleRightPanel,
-    toggleRightChatPanel,
+    toggleTeamChat,
     toggleChatSidebar,
-    toggleTabBar,
     addTab,
     setActiveTab,
     activateTabByIndex,
@@ -1331,11 +1333,11 @@ export function App() {
     "nav.filePicker": () => setFilePickerOpen(true),
     "nav.search": () => setSearchOpen(true),
     "panels.left": toggleLeftPanel,
-    "panels.right": toggleRightPanel,
-    // ⌘⇧C — team chat. Shares the right slot with source control: pressing
-    // this while source control is open swaps the occupant rather than
-    // opening a second panel, and pressing it again closes the slot.
-    "panels.teamChat": toggleRightChatPanel,
+    // ⌘⇧B — source control, a surface tab beside the agent. The id keeps its
+    // old name so a user's rebinding of it still applies.
+    "panels.right": toggleSourceControl,
+    // ⌘⇧C — team chat, the right slot's only occupant.
+    "panels.teamChat": toggleTeamChat,
     "panels.terminal": toggleTerminal,
     "panels.agentSidebar": toggleChatSidebar,
     // ⌥J — open the Knowledge Base, or jump to it if already open, WITHIN
@@ -1357,7 +1359,6 @@ export function App() {
         data: {},
       });
     },
-    "panels.tabBar": toggleTabBar,
     // ⌘1–8 select by index; ⌘9 always jumps to the LAST tab (browser
     // convention) — the store treats i<0 as "last".
     ...Object.fromEntries(
@@ -1378,7 +1379,7 @@ export function App() {
     "split.focusRight": () => focusAdjacentGroup(1),
     // Close the focused split column (tabs move to the left neighbour).
     "split.close": () => closeGroup(useLayoutStore.getState().focusedGroupId),
-    // Zen mode: Knowledge │ Chat │ Browser, side panels hidden. Again restores.
+    // Zen mode: Session │ Knowledge │ Browser, side panels hidden. Again restores.
     "panels.zen": () => {
       if (currentProject) toggleZenMode();
     },
@@ -1391,8 +1392,31 @@ export function App() {
       if (!tab || tab.type !== "chat") return;
       cycleChatAgent(tab.id);
     },
-    // ⌘T — new agent chat. Singleton: focuses the existing chat tab and resets
-    // it to a fresh session rather than opening a second chat tab.
+    // ⌘T — open a surface. A single column grows a pane beside
+    // it whose launcher takes a bare letter; a split window opens the focused
+    // column's `+` menu, which takes the same letters.
+    "tabs.openSurface": () => {
+      if (!currentProject) return;
+      // Always the surfaces pane, never the main one: with no pane yet it
+      // opens one on the launcher; otherwise it shows the pane and opens the
+      // `+` menu of its focused column (or its first).
+      const layout = useLayoutStore.getState();
+      const { groupOrder, focusedGroupId, actions } = layout;
+      if (groupOrder.length === 1) {
+        actions.setFocusedGroup(groupOrder[0]);
+        actions.addGroup();
+        return;
+      }
+      const target = focusedGroupId === groupOrder[0] ? groupOrder[1] : focusedGroupId;
+      if (layout.surfaces === "hidden") actions.setSurfaces("shown");
+      actions.setFocusedGroup(target);
+      window.dispatchEvent(
+        new CustomEvent(OPEN_SURFACE_MENU_EVENT, { detail: { groupId: target } }),
+      );
+    },
+    // New agent chat, unbound by default (⌘T A opens one). Singleton: focuses
+    // the existing chat tab and resets it to a fresh session rather than
+    // opening a second chat tab.
     "tabs.newChat": () => openNewAgentChat(),
     // ⌘N — new untitled editor. The synthetic `untitled:<ts>` path
     // tells the editor to start with an empty buffer and to fall
@@ -1420,15 +1444,9 @@ export function App() {
         dirty: false,
         data: {},
       }),
+    // ⌘, toggles: Settings covers the window, so the same key takes you back.
     "app.settings": () =>
-      addTab({
-        id: "settings",
-        type: "settings",
-        title: "Settings",
-        closable: true,
-        dirty: false,
-        data: {},
-      }),
+      useSettingsNav.getState().open ? closeSettings() : openSettingsSection(),
     // The org's Usage dashboard — a singleton tab, so re-running focuses it.
     "usage.open": () =>
       addTab({

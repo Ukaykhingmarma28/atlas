@@ -1,6 +1,5 @@
 /**
- * `when` expressions: the condition a shortcut fires under, after T3 Code's
- * keybinding clauses. Variables joined with `!`, `&&`, `||` and parentheses —
+ * `when` expressions: the condition a shortcut fires under. Variables joined with `!`, `&&`, `||` and parentheses —
  * `!terminalFocus`, `chatFocus && !inputFocus`. Empty means "always".
  *
  * Each action has a default expression (its registry context), and a profile

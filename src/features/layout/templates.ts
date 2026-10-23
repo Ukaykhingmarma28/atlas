@@ -1,7 +1,6 @@
 import type { TabType } from "@/lib/constants";
 
 type LeftSection = "files" | "knowledge";
-type RightSection = "changes" | "github" | "git-graph";
 
 /** A predefined panel/split/tab arrangement applied via the layout switcher
  *  (⌘⌥L) or Settings → Layouts. Applied to the ACTIVE project. */
@@ -9,11 +8,11 @@ export interface LayoutTemplate {
   id: string;
   name: string;
   description: string;
-  /** Side panel visibility (omitted = hidden). */
-  panels: { left?: boolean; right?: boolean };
+  /** Left panel visibility (omitted = hidden). */
+  panels: { left?: boolean };
   leftSection?: LeftSection;
-  rightSection?: RightSection;
-  /** Split columns, left→right (1–3). Each cell is the tab type that fills it. */
+  /** Split columns, left→right (1–3). Each cell is the tab type that fills it;
+   *  the first is the main column, which holds the agent. */
   columns: { type: TabType; title: string }[];
   /** Index of the column to focus after applying (default last). */
   focus?: number;
@@ -34,10 +33,10 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
     panels: { left: true },
     leftSection: "files",
     columns: [
-      { type: "editor", title: "Editor" },
       { type: "chat", title: "Agents" },
+      { type: "editor", title: "Editor" },
     ],
-    focus: 1,
+    focus: 0,
   },
   {
     id: "research",
@@ -45,11 +44,11 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
     description: "Knowledge, agent and the web side by side.",
     panels: {},
     columns: [
-      { type: "knowledge", title: "Knowledge" },
       { type: "chat", title: "Agents" },
+      { type: "knowledge", title: "Knowledge" },
       { type: "browser", title: "Browser" },
     ],
-    focus: 1,
+    focus: 0,
   },
   {
     id: "terminal",
@@ -66,10 +65,13 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
   {
     id: "review",
     name: "Review",
-    description: "Agent with the code-review panel open.",
-    panels: { right: true },
-    rightSection: "changes",
-    columns: [{ type: "chat", title: "Agents" }],
+    description: "Agent with source control beside it.",
+    panels: {},
+    columns: [
+      { type: "chat", title: "Agents" },
+      { type: "source-control", title: "Source control" },
+    ],
+    focus: 0,
   },
   {
     id: "usage",

@@ -1,6 +1,6 @@
 // The editor sections that write an agent's own settings through
 // `agents_configure`: its name, what it needs to sign in, how it runs, and its
-// environment. T3 Code's provider editor, on Atlas's installed-agents map.
+// environment, on Atlas's installed-agents map.
 //
 // The well-known agents get named fields from their profile
 // (`agent-profiles.ts`); each is a view onto one environment variable, so the

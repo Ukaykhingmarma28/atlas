@@ -12,7 +12,6 @@ import {
   ScrollText,
   Gauge,
   Code,
-  Settings,
   Search,
   type LucideProps,
 } from "lucide-react";
@@ -40,7 +39,7 @@ const MODULES: ModuleEntry[] = [
   {
     id: "chat",
     type: "chat",
-    label: "New Agents Chat",
+    label: "New Session",
     icon: AtlasIcon as ElementType<LucideProps>,
     actionId: "tabs.newChat",
   },
@@ -65,7 +64,6 @@ const MODULES: ModuleEntry[] = [
   },
   { id: "log", type: "log", label: "Log", icon: ScrollText },
   { id: "usage", type: "usage", label: "Usage", icon: Gauge, actionId: "usage.open" },
-  { id: "settings", type: "settings", label: "Settings", icon: Settings, actionId: "app.settings" },
 ];
 
 export function NewTabPalette({
@@ -129,15 +127,6 @@ export function NewTabPalette({
         id: "knowledge-graph",
         type: "knowledge-graph",
         title: "Graph",
-        closable: true,
-        dirty: false,
-        data: {},
-      });
-    } else if (item.type === "settings") {
-      addTab({
-        id: "settings",
-        type: "settings",
-        title: "Settings",
         closable: true,
         dirty: false,
         data: {},

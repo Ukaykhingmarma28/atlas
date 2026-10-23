@@ -3,8 +3,7 @@
 // It answers the questions a long turn raises that the thread itself answers
 // badly, because the answer is scattered through it: how many children are
 // running, what this conversation has changed, what it remembered. Claude
-// Desktop's right rail ("Background tasks · 3 running") and t3code's thread
-// details panel are the two references.
+// Desktop's right rail ("Background tasks · 3 running") is the reference.
 //
 // Like the comments panel it is DOCKED, not an overlay: it takes layout space
 // and the transcript reflows narrower beside it. An overlay over a transcript

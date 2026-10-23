@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronRight, RotateCcw, Settings } from "lucide-react";
 import { ScrollArea } from "@/ui/scroll-area";
 import { Button } from "@/ui/button";
 import { Icon } from "@/ui/icon";
+import { WindowControls, useWindowDrag } from "@/components/titlebar";
+import { isLinux, isWindows } from "@/lib/platform";
 import { cn } from "@/lib/utils";
+import { closeSettings } from "../lib/open-settings";
 import {
   Dialog,
   DialogClose,
@@ -24,11 +27,7 @@ import { ChatPage } from "./pages/chat-page";
 import { MemoryPage } from "./pages/memory-page";
 import { AboutPage, PrivacyPage, SourceControlPage, UpdatesPage } from "./pages/other-pages";
 import { SettingsSidebar } from "./settings-sidebar";
-import {
-  SETTINGS_SECTIONS,
-  useSettingsNav,
-  type SettingsSection,
-} from "../stores/settings-nav-store";
+import { useSettingsNav, type SettingsSection } from "../stores/settings-nav-store";
 import { useSettingsStore } from "../stores/settings-store";
 import { DEFAULT_SETTINGS, type AppSettings } from "../lib/app-settings";
 import {
@@ -38,11 +37,6 @@ import {
   type SearchItem,
 } from "../lib/settings-sections";
 import { useAgentRegistryStore } from "@/features/agents/stores/agent-registry-store";
-
-/** The gap between the tab's edge and the card — the chat tab's value. */
-const CARD_INSET = 4;
-
-const NAV_COLLAPSED_KEY = "atlas:settings:navCollapsed";
 
 /** Pages drawn with the settings layout, inside one scroll area. */
 const PAGES: Partial<Record<SettingsSection, () => React.ReactElement>> = {
@@ -61,24 +55,44 @@ const PAGES: Partial<Record<SettingsSection, () => React.ReactElement>> = {
   about: () => <AboutPage />,
 };
 
-const asSection = (value: string | undefined): SettingsSection =>
-  (SETTINGS_SECTIONS as readonly string[]).includes(value ?? "")
-    ? (value as SettingsSection)
-    : "general";
+/**
+ * Settings, covering the whole window: its own sidebar
+ * under the traffic lights, a `Settings › <page>` breadcrumb in the bar, and `Back` to the
+ * workspace.
+ *
+ * `AppLayout` mounts it on first open and from then on it is only hidden, so the open page, its
+ * sub-tabs and any half-typed field survive a trip back to the workspace. The
+ * workspace stays mounted underneath for the same reason — terminals, chats
+ * and editors are exactly as they were.
+ */
+export function SettingsScreen() {
+  const open = useSettingsNav((s) => s.open);
+  return (
+    <div
+      className={cn("fixed inset-0 z-drawer flex bg-background", !open && "hidden")}
+      aria-hidden={!open}
+    >
+      <SettingsBody open={open} />
+    </div>
+  );
+}
 
-export function SettingsPanel({ initialSection }: { initialSection?: string } = {}) {
-  const [active, setActive] = useState<SettingsSection>(() => asSection(initialSection));
+function SettingsBody({ open }: { open: boolean }) {
+  const [active, setActive] = useState<SettingsSection>(
+    () => useSettingsNav.getState().section ?? "general",
+  );
 
-  // Honor cross-component "open Settings → <section>" requests (e.g. the
-  // sidebar's Skills button), whether this panel is fresh or already mounted.
+  // Honor "open Settings → <section>" requests from anywhere (the account
+  // menu, a notification, `ui_open`), whether the screen is fresh or up.
   const navSection = useSettingsNav((s) => s.section);
   const clearNav = useSettingsNav((s) => s.clear);
   const setShown = useSettingsNav((s) => s.setShown);
   const goTo = useSettingsNav((s) => s.goTo);
   useEffect(() => {
+    if (!open) return;
     setShown(active);
     return () => setShown(null);
-  }, [active, setShown]);
+  }, [open, active, setShown]);
   useEffect(() => {
     if (navSection) {
       setActive(navSection);
@@ -93,68 +107,47 @@ export function SettingsPanel({ initialSection }: { initialSection?: string } = 
     (s) => s.registryEntries.filter((e) => e.installed && e.updateAvailable).length,
   );
 
-  const [collapsed, setCollapsed] = useState(() => {
-    try {
-      return localStorage.getItem(NAV_COLLAPSED_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
-  const toggleCollapsed = useCallback(
-    () =>
-      setCollapsed((c) => {
-        const next = !c;
-        try {
-          localStorage.setItem(NAV_COLLAPSED_KEY, next ? "1" : "0");
-        } catch {
-          /* ignore */
-        }
-        return next;
-      }),
-    [],
-  );
-
   const onSearchPick = (item: SearchItem) => goTo(item.section, item.anchor);
-
+  const drag = useWindowDrag();
   const page = PAGES[active];
 
   return (
-    // The chat, Timeline and terminal tabs' card: an inset on the tab's card
-    // fill, the panel as a rounded card inside it, its edge carried by the
-    // ring and the shadow only lifting it. The sidebar sits inside the card,
-    // as the chat's session sidebar does. `overflow-hidden` is what makes the
-    // corners real — the sidebar and the header hairlines paint to the edge.
-    <div className="h-full min-h-0 bg-card" style={{ padding: CARD_INSET }}>
-      <div className="flex h-full min-h-0 overflow-hidden rounded-lg bg-background shadow-lg ring-1 ring-border">
-        <SettingsSidebar
-          active={active}
-          onSelect={setActive}
-          onSearchPick={onSearchPick}
-          collapsed={collapsed}
-          onToggleCollapsed={toggleCollapsed}
-          badges={{ agents: agentUpdates }}
-        />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-10 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
-            <Breadcrumbs section={active} onHome={() => setActive("general")} />
-            <RestoreDefaults section={active} />
-          </header>
-          <ScrollArea className="min-h-0 flex-1">{page?.()}</ScrollArea>
-        </div>
+    <>
+      <SettingsSidebar
+        active={active}
+        onSelect={setActive}
+        onSearchPick={onSearchPick}
+        onBack={closeSettings}
+        badges={{ agents: agentUpdates }}
+      />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header
+          {...drag}
+          className={cn(
+            "flex h-titlebar shrink-0 select-none items-center gap-3 pl-4",
+            isWindows || isLinux ? "pr-0" : "pr-3",
+          )}
+        >
+          <Breadcrumbs section={active} onHome={() => setActive("general")} />
+          <RestoreDefaults section={active} />
+          {(isWindows || isLinux) && <WindowControls />}
+        </header>
+        <ScrollArea className="min-h-0 flex-1">{page?.()}</ScrollArea>
       </div>
-    </div>
+    </>
   );
 }
 
 /**
  * Where you are: Settings, then the page, each with its sidebar icon. The
  * root is a way back to the first page; the current page is not a link.
+ * Fills the bar's free width, so the rest of the bar still drags the window.
  */
 function Breadcrumbs({ section, onHome }: { section: SettingsSection; onHome: () => void }) {
   const entry = sectionEntry(section);
-  const crumb = "flex h-6 items-center gap-1.5 rounded-md px-1.5 text-xs leading-none";
+  const crumb = "flex h-6 items-center gap-1.5 rounded-md px-1.5 text-sm leading-none";
   return (
-    <nav aria-label="Breadcrumb" className="-ml-1.5 min-w-0">
+    <nav aria-label="Breadcrumb" className="-ml-1.5 flex min-w-0 flex-1">
       <ol className="flex min-w-0 items-center gap-0.5">
         <li>
           <button
@@ -165,15 +158,15 @@ function Breadcrumbs({ section, onHome }: { section: SettingsSection; onHome: ()
               "text-muted-foreground transition-colors duration-fast ease-out-strong hover:bg-element-hover hover:text-foreground",
             )}
           >
-            <Icon icon={Settings} size="sm" />
+            <Icon icon={Settings} size="md" />
             Settings
           </button>
         </li>
         <li aria-hidden className="flex text-disabled">
-          <Icon icon={ChevronRight} size="xs" />
+          <Icon icon={ChevronRight} size="sm" />
         </li>
-        <li aria-current="page" className={cn(crumb, "min-w-0 font-medium text-foreground")}>
-          {entry && <Icon icon={entry.icon} size="sm" className="shrink-0" />}
+        <li aria-current="page" className={cn(crumb, "min-w-0 text-foreground")}>
+          {entry && <Icon icon={entry.icon} size="md" className="shrink-0" />}
           <span className="truncate">{sectionLabel(section)}</span>
         </li>
       </ol>

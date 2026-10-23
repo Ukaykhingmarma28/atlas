@@ -11,7 +11,7 @@ export const TAB_TYPES = [
   "diff",
   "commit",
   "session-changes",
-  "settings",
+  "source-control",
   "log",
   "media",
   "svg",
@@ -33,7 +33,6 @@ export type TabType = (typeof TAB_TYPES)[number];
  * project opens.
  */
 export const PROJECTLESS_TYPES: ReadonlySet<TabType> = new Set<TabType>([
-  "settings",
   "comms-draft",
   "spaces",
   "usage",

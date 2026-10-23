@@ -16,6 +16,7 @@ import { useMembersStore } from "@/features/organisations/stores/members-store";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { conversationTitle, memberName } from "../lib/derive";
 import type { ChatConversation, OrgMemberProfile } from "../types";
+import { PaneHeader } from "@/components/titlebar";
 
 /**
  * Team chat, in the right panel slot (⌘⇧C).
@@ -132,7 +133,10 @@ export function CommsPanel() {
     // an empty 29px strip labelled "Team Chat" only repeats what the panel
     // already is. The placeholder gets the whole surface.
     return (
-      <div className="atlas-vibrant-panel flex h-full flex-col bg-[var(--sidebar)] pt-1.5">
+      <div className="atlas-vibrant-panel flex h-full flex-col bg-[var(--sidebar)]">
+        {/* This column may be the window's right edge, and the window's
+            trailing controls need a header to sit in. */}
+        <PaneHeader trailing />
         <CommsSurface>
           <CommsNotConnected org={activeOrg} />
         </CommsSurface>
@@ -151,12 +155,12 @@ export function CommsPanel() {
     const terminal = connection.state === "unavailable";
     return (
       <div className="atlas-vibrant-panel flex h-full flex-col bg-[var(--sidebar)]">
-        <div className="flex h-[38px] shrink-0 items-center pl-2">
+        <PaneHeader trailing>
           <div className="flex h-[26px] items-center gap-1.5 rounded-lg bg-[var(--atlas-element-selected)] pl-2.5 pr-2.5 text-sm font-medium text-foreground select-none">
             <MessagesSquare size={11} className="shrink-0 opacity-70" />
             Chats
           </div>
-        </div>
+        </PaneHeader>
         <CommsSurface>
           {terminal ? (
             <CommsConnecting
@@ -177,7 +181,7 @@ export function CommsPanel() {
       {/* The header lives on the BACKDROP, not the card — that separation is
           the whole depth trick. Taller than the old 29px band so the tabs
           breathe like the reference. */}
-      <div className="flex h-[38px] shrink-0 items-center gap-1 pl-2">
+      <PaneHeader trailing>
         <div
           className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto hide-scrollbar"
           // A gradient overlay in the backdrop colour never quite matched it —
@@ -216,7 +220,7 @@ export function CommsPanel() {
             </button>
           </Hint>
         </div>
-      </div>
+      </PaneHeader>
 
       {/* `overflow-hidden` so a view can never paint outside the panel, and the
           transition is OPACITY ONLY. A transform here was the bug: this panel
@@ -245,19 +249,13 @@ export function CommsPanel() {
 }
 
 /**
- * The interface card: a rounded near-black surface floating on the panel's
- * warm backdrop, inset on the sides and bottom. The depth is the point — a
- * hairline ring plus a soft drop shadow, no blur and no transform, so it
- * lives safely inside `atlas-vibrant-panel`.
+ * The conversation's surface, flat under the header band. It used to be a
+ * rounded card inset on the panel's backdrop — a panel inside the panel — so
+ * now a hairline under the tabs is the only seam.
  */
 function CommsSurface({ children }: { children: React.ReactNode }) {
   return (
-    <div
-      // Pure black on the panel's own near-black background leaves a drop
-      // shadow almost nothing to darken, so the hairline ring carries the
-      // edge; the shadow just softens it.
-      className="mx-1.5 mb-1.5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-[var(--background)] ring-1 ring-[var(--atlas-element-active)] shadow-sm"
-    >
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-[var(--border)] bg-[var(--background)]">
       {children}
     </div>
   );

@@ -46,7 +46,6 @@ const PLAIN_TABS: Record<string, string> = {
   knowledge: "Knowledge",
   "knowledge-graph": "Knowledge Graph",
   memory: "Memory",
-  settings: "Settings",
   log: "Logs",
   usage: "Usage",
   artifacts: "Timeline",
@@ -97,8 +96,10 @@ export async function performOpen(request: UiActionRequest): Promise<unknown> {
       return { tabId: layout().activeTabId, repoPath, file };
     }
     case "settings": {
-      openSettingsSection(a.optOneOf("section", SETTINGS_SECTIONS) ?? "general");
-      return { tabId: layout().activeTabId };
+      // Settings covers the window rather than opening as a tab.
+      const section = a.optOneOf("section", SETTINGS_SECTIONS) ?? "general";
+      openSettingsSection(section);
+      return { section };
     }
     case "tab": {
       const type = a.str("type");

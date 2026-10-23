@@ -175,7 +175,8 @@ describe("ui_open", () => {
 
   it("opens settings on a section and rejects one that does not exist", async () => {
     const r = result(await act("ui_open", { target: "settings", section: "keybindings" }));
-    expect(layout().tabs.find((t) => t.id === r.tabId)?.type).toBe("settings");
+    expect(r.section).toBe("keybindings");
+    expect(useSettingsNav.getState().open).toBe(true);
     expect(useSettingsNav.getState().section).toBe("keybindings");
     expect(error(await act("ui_open", { target: "settings", section: "secrets" }))).toMatch(
       /keybindings/,
@@ -317,13 +318,15 @@ describe("ui_focus", () => {
     expect(layout().chatSidebar.visible).toBe(false);
   });
 
-  it("reveals a side panel section", async () => {
-    result(await act("ui_focus", { target: "section", side: "right", section: "git-graph" }));
-    expect(layout().rightPanel).toMatchObject({
-      visible: true,
-      activeSection: "git-graph",
-      mode: "source-control",
-    });
+  it("reveals a section of the left panel or of source control", async () => {
+    result(
+      await act("ui_focus", { target: "section", side: "source_control", section: "git-graph" }),
+    );
+    expect(layout().sourceControl.section).toBe("git-graph");
+    // Source control opens as a surface tab beside the main column, focused.
+    const sc = layout().tabs.find((t) => t.type === "source-control");
+    expect(sc?.groupId).toBe("g2");
+    expect(layout().activeByGroup.g2).toBe(sc?.id);
     useLayoutStore.setState({ leftPanel: { ...layout().leftPanel, visible: false } });
     result(await act("ui_focus", { target: "section", side: "left", section: "knowledge" }));
     expect(layout().leftPanel).toMatchObject({ visible: true, activeSection: "knowledge" });
@@ -332,11 +335,11 @@ describe("ui_focus", () => {
     ).toMatch(/files/);
   });
 
-  it("switches the right panel's mode and keeps it open", async () => {
-    result(await act("ui_focus", { target: "right_mode", mode: "chat" }));
-    expect(layout().rightPanel).toMatchObject({ visible: true, mode: "chat" });
-    result(await act("ui_focus", { target: "right_mode", mode: "chat" }));
-    expect(layout().rightPanel.visible).toBe(true);
+  it("toggles source control as a tab: closed when shown, reopened when not", async () => {
+    result(await act("ui_focus", { target: "panel", name: "source_control", visible: true }));
+    expect(layout().tabs.some((t) => t.type === "source-control")).toBe(true);
+    result(await act("ui_focus", { target: "panel", name: "source_control", visible: false }));
+    expect(layout().tabs.some((t) => t.type === "source-control")).toBe(false);
   });
 
   it("reveals a path in the explorer, opening the Files panel", async () => {

@@ -382,9 +382,6 @@
 @utility h-titlebar {
   height: var(--titlebar-height);
 }
-@utility h-tab-strip {
-  height: var(--tab-strip-height);
-}
 
 /* ──────────────────────────────────────────────────────────────────────────
    Z-index layers (decision 28). `z-<number>` only takes numbers, so the layers

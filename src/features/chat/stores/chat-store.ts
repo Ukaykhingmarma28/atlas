@@ -823,6 +823,10 @@ function recordInterruption(
   session.messages.push(host);
 }
 
+/** An agent session's title until the agent names it. Atlas calls them
+ *  sessions — never chats or threads — and so does every label built on this. */
+export const UNTITLED_SESSION = "New session";
+
 export const useChatStore = createSelectors(
   create<ChatState & ChatActions>()(
     immer((set, get) => ({
@@ -842,7 +846,7 @@ export const useChatStore = createSelectors(
             if (s.sessions[tabId]) return;
             s.sessions[tabId] = {
               id: tabId,
-              title: "New Chat",
+              title: UNTITLED_SESSION,
               messages: [],
               agentType,
               model: "",
@@ -1161,7 +1165,7 @@ export const useChatStore = createSelectors(
               session.acpAgentId = undefined;
               session.acpSessionId = undefined;
               forgetSessionUsage(session);
-              session.title = "New Chat";
+              session.title = UNTITLED_SESSION;
               session.firstUserContent = undefined;
               session.userMessageCount = 0;
               // Reset the turn-identity high-water mark + live per-turn scratch

@@ -7,6 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   LEGACY_TAB_TYPES,
   ORG_SCOPED_TYPES,
+  PROJECTLESS_TYPES,
   TAB_TYPES,
   migrateTabType,
   type TabType,
@@ -52,14 +53,15 @@ interface LayoutState {
     width: number;
     activeSection: "files" | "knowledge";
   };
+  /** The right slot: team chat (⌘⇧C). Source control used to share it; it is
+   *  a surface tab now (`source-control.ts`). */
   rightPanel: {
     visible: boolean;
     width: number;
-    activeSection: "changes" | "github" | "git-graph";
-    /** The right slot holds one occupant at a time: source control (⌘⇧B) or
-     *  team chat (⌘⇧C). Pressing the other one's key swaps the occupant rather
-     *  than opening a second panel. */
-    mode: "source-control" | "chat";
+  };
+  /** The source-control surface's last section, kept across reopening it. */
+  sourceControl: {
+    section: SourceControlSection;
   };
   /** Per-app KB tab layout — survives tab switches (each KB tab gets the
    *  same panel layout, matching the global-left/right model). */
@@ -107,28 +109,35 @@ interface LayoutState {
   activeByGroup: Record<string, string | null>;
   /** The column that owns keyboard focus (tab hotkeys target it). */
   focusedGroupId: string;
-  /** Zen mode: a focused Knowledge │ Chat │ Browser 3-column split with the
+  /** Zen mode: a focused Session │ Knowledge │ Browser 3-column split with the
    *  global side panels hidden. `zenPrev` snapshots the layout to restore. */
   zen: boolean;
   zenPrev: ZenSnapshot | null;
-  tabBarVisible: boolean;
+  /** The surfaces pane — every split column after the first, which is the
+   *  main pane. `hidden` collapses it to nothing while its tabs keep
+   *  running; `expanded` gives it the whole centre,
+   *  collapsing the main pane instead. Not persisted: a relaunch starts with
+   *  both on screen. */
+  surfaces: SurfacesMode;
   // Back/forward stack of tab ids — entries are pushed every time the user
   // navigates to a tab; back() / forward() rewind/advance an index.
   tabHistory: string[];
   tabHistoryIndex: number;
 }
 
+export type SurfacesMode = "shown" | "hidden" | "expanded";
+
+/** The source-control surface's sections, in the order its header shows them. */
+export const SOURCE_CONTROL_SECTIONS = ["changes", "git-graph", "github"] as const;
+export type SourceControlSection = (typeof SOURCE_CONTROL_SECTIONS)[number];
+
 interface LayoutActions {
   actions: {
+    /** Show, hide or expand the surfaces pane (see `surfaces`). */
+    setSurfaces: (mode: SurfacesMode) => void;
     toggleLeftPanel: () => void;
-    /** ⌘⇧B — source control. Closes the slot if it already holds source
-     *  control, otherwise takes the slot over from chat. */
-    toggleRightPanel: () => void;
-    /** ⌘⇧C — team chat. Mirror of `toggleRightPanel`. */
-    toggleRightChatPanel: () => void;
-    /** Shared implementation: a key that owns a mode either closes the slot
-     *  (it already holds that mode) or claims it. */
-    toggleRightPanelMode: (mode: LayoutState["rightPanel"]["mode"]) => void;
+    /** ⌘⇧C — show or hide team chat in the right slot. */
+    toggleTeamChat: () => void;
     toggleChatSidebar: () => void;
     toggleKnowledgeSidebar: () => void;
     toggleKnowledgeInspector: () => void;
@@ -140,16 +149,11 @@ interface LayoutActions {
     toggleTimelineSidebar: () => void;
     setTimelineSidebarWidth: (width: number) => void;
     setLeftSection: (section: LayoutState["leftPanel"]["activeSection"]) => void;
-    setRightSection: (section: LayoutState["rightPanel"]["activeSection"]) => void;
-    /** Make the right panel visible AND switch it to `section` (e.g. open the
-     *  Source Control pane from a notification). */
-    revealRightSection: (section: LayoutState["rightPanel"]["activeSection"]) => void;
+    setSourceControlSection: (section: SourceControlSection) => void;
     addTab: (tab: Tab, groupId?: string) => void;
     closeTab: (id: string) => void;
     setActiveTab: (id: string) => void;
     setTabDirty: (id: string, dirty: boolean) => void;
-    toggleTabBar: () => void;
-    setTabBarVisible: (visible: boolean) => void;
     navigateTabBack: () => void;
     navigateTabForward: () => void;
     activateTabByIndex: (i: number) => void;
@@ -164,7 +168,7 @@ interface LayoutActions {
     /** Close a split column, moving its tabs to the left neighbour (never the
      *  last remaining column). */
     closeGroup: (groupId: string) => void;
-    /** Toggle Zen mode: a Knowledge │ Chat │ Browser 3-column split with the
+    /** Toggle Zen mode: a Session │ Knowledge │ Browser 3-column split with the
      *  global side panels hidden; toggling again restores the prior layout. */
     toggleZenMode: () => void;
     /** Apply a predefined layout template to the active project: set panels +
@@ -193,10 +197,11 @@ const initialState: LayoutState = {
     activeSection: "files",
   },
   rightPanel: {
-    visible: true,
+    visible: false,
     width: 280,
-    activeSection: "changes",
-    mode: "source-control",
+  },
+  sourceControl: {
+    section: "changes",
   },
   knowledgePanel: {
     showSidebar: true,
@@ -237,13 +242,21 @@ const initialState: LayoutState = {
   focusedGroupId: "main",
   zen: false,
   zenPrev: null,
-  // Hidden by default — Settings → Layouts and `panels.tabBar` show it.
-  tabBarVisible: false,
+  surfaces: "shown",
   tabHistory: ["welcome-chat"],
   tabHistoryIndex: 0,
 };
 
 const DEFAULT_GROUP = "main";
+
+/** Bring `groupId` on screen: a tab landing in the hidden surfaces pane shows
+ *  it, and one landing in the main pane while surfaces are expanded restores
+ *  the split. */
+function revealGroup(s: { surfaces: SurfacesMode; groupOrder: string[] }, groupId: string): void {
+  const isMain = groupId === s.groupOrder[0];
+  if (s.surfaces === "hidden" && !isMain) s.surfaces = "shown";
+  else if (s.surfaces === "expanded" && isMain) s.surfaces = "shown";
+}
 export const MAX_GROUPS = 3;
 
 /** Which split column a tab lives in. Exported because anything asking "is
@@ -293,6 +306,42 @@ function reconcileGroups(s: LayoutState): void {
   }
   if (!s.groupOrder.includes(s.focusedGroupId)) s.focusedGroupId = s.groupOrder[0];
   syncActiveMirror(s);
+}
+
+/**
+ * Whether `type` may live in the main column. The main column is the session:
+ * it never shows a tab strip, so it holds the agent and nothing else, and
+ * files, editors and tools open in the surfaces pane beside it. Projectless types are the exception — the projectless shell has no
+ * surfaces pane to send them to.
+ */
+function belongsInMain(type: TabType): boolean {
+  return type === "chat" || PROJECTLESS_TYPES.has(type);
+}
+
+/** The surfaces column a tool should open in: the focused one when it is not
+ *  the main column, else the first beside it — made when there is none. */
+function surfaceGroupFor(s: LayoutState): string {
+  const main = s.groupOrder[0];
+  if (s.focusedGroupId !== main && s.groupOrder.includes(s.focusedGroupId)) {
+    return s.focusedGroupId;
+  }
+  if (s.groupOrder.length > 1) return s.groupOrder[1];
+  const gid = `split-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`;
+  s.groupOrder.push(gid);
+  s.activeByGroup[gid] = null;
+  return gid;
+}
+
+/** Move anything that is not a session out of the main column — a restored
+ *  layout from before the main column held only the agent. */
+function keepMainForSessions(s: LayoutState): void {
+  const main = s.groupOrder[0];
+  const strays = s.tabs.filter((t) => groupOf(t) === main && !belongsInMain(t.type));
+  if (strays.length === 0) return;
+  const target = surfaceGroupFor(s);
+  for (const t of strays) t.groupId = target;
+  if (!s.tabs.some((t) => groupOf(t) === main)) s.tabs.push(WELCOME_TAB(main));
+  reconcileGroups(s);
 }
 
 const WELCOME_TAB = (groupId: string): Tab => ({
@@ -432,35 +481,9 @@ export const useLayoutStore = createSelectors(
             set((s) => {
               s.leftPanel.visible = !s.leftPanel.visible;
             }),
-          toggleRightPanelMode: (mode) =>
+          toggleTeamChat: () =>
             set((s) => {
-              // Already showing this mode → the key that opened it closes it.
-              // Showing the other mode → swap the occupant, stay open. Closed →
-              // open on this mode.
-              if (s.rightPanel.visible && s.rightPanel.mode === mode) {
-                s.rightPanel.visible = false;
-                return;
-              }
-              s.rightPanel.visible = true;
-              s.rightPanel.mode = mode;
-            }),
-          toggleRightPanel: () =>
-            set((s) => {
-              if (s.rightPanel.visible && s.rightPanel.mode === "source-control") {
-                s.rightPanel.visible = false;
-                return;
-              }
-              s.rightPanel.visible = true;
-              s.rightPanel.mode = "source-control";
-            }),
-          toggleRightChatPanel: () =>
-            set((s) => {
-              if (s.rightPanel.visible && s.rightPanel.mode === "chat") {
-                s.rightPanel.visible = false;
-                return;
-              }
-              s.rightPanel.visible = true;
-              s.rightPanel.mode = "chat";
+              s.rightPanel.visible = !s.rightPanel.visible;
             }),
           toggleChatSidebar: () =>
             set((s) => {
@@ -506,17 +529,9 @@ export const useLayoutStore = createSelectors(
             set((s) => {
               s.leftPanel.activeSection = section;
             }),
-          setRightSection: (section) =>
+          setSourceControlSection: (section) =>
             set((s) => {
-              s.rightPanel.activeSection = section;
-            }),
-          revealRightSection: (section) =>
-            set((s) => {
-              s.rightPanel.visible = true;
-              // The sections are all source-control views, so revealing one has
-              // to claim the slot back from chat.
-              s.rightPanel.mode = "source-control";
-              s.rightPanel.activeSection = section;
+              s.sourceControl.section = section;
             }),
           addTab: (tab, groupId) =>
             set((s) => {
@@ -548,6 +563,10 @@ export const useLayoutStore = createSelectors(
               // Where the tab lands: caller-specified column, else the focused one.
               let targetGroup = groupId ?? s.focusedGroupId;
               if (!s.groupOrder.includes(targetGroup)) targetGroup = s.focusedGroupId;
+              // …unless that is the main column and this is not a session.
+              if (targetGroup === s.groupOrder[0] && !belongsInMain(tab.type)) {
+                targetGroup = surfaceGroupFor(s);
+              }
 
               if (!allowMultiple) {
                 const existingInGroup = s.tabs.find(
@@ -571,6 +590,7 @@ export const useLayoutStore = createSelectors(
               }
               s.focusedGroupId = targetGroup;
               s.activeByGroup[targetGroup] = targetId;
+              revealGroup(s, targetGroup);
               pushTabHistory(s, targetId);
               syncActiveMirror(s);
             }),
@@ -593,6 +613,7 @@ export const useLayoutStore = createSelectors(
                   s.groupOrder = s.groupOrder.filter((g) => g !== grp);
                   delete s.activeByGroup[grp];
                   if (s.focusedGroupId === grp) s.focusedGroupId = s.groupOrder[0];
+                  if (s.groupOrder.length === 1) s.surfaces = "shown";
                 } else {
                   // Last column emptied — restore the permanent welcome chat.
                   s.tabs.push(WELCOME_TAB(grp));
@@ -613,16 +634,9 @@ export const useLayoutStore = createSelectors(
               const grp = groupOf(s.tabs.find((t) => t.id === target));
               s.focusedGroupId = grp;
               s.activeByGroup[grp] = target;
+              revealGroup(s, grp);
               pushTabHistory(s, target);
               syncActiveMirror(s);
-            }),
-          toggleTabBar: () =>
-            set((s) => {
-              s.tabBarVisible = !s.tabBarVisible;
-            }),
-          setTabBarVisible: (visible) =>
-            set((s) => {
-              s.tabBarVisible = visible;
             }),
           navigateTabBack: () =>
             set((s) => {
@@ -676,6 +690,18 @@ export const useLayoutStore = createSelectors(
               pushTabHistory(s, next.id);
               syncActiveMirror(s);
             }),
+          setSurfaces: (mode) =>
+            set((s) => {
+              s.surfaces = s.groupOrder.length > 1 ? mode : "shown";
+              const main = s.groupOrder[0];
+              // Keyboard focus follows what is on screen: hidden surfaces hand
+              // it to the main pane, an expanded one takes it.
+              if (s.surfaces === "hidden") s.focusedGroupId = main;
+              else if (s.surfaces === "expanded" && s.focusedGroupId === main) {
+                s.focusedGroupId = s.groupOrder[1];
+              }
+              syncActiveMirror(s);
+            }),
           setFocusedGroup: (groupId) =>
             set((s) => {
               if (!s.groupOrder.includes(groupId) || s.focusedGroupId === groupId) return;
@@ -700,6 +726,7 @@ export const useLayoutStore = createSelectors(
               s.groupOrder.splice(fi + 1, 0, gid);
               s.activeByGroup[gid] = null;
               s.focusedGroupId = gid;
+              if (s.surfaces === "hidden") s.surfaces = "shown";
               syncActiveMirror(s);
             }),
           closeGroup: (groupId) =>
@@ -717,6 +744,7 @@ export const useLayoutStore = createSelectors(
               delete s.activeByGroup[groupId];
               if (moved) s.activeByGroup[leftId] = moved;
               s.focusedGroupId = leftId;
+              if (s.groupOrder.length === 1) s.surfaces = "shown";
               syncActiveMirror(s);
             }),
           toggleZenMode: () =>
@@ -735,7 +763,7 @@ export const useLayoutStore = createSelectors(
                 reconcileGroups(s);
                 return;
               }
-              // Enter: snapshot the current layout, then build Knowledge │ Chat │
+              // Enter: snapshot the current layout, then build Session │ Knowledge │
               // Browser with the side panels hidden.
               const tabGroups: Record<string, string> = {};
               for (const t of s.tabs) tabGroups[t.id] = groupOf(t);
@@ -787,7 +815,8 @@ export const useLayoutStore = createSelectors(
                 chat.groupId = G_CHAT;
               }
               const browserId = ensure("browser", "Browser", G_BROWSER);
-              s.groupOrder = [G_KB, G_CHAT, G_BROWSER];
+              // The agent first: the main column holds the session.
+              s.groupOrder = [G_CHAT, G_KB, G_BROWSER];
               s.activeByGroup = { [G_KB]: kbId, [G_CHAT]: chat.id, [G_BROWSER]: browserId };
               s.focusedGroupId = G_CHAT;
               s.leftPanel.visible = false;
@@ -841,16 +870,10 @@ export const useLayoutStore = createSelectors(
               // validate actives/focus.
               reconcileGroups(s);
 
-              // Panels — left/right are explicitly controlled by templates.
+              // The left panel is the template's to set; team chat in the right
+              // slot is the user's and stays as it was.
               s.leftPanel.visible = !!template.panels.left;
-              s.rightPanel.visible = !!template.panels.right;
               if (template.leftSection) s.leftPanel.activeSection = template.leftSection;
-              // A template naming a section means it wants source control in
-              // the slot; leaving chat there would silently ignore the request.
-              if (template.rightSection) {
-                s.rightPanel.activeSection = template.rightSection;
-                s.rightPanel.mode = "source-control";
-              }
             }),
           setTabDirty: (id, dirty) =>
             set((s) => {
@@ -885,6 +908,7 @@ export const useLayoutStore = createSelectors(
             set((s) => {
               const v = s.viewsByWs[wsId] ?? welcomeView(wsId);
               applyView(s, v);
+              keepMainForSessions(s);
               s.currentViewWsId = wsId;
             }),
           removeProjectView: (wsId) =>
@@ -979,6 +1003,7 @@ export const useLayoutStore = createSelectors(
                       ? data.focusedGroupId
                       : s.groupOrder[0];
                   syncActiveMirror(s);
+                  keepMainForSessions(s);
                 });
               }
             } catch {
@@ -995,24 +1020,15 @@ export const useLayoutStore = createSelectors(
         // they're deliberately excluded.
         name: "atlas-layout-prefs",
         version: 2,
-        // v2: the tab bar became hidden by default. Every v1 blob carries
-        // `tabBarVisible: true` because that was the old default, not a
-        // choice, so it's reset once; from v2 on the stored value is the
-        // user's own and survives restarts.
-        migrate: (persisted, version) => {
-          const p = (persisted ?? {}) as Partial<LayoutState>;
-          if (version < 2) return { ...p, tabBarVisible: false };
-          return p;
-        },
         partialize: (s) => ({
           leftPanel: s.leftPanel,
           rightPanel: s.rightPanel,
+          sourceControl: s.sourceControl,
           knowledgePanel: s.knowledgePanel,
           chatSidebar: s.chatSidebar,
           bashPanel: s.bashPanel,
           plansPanel: s.plansPanel,
           timelinePanel: s.timelinePanel,
-          tabBarVisible: s.tabBarVisible,
         }),
         // One-level-deep merge so persisted slices overlay the defaults
         // without dropping any fields added in newer versions (the
@@ -1020,18 +1036,22 @@ export const useLayoutStore = createSelectors(
         merge: (persisted, current) => {
           const p = (persisted ?? {}) as Partial<LayoutState>;
           const leftPanel = { ...current.leftPanel, ...p.leftPanel };
-          const rightPanel = { ...current.rightPanel, ...p.rightPanel };
+          // The slot is team chat's alone now. A save from when source control
+          // shared it says which one was open; only an open chat carries over.
+          const saved = p.rightPanel as (LayoutState["rightPanel"] & { mode?: string }) | undefined;
+          const rightPanel = {
+            visible: !!saved?.visible && (saved.mode === undefined || saved.mode === "chat"),
+            width: saved?.width ?? current.rightPanel.width,
+          };
+          const sourceControl = { ...current.sourceControl, ...p.sourceControl };
           // Coerce section ids that no longer belong to this panel (e.g. a
           // pre-move `state.json` with "git-graph" on the left or "analysis"
           // on the right) back to a valid default so the panel isn't blank.
           const LEFT = ["files", "knowledge"];
-          const RIGHT = ["changes", "github", "git-graph"];
           if (!LEFT.includes(leftPanel.activeSection)) leftPanel.activeSection = "files";
-          if (!RIGHT.includes(rightPanel.activeSection)) rightPanel.activeSection = "changes";
-          // Same coercion for the slot occupant — a persisted state predating
-          // the chat panel has no `mode` at all.
-          const RIGHT_MODES = ["source-control", "chat"];
-          if (!RIGHT_MODES.includes(rightPanel.mode)) rightPanel.mode = "source-control";
+          if (!(SOURCE_CONTROL_SECTIONS as readonly string[]).includes(sourceControl.section)) {
+            sourceControl.section = "changes";
+          }
           // Tabs whose feature has since been removed (pomodoro, model-chat,
           // research…) still sit in persisted state.json; restoring them
           // yields a permanent placeholder tab. Drop them, and repoint
@@ -1058,6 +1078,7 @@ export const useLayoutStore = createSelectors(
             activeTabId,
             leftPanel,
             rightPanel,
+            sourceControl,
             knowledgePanel: { ...current.knowledgePanel, ...p.knowledgePanel },
             chatSidebar: { ...current.chatSidebar, ...p.chatSidebar },
             bashPanel: { ...current.bashPanel, ...p.bashPanel },
