@@ -24,7 +24,7 @@ import { blameInline, applyBlame, type BlamePart } from "../lib/blame-inline";
 import { loadLanguageExtension } from "../lib/languages";
 import { applyReveal } from "../lib/reveal";
 import { setWordWrap, wordWrapExtension } from "../lib/word-wrap";
-import { registerEditorView } from "../lib/editor-views";
+import { editorPosition, registerEditorView } from "../lib/editor-views";
 import { gitBlameFile } from "@/features/git/lib/git-blame-api";
 import { MarkdownFile } from "@/lib/markdown-fileviewer";
 import { openFileAs } from "@/lib/open-file";
@@ -34,6 +34,7 @@ import { Hint } from "@/ui/tooltip";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { projectSettingNow, useProjectSetting } from "@/features/settings/lib/use-scoped-setting";
 import { useWordWrap } from "@/features/settings/lib/use-word-wrap";
+import { OpenInEditorButton } from "@/features/external-editor/components/open-in-editor-button";
 
 const TOOLBAR_HEIGHT = 32;
 const DIRTY_CHECK_DEBOUNCE = 300; // ms — only check dirty state, not sync content
@@ -538,6 +539,17 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
                 onClick={toggleWordWrap}
               />
             </Hint>
+          )}
+          {!isUntitled && (
+            <OpenInEditorButton
+              path={path}
+              position={() => {
+                const view = viewRef.current;
+                if (!view || effectiveMode !== "editor") return undefined;
+                const { line, col } = editorPosition(view.state).cursor;
+                return { line, column: col };
+              }}
+            />
           )}
           {isMarkdownFile && (
             <div className="inline-flex items-center h-control-xs rounded-full border border-border bg-card p-[2px] text-2xs font-medium shrink-0">

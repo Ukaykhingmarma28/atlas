@@ -155,6 +155,7 @@ bookkeeping).
 | `autoAddAtlasGitignore` | boolean | `true` | General › Files › Keep .atlas out of git | — |
 | `enableAtlasLogs` | boolean | `true` | Privacy › Diagnostics › Atlas logs | — |
 | `showHiddenFiles` | boolean | `true` | General › Files › Show hidden files | — |
+| `preferredEditor` | string | `""` | General › Files › Preferred editor | an editor id; one that isn't installed falls back to the first one found |
 | `uiScale` | number | `1.0` | Appearance › Interface › Interface zoom | finite, `0.5`–`2.0` inclusive |
 | `shareTelemetry` | boolean | `true` | Privacy › Usage data › Share usage data | — |
 | `linkTelemetryToAccount` | boolean | `true` | Privacy › Usage data › Link usage data to my account | — |

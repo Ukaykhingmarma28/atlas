@@ -4,6 +4,7 @@ import type { AgentResponses } from "./fake-agent";
 import type { ArtifactsResponses } from "./fixtures/artifacts";
 import type { CaptureResponses } from "./fixtures/capture";
 import type { CommsResponses } from "./fixtures/comms";
+import type { ExternalEditorResponses } from "./fixtures/external-editor";
 import type { FsResponses } from "./fixtures/files";
 import type { GitResponses } from "./fixtures/git";
 import type { IconThemeResponses } from "./fixtures/icon-themes";
@@ -60,6 +61,7 @@ export interface MockResponses
     ArtifactsResponses,
     CaptureResponses,
     CommsResponses,
+    ExternalEditorResponses,
     FsResponses,
     GitResponses,
     IconThemeResponses,

@@ -1,8 +1,7 @@
 // The workspace row's verbs: where the project lives, opened somewhere else.
 //
-// Atlas has no editor detection command yet, so there is no "Open in
-// <editor>"; this offers what the backend already does: Finder, a terminal,
-// the path.
+// Opening it in an editor is `external-editor`'s; these are the rest: Finder,
+// a terminal, the path.
 
 import { invoke } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";

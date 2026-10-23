@@ -23,6 +23,7 @@ pub mod comms;
 pub mod compose_prompt;
 pub mod diagnostics;
 pub mod diff_preview;
+pub mod external_editor;
 pub mod feedback;
 pub mod fileindex;
 pub mod fonts;

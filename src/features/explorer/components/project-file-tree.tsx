@@ -68,6 +68,9 @@ import { ROOT_DROP, useFileTreeDragDrop } from "../hooks/use-file-tree-drag-drop
 import { useExternalFileDrop } from "../hooks/use-external-file-drop";
 import { ProjectTreeRow, RenameInput } from "./project-tree-row";
 import { FileTreeConfirmDelete } from "./file-tree-confirm-delete";
+import { OpenInEditorContextItems } from "@/features/external-editor/components/open-in-editor-menu";
+import { SYSTEM_EDITOR_ID } from "@/features/external-editor/lib/external-editor-api";
+import { openInEditor } from "@/features/external-editor/lib/preferred-editor";
 
 /**
  * The project's files, as a lazily loaded, virtualized tree: the Files
@@ -503,14 +506,10 @@ export function ProjectFileTree({
 
   const copyText = (text: string) => void navigator.clipboard.writeText(text).catch(() => {});
 
-  const openInDefaultApp = async (abs: string) => {
-    try {
-      const { openPath } = await import("@tauri-apps/plugin-opener");
-      await openPath(abs);
-    } catch (e) {
-      toast.error(String(e));
-    }
-  };
+  // Through the external-editor command's system default: the opener
+  // plugin's JS `openPath` is outside Atlas's capabilities, and Rust shows an
+  // executable in Finder rather than running it.
+  const openInDefaultApp = (abs: string) => openInEditor(SYSTEM_EDITOR_ID, abs);
   const terminalAt = (abs: string) => void openInTerminal(abs).catch((e) => toast.error(String(e)));
   const ignore = (rel: string) =>
     void addToGitignore(root, rel)
@@ -764,6 +763,7 @@ export function ProjectFileTree({
             Open in Default App
           </ContextMenuItem>
         )}
+        <OpenInEditorContextItems path={abs} />
         <ContextMenuSeparator />
         <ContextMenuItem
           onClick={() =>
@@ -845,6 +845,7 @@ export function ProjectFileTree({
         Reveal Project in Finder
       </ContextMenuItem>
       <ContextMenuItem onClick={() => terminalAt(root)}>Open in Terminal</ContextMenuItem>
+      <OpenInEditorContextItems path={root} />
       <ContextMenuSeparator />
       <ContextMenuItem onClick={() => model.collapseAll()}>Collapse All</ContextMenuItem>
     </>

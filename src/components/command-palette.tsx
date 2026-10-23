@@ -30,11 +30,18 @@ import {
   FolderOpen,
   Circle,
   FolderTree,
+  SquareArrowOutUpRight,
 } from "lucide-react";
 import type { TabType } from "@/lib/constants";
 import { revealSourceControl, toggleSourceControl } from "@/features/layout/lib/source-control";
 import { revealFiles, toggleFiles } from "@/features/layout/lib/files-surface";
 import { toggleTeamChat } from "@/features/layout/lib/team-chat";
+import {
+  editorName,
+  openInEditor,
+  usePreferredEditor,
+} from "@/features/external-editor/lib/preferred-editor";
+import { editorPosition, getEditorView } from "@/features/editor/lib/editor-views";
 
 interface Command {
   id: string;
@@ -91,7 +98,46 @@ export function CommandPalette({
       data: {},
     });
 
-  const commands = useMemo<Command[]>(
+  // "Open in <editor>" for the project and for the focused file tab, read
+  // when the palette renders (it mounts per opening).
+  const { preferred: editor } = usePreferredEditor();
+  const projectPath = useAppStore((s) => s.currentProject?.path ?? null);
+  const activeFile = useLayoutStore((s) => {
+    const id = s.activeByGroup[s.focusedGroupId];
+    const tab = id ? s.tabs.find((t) => t.id === id) : undefined;
+    const path = tab?.type === "editor" ? tab.data.filePath : undefined;
+    return typeof path === "string" && !path.startsWith("untitled:") ? path : null;
+  });
+  const activeTabId = useLayoutStore((s) => s.activeByGroup[s.focusedGroupId] ?? null);
+  const editorCommands: Command[] = [];
+  if (editor && activeFile) {
+    editorCommands.push({
+      id: "open-file-in-editor",
+      label: `Open File in ${editorName(editor)}`,
+      icon: SquareArrowOutUpRight,
+      category: "Project",
+      action: () => {
+        const view = activeTabId ? getEditorView(activeTabId) : undefined;
+        const cursor = view ? editorPosition(view.state).cursor : undefined;
+        void openInEditor(
+          editor.id,
+          activeFile,
+          cursor ? { line: cursor.line, column: cursor.col } : undefined,
+        );
+      },
+    });
+  }
+  if (editor && projectPath) {
+    editorCommands.unshift({
+      id: "open-project-in-editor",
+      label: `Open Project in ${editorName(editor)}`,
+      icon: SquareArrowOutUpRight,
+      category: "Project",
+      action: () => void openInEditor(editor.id, projectPath),
+    });
+  }
+
+  const baseCommands = useMemo<Command[]>(
     () => [
       // ── Project ──
       {
@@ -297,6 +343,7 @@ export function CommandPalette({
     ],
     [addTab, toggleChatSidebar, toggleZenMode, addGroup, focusAdjacentGroup, closeGroup],
   );
+  const commands = [...baseCommands.slice(0, 1), ...editorCommands, ...baseCommands.slice(1)];
 
   const filtered = useMemo(() => {
     if (!query) return commands;

@@ -14,6 +14,7 @@ import { agentHandlers } from "../fake-agent";
 import { artifactsHandlers } from "../fixtures/artifacts";
 import { captureHandlers } from "../fixtures/capture";
 import { commsHandlers } from "../fixtures/comms";
+import { externalEditorHandlers } from "../fixtures/external-editor";
 import { fsHandlers } from "../fixtures/files";
 import { fontHandlers } from "../fixtures/fonts";
 import { gitHandlers } from "../fixtures/git";
@@ -51,6 +52,7 @@ export const baseFixtureMaps: Readonly<Record<string, MockHandlers>> = {
   "fixtures/git": gitHandlers,
   "fake-agent": agentHandlers,
   "fixtures/files": fsHandlers,
+  "fixtures/external-editor": externalEditorHandlers,
   "fixtures/fonts": fontHandlers,
   "fixtures/settings": settingsHandlers,
   "fixtures/log": logHandlers,
@@ -172,6 +174,7 @@ export const baseHandlers: MockHandlers = {
   // rather than by an import's position. (`misc`, the catch-all, is spread at
   // the very top so everything outranks it.)
   ...fsHandlers,
+  ...externalEditorHandlers,
   ...fontHandlers,
   ...settingsHandlers,
   ...logHandlers,

@@ -27,6 +27,15 @@ enableAtlasLogs = true
 # Show dotfiles and dot-directories in the explorer file tree. (default: true)
 showHiddenFiles = true
 
+# The external editor that "Open in <editor>" uses for a file or the project:
+# an id such as "vscode", "cursor", "zed", "windsurf", "sublime", "xcode" or a
+# JetBrains IDE ("idea", "webstorm", "pycharm"…), or "system" for the app your
+# system opens the file with. Empty uses the first editor Atlas finds
+# installed. An id that isn't installed falls back to that same choice. Files
+# outside the project open in the system's app unless this names an editor.
+# (default: "")
+preferredEditor = ""
+
 # Interface zoom, where 1.0 is 100%. Also driven by Cmd +/-/0. Must be a
 # number between 0.5 and 2.0. (default: 1.0)
 uiScale = 1.0

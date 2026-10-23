@@ -85,6 +85,18 @@
       "validation": "—"
     },
     {
+      "key": "preferredEditor",
+      "type": "string",
+      "status": "live",
+      "page": "general",
+      "section": "Files",
+      "title": "Preferred editor",
+      "summary": "The external editor that Open in Editor uses for files and projects.",
+      "default": "\"\"",
+      "doc": "The external editor that \"Open in <editor>\" uses for a file or the project: an id such as \"vscode\", \"cursor\", \"zed\", \"windsurf\", \"sublime\", \"xcode\" or a JetBrains IDE (\"idea\", \"webstorm\", \"pycharm\"…), or \"system\" for the app your system opens the file with. Empty uses the first editor Atlas finds installed. An id that isn't installed falls back to that same choice. Files outside the project open in the system's app unless this names an editor.",
+      "validation": "an editor id; one that isn't installed falls back to the first one found"
+    },
+    {
       "key": "uiScale",
       "type": "number",
       "status": "live",

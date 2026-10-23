@@ -213,3 +213,20 @@ describe("compacted folders", () => {
     expect(tree.getAttribute("aria-activedescendant")).toContain("lib_46rs");
   });
 });
+
+describe("the row menu", () => {
+  it("opens a file in the default app through Rust, not the opener plugin's JS", async () => {
+    render(<ProjectFileTree root="/p" activeFile={null} />);
+    await settle();
+    fireEvent.contextMenu(screen.getByText("README.md"));
+    await settle();
+    await act(async () => fireEvent.click(screen.getByText("Open in Default App")));
+    await settle();
+    expect(invoke).toHaveBeenCalledWith("external_editor_open", {
+      editor: "system",
+      path: "/p/README.md",
+      line: null,
+      column: null,
+    });
+  });
+});
