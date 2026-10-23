@@ -161,17 +161,15 @@ export interface MarkerRow extends RowBase {
 
 export interface MarkerGroupRow extends RowBase {
   kind: typeof RowKind.MarkerGroup;
-  /** The whole folded block as one sentence: "Read files, ran commands". This
-   *  is what tells one block from the next in a column of them, which is why
-   *  it is the line and not a fixed label. */
+  /** The whole block as one counted sentence: "Ran 3 commands and read 2
+   *  files". See "Folded-block summary". */
   summary: string;
   /** How many tool calls the block stands for. Not rendered — the summary is
    *  the whole line — but it is what `summary` was counted from, and the thing
    *  to assert on when testing that projection. */
   count: number;
-  /** The glyph for the whole block: the icon of the FIRST bucket in `summary`,
-   *  so the wrench leads "Loaded a tool, read files…" and the book leads "Read
-   *  files, ran commands" — note 3 under "Folded-block summary". */
+  /** The glyph for the whole block: the icon of the group `summary` names
+   *  first. */
   tool: MarkerTool;
   /** Calls in this consecutive sequence, shown inside the disclosure. */
   markers: MarkerRow[];
@@ -502,92 +500,106 @@ export function toolIconFor(kind: string | null | undefined, toolName: string): 
 
 // ── Folded-block summary ───────────────────────────────────────────────────
 //
-// "Loaded a tool, read files, ran commands" — the whole of a folded turn as one
-// sentence.
-//
-// Three observations shape the code below — change them only against new
-// evidence:
-//
-//  1. The buckets are coarser than the row glyphs. A turn whose rows were
-//     `run ×6, tool ×1, read ×1, search ×1` summarised as exactly three
-//     fragments with no "searched" among them — so a search counts toward
-//     "read files". The plural confirms it: that turn read ONE file by glyph
-//     yet said "read files", which only adds up if the search counted too.
-//  2. The order is fixed, not by frequency and not by when things happened.
-//     That same turn led with "Loaded a tool" off a single call while its six
-//     commands came last, and its first row chronologically was a command.
-//  3. The glyph is the first bucket in the sentence, again not the commonest —
-//     the wrench above six terminal rows, and a book on "Read files, ran
-//     commands".
-//
-// Where the fragment for a bucket is unobserved (`edit`), or where a glyph has
-// no obviously right bucket (`fetch`, `think`), the choice below is ours.
+// "Ran 3 commands and read 2 files": a block of tool calls as one counted
+// sentence. Calls are grouped by what they did. The two most telling groups
+// are named, in the order they first happened, and anything left over is
+// counted as "performed N other actions". Changing the project (commands,
+// edits) outranks looking at it (reads, searches, lookups), which outranks a
+// generic tool, so a block that ran a build is never summarised by the file
+// it read on the way.
 
-type SummaryBucket = "org" | "memory" | "tool" | "read" | "edit" | "run";
+type SummaryAction = "run" | "edit" | "read" | "search" | "fetch" | "org" | "memory" | "tool";
 
-/** Which sentence fragment each row glyph counts toward. */
-const SUMMARY_BUCKET: Record<MarkerTool, SummaryBucket> = {
+/** Which group each row glyph counts toward. */
+const SUMMARY_ACTION: Record<MarkerTool, SummaryAction> = {
   run: "run",
-  // Searching and listing are reading — see note 1 above.
-  read: "read",
-  search: "read",
-  list: "read",
-  file: "read",
   edit: "edit",
   delete: "edit",
   move: "edit",
-  // Unobserved: a fetch or a think has no fragment of its own, and "loaded a
-  // tool" is the least wrong of the four.
-  tool: "tool",
-  fetch: "tool",
-  think: "tool",
-  // Ours, not the app's: an organisation call loads nothing. "Loaded a tool"
-  // over "Listed recorded sessions by …" read as a different call entirely.
+  read: "read",
+  list: "read",
+  file: "read",
+  search: "search",
+  fetch: "fetch",
   org: "org",
-  // Same reasoning: a memory search is not reading a file, and remembering
-  // loads nothing. One phrase covers both, since a turn often does both.
   memory: "memory",
+  tool: "tool",
+  think: "tool",
 };
 
-/** Fixed order — note 2 above. `edit`'s and `org`'s slots are the ones we chose. */
-const SUMMARY_ORDER: readonly SummaryBucket[] = ["org", "memory", "tool", "read", "edit", "run"];
-
-/** [one, several]. The singular is load-bearing: "Loaded a tool" is what a
- *  single call reads as, and it is how note 1's plural was diagnosed.
- *
- *  A counted form ("3 files read") was tried on a two-line header and reverted:
- *  every block then opened with the same bold "Tool calls" label, so a column
- *  of them stopped differentiating at a glance. The sentence IS the
- *  differentiator — "Read files, ran commands" and "Edited files" are
- *  recognisably different lines. */
-const SUMMARY_PHRASE: Record<SummaryBucket, [string, string]> = {
-  org: ["checked your organization", "checked your organization"],
-  memory: ["used Atlas memory", "used Atlas memory"],
-  tool: ["loaded a tool", "loaded tools"],
-  read: ["read a file", "read files"],
-  edit: ["edited a file", "edited files"],
-  run: ["ran a command", "ran commands"],
+/** Lower is named first. */
+const SUMMARY_PRIORITY: Record<SummaryAction, number> = {
+  run: 0,
+  edit: 0,
+  read: 1,
+  search: 1,
+  fetch: 1,
+  org: 1,
+  memory: 1,
+  tool: 2,
 };
 
-/** One folded block → the sentence on its header, and the glyph that leads it
- *  (note 3: the first bucket's, not the commonest). */
-function summarizeMarkers(markers: MarkerRow[]): { summary: string; tool: MarkerTool } {
-  const counts = new Map<SummaryBucket, number>();
-  for (const m of markers) {
-    const bucket = SUMMARY_BUCKET[m.tool];
-    counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
+function counted(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+function actionLabel(action: SummaryAction, n: number): string {
+  switch (action) {
+    case "run":
+      return `Ran ${counted(n, "command", "commands")}`;
+    case "edit":
+      return `Changed ${counted(n, "file", "files")}`;
+    case "read":
+      return `Read ${counted(n, "file", "files")}`;
+    case "search":
+      return n === 1 ? "Searched code once" : `Searched code ${n} times`;
+    case "fetch":
+      return n === 1 ? "Fetched a page" : `Fetched ${n} pages`;
+    case "org":
+      return n === 1 ? "Checked your organization" : `Checked your organization ${n} times`;
+    case "memory":
+      return n === 1 ? "Used Atlas memory" : `Used Atlas memory ${n} times`;
+    case "tool":
+      return n === 1 ? "Used a tool" : `Used ${n} tools`;
   }
-  const present = SUMMARY_ORDER.filter((b) => counts.has(b));
-  if (present.length === 0) return { summary: "Used tools", tool: "tool" };
+}
 
-  const fragments = present.map((b) => SUMMARY_PHRASE[b][counts.get(b) === 1 ? 0 : 1]);
-  const sentence = fragments.join(", ");
-  // Only the first fragment is capitalised; the rest stay mid-sentence.
-  return {
-    summary: sentence.charAt(0).toUpperCase() + sentence.slice(1),
-    // Each bucket is named after the glyph that stands for it.
-    tool: present[0],
-  };
+/** One block → the sentence on its header, and the glyph of the group that
+ *  leads it. */
+export function summarizeMarkers(markers: MarkerRow[]): { summary: string; tool: MarkerTool } {
+  const groups = new Map<SummaryAction, MarkerRow[]>();
+  for (const m of markers) {
+    const action = SUMMARY_ACTION[m.tool];
+    const group = groups.get(action);
+    if (group) group.push(m);
+    else groups.set(action, [m]);
+  }
+  if (groups.size === 0) return { summary: "Used tools", tool: "tool" };
+
+  const all = [...groups].map(([action, calls], index) => ({
+    action,
+    index,
+    calls: calls.length,
+    // Edits count files, not calls: three edits to one file changed one file.
+    n:
+      action === "edit"
+        ? new Set(calls.map((c) => c.path ?? (c.detail || c.toolCallId))).size
+        : calls.length,
+  }));
+  const named = [...all]
+    .sort((a, b) => SUMMARY_PRIORITY[a.action] - SUMMARY_PRIORITY[b.action] || a.index - b.index)
+    .slice(0, 2)
+    .sort((a, b) => a.index - b.index);
+  const labels = named.map((g) => actionLabel(g.action, g.n));
+  const rest = markers.length - named.reduce((sum, g) => sum + g.calls, 0);
+  if (rest > 0) labels.push(`Performed ${counted(rest, "other action", "other actions")}`);
+
+  const parts = labels.map((l, i) => (i === 0 ? l : l.charAt(0).toLowerCase() + l.slice(1)));
+  const summary =
+    parts.length < 3
+      ? parts.join(" and ")
+      : `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
+  return { summary, tool: named[0].action };
 }
 
 /**
@@ -1146,9 +1158,27 @@ function projectSegment(
     maybeGapSeparator(rows, messages, i, turnId);
     const rowStart = rows.length;
 
+    // The turn is still going: running, or paused on a prompt.
+    const inProgress = (opts.turnInProgress ?? opts.streaming) && end === messages.length;
     let markers: MarkerRow[] = [];
     const flushMarkers = () => {
       if (markers.length === 0) return;
+      // A lone finished call is its own row: a disclosure that opens onto one
+      // line says less than the line itself. Only once the turn has settled:
+      // while it runs, the block carries the live label, and a call that just
+      // finished is usually about to be joined by the next one, so swapping
+      // it for a line would flicker between the two.
+      if (
+        !inProgress &&
+        markers.length === 1 &&
+        (markers[0].state === "done" || markers[0].state === "failed")
+      ) {
+        const only = markers[0];
+        only.firstInTurn = rows.length === rowStart;
+        rows.push(only);
+        markers = [];
+        return;
+      }
       const id = `mg:${turnId}:${markers[0].toolCallId}`;
       rows.push({
         kind: RowKind.MarkerGroup,
@@ -1474,9 +1504,24 @@ function foldWork(
   const open = foldable && o.expandedTurns.has(id);
   if (foldable && !open) {
     const folded = rows.splice(rowStart, answerStart - rowStart);
+    // Failed calls stay in view: a turn that recovered from an error still
+    // has to say it hit one, and the fold is where that would otherwise be
+    // lost. They go between the header and the answer, in the order they
+    // happened, as plain lines.
+    const failed: MarkerRow[] = [];
+    for (const r of folded) {
+      if (r.kind === RowKind.Marker && r.state === "failed") failed.push(r);
+      else if (r.kind === RowKind.MarkerGroup) {
+        for (const m of r.markers) if (m.state === "failed") failed.push(m);
+      }
+    }
+    if (failed.length > 0) {
+      for (const m of failed) m.firstInTurn = false;
+      rows.splice(rowStart, 0, ...failed);
+    }
     // The model · time line rode on the turn's first prose row, which may have
     // just been folded. Hand it to the first row still showing.
-    const answer = rows[rowStart];
+    const answer = rows[rowStart + failed.length];
     if (
       answer?.kind === RowKind.Prose &&
       folded.some((r) => r.kind === RowKind.Prose && r.showHeader)
