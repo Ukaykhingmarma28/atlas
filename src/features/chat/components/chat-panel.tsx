@@ -113,7 +113,7 @@ import { forkSessionToNewTab } from "../lib/fork-session";
 import { projectPathForTab } from "../lib/tab-project";
 import { MemoryUpdatedCard } from "@/features/memory/components/memory-updated-card";
 import { OPEN_TURN_DIFF_EVENT, type TurnDiffRequest } from "../lib/open-turn-diff";
-import { collectTurnEdits } from "../lib/turn-edits";
+import { showTurnDiff } from "../lib/show-turn-diff";
 import { CONTENT_COLUMN, HEADER_INSET } from "../lib/row-metrics";
 
 /** When this app run first saw each bound session (ms). The "Memory updated"
@@ -158,13 +158,6 @@ import { requestModelPicker } from "../lib/model-picker-events";
 const DetailPanel = lazy(() => import("./detail-panel").then((m) => ({ default: m.DetailPanel })));
 const ThreadOverviewPanel = lazy(() =>
   import("./thread-overview-panel").then((m) => ({ default: m.ThreadOverviewPanel })),
-);
-// Full-screen diff for a turn's changes. Lazy: it pulls the diff viewer and
-// Shiki, and most sessions never open it.
-const GitDiffModal = lazy(() =>
-  import("@/features/git/components/git-diff-modal").then((m) => ({
-    default: m.GitDiffModal,
-  })),
 );
 import { Sparkles, Search, ChevronDown, ArrowRight, GitCompare, FlaskConical } from "lucide-react";
 import { AtlasIcon } from "@/components/atlas-icon";
@@ -337,36 +330,29 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     if (session?.acpSessionId) adoptOverview(overviewScope(tabId, undefined), overviewKey);
   }, [adoptOverview, tabId, session?.acpSessionId, overviewKey]);
 
-  // Full-screen diff. Driven by a window event rather than a prop chain so a row
-  // opening it re-renders nothing in the transcript.
-  const [turnDiff, setTurnDiff] = useState<{
-    files: string[];
-    initial: string;
-    sources: Record<string, { old: string; new: string }>;
-  } | null>(null);
-
+  // A turn's diff, in the review panel beside the session. Driven by a window
+  // event rather than a prop chain so a row opening it re-renders nothing in
+  // the transcript. Every mounted chat hears it; only the one holding the turn
+  // finds edits for it, so only that one opens anything.
   useEffect(() => {
     const onOpen = (e: Event) => {
       const detail = (e as CustomEvent<TurnDiffRequest>).detail;
-      if (!detail?.turnId) return;
-      const repo = useAppStore.getState().currentProject?.path ?? "";
-      const messages = useChatStore.getState().sessions[tabId]?.messages ?? [];
-      const next = collectTurnEdits(messages, detail.turnId, repo, detail.file);
-      setTurnDiff(next);
+      if (detail?.turnId) showTurnDiff(tabId, detail);
     };
     window.addEventListener(OPEN_TURN_DIFF_EVENT, onOpen);
     return () => window.removeEventListener(OPEN_TURN_DIFF_EVENT, onOpen);
   }, [tabId]);
 
-  // Warm the diff modal's chunk while the reader is idle, so opening it is a
-  // paint rather than a fetch. Not its workers: they start with the first
-  // viewer, and a pool per idle chat would be threads nobody asked for.
+  // Warm the review panel's chunk while the reader is idle, so opening a
+  // turn's diff is a paint rather than a fetch. Not its workers: they start
+  // with the first viewer, and a pool per idle chat would be threads nobody
+  // asked for.
   useEffect(() => {
     const w = window as Window & {
       requestIdleCallback?: (cb: () => void, o?: { timeout?: number }) => number;
     };
     const load = () => {
-      void import("@/features/git/components/git-diff-modal");
+      void import("@/features/git/components/diff-viewer/review-panel");
     };
     // Short timeout: this competes with nothing the reader can see, and waiting
     // four seconds meant an early click still paid full price.
@@ -1750,24 +1736,6 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
       {detailOpen && (
         <Suspense fallback={null}>
           <DetailPanel tabId={tabId} messages={session.messages} />
-        </Suspense>
-      )}
-
-      {turnDiff !== null && turnDiff.files.length > 0 && (
-        <Suspense fallback={null}>
-          <GitDiffModal
-            open
-            onOpenChange={(o) => !o && setTurnDiff(null)}
-            repoPath={useAppStore.getState().currentProject?.path ?? ""}
-            files={turnDiff.files}
-            initialFile={turnDiff.initial}
-            textSources={turnDiff.sources}
-            title={
-              turnDiff.files.length === 1
-                ? (turnDiff.files[0].split("/").pop() ?? "Changes")
-                : `${turnDiff.files.length} files changed`
-            }
-          />
         </Suspense>
       )}
 

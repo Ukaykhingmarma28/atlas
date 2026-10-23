@@ -1,8 +1,9 @@
-// Open a turn's changes in the full-screen side-by-side diff viewer.
+// Open a turn's changes in the review panel beside the session, in the turn's
+// own scope, scrolled to a file.
 //
 // Imperative, via a window event, for the same reason the detail panel has its
-// own store: the transcript must not re-render because a modal opened. A row
-// fires this and forgets; `ChatPanel` listens and owns the modal state.
+// own store: the transcript must not re-render because a panel opened. A row
+// fires this and forgets; `ChatPanel` listens and hands it to `showTurnDiff`.
 //
 // ── What the viewer actually shows ────────────────────────────────────────
 //
@@ -13,9 +14,8 @@
 // the edits are committed git reports nothing at all, so every past turn went
 // blank.
 //
-// The viewer is the review diff's own (`GitDiffModal`), handed text instead of
-// a repo path: the backend diffs each before/after (`diff_texts_patch`). See
-// its `textSources` prop.
+// The panel's turn scope is handed text instead of a repo path: the backend
+// diffs each before/after (`diff_texts_patch`). See `use-turn-review-files.ts`.
 
 /** Payload of the `atlas:open-turn-diff` event. */
 export interface TurnDiffRequest {

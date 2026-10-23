@@ -24,6 +24,9 @@ export interface ReviewFile {
   state: "ready" | "pending" | "error" | "binary" | "too-large" | "empty";
   /** Over the per-file cap: only the first hunks are shown. */
   truncated: boolean;
+  /** A turn's file known only by the fragments its edits replaced: the diff
+   *  is an excerpt of the file, not the file. Turn scope only. */
+  excerpt?: boolean;
 }
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });

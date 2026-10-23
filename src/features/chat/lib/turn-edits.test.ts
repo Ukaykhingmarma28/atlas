@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { collectTurnEdits } from "./turn-edits";
+import {
+  collectTurnEdits,
+  editsSignature,
+  listEditTurns,
+  PROMPT_SNIPPET_CHARS,
+} from "./turn-edits";
 import type { ChatMessage, ToolCallDisplay } from "@/types/agent";
 
 const REPO = "/repo";
@@ -155,6 +160,123 @@ describe("which file the viewer lands on", () => {
 
   it("is empty for a turn that changed nothing", () => {
     const none = collectTurnEdits(turn(toolCall({ toolName: "Read" })), "t:m1", REPO);
-    expect(none).toEqual({ files: [], initial: "", sources: {} });
+    expect(none).toEqual({ files: [], initial: "", sources: {}, excerpts: new Set() });
+  });
+});
+
+describe("which files are only excerpts", () => {
+  it("marks a file the turn knew only by the fragments it replaced", () => {
+    const edits = collectTurnEdits(
+      turn(
+        toolCall({
+          toolName: "Edit",
+          arguments: { file_path: "/repo/a.ts", old_string: "one\n", new_string: "ONE\n" },
+        }),
+      ),
+      "t:m1",
+      REPO,
+    );
+    expect([...edits.excerpts]).toEqual(["a.ts"]);
+  });
+
+  it("does not mark a whole file written out, or one a diff block carried", () => {
+    const edits = collectTurnEdits(
+      turn(
+        toolCall({
+          id: "w",
+          toolName: "Write",
+          arguments: { file_path: "/repo/new.ts", content: "x\n" },
+        }),
+        toolCall({
+          id: "e",
+          toolName: "Edit",
+          arguments: { file_path: "/repo/b.ts", old_string: "b\n", new_string: "B\n" },
+          contentBlocks: [diffBlock("/repo/b.ts", "a\nb\n", "a\nB\n")],
+        }),
+      ),
+      "t:m1",
+      REPO,
+    );
+    expect(edits.files).toEqual(["new.ts", "b.ts"]);
+    expect(edits.excerpts.size).toBe(0);
+  });
+});
+
+function message(id: string, role: "user" | "assistant", extra: Partial<ChatMessage> = {}) {
+  return {
+    id,
+    role,
+    content: "",
+    toolCalls: [],
+    fileChanges: [],
+    plan: null,
+    timestamp: `2026-08-23T00:00:${id.replace(/\D/g, "").padStart(2, "0")}Z`,
+    mode: "text",
+    ...extra,
+  } as ChatMessage;
+}
+
+const edit = (path: string, id = path) =>
+  toolCall({
+    id,
+    toolName: "Edit",
+    arguments: { file_path: `/repo/${path}`, old_string: "a", new_string: "b" },
+  });
+
+describe("listEditTurns", () => {
+  const messages = [
+    message("u1", "user", { content: "Fix the login form" }),
+    message("a2", "assistant", { toolCalls: [edit("src/login.tsx"), edit("src/login.tsx", "x")] }),
+    message("a3", "assistant", { toolCalls: [edit("src/auth.ts")] }),
+    message("u4", "user", { content: "Where is the cookie set?" }),
+    message("a5", "assistant", { toolCalls: [toolCall({ toolName: "Read" })] }),
+    message("u6", "user", {
+      content: "Long prompt\n\nwith context",
+      atlasProse: `Add a users route ${"and more words ".repeat(10)}`,
+    }),
+    message("a7", "assistant", {
+      toolCalls: [toolCall({ contentBlocks: [diffBlock("/repo/routes.ts", "a", "b")] })],
+    }),
+  ];
+
+  it("lists the turns that changed files, newest first, numbered among all turns", () => {
+    const turns = listEditTurns(messages, REPO);
+    expect(turns.map((t) => [t.turnId, t.number, t.fileCount])).toEqual([
+      ["t:a7", 3, 1],
+      ["t:a2", 1, 2],
+    ]);
+  });
+
+  it("stamps each with when it finished and the prompt it answered, on one line", () => {
+    const [latest, first] = listEditTurns(messages, REPO);
+    expect(first.timestamp).toBe(messages[2].timestamp);
+    expect(first.prompt).toBe("Fix the login form");
+    // The prose without its @-mention context, cut to the snippet length.
+    expect(latest.prompt.startsWith("Add a users route and more words")).toBe(true);
+    expect(latest.prompt.length).toBe(PROMPT_SNIPPET_CHARS);
+    expect(latest.prompt.endsWith("…")).toBe(true);
+  });
+
+  it("uses the same turn ids collectTurnEdits reads", () => {
+    for (const t of listEditTurns(messages, REPO)) {
+      expect(collectTurnEdits(messages, t.turnId, REPO).files.length).toBe(t.fileCount);
+    }
+  });
+});
+
+describe("editsSignature", () => {
+  it("ignores streamed prose and changes when a call arrives or settles", () => {
+    const base = [message("u1", "user"), message("a2", "assistant", { content: "Hel" })];
+    const sig = editsSignature(base);
+    const streamed = [base[0], { ...base[1], content: "Hello there" }];
+    expect(editsSignature(streamed)).toBe(sig);
+    const called = [base[0], { ...base[1], toolCalls: [edit("a.ts")] }];
+    expect(editsSignature(called)).not.toBe(sig);
+    const settled = [
+      base[0],
+      { ...base[1], toolCalls: [{ ...edit("a.ts"), status: "failed" as const }] },
+    ];
+    expect(editsSignature(settled)).not.toBe(editsSignature(called));
+    expect(editsSignature([...base, message("u3", "user")])).not.toBe(sig);
   });
 });

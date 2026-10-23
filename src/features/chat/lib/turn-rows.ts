@@ -281,12 +281,9 @@ export interface SeparatorRow extends RowBase {
 
 export interface TurnFooterRow extends RowBase {
   kind: typeof RowKind.TurnFooter;
-  /** The first few, shown collapsed. */
+  /** The turn's frozen `turnSummary.files`, by identity: the same array every
+   *  projection, so a settled turn's changed-files card never re-renders. */
   files: TurnFile[];
-  /** Everything — the overflow disclosure renders from this. */
-  allFiles: TurnFile[];
-  /** How many `allFiles` holds beyond `files`. */
-  overflow: number;
   repoAtTurn: boolean;
   /** Message id, so the footer can reach usage/suggestions/contextUsage. */
   messageId: string;
@@ -1386,15 +1383,12 @@ function projectSegment(
     }
 
     if (footerMsg?.turnSummary) {
-      const files = footerMsg.turnSummary.files;
       rows.push({
         kind: RowKind.TurnFooter,
         id: `f:${footerMsg.id}`,
         turnId,
         firstInTurn: false,
-        files: files.slice(0, 3),
-        allFiles: files,
-        overflow: Math.max(0, files.length - 3),
+        files: footerMsg.turnSummary.files,
         repoAtTurn: footerMsg.turnSummary.repoAtTurn,
         messageId: footerMsg.id,
         hasSuggestions: (footerMsg.suggestions?.chips.length ?? 0) > 0,
@@ -1457,9 +1451,9 @@ function projectSegment(
 
 /**
  * One-level equality for row/turn records. Arrays compare element-by-identity —
- * `TurnFooterRow.files` is re-`slice`d every projection, but its ELEMENTS are
- * the stable `turnSummary.files` objects frozen at turn end, so identity per
- * element is exactly the right test.
+ * an array a projection rebuilds is still equal when its ELEMENTS are the same
+ * stable records. (`TurnFooterRow.files` is the frozen `turnSummary.files`
+ * itself, so it compares equal by identity before that.)
  */
 function sameShallow(a: object, b: object): boolean {
   const ka = Object.keys(a);

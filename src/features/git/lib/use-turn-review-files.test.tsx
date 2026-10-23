@@ -1,0 +1,215 @@
+// @vitest-environment happy-dom
+//
+// The review panel's turn scope: the turn picker's list, one turn's files as
+// review rows, and the keys that keep a settled turn from re-diffing.
+
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => undefined) }));
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async () => () => {}),
+  emit: vi.fn(async () => {}),
+}));
+
+const diffTextsPatch = vi.fn();
+vi.mock("./git-review-api", () => ({
+  diffTextsPatch: (...a: unknown[]) => diffTextsPatch(...a),
+}));
+
+import type { ChatMessage, ChatSession, ToolCallDisplay } from "@/types/agent";
+import { useChatStore } from "@/features/chat/stores/chat-store";
+import type { TurnEdits } from "@/features/chat/lib/turn-edits";
+import { useSessionEditTurns, useTurnEdits, useTurnReviewFiles } from "./use-turn-review-files";
+
+const REPO = "/repo";
+const ACP = "acp-1";
+
+function call(id: string, path: string, oldString: string, newString: string): ToolCallDisplay {
+  return {
+    id,
+    toolName: "Edit",
+    kind: "edit",
+    status: "completed",
+    arguments: { file_path: `${REPO}/${path}`, old_string: oldString, new_string: newString },
+    result: null,
+    duration: null,
+    locations: [],
+  } as ToolCallDisplay;
+}
+
+function message(id: string, role: "user" | "assistant", extra: Partial<ChatMessage> = {}) {
+  return {
+    id,
+    role,
+    content: "",
+    toolCalls: [],
+    fileChanges: [],
+    plan: null,
+    timestamp: "2026-10-01T09:00:00Z",
+    mode: "text",
+    ...extra,
+  } as ChatMessage;
+}
+
+function seed(messages: ChatMessage[]) {
+  useChatStore.setState((s) => ({
+    ...s,
+    sessions: {
+      "tab-1": { id: "tab-1", acpSessionId: ACP, messages } as unknown as ChatSession,
+    },
+  }));
+}
+
+const patchOf = (path: string, minus: string, plus: string) =>
+  `--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-${minus}\n+${plus}\n`;
+
+function wrapper() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  );
+}
+
+beforeEach(() => {
+  diffTextsPatch.mockReset();
+  diffTextsPatch.mockImplementation(async (_old: string, _new: string, file: string) => ({
+    patch: patchOf(file, "a", "b"),
+    truncated: false,
+    binary: false,
+  }));
+  seed([
+    message("u1", "user", { content: "Fix the login form" }),
+    message("a2", "assistant", { toolCalls: [call("c1", "src/login.tsx", "a\n", "b\n")] }),
+    message("u3", "user", { content: "And the session" }),
+    message("a4", "assistant", { toolCalls: [call("c2", "src/session.ts", "x\n", "y\n")] }),
+  ]);
+});
+
+describe("useSessionEditTurns", () => {
+  it("lists the session's turns that changed files, newest first", () => {
+    const { result } = renderHook(() => useSessionEditTurns(ACP, REPO));
+    expect(result.current.map((t) => [t.turnId, t.number, t.prompt])).toEqual([
+      ["t:a4", 2, "And the session"],
+      ["t:a2", 1, "Fix the login form"],
+    ]);
+  });
+
+  it("keeps its answer while only prose streams, and updates when a turn edits", () => {
+    const { result } = renderHook(() => useSessionEditTurns(ACP, REPO));
+    const first = result.current;
+    const messages = useChatStore.getState().sessions["tab-1"].messages;
+    act(() => seed([...messages.slice(0, 3), { ...messages[3], content: "Done, and more" }]));
+    expect(result.current).toBe(first);
+    act(() =>
+      seed([
+        ...messages,
+        message("u5", "user", { content: "One more" }),
+        message("a6", "assistant", { toolCalls: [call("c3", "README.md", "r\n", "R\n")] }),
+      ]),
+    );
+    expect(result.current[0].turnId).toBe("t:a6");
+  });
+
+  it("is empty for a session the chat store does not hold", () => {
+    const { result } = renderHook(() => useSessionEditTurns("nope", REPO));
+    expect(result.current).toEqual([]);
+  });
+});
+
+describe("useTurnEdits", () => {
+  it("keeps each unchanged text pair's object across a re-read", () => {
+    const { result } = renderHook(() => useTurnEdits(ACP, "t:a2", REPO));
+    const pair = result.current!.sources["src/login.tsx"];
+    const messages = useChatStore.getState().sessions["tab-1"].messages;
+    // A later message arrives: the signature moves and the turn is re-read.
+    act(() => seed([...messages, message("u5", "user")]));
+    expect(result.current!.sources["src/login.tsx"]).toBe(pair);
+  });
+});
+
+describe("useTurnReviewFiles", () => {
+  const edits = (): TurnEdits => ({
+    files: ["src/a.ts", "src/b.ts"],
+    initial: "src/a.ts",
+    sources: {
+      "src/a.ts": { old: "one\ntwo\n", new: "one\nTWO\nthree\n" },
+      "src/b.ts": { old: "", new: "created\n" },
+    },
+    excerpts: new Set(["src/a.ts"]),
+  });
+
+  it("lists every file at once, counted from its texts until its patch is parsed", async () => {
+    let resolve: () => void = () => {};
+    diffTextsPatch.mockImplementation(
+      (_o: string, _n: string, file: string) =>
+        new Promise((r) => {
+          resolve = () => r({ patch: patchOf(file, "a", "b"), truncated: false, binary: false });
+        }),
+    );
+    const input = edits();
+    const { result } = renderHook(
+      () => useTurnReviewFiles({ edits: input, ignoreWhitespace: false }),
+      { wrapper: wrapper() },
+    );
+    const [a, b] = result.current.files;
+    expect(a.state).toBe("pending");
+    expect(a.stat).toMatchObject({
+      path: "src/a.ts",
+      status: "modified",
+      additions: 2,
+      deletions: 1,
+    });
+    expect(a.excerpt).toBe(true);
+    expect(b.stat).toMatchObject({ status: "added", additions: 1, deletions: 0 });
+    expect(b.excerpt).toBe(false);
+    act(() => resolve());
+    await waitFor(() => expect(result.current.files.some((f) => f.state === "ready")).toBe(true));
+  });
+
+  it("parses each patch under its repo path, typed by what the texts say", async () => {
+    const input = edits();
+    const { result } = renderHook(
+      () => useTurnReviewFiles({ edits: input, ignoreWhitespace: false }),
+      { wrapper: wrapper() },
+    );
+    await waitFor(() => expect(result.current.files.every((f) => f.state === "ready")).toBe(true));
+    const [a, b] = result.current.files;
+    expect(a.fileDiff.name).toBe("src/a.ts");
+    expect(a.stat).toMatchObject({ additions: 1, deletions: 1 });
+    expect(b.fileDiff.type).toBe("new");
+  });
+
+  it("does not diff a pair again when the same texts come back in a new turn read", async () => {
+    const first = edits();
+    const { result, rerender } = renderHook(
+      ({ e }) => useTurnReviewFiles({ edits: e, ignoreWhitespace: false }),
+      { wrapper: wrapper(), initialProps: { e: first } },
+    );
+    await waitFor(() => expect(result.current.files.every((f) => f.state === "ready")).toBe(true));
+    expect(diffTextsPatch).toHaveBeenCalledTimes(2);
+    // Same texts, fresh objects: the key is the texts' fingerprint, not the object.
+    rerender({ e: edits() });
+    await waitFor(() => expect(result.current.files.every((f) => f.state === "ready")).toBe(true));
+    expect(diffTextsPatch).toHaveBeenCalledTimes(2);
+    // A changed text is a new key.
+    const changed = edits();
+    changed.sources["src/a.ts"] = { old: "one\n", new: "uno\n" };
+    rerender({ e: changed });
+    await waitFor(() => expect(diffTextsPatch).toHaveBeenCalledTimes(3));
+  });
+
+  it("reports a failed diff as an error the row can retry", async () => {
+    diffTextsPatch.mockRejectedValueOnce(new Error("boom"));
+    const input = edits();
+    const { result } = renderHook(
+      () => useTurnReviewFiles({ edits: input, ignoreWhitespace: false }),
+      { wrapper: wrapper() },
+    );
+    await waitFor(() => expect(result.current.files[0].state).toBe("error"));
+    act(() => result.current.retry("src/a.ts"));
+    await waitFor(() => expect(result.current.files[0].state).toBe("ready"));
+  });
+});

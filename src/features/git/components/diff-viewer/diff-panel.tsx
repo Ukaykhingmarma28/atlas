@@ -30,15 +30,30 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
+import { formatTime } from "@/lib/format-time";
+import type { EditTurn } from "@/features/chat/lib/turn-edits";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { useSessionFiles } from "@/features/chat/lib/session-files";
 import { getDiffFileContents, getDiffPreview, type DiffSource } from "../../lib/git-review-api";
 import { buildFileDiffContentVersion, fnv1a32 } from "../../lib/diff-rendering";
 import { invalidateReviewFiles, useReviewFiles, type ReviewFile } from "../../lib/use-review-files";
 import { useDiffJump } from "../../lib/diff-jump";
-import { collapsedSetOf, useDiffPanelStore, type DiffScope } from "../../stores/diff-panel-store";
+import {
+  useSessionEditTurns,
+  useTurnEdits,
+  useTurnReviewFiles,
+} from "../../lib/use-turn-review-files";
+import {
+  collapsedSetOf,
+  LATEST_TURN,
+  useDiffPanelStore,
+  type DiffScope,
+} from "../../stores/diff-panel-store";
 import { useGitStore } from "../../stores/git-store";
 import { StyledCodeView } from "./styled-code-view";
 import { DiffFileTree } from "./diff-file-tree";
@@ -51,15 +66,21 @@ import { DiffPanelSkeleton } from "./diff-panel-skeleton";
  *
  * Data: `getDiffPreview` answers both sources at once with a capped patch and
  * a complete file list; `useReviewFiles` fills in the files the cap left out,
- * one at a time as their rows come into view. Rendering: `StyledCodeView`,
+ * one at a time as their rows come into view. Beside a session there is also
+ * the turn scope, which reads no git at all: one turn's own edits, diffed from
+ * the texts its tool calls carried (`use-turn-review-files.ts`). Rendering: `StyledCodeView`,
  * which tokenizes in a worker pool and never on this thread.
  */
 
 const SCOPE_LABEL: Record<DiffScope, string> = {
   session: "This session",
+  turn: "Latest turn",
   "working-tree": "Uncommitted",
   "branch-range": "Branch",
 };
+
+/** The scope menu's value for the turn the panel follows. */
+const turnValue = (turn: string) => `turn:${turn}`;
 
 /** Hide the viewer's own +/- counts: it counts only what has loaded, and a
  *  pending file would read +0 −0. The header shows the backend's numstat. */
@@ -127,11 +148,16 @@ export interface DiffPanelProps {
 }
 
 export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading }: DiffPanelProps) {
+  // The git scopes the menu lists as items; `turn` has its own entries.
   const scopes: DiffScope[] = sessionId
     ? ["session", "working-tree", "branch-range"]
     : ["working-tree", "branch-range"];
   const storedScope = useDiffPanelStore((s) => s.scope[tabId]);
-  const scope = storedScope && scopes.includes(storedScope) ? storedScope : scopes[0];
+  const scope =
+    storedScope && (scopes.includes(storedScope) || (storedScope === "turn" && sessionId))
+      ? storedScope
+      : scopes[0];
+  const turnChoice = useDiffPanelStore((s) => s.turn[tabId] ?? LATEST_TURN);
   const baseRef = useDiffPanelStore((s) => s.baseRef[repoPath] ?? null);
   const layout = useDiffPanelStore.use.layout();
   const wordWrap = useDiffPanelStore.use.wordWrap();
@@ -202,14 +228,36 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
     [scope, sessionFiles],
   );
 
-  const {
-    files,
-    stats: treeFiles,
-    requestFile,
-    retry,
-  } = useReviewFiles({ repoPath, source, only, ignoreWhitespace });
+  // ── The turn scope: one turn's own edits, from the session's message log ──
+  const turns = useSessionEditTurns(sessionId, repoPath);
+  const latestTurn = turns[0] ?? null;
+  const selectedTurn =
+    scope !== "turn"
+      ? null
+      : turnChoice === LATEST_TURN
+        ? latestTurn
+        : (turns.find((t) => t.turnId === turnChoice) ?? null);
+  const turnEdits = useTurnEdits(sessionId, selectedTurn?.turnId ?? null, repoPath);
+  const turnReview = useTurnReviewFiles({ edits: turnEdits, ignoreWhitespace });
 
-  const collapseScopeKey = `${repoPath}\0${scope}\0${baseRef ?? ""}\0${sessionId ?? ""}`;
+  const gitReview = useReviewFiles({
+    repoPath,
+    source: scope === "turn" ? null : source,
+    only,
+    ignoreWhitespace,
+  });
+  const { files, stats: treeFiles, requestFile, retry } = scope === "turn" ? turnReview : gitReview;
+
+  const collapseScopeKey =
+    scope === "turn"
+      ? `${repoPath}\0turn\0${selectedTurn?.turnId ?? ""}\0${sessionId ?? ""}`
+      : `${repoPath}\0${scope}\0${baseRef ?? ""}\0${sessionId ?? ""}`;
+  const scopeLabel =
+    scope !== "turn"
+      ? SCOPE_LABEL[scope]
+      : selectedTurn && selectedTurn !== latestTurn
+        ? `Turn ${selectedTurn.number}`
+        : SCOPE_LABEL.turn;
   const itemIds = useMemo(() => files.map(itemIdOf), [files]);
   const defaultCollapsed = useMemo<ReadonlySet<string>>(
     () => new Set(collapseByDefault && itemIds.length > 1 ? itemIds : []),
@@ -293,7 +341,25 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
   );
 
   // ── Revealing a file: from the tree, or from outside (`requestDiffJump`) ──
-  const [viewer, setViewer] = useState<CodeViewHandle<undefined, undefined> | null>(null);
+  // The handle is held with the scope key its viewer was mounted for: the
+  // viewer remounts per scope, and a jump that changes scope must not land on
+  // the handle of the viewer it replaced.
+  const [mounted, setMounted] = useState<{
+    key: string;
+    handle: CodeViewHandle<undefined, undefined>;
+  } | null>(null);
+  const setViewer = useCallback(
+    (handle: CodeViewHandle<undefined, undefined> | null) =>
+      setMounted((current) =>
+        handle
+          ? { key: collapseScopeKey, handle }
+          : current?.key === collapseScopeKey
+            ? null
+            : current,
+      ),
+    [collapseScopeKey],
+  );
+  const viewer = mounted?.key === collapseScopeKey ? mounted.handle : null;
   const [selected, setSelected] = useState<string | null>(null);
   const reveal = useCallback(
     (path: string) => {
@@ -372,23 +438,41 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
-            <Button variant="ghost" size="sm" aria-label={`Diff scope: ${SCOPE_LABEL[scope]}`}>
-              {SCOPE_LABEL[scope]}
+            <Button variant="ghost" size="sm" aria-label={`Diff scope: ${scopeLabel}`}>
+              <span className="max-w-40 truncate">{scopeLabel}</span>
               <ChevronDown size={12} className="text-muted-foreground" />
             </Button>
           }
         />
         <DropdownMenuContent align="start" sideOffset={4} className="w-48">
           <DropdownMenuRadioGroup
-            value={scope}
-            onValueChange={(value) => actionsApi.setScope(tabId, value as DiffScope)}
+            value={
+              scope !== "turn" ? scope : selectedTurn === latestTurn ? turnValue(LATEST_TURN) : ""
+            }
+            onValueChange={(value) => {
+              const v = String(value);
+              if (v.startsWith("turn:")) actionsApi.setTurn(tabId, v.slice(5));
+              else actionsApi.setScope(tabId, v as DiffScope);
+            }}
           >
             {scopes.map((s) => (
               <DropdownMenuRadioItem key={s} value={s}>
                 {SCOPE_LABEL[s]}
               </DropdownMenuRadioItem>
             ))}
+            {sessionId && (
+              <DropdownMenuRadioItem value={turnValue(LATEST_TURN)} disabled={!latestTurn}>
+                {SCOPE_LABEL.turn}
+              </DropdownMenuRadioItem>
+            )}
           </DropdownMenuRadioGroup>
+          {sessionId && (
+            <TurnSubmenu
+              turns={turns}
+              selected={scope === "turn" && selectedTurn !== latestTurn ? selectedTurn : null}
+              onPick={(turnId) => actionsApi.setTurn(tabId, turnId)}
+            />
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
       {scope === "branch-range" && (
@@ -424,15 +508,18 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
             onClick={() => jumpChange(1)}
           />
         </Hint>
-        <Hint label="Refresh">
-          <IconButton
-            size="sm"
-            icon={RefreshCw}
-            label="Refresh diff"
-            disabled={preview.isFetching}
-            onClick={() => void refetch()}
-          />
-        </Hint>
+        {/* A turn's edits are a record, not the disk: nothing to refresh. */}
+        {scope !== "turn" && (
+          <Hint label="Refresh">
+            <IconButton
+              size="sm"
+              icon={RefreshCw}
+              label="Refresh diff"
+              disabled={preview.isFetching}
+              onClick={() => void refetch()}
+            />
+          </Hint>
+        )}
         {files.length > 1 && (
           <Hint label={allCollapsed ? "Expand all files" : "Collapse all files"}>
             <IconButton
@@ -483,14 +570,27 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
     </div>
   );
 
+  // The turn scope reads the session's record, not git: none of the
+  // repository's states below apply to it.
+  const git = scope !== "turn";
   let body: ReactNode;
-  if (!repoPath) {
+  if (!git && !selectedTurn) {
+    body = (
+      <Empty>
+        {turns.length > 0
+          ? "That turn isn't in this session any more."
+          : "No turn in this session has changed a file yet."}
+      </Empty>
+    );
+  } else if (!git && files.length === 0) {
+    body = <Empty>This turn's edits have nothing to show.</Empty>;
+  } else if (git && !repoPath) {
     body = <Empty>Open a project to review its changes.</Empty>;
-  } else if (preview.isError) {
+  } else if (git && preview.isError) {
     body = <Empty>Couldn't read the diff: {String(preview.error)}</Empty>;
-  } else if (!preview.data) {
+  } else if (git && !preview.data) {
     body = <DiffPanelSkeleton />;
-  } else if (preview.data.sources.length === 0) {
+  } else if (git && preview.data?.sources.length === 0) {
     body = <Empty>This project isn't a git repository.</Empty>;
   } else if (files.length === 0) {
     body = (
@@ -556,7 +656,9 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
                 diffStyle: layout,
                 overflow: wordWrap ? "wrap" : "scroll",
                 stickyHeaders: true,
-                loadDiffFiles,
+                // Unchanged lines around a hunk come from git, which knows
+                // nothing of a past turn's texts.
+                loadDiffFiles: git ? loadDiffFiles : undefined,
               }}
               renderHeaderPrefix={(item) => {
                 const file = fileById.get(item.id);
@@ -574,7 +676,9 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
               renderHeaderFilenameSuffix={(item) => {
                 const file = fileById.get(item.id);
                 if (!file) return null;
-                return <FileStatus file={file} onRequest={requestFile} onRetry={retry} />;
+                return (
+                  <FileStatus file={file} onRequest={requestFile} onRetry={retry} turn={!git} />
+                );
               }}
               renderHeaderMetadata={(item) => {
                 const stat = fileById.get(item.id)?.stat;
@@ -610,6 +714,7 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[var(--atlas-editor-background)]">
       {header}
+      {!git && selectedTurn && <TurnNote turn={selectedTurn} />}
       {body}
     </div>
   );
@@ -658,10 +763,13 @@ function FileStatus({
   file,
   onRequest,
   onRetry,
+  turn = false,
 }: {
   file: ReviewFile;
   onRequest: (path: string) => void;
   onRetry: (path: string) => void;
+  /** A turn's file: diffed from its texts, so "no changes" is not "now". */
+  turn?: boolean;
 }) {
   const { path } = file.stat;
   const pending = file.state === "pending";
@@ -677,7 +785,16 @@ function FileStatus({
         <span className="text-2xs text-muted-foreground">Too large to show</span>
       )}
       {file.state === "empty" && (
-        <span className="text-2xs text-muted-foreground">No changes now</span>
+        <span className="text-2xs text-muted-foreground">
+          {turn ? "No changes" : "No changes now"}
+        </span>
+      )}
+      {file.excerpt && (
+        <Hint label="Only the lines the agent replaced are known, not the whole file. Line numbers count from the excerpt.">
+          <span className="rounded border border-border px-1 text-2xs text-muted-foreground">
+            Excerpt
+          </span>
+        </Hint>
       )}
       {file.state === "error" && (
         <Hint label="Couldn't load this file. Retry">
@@ -700,6 +817,61 @@ function FileStatus({
         </Hint>
       )}
     </span>
+  );
+}
+
+/** Under the header in the turn scope: which turn, and what these diffs are.
+ *  They are rebuilt from the agent's own edit calls, so a change a command
+ *  made (a formatter, a codegen step, `git mv`) is not in them. */
+function TurnNote({ turn }: { turn: EditTurn }) {
+  return (
+    <div className="flex shrink-0 flex-col gap-0.5 border-b border-border px-3 py-1.5 text-2xs text-muted-foreground">
+      <span className="min-w-0 truncate">
+        <span className="text-secondary-foreground">Turn {turn.number}</span>
+        {turn.prompt && <> · {turn.prompt}</>}
+      </span>
+      <span>The agent's own edits. Changes made by commands aren't included.</span>
+    </div>
+  );
+}
+
+/** "Turn ▸": every turn of the session that changed files, newest first. */
+function TurnSubmenu({
+  turns,
+  selected,
+  onPick,
+}: {
+  turns: readonly EditTurn[];
+  /** The pinned turn, when it is not simply the latest. */
+  selected: EditTurn | null;
+  onPick: (turnId: string) => void;
+}) {
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger disabled={turns.length === 0}>Turn</DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className="max-h-80 w-72 overflow-auto">
+        <DropdownMenuRadioGroup
+          value={selected ? selected.turnId : ""}
+          onValueChange={(value) => onPick(String(value))}
+        >
+          {turns.map((turn) => (
+            <DropdownMenuRadioItem key={turn.turnId} value={turn.turnId}>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="flex items-baseline gap-2">
+                  <span>Turn {turn.number}</span>
+                  <span className="ml-auto text-2xs text-muted-foreground tabular-nums">
+                    {formatTime(turn.timestamp)}
+                  </span>
+                </span>
+                {turn.prompt && (
+                  <span className="truncate text-2xs text-muted-foreground">{turn.prompt}</span>
+                )}
+              </span>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
   );
 }
 
