@@ -463,8 +463,8 @@ function SplitSide({
   );
 }
 
-/** A diff line's code, syntax-highlighted; long lines clip — the per-file
- *  "Open in diff view" shows them whole. */
+/** A diff line's code, syntax-highlighted; long lines clip (this is a
+ *  commit summary; the review panel's viewer shows them whole). */
 function Code({ content, language }: { content: string; language: string }) {
   const tokens = highlightDiffLine(language, content);
   return (

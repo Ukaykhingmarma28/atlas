@@ -33,6 +33,7 @@ import {
   buildFileDiffContentVersion,
   getDiffLineStat,
   getRenderablePatch,
+  textFingerprint,
 } from "../lib/diff-rendering";
 import { StyledCodeView } from "./diff-viewer/styled-code-view";
 import { DiffFileTree } from "./diff-viewer/diff-file-tree";
@@ -41,7 +42,8 @@ import { DiffPanelSkeleton } from "./diff-viewer/diff-panel-skeleton";
 
 type TextSource = { old: string; new: string };
 
-type FileState = "pending" | "ready" | "binary" | "too-large" | "empty" | "error";
+/** `unavailable`: no text source and no repository to diff the path in. */
+type FileState = "pending" | "ready" | "binary" | "too-large" | "empty" | "error" | "unavailable";
 
 interface ModalFile {
   path: string;
@@ -124,13 +126,25 @@ export function GitDiffModal({
   title?: string;
 }) {
   const ignoreWhitespace = useSettingsStore((s) => s.settings.diffIgnoreWhitespace);
+  // Each text source by fingerprint, hashed once per set of sources: a key
+  // holding the texts themselves would keep (and compare) up to megabytes
+  // per file on every render.
+  const fingerprints = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [path, source] of Object.entries(textSources ?? {})) {
+      map.set(path, `${textFingerprint(source.old)}|${textFingerprint(source.new)}`);
+    }
+    return map;
+  }, [textSources]);
   const results = useQueries({
     queries: files.map((path) => {
       const source = textSources?.[path];
       return {
         queryKey: source
-          ? ["turn-diff-text", path, source.old, source.new, ignoreWhitespace]
+          ? ["turn-diff-text", path, fingerprints.get(path), ignoreWhitespace]
           : ["turn-diff-fallback", repoPath, path, ignoreWhitespace],
+        // A path with neither a text nor a repository to diff it in has
+        // nothing to load; it shows as `unavailable`, not as loading.
         enabled: open && (!!source || !!repoPath),
         staleTime: source ? Infinity : 10_000,
         gcTime: 60_000,
@@ -160,7 +174,13 @@ export function GitDiffModal({
         const source = textSources?.[path];
         const data = result?.data;
         const status = source ? statusOfSource(source) : statusOfDiff(data?.fileDiff ?? null);
-        const state: FileState = data ? data.state : result?.isError ? "error" : "pending";
+        const state: FileState = data
+          ? data.state
+          : result?.isError
+            ? "error"
+            : !source && !repoPath
+              ? "unavailable"
+              : "pending";
         return {
           path,
           state,
@@ -171,7 +191,7 @@ export function GitDiffModal({
       }),
     // `resultsKey` stands for `results`, a fresh array every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [files, textSources, resultsKey],
+    [files, textSources, repoPath, resultsKey],
   );
   const byPath = useMemo(() => new Map(modalFiles.map((f) => [f.path, f])), [modalFiles]);
 
@@ -343,6 +363,8 @@ function FileNote({ state, onRetry }: { state: FileState; onRetry: () => void })
       return <span className="text-2xs text-muted-foreground">Too large to show</span>;
     case "empty":
       return <span className="text-2xs text-muted-foreground">No changes</span>;
+    case "unavailable":
+      return <span className="text-2xs text-muted-foreground">Not available</span>;
     case "error":
       return (
         <Hint label="Couldn't load this file. Retry">

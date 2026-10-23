@@ -6,6 +6,7 @@ import {
   getDiffLineStat,
   getRenderablePatch,
   resolveFileDiffPath,
+  textFingerprint,
 } from "./diff-rendering";
 
 const TWO_FILES = `diff --git a/src/a.ts b/src/a.ts
@@ -102,5 +103,15 @@ describe("fnv1a32", () => {
   it("matches the reference vectors", () => {
     expect(fnv1a32("")).toBe(0x811c9dc5);
     expect(fnv1a32("a")).toBe(0xe40c292c);
+  });
+});
+
+describe("textFingerprint", () => {
+  it("is short, stable, and tells apart texts of the same length", () => {
+    const big = "x".repeat(1_000_000);
+    expect(textFingerprint(big)).toBe(textFingerprint("x".repeat(1_000_000)));
+    expect(textFingerprint(big).length).toBeLessThan(40);
+    expect(textFingerprint("ab")).not.toBe(textFingerprint("ba"));
+    expect(textFingerprint("")).not.toBe(textFingerprint("a"));
   });
 });

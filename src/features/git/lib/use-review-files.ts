@@ -32,6 +32,9 @@ const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "bas
 const INITIAL_BATCH = 4;
 /** Lazily loaded patches kept for files no viewer shows any more. */
 const MAX_IDLE_ENTRIES = 48;
+/** Files kept requested (observed) at once: the render window and the tree's
+ *  picks, with room to spare. Past it the least recently asked one goes idle. */
+export const MAX_WATCHED = 64;
 const QUERY_ROOT = "git-diff-file";
 
 interface Loaded {
@@ -75,6 +78,18 @@ function pruneIdle(client: QueryClient, repoPath: string) {
   for (const q of idle.slice(0, Math.max(0, idle.length - MAX_IDLE_ENTRIES))) {
     client.getQueryCache().remove(q);
   }
+}
+
+/** The newest loaded patch under a key prefix, if any is still cached. */
+function latestCached(client: QueryClient, queryKey: readonly unknown[]): Loaded | undefined {
+  let best: { at: number; data: Loaded } | undefined;
+  for (const q of client.getQueryCache().findAll({ queryKey })) {
+    const data = q.state.data as Loaded | undefined;
+    if (data && (!best || q.state.dataUpdatedAt > best.at)) {
+      best = { at: q.state.dataUpdatedAt, data };
+    }
+  }
+  return best?.data;
 }
 
 export function useReviewFiles({
@@ -130,9 +145,12 @@ export function useReviewFiles({
     [stats, fromPatch],
   );
 
-  const [requested, setRequested] = useState<{ scope: string; paths: ReadonlySet<string> }>({
+  // The files rows have asked for, least recently asked first, at most
+  // `MAX_WATCHED`: each is an observed query, which `pruneIdle` never
+  // drops, so an unbounded list would hold every patch a long review saw.
+  const [requested, setRequested] = useState<{ scope: string; paths: readonly string[] }>({
     scope: "",
-    paths: new Set(),
+    paths: [],
   });
   const wanted = useMemo(() => {
     const paths = new Set(requested.scope === scope ? requested.paths : []);
@@ -195,10 +213,6 @@ export function useReviewFiles({
   const queryClient = useQueryClient();
   useEffect(() => pruneIdle(queryClient, repoPath), [queryClient, repoPath, wanted]);
 
-  // What each query last showed. While a file's new key loads after a write,
-  // its row keeps the old diff instead of folding to a placeholder and back.
-  const lastLoaded = useRef(new Map<string, { scope: string; data: Loaded }>());
-
   // `results` is a new array every render; this changes only when one of
   // them does, which is what `files` (and everything keyed on it) follows.
   const resultsKey = results
@@ -215,10 +229,18 @@ export function useReviewFiles({
       if (parsed) return { stat, fileDiff: parsed, state: "ready", truncated: false };
       const result = byPath.get(stat.path);
       let data = result?.data;
-      if (data) lastLoaded.current.set(stat.path, { scope, data });
-      else {
-        const last = lastLoaded.current.get(stat.path);
-        if (last?.scope === scope && !result?.isError) data = last.data;
+      // While a file's new key loads after a write, its row keeps the diff
+      // its previous key holds (still cached, idle) instead of folding to a
+      // placeholder and back. The key prefix is the scope.
+      if (!data && result && !result.isError) {
+        data = latestCached(queryClient, [
+          QUERY_ROOT,
+          repoPath,
+          kind,
+          base,
+          ignoreWhitespace,
+          stat.path,
+        ]);
       }
       if (!data) {
         const state = result?.isError ? "error" : "pending";
@@ -233,15 +255,28 @@ export function useReviewFiles({
     });
     // `resultsKey` stands for `results`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stats, placeholders, fromPatch, wanted, resultsKey, scope]);
+  }, [
+    stats,
+    placeholders,
+    fromPatch,
+    wanted,
+    resultsKey,
+    queryClient,
+    repoPath,
+    kind,
+    base,
+    ignoreWhitespace,
+  ]);
 
   // Stable per scope: every pending row's header holds it.
   const requestFile = useCallback(
     (path: string) =>
       setRequested((current) => {
-        const prior = current.scope === scope ? current.paths : new Set<string>();
-        if (prior.has(path)) return current;
-        return { scope, paths: new Set([...prior, path]) };
+        const prior = current.scope === scope ? current.paths : [];
+        if (prior[prior.length - 1] === path) return current;
+        const paths = prior.filter((p) => p !== path);
+        paths.push(path);
+        return { scope, paths: paths.slice(-MAX_WATCHED) };
       }),
     [scope],
   );

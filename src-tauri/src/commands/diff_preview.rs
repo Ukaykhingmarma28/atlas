@@ -1125,8 +1125,11 @@ pub struct DiffFilePatch {
     pub binary: bool,
 }
 
-/// The working-tree file's modification time and size: a cheap stand-in for
-/// its content that changes on every write.
+/// The working-tree file's modification time and size, and on unix its
+/// inode and status-change time: a cheap stand-in for its content that
+/// changes on every write. The ctime catches what mtime alone misses: a
+/// same-size rewrite that restores the mtime (`touch -r`, an archive
+/// extract), or a file replaced by rename.
 fn worktree_sig(cwd: &Path, rel: &str) -> Option<String> {
     let meta = std::fs::symlink_metadata(cwd.join(rel)).ok()?;
     let mtime = meta
@@ -1134,6 +1137,18 @@ fn worktree_sig(cwd: &Path, rel: &str) -> Option<String> {
         .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map_or(0, |d| d.as_nanos());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        Some(format!(
+            "{mtime:x}-{:x}-{:x}-{:x}.{:x}",
+            meta.len(),
+            meta.ino(),
+            meta.ctime(),
+            meta.ctime_nsec()
+        ))
+    }
+    #[cfg(not(unix))]
     Some(format!("{mtime:x}-{:x}", meta.len()))
 }
 
@@ -1195,14 +1210,29 @@ pub fn file_patch(
     } else {
         &[]
     };
-    let mut cmd = git(cwd);
-    cmd.args(DIFF_ARGS).args(ws).args(["--patch", &rev, "--"]);
-    if old_rel != new_rel {
-        cmd.arg(old_rel);
-    }
-    cmd.arg(new_rel);
-    let (mut patch, mut truncated, _) = run_capped(cmd, FILE_PATCH_CAP)?;
+    let diff = || {
+        let mut cmd = git(cwd);
+        cmd.args(DIFF_ARGS).args(ws).args(["--patch", &rev, "--"]);
+        if old_rel != new_rel {
+            cmd.arg(old_rel);
+        }
+        cmd.arg(new_rel);
+        cmd
+    };
+    let (mut patch, mut truncated, ok) = run_capped(diff(), FILE_PATCH_CAP)?;
 
+    if !ok && patch.is_empty() {
+        // Git refused (a base that no longer resolves, say), which is not
+        // "no change". The capped run drops stderr; the rerun is as cheap,
+        // since git failed before diffing anything.
+        let out = run(diff())?;
+        let why = out.stderr.trim();
+        return Err(if why.is_empty() {
+            "git diff failed".to_string()
+        } else {
+            format!("git diff: {why}")
+        });
+    }
     if patch.is_empty() {
         // Either unchanged now, or not in git's view at all: an untracked
         // file, which is all added.
@@ -1317,6 +1347,7 @@ pub fn texts_patch(
             "--no-index",
             "--no-color",
             "--no-ext-diff",
+            "--no-textconv",
             "--no-prefix",
         ])
         .args(if ignore_ws {
@@ -1694,6 +1725,17 @@ mod tests {
         assert!(p.patch.contains("-b\n+c\n"));
         let same = texts_patch("a  b\n", "a b\n", "x.ts", true).unwrap();
         assert!(same.patch.is_empty(), "whitespace-only change is no change");
+    }
+
+    #[test]
+    fn a_file_patch_git_refuses_is_an_error_not_an_empty_diff() {
+        // No commit yet: the branch range falls back to HEAD, which does
+        // not resolve, so git exits non-zero with nothing on stdout.
+        let r = Repo::new("file-patch-err");
+        r.write("a.ts", "a\n");
+        let err = file_patch(&r.0, SourceKind::BranchRange, None, "a.ts", None, false)
+            .expect_err("a failed diff is not a clean file");
+        assert!(err.starts_with("git diff"), "{err}");
     }
 
     #[test]
