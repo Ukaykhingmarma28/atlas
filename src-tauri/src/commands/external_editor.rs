@@ -200,10 +200,12 @@ pub struct ExternalEditor {
 /// How a detected editor is started.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Launcher {
-    /// Run `program` with `base_args`, then the target.
+    /// Run `program` with `base_args`, then the target, with `env` added to
+    /// the environment.
     Program {
         program: PathBuf,
         base_args: Vec<String>,
+        env: Vec<(String, PathBuf)>,
     },
     /// A macOS bundle with no CLI: `open -na <bundle> --args <target…>`.
     MacBundle(PathBuf),
@@ -353,14 +355,24 @@ fn program(path: PathBuf) -> Launcher {
     Launcher::Program {
         program: path,
         base_args: Vec::new(),
+        env: Vec::new(),
     }
 }
 
-fn find_on_path(def: &EditorDef, env: &HostEnv, probe: &dyn Probe) -> Option<Launcher> {
-    let path_var = env.path_var.as_ref()?;
-    def.commands
+/// `PATH` without its `sbin` directories. Daemons live there, not editors,
+/// and one of them is OpenZFS's event daemon, which is called `zed`.
+fn path_without_sbin(path_var: &OsString) -> Option<OsString> {
+    let dirs: Vec<PathBuf> = std::env::split_paths(path_var)
+        .filter(|dir| !dir.components().any(|c| c.as_os_str() == "sbin"))
+        .collect();
+    std::env::join_paths(dirs).ok()
+}
+
+fn find_on_path(commands: &[&str], env: &HostEnv, probe: &dyn Probe) -> Option<Launcher> {
+    let path_var = path_without_sbin(env.path_var.as_ref()?)?;
+    commands
         .iter()
-        .find_map(|command| probe.on_path(command, path_var))
+        .find_map(|command| probe.on_path(command, &path_var))
         .map(program)
 }
 
@@ -369,7 +381,7 @@ fn resolve_mac(def: &EditorDef, env: &HostEnv, probe: &dyn Probe) -> Option<Laun
     // bundle is the trustworthy one, so it is looked for first.
     let bundle_first = def.id == "zed";
     if !bundle_first && def.mac_launcher != MacLauncher::Xcode {
-        if let Some(found) = find_on_path(def, env, probe) {
+        if let Some(found) = find_on_path(def.commands, env, probe) {
             return Some(found);
         }
     }
@@ -418,9 +430,17 @@ fn resolve_mac(def: &EditorDef, env: &HostEnv, probe: &dyn Probe) -> Option<Laun
                     .filter(|p| probe.is_executable(p))
                     .map(program),
                 MacLauncher::JetBrains => Some(Launcher::MacBundle(bundle.clone())),
-                MacLauncher::Xcode => Some(PathBuf::from("/usr/bin/xed"))
+                // The bundle's own `xed`, with DEVELOPER_DIR naming the
+                // bundle: `/usr/bin/xed` is a shim that follows
+                // `xcode-select`, which can point at the Command Line Tools,
+                // where there is no xed to forward to.
+                MacLauncher::Xcode => Some(contents.join("Developer/usr/bin/xed"))
                     .filter(|p| probe.is_executable(p))
-                    .map(program),
+                    .map(|xed| Launcher::Program {
+                        program: xed,
+                        base_args: Vec::new(),
+                        env: vec![("DEVELOPER_DIR".to_string(), contents.join("Developer"))],
+                    }),
             };
             if launcher.is_some() {
                 return launcher;
@@ -428,13 +448,13 @@ fn resolve_mac(def: &EditorDef, env: &HostEnv, probe: &dyn Probe) -> Option<Laun
         }
     }
     if bundle_first {
-        return find_on_path(def, env, probe);
+        return find_on_path(def.commands, env, probe);
     }
     None
 }
 
 fn resolve_windows(def: &EditorDef, env: &HostEnv, probe: &dyn Probe) -> Option<Launcher> {
-    if let Some(found) = find_on_path(def, env, probe) {
+    if let Some(found) = find_on_path(def.commands, env, probe) {
         return Some(found);
     }
     let mut roots: Vec<PathBuf> = env
@@ -493,7 +513,22 @@ fn resolve_windows(def: &EditorDef, env: &HostEnv, probe: &dyn Probe) -> Option<
 }
 
 fn resolve_linux(def: &EditorDef, env: &HostEnv, probe: &dyn Probe) -> Option<Launcher> {
-    if let Some(found) = find_on_path(def, env, probe) {
+    // Zed's installer puts `~/.local/bin/zed`; distro packages name it
+    // `zeditor`, because `zed` is taken by OpenZFS. Both beat a bare `zed`.
+    let zed_order: &[&str] = &["zeditor", "zed"];
+    let commands = if def.id == "zed" {
+        zed_order
+    } else {
+        def.commands
+    };
+    if def.id == "zed" {
+        if let Some(local) = env.home.as_ref().map(|h| h.join(".local/bin/zed")) {
+            if probe.is_executable(&local) {
+                return Some(program(local));
+            }
+        }
+    }
+    if let Some(found) = find_on_path(commands, env, probe) {
         return Some(found);
     }
     let mut dirs: Vec<PathBuf> = env.home.iter().map(|h| h.join(".local/bin")).collect();
@@ -508,7 +543,7 @@ fn resolve_linux(def: &EditorDef, env: &HostEnv, probe: &dyn Probe) -> Option<La
         }
     }
     dirs.iter()
-        .flat_map(|dir| def.commands.iter().map(move |c| dir.join(c)))
+        .flat_map(|dir| commands.iter().map(move |c| dir.join(c)))
         .find(|p| probe.is_executable(p))
         .map(program)
 }
@@ -577,11 +612,32 @@ struct Position {
 
 /// The target arguments for `style`: the path, with the position spelled the
 /// way that editor reads it.
+/// `notes:12`: a file name that a `path:line` parser would cut short.
+fn name_looks_positioned(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    name.rsplit_once(':').is_some_and(|(stem, digits)| {
+        !stem.is_empty() && !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
+    })
+}
+
 fn target_args(style: LaunchStyle, path: &Path, position: Option<Position>) -> Vec<OsString> {
-    let Some(Position { line, column }) = position.filter(|p| p.line > 0) else {
+    let suffix_style = matches!(style, LaunchStyle::Goto | LaunchStyle::Suffix);
+    // The suffix parsers read `path:line:col` from the right, so a name that
+    // itself ends in `:digits` must carry a full `:line:col` after it, or its
+    // own digits are taken as the line. Line 1, column 1 when none was asked.
+    let ambiguous = suffix_style && name_looks_positioned(path);
+    let position = position
+        .filter(|p| p.line > 0)
+        .or(ambiguous.then_some(Position {
+            line: 1,
+            column: Some(1),
+        }));
+    let Some(Position { line, column }) = position else {
         return vec![path.as_os_str().to_owned()];
     };
-    let column = column.filter(|c| *c > 0);
+    let column = column.filter(|c| *c > 0).or(ambiguous.then_some(1));
     let suffixed = || {
         let mut target = path.as_os_str().to_owned();
         target.push(format!(":{line}"));
@@ -613,26 +669,84 @@ fn target_args(style: LaunchStyle, path: &Path, position: Option<Position>) -> V
 
 /// The program and argv that open `path` in `editor`, or `None` for the
 /// system default, which goes through the opener plugin instead.
+/// A program to run: what `command_for` builds and `spawn_checked` runs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LaunchCommand {
+    program: PathBuf,
+    args: Vec<OsString>,
+    env: Vec<(String, PathBuf)>,
+}
+
 fn command_for(
     editor: &Detected,
     path: &Path,
     position: Option<Position>,
-) -> Option<(PathBuf, Vec<OsString>)> {
+) -> Option<LaunchCommand> {
     let target = target_args(editor.style, path, position);
     match &editor.launcher {
         Launcher::System => None,
-        Launcher::Program { program, base_args } => {
+        Launcher::Program {
+            program,
+            base_args,
+            env,
+        } => {
             let mut args: Vec<OsString> = base_args.iter().map(OsString::from).collect();
             args.extend(target);
-            Some((program.clone(), args))
+            Some(LaunchCommand {
+                program: program.clone(),
+                args,
+                env: env.clone(),
+            })
         }
         Launcher::MacBundle(bundle) => {
             let mut args: Vec<OsString> =
                 vec!["-na".into(), bundle.as_os_str().to_owned(), "--args".into()];
             args.extend(target);
-            Some((PathBuf::from("/usr/bin/open"), args))
+            Some(LaunchCommand {
+                program: PathBuf::from("/usr/bin/open"),
+                args,
+                env: Vec::new(),
+            })
         }
     }
+}
+
+/// Extensions the OS would *run* rather than open in an app.
+const RUNNABLE_EXTENSIONS: &[&str] = &[
+    "exe", "bat", "cmd", "com", "ps1", "js", "vbs", "lnk", "msi", "app", "command", "tool",
+];
+
+/// Whether handing `path` to the system's opener would run it: a runnable
+/// extension (Windows programs and scripts, a macOS app bundle or a
+/// Terminal `.command`), or on Unix a file with an execute bit.
+fn system_open_would_run(path: &Path) -> bool {
+    let by_name = path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+        RUNNABLE_EXTENSIONS
+            .iter()
+            .any(|r| e.eq_ignore_ascii_case(r))
+    });
+    if by_name {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = std::fs::metadata(path) {
+            return meta.is_file() && meta.permissions().mode() & 0o111 != 0;
+        }
+    }
+    false
+}
+
+/// The system default: the app the OS opens `path` with, except for anything
+/// it would run instead, which is shown in Finder / Explorer.
+fn open_with_system(path: &Path) -> Result<(), String> {
+    if system_open_would_run(path) {
+        return tauri_plugin_opener::reveal_item_in_dir(path)
+            .map_err(|e| format!("Couldn't reveal {}: {e}", path.display()));
+    }
+    tauri_plugin_opener::open_path(path, None::<&str>)
+        .map_err(|e| format!("Couldn't open {}: {e}", path.display()))
 }
 
 fn find_editor<'a>(list: &'a [Detected], id: &str) -> Result<&'a Detected, String> {
@@ -672,32 +786,93 @@ fn check_batch_safe(program: &Path, args: &[OsString]) -> Result<(), String> {
     Ok(())
 }
 
-fn spawn_detached(program: &Path, args: &[OsString]) -> Result<(), String> {
-    check_batch_safe(program, args)?;
-    let mut command = std::process::Command::new(program);
-    command
-        .args(args)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
+/// How long a launcher is watched for an early failure before it is left to
+/// run. Long enough for a CLI that cannot find its app to say so; short
+/// enough that a launcher which stays in the foreground (JetBrains Toolbox
+/// scripts on Linux) is not mistaken for a hang.
+const LAUNCH_WATCH: std::time::Duration = std::time::Duration::from_millis(1500);
+
+/// The most of a launcher's stderr kept for an error message.
+const STDERR_KEEP: usize = 4096;
+
+/// Start `command`, and fail with what it printed if it exits non-zero within
+/// `watch`. Past that it is left running and reaped in the background.
+fn spawn_checked(command: &LaunchCommand, watch: std::time::Duration) -> Result<(), String> {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    use std::sync::Mutex as StdMutex;
+
+    check_batch_safe(&command.program, &command.args)?;
+    let mut process = Command::new(&command.program);
+    process
+        .args(&command.args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    for (key, value) in &command.env {
+        process.env(key, value);
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         // CREATE_NO_WINDOW: a `.cmd` shim would otherwise flash a console.
-        command.creation_flags(0x0800_0000);
+        process.creation_flags(0x0800_0000);
     }
-    let child = command
+    let name = command.program.display().to_string();
+    let mut child = process
         .spawn()
-        .map_err(|e| format!("Couldn't start {}: {e}", program.display()))?;
-    // The CLIs hand off to the running app and exit; reap them so they don't
-    // linger as zombies for the rest of the session. Windows has no zombies.
-    #[cfg(unix)]
+        .map_err(|e| format!("Couldn't start {name}: {e}"))?;
+
+    // Drained on its own thread, all the way to EOF: a launcher that keeps
+    // writing must never block on a full pipe, and the app it starts may hold
+    // the pipe open long after the launcher itself has gone.
+    let stderr = Arc::new(StdMutex::new(Vec::new()));
+    let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
+    if let Some(mut pipe) = child.stderr.take() {
+        let sink = stderr.clone();
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 1024];
+            while let Ok(n) = pipe.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                if let Ok(mut kept) = sink.lock() {
+                    let room = STDERR_KEEP.saturating_sub(kept.len());
+                    kept.extend_from_slice(&buf[..n.min(room)]);
+                }
+            }
+            let _ = done_tx.send(());
+        });
+    }
+
+    let started = std::time::Instant::now();
+    while started.elapsed() < watch {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => return Ok(()),
+            Ok(Some(status)) => {
+                // Let the reader catch up with what the launcher wrote
+                // before it exited; a grandchild keeping the pipe open must
+                // not hold the error back for long.
+                let _ = done_rx.recv_timeout(std::time::Duration::from_millis(200));
+                let text = stderr
+                    .lock()
+                    .map(|kept| String::from_utf8_lossy(&kept).trim().to_string())
+                    .unwrap_or_default();
+                return Err(if text.is_empty() {
+                    format!("{name} exited with {status}")
+                } else {
+                    text
+                });
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
+            Err(e) => return Err(format!("Couldn't watch {name}: {e}")),
+        }
+    }
+    // Still running: a launcher that stays in the foreground. Reap it when it
+    // ends so it does not linger as a zombie.
     std::thread::spawn(move || {
-        let mut child = child;
         let _ = child.wait();
     });
-    #[cfg(not(unix))]
-    let _ = child;
     Ok(())
 }
 
@@ -733,9 +908,8 @@ pub async fn external_editor_open(
             .filter(|_| target.is_file())
             .map(|line| Position { line, column });
         match command_for(&chosen, &target, position) {
-            Some((program, args)) => spawn_detached(&program, &args),
-            None => tauri_plugin_opener::open_path(&target, None::<&str>)
-                .map_err(|e| format!("Couldn't open {}: {e}", target.display())),
+            Some(command) => spawn_checked(&command, LAUNCH_WATCH),
+            None => open_with_system(&target),
         }
     })
     .await
@@ -760,12 +934,14 @@ mod tests {
             launcher: Launcher::Program {
                 program: PathBuf::from(program),
                 base_args: Vec::new(),
+                env: Vec::new(),
             },
         }
     }
 
     fn argv(editor: &Detected, path: &str, position: Option<Position>) -> (String, Vec<String>) {
-        let (program, args) = command_for(editor, Path::new(path), position).expect("a program");
+        let LaunchCommand { program, args, .. } =
+            command_for(editor, Path::new(path), position).expect("a program");
         (
             program.to_string_lossy().into_owned(),
             args.iter()
@@ -874,6 +1050,7 @@ mod tests {
         editor.launcher = Launcher::Program {
             program: PathBuf::from("/usr/local/bin/cursor"),
             base_args: vec!["--reuse-window".into()],
+            env: Vec::new(),
         };
         assert_eq!(
             argv(&editor, SPACED, AT).1,
@@ -965,12 +1142,12 @@ mod tests {
         }
     }
 
-    /// A pretend disk: executables, directories and PATH hits.
+    /// A pretend disk: executables and directories. `PATH` is searched
+    /// against the executables, in the order it is given.
     #[derive(Default)]
     struct FakeProbe {
         executables: HashSet<PathBuf>,
         dirs: HashMap<PathBuf, Vec<String>>,
-        path_hits: HashMap<String, PathBuf>,
     }
 
     impl Probe for FakeProbe {
@@ -983,8 +1160,10 @@ mod tests {
         fn list_dir(&self, path: &Path) -> Vec<String> {
             self.dirs.get(path).cloned().unwrap_or_default()
         }
-        fn on_path(&self, command: &str, _: &OsString) -> Option<PathBuf> {
-            self.path_hits.get(command).cloned()
+        fn on_path(&self, command: &str, path_var: &OsString) -> Option<PathBuf> {
+            std::env::split_paths(path_var)
+                .map(|dir| dir.join(command))
+                .find(|p| self.executables.contains(p))
         }
     }
 
@@ -1013,10 +1192,8 @@ mod tests {
             vec!["IntelliJ IDEA 2026.1.app".into()],
         );
         probe.dirs.insert(idea_app.clone(), vec![]);
-        // A ZFS `zed` on PATH loses to the Zed bundle.
-        probe
-            .path_hits
-            .insert("zed".into(), "/usr/local/zfs/bin/zed".into());
+        // Another `zed` on PATH loses to the Zed bundle.
+        probe.executables.insert("/usr/bin/zed".into());
         let zed_app = PathBuf::from("/Applications/Zed.app");
         probe.dirs.insert(zed_app.clone(), vec![]);
         probe.executables.insert(zed_app.join("Contents/MacOS/cli"));
@@ -1035,18 +1212,30 @@ mod tests {
     fn xcode_needs_its_bundle_and_is_mac_only() {
         let mut probe = FakeProbe::default();
         probe.dirs.insert("/Applications/Xcode.app".into(), vec![]);
-        probe.executables.insert("/usr/bin/xed".into());
+        let xed = PathBuf::from("/Applications/Xcode.app/Contents/Developer/usr/bin/xed");
+        probe.executables.insert(xed.clone());
         let ids = |p| -> Vec<&str> { detect(p, &mac_env(), &probe).iter().map(|d| d.id).collect() };
         assert_eq!(ids(Platform::Mac), ["xcode", "system"]);
         assert_eq!(ids(Platform::Linux), ["system"]);
+        // The bundle's own xed, told where its bundle is.
+        let found = detect(Platform::Mac, &mac_env(), &probe);
+        assert_eq!(
+            found[0].launcher,
+            Launcher::Program {
+                program: xed,
+                base_args: Vec::new(),
+                env: vec![(
+                    "DEVELOPER_DIR".to_string(),
+                    PathBuf::from("/Applications/Xcode.app/Contents/Developer")
+                )],
+            }
+        );
     }
 
     #[test]
     fn linux_detection_reads_path_then_toolbox_scripts() {
         let mut probe = FakeProbe::default();
-        probe
-            .path_hits
-            .insert("subl".into(), "/usr/bin/subl".into());
+        probe.executables.insert("/usr/bin/subl".into());
         probe
             .executables
             .insert("/home/me/.local/share/JetBrains/Toolbox/scripts/pycharm".into());
@@ -1062,5 +1251,145 @@ mod tests {
             .map(|d| d.id)
             .collect();
         assert_eq!(ids, ["sublime", "pycharm", "system"]);
+    }
+
+    fn linux_env(path: &str) -> HostEnv {
+        HostEnv {
+            path_var: Some(path.into()),
+            home: Some("/home/me".into()),
+            local_app_data: None,
+            program_files: Vec::new(),
+            xdg_data_home: None,
+        }
+    }
+
+    fn ids(platform: Platform, env: &HostEnv, probe: &FakeProbe) -> Vec<&'static str> {
+        detect(platform, env, probe).iter().map(|d| d.id).collect()
+    }
+
+    #[test]
+    fn the_zfs_event_daemon_in_sbin_is_not_zed() {
+        let mut probe = FakeProbe::default();
+        probe.executables.insert("/usr/sbin/zed".into());
+        assert_eq!(
+            ids(Platform::Linux, &linux_env("/usr/sbin:/usr/bin"), &probe),
+            ["system"]
+        );
+        let mac = HostEnv {
+            path_var: Some("/usr/local/sbin:/usr/bin".into()),
+            ..mac_env()
+        };
+        probe.executables.insert("/usr/local/sbin/zed".into());
+        assert_eq!(ids(Platform::Mac, &mac, &probe), ["system"]);
+    }
+
+    #[test]
+    fn linux_zed_prefers_its_own_install_then_zeditor() {
+        let mut probe = FakeProbe::default();
+        probe.executables.insert("/usr/bin/zed".into());
+        probe.executables.insert("/usr/bin/zeditor".into());
+        let env = linux_env("/usr/bin");
+        let launcher = |probe: &FakeProbe| detect(Platform::Linux, &env, probe)[0].launcher.clone();
+        assert_eq!(launcher(&probe), program("/usr/bin/zeditor".into()));
+        probe.executables.insert("/home/me/.local/bin/zed".into());
+        assert_eq!(launcher(&probe), program("/home/me/.local/bin/zed".into()));
+    }
+
+    #[test]
+    fn a_name_ending_in_digits_gets_an_explicit_position() {
+        let odd = "/p/notes:12";
+        for id in ["zed", "sublime"] {
+            let editor = detected_program(id, "/usr/local/bin/zed");
+            assert_eq!(argv(&editor, odd, None).1, [format!("{odd}:1:1")], "{id}");
+            assert_eq!(argv(&editor, odd, LINE_ONLY).1, [format!("{odd}:12:1")]);
+            assert_eq!(argv(&editor, odd, AT).1, [format!("{odd}:12:5")]);
+        }
+        let code = detected_program("vscode", "/usr/local/bin/code");
+        assert_eq!(argv(&code, odd, None).1, ["--goto", &format!("{odd}:1:1")]);
+        // JetBrains takes the position as flags, so the name needs nothing.
+        let idea = detected_program("idea", "/usr/local/bin/idea");
+        assert_eq!(argv(&idea, odd, None).1, [odd]);
+        // Only a whole run of digits after the last colon counts.
+        assert!(!name_looks_positioned(Path::new("/p/a:b")));
+        assert!(!name_looks_positioned(Path::new("/p/:12")));
+        assert!(!name_looks_positioned(Path::new("/p:12/a")));
+    }
+
+    #[test]
+    fn the_system_default_refuses_to_run_what_it_would_execute() {
+        for name in [
+            "setup.exe",
+            "run.BAT",
+            "x.cmd",
+            "x.com",
+            "x.ps1",
+            "x.js",
+            "x.vbs",
+            "x.lnk",
+            "x.msi",
+            "Calculator.app",
+            "go.command",
+            "x.tool",
+        ] {
+            assert!(
+                system_open_would_run(Path::new(&format!("/nowhere/{name}"))),
+                "{name}"
+            );
+        }
+        assert!(!system_open_would_run(Path::new("/nowhere/notes.md")));
+
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("build");
+        std::fs::write(&script, "#!/bin/sh\n").unwrap();
+        assert!(!system_open_would_run(&script));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+            assert!(system_open_would_run(&script));
+            // A folder's execute bit is search permission, not "run me".
+            assert!(!system_open_would_run(dir.path()));
+        }
+    }
+
+    #[cfg(unix)]
+    fn sh(script: &str) -> LaunchCommand {
+        LaunchCommand {
+            program: "/bin/sh".into(),
+            args: vec!["-c".into(), script.into()],
+            env: Vec::new(),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_launcher_that_fails_fast_reports_its_stderr() {
+        let err = spawn_checked(&sh("echo '  no such app  ' >&2; exit 3"), LAUNCH_WATCH)
+            .expect_err("a non-zero exit is a failure");
+        assert_eq!(err, "no such app");
+        let silent = spawn_checked(&sh("exit 4"), LAUNCH_WATCH).expect_err("still a failure");
+        assert!(silent.contains("exited with"), "{silent}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_launcher_that_succeeds_or_stays_in_the_foreground_is_fine() {
+        assert_eq!(spawn_checked(&sh("exit 0"), LAUNCH_WATCH), Ok(()));
+        let started = std::time::Instant::now();
+        let watch = std::time::Duration::from_millis(200);
+        assert_eq!(spawn_checked(&sh("sleep 5"), watch), Ok(()));
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "not waited out"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_launch_environment_reaches_the_launcher() {
+        let mut command =
+            sh("[ \"$DEVELOPER_DIR\" = /x/Developer ] || { echo wrong >&2; exit 1; }");
+        command.env = vec![("DEVELOPER_DIR".into(), "/x/Developer".into())];
+        assert_eq!(spawn_checked(&command, LAUNCH_WATCH), Ok(()));
     }
 }

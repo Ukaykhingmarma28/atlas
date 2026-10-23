@@ -2,9 +2,11 @@
 //
 // An Atlas session always runs on this machine, in the project folder, so the
 // first row states that rather than offering a choice of machine or run mode.
-// The second row's split opens the project in the preferred editor (the file
-// manager when no editor is installed); its menu lists every installed editor,
-// then the file manager, a terminal and the clipboard.
+// The second row's split opens the project in the editor the user chose in
+// Settings ▸ Preferred editor; with "Automatic" it stays the file manager, the
+// same rule as for files outside the project. Its menu lists every installed
+// editor whatever the setting, then the file manager, a terminal and the
+// clipboard.
 
 import {
   Copy,
@@ -16,14 +18,14 @@ import {
 } from "lucide-react";
 
 import { useProjectStore } from "@/features/projects/stores/project-store";
+import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { OpenInEditorDropdownItems } from "@/features/external-editor/components/open-in-editor-menu";
-import { SYSTEM_EDITOR_ID } from "@/features/external-editor/lib/external-editor-api";
 import {
+  editorForOutsideFiles,
   openInEditor,
   openInLabel,
   usePreferredEditor,
 } from "@/features/external-editor/lib/preferred-editor";
-import { DropdownMenuSeparator } from "@/ui/dropdown-menu";
 import { isMac, isWindows } from "@/lib/platform";
 import { DropdownMenuItem } from "@/ui/dropdown-menu";
 
@@ -42,10 +44,10 @@ const FILE_MANAGER = isMac ? "Finder" : isWindows ? "Explorer" : "file manager";
 export function WorkspaceSection({ projectPath }: { projectPath: string }) {
   const name = useProjectStore((s) => s.projects.find((p) => p.path === projectPath)?.name ?? null);
   const folder = name ?? projectPath.split(/[\\/]/).pop() ?? projectPath;
-  // The system default opens a folder in the file manager, which the menu
-  // already offers in its own words, so only a real editor takes the row.
-  const { preferred } = usePreferredEditor();
-  const editor = preferred && preferred.id !== SYSTEM_EDITOR_ID ? preferred : null;
+  const { editors } = usePreferredEditor();
+  const setting = useSettingsStore((s) => s.settings.preferredEditor);
+  // Only an editor the user named takes the row.
+  const editor = editorForOutsideFiles(setting, editors);
 
   return (
     <ContextSection title="Workspace" showHeading={false} separated={false}>
@@ -64,8 +66,7 @@ export function WorkspaceSection({ projectPath }: { projectPath: string }) {
         menuLabel="Other ways to open the project"
         menu={
           <>
-            <OpenInEditorDropdownItems path={projectPath} />
-            {editor && <DropdownMenuSeparator />}
+            <OpenInEditorDropdownItems path={projectPath} separatorAfter />
             <DropdownMenuItem onClick={() => void revealProject(projectPath)}>
               <FolderOpen />
               Reveal in {FILE_MANAGER}

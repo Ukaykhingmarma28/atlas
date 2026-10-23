@@ -9,7 +9,7 @@ import {
   ContextMenuSubContent,
   ContextMenuSubTrigger,
 } from "@/ui/context-menu";
-import { DropdownMenuItem } from "@/ui/dropdown-menu";
+import { DropdownMenuItem, DropdownMenuSeparator } from "@/ui/dropdown-menu";
 import {
   SYSTEM_EDITOR_ID,
   type EditorPosition,
@@ -65,11 +65,19 @@ export function OpenInEditorContextItems({
 /** For a dropdown: one "Open in X" item per installed editor, preferred
  *  first; the system default is left to the caller, which has its own
  *  file-manager wording for a folder. */
-export function OpenInEditorDropdownItems({ path }: { path: string }) {
+export function OpenInEditorDropdownItems({
+  path,
+  separatorAfter = false,
+}: {
+  path: string;
+  /** Close the group with a separator, drawn only when there are items. */
+  separatorAfter?: boolean;
+}) {
   const { editors, preferred } = usePreferredEditor();
   const { primary, others } = editorMenuEntries(editors, preferred);
   if (!primary) return null;
   const items = [primary, ...others].filter((e) => e.id !== SYSTEM_EDITOR_ID);
+  if (items.length === 0) return null;
   return (
     <>
       {items.map((editor) => (
@@ -78,6 +86,7 @@ export function OpenInEditorDropdownItems({ path }: { path: string }) {
           {openInLabel(editor)}
         </DropdownMenuItem>
       ))}
+      {separatorAfter && <DropdownMenuSeparator />}
     </>
   );
 }
