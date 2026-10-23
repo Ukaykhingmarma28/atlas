@@ -1,5 +1,5 @@
 // The bar's action dock: the window-level icon row (update, notifications,
-// right panel, account) with a single tooltip that slides between its items.
+// account) with a single tooltip that slides between its items.
 //
 // The tooltip is ONE strip containing every label, translated so the active
 // label centres under the hovered icon and clipped so only that label shows.
@@ -39,7 +39,7 @@ export interface DockItem {
   badge?: React.ReactNode;
   /** Overrides `label` for the accessible name where it says more. */
   title?: string;
-  /** A toggle that is on (the right panel while it is open). */
+  /** A toggle that is on. */
   pressed?: boolean;
 }
 

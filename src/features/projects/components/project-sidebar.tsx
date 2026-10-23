@@ -76,6 +76,8 @@ import { isMac } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { GitDot, NumStatPill } from "./git-summary";
 import { sourceControlShown, toggleSourceControl } from "@/features/layout/lib/source-control";
+import { teamChatShown, toggleTeamChat } from "@/features/layout/lib/team-chat";
+import { destinationShown, toggleDestination } from "@/features/layout/lib/destinations";
 import { unlockHint, useTeamAccess } from "@/features/comms/lib/team-chat-access";
 
 // Slot heights (include the inter-row gap so the virtualizer spaces rows out);
@@ -665,10 +667,13 @@ export function ProjectSidebar() {
   const displayActiveId = optimisticActiveId ?? activeProjectId;
   const sidebarPinned = useProjectStore.use.sidebarPinned();
   const { addProject, toggleSidebarPinned } = useProjectStore.use.actions();
-  const { addTab, toggleTeamChat } = useLayoutStore.use.actions();
-  // Drive the active state of the Chat and Source control items.
-  const teamChatOpen = useLayoutStore((s) => s.rightPanel.visible);
+  const { addTab } = useLayoutStore.use.actions();
+  // Drive the active state of the items that toggle what they open.
+  const teamChatOpen = useLayoutStore(teamChatShown);
   const sourceControlOpen = useLayoutStore(sourceControlShown);
+  const knowledgeOpen = useLayoutStore((s) => destinationShown(s, "knowledge"));
+  const memoryOpen = useLayoutStore((s) => destinationShown(s, "memory"));
+  const usageOpen = useLayoutStore((s) => destinationShown(s, "usage"));
   // Source control needs a project (it opens beside the project's agent), so
   // the item says so instead of opening a tab that has nothing to show.
   const hasProject = useAppStore((s) => !!s.currentProject);
@@ -682,45 +687,6 @@ export function ProjectSidebar() {
   const teamAccess = useTeamAccess();
   const [membersOpen, setMembersOpen] = useState(false);
   const newTabHint = useActionShortcut("nav.newTabPalette")?.label;
-  // Mirrors `panels.knowledge` in App.tsx: one Knowledge tab per split column,
-  // focused if it already exists.
-  const openKnowledge = useCallback(() => {
-    const st = useLayoutStore.getState();
-    const g = st.focusedGroupId;
-    const existing = st.tabs.find((t) => (t.groupId ?? "main") === g && t.type === "knowledge");
-    if (existing) {
-      st.actions.setActiveTab(existing.id);
-      return;
-    }
-    st.actions.addTab({
-      id: `knowledge-${Date.now()}`,
-      type: "knowledge",
-      title: "Knowledge",
-      closable: true,
-      dirty: false,
-      data: {},
-    });
-  }, []);
-  // Same open-or-focus shape as `openKnowledge`. Deliberately NOT gated on a
-  // project: only the panel's Shared tab needs one, and it says so itself —
-  // the graph, policy and timeline views are global.
-  const openMemory = useCallback(() => {
-    const st = useLayoutStore.getState();
-    const g = st.focusedGroupId;
-    const existing = st.tabs.find((t) => (t.groupId ?? "main") === g && t.type === "memory");
-    if (existing) {
-      st.actions.setActiveTab(existing.id);
-      return;
-    }
-    st.actions.addTab({
-      id: `memory-${Date.now()}`,
-      type: "memory",
-      title: "Memory",
-      closable: true,
-      dirty: false,
-      data: {},
-    });
-  }, []);
   const recentProjects = useAppStore.use.recentProjects();
   const { clearRecents } = useAppStore.use.actions();
   const recentChats = useRecentChatsStore.use.items();
@@ -1031,9 +997,10 @@ export function ProjectSidebar() {
                   <NavItem
                     icon={<BookOpen size={14} />}
                     label="Knowledge"
+                    active={knowledgeOpen}
                     disabled={!hasProject}
                     title={hasProject ? undefined : "Open a project to open its knowledge base"}
-                    onClick={openKnowledge}
+                    onClick={() => toggleDestination("knowledge")}
                   />
                   <NavItem
                     icon={<TerminalSquare size={14} />}
@@ -1058,25 +1025,19 @@ export function ProjectSidebar() {
                     title={hasProject ? undefined : "Open a project to see its source control"}
                     onClick={toggleSourceControl}
                   />
-                  <NavItem icon={<BrainCircuit size={14} />} label="Memory" onClick={openMemory} />
-                  {/* Usage is a module, not rail chrome. It was up with the pin
-                   *  and collapse-all buttons, which are controls on the SIDEBAR
-                   *  ITSELF — Usage opens a tab, like every row here. Same
-                   *  singleton id either way, so an open Usage tab is focused
-                   *  rather than duplicated. */}
+                  <NavItem
+                    icon={<BrainCircuit size={14} />}
+                    label="Memory"
+                    active={memoryOpen}
+                    onClick={() => toggleDestination("memory")}
+                  />
+                  {/* Usage is a module, not rail chrome: a destination, like
+                   *  Knowledge and Memory, so the row toggles it. */}
                   <NavItem
                     icon={<Gauge size={14} />}
                     label="Usage"
-                    onClick={() =>
-                      addTab({
-                        id: "usage",
-                        type: "usage",
-                        title: "Usage",
-                        closable: true,
-                        dirty: false,
-                        data: {},
-                      })
-                    }
+                    active={usageOpen}
+                    onClick={() => toggleDestination("usage")}
                   />
                   <NavItem
                     icon={<Ellipsis size={14} />}

@@ -1,14 +1,5 @@
 import type { ElementType } from "react";
-import {
-  Brain,
-  BrainCircuit,
-  Code,
-  GitBranch,
-  Globe,
-  Map,
-  ScrollText,
-  Terminal,
-} from "lucide-react";
+import { Code, GitBranch, Globe, MessagesSquare, ScrollText, Terminal } from "lucide-react";
 import { AtlasIcon } from "@/components/atlas-icon";
 import type { TabType } from "@/lib/constants";
 import { useLayoutStore } from "../stores/layout-store";
@@ -22,6 +13,10 @@ import { useLayoutStore } from "../stores/layout-store";
  * picks it — inside the open `+` menu, and anywhere while a focused column is
  * showing the launcher — so `⌘T` then `A` is a new agent, `⌘T` then `T` a
  * terminal. The hint and the match read the same field, so they cannot drift.
+ *
+ * Surfaces only (ADR-0024): Knowledge, Memory, Spaces and the other
+ * destinations take the window, so they are not offered as a column's tab
+ * (`tab-placement-contract.test.ts`). The rail and ⌘K reach them.
  */
 export interface Surface {
   type: TabType;
@@ -35,24 +30,16 @@ export const SURFACES: readonly Surface[] = [
   { type: "terminal", label: "Terminal", icon: Terminal, key: "T" },
   { type: "browser", label: "Browser", icon: Globe, key: "B" },
   { type: "editor", label: "New file", icon: Code, key: "N" },
-  { type: "canvas", label: "Spaces", icon: Map, key: "S" },
-  { type: "knowledge", label: "Knowledge", icon: Brain, key: "K" },
-  { type: "memory", label: "Memory", icon: BrainCircuit, key: "M" },
   { type: "source-control", label: "Source control", icon: GitBranch, key: "G" },
+  { type: "team-chat", label: "Team chat", icon: MessagesSquare, key: "C" },
   { type: "log", label: "Log", icon: ScrollText, key: "L" },
 ];
 
 /** Open `surface` as a new tab in split column `groupId`. */
 export function openSurface(surface: Surface, groupId: string): void {
-  const { addTab, setActiveTab } = useLayoutStore.getState().actions;
-  if (surface.type === "source-control") {
-    // One per window, wherever it is: a second copy would be the same repo.
-    const existing = useLayoutStore.getState().tabs.find((t) => t.type === "source-control");
-    if (existing) {
-      setActiveTab(existing.id);
-      return;
-    }
-  }
+  // Source control and team chat are one per window; `addTab` focuses the
+  // open one wherever it is.
+  const { addTab } = useLayoutStore.getState().actions;
   const ts = Date.now();
   if (surface.type === "editor") {
     // The synthetic `untitled:<ts>` path starts the editor on an empty buffer
@@ -72,7 +59,10 @@ export function openSurface(surface: Surface, groupId: string): void {
   }
   addTab(
     {
-      id: surface.type === "source-control" ? "source-control" : `${surface.type}-${ts}`,
+      id:
+        surface.type === "source-control" || surface.type === "team-chat"
+          ? surface.type
+          : `${surface.type}-${ts}`,
       type: surface.type,
       title: surface.type === "chat" ? "Agents" : surface.label,
       closable: true,

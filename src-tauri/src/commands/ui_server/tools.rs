@@ -72,7 +72,8 @@ pub(super) fn tools() -> Vec<Tool> {
             "ui_open",
             "Open something in the active project and make it the active tab. file: optional 1-based line/column/endLine/endColumn. \
              diff: git diff of `path`. tab: a plain tab type. thread: a chat by session id. space_page: a conversation's Space \
-             on pageId. Paths may be relative to your cwd.",
+             on pageId. Paths may be relative to your cwd. Timeline, Usage, Knowledge, the knowledge graph, Memory and \
+             Spaces are destinations: they take the window over the columns, one at a time (ui_state.destination).",
             json!({
                 "type": "object",
                 "properties": {
@@ -99,7 +100,7 @@ pub(super) fn tools() -> Vec<Tool> {
         ),
         tool(
             "ui_focus",
-            "Activate a tab, show/hide a panel (omit visible to toggle; right is team chat, source_control the source control tab), \
+            "Activate a tab, show/hide a panel (omit visible to toggle; team_chat and source_control are surface tabs), \
              pick a section (side left: files/knowledge; side source_control: changes/github/git-graph), \
              focus a split column by its index in ui_state.groups, or reveal a path in the explorer.",
             json!({
@@ -107,7 +108,7 @@ pub(super) fn tools() -> Vec<Tool> {
                 "properties": {
                     "target": { "type": "string", "enum": ["tab", "panel", "section", "group", "explorer"] },
                     "id": { "type": "string" },
-                    "name": { "type": "string", "enum": ["left", "right", "source_control", "chat_sidebar", "terminal", "timeline_sidebar"] },
+                    "name": { "type": "string", "enum": ["left", "team_chat", "source_control", "chat_sidebar", "terminal", "timeline_sidebar"] },
                     "visible": { "type": "boolean" },
                     "side": { "type": "string", "enum": ["left", "source_control"] },
                     "section": { "type": "string", "enum": ["files", "knowledge", "changes", "github", "git-graph"] },

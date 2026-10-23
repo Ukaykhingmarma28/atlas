@@ -53,8 +53,9 @@ const PLAIN_TABS: Record<string, string> = {
 
 const layout = () => useLayoutStore.getState();
 
-/** Open a one-per-column tab and return the id it ended up with (an existing
- *  tab in the focused column wins over the id asked for). */
+/** Open a one-per-column tab, or a destination (ADR-0024), and return the id
+ *  it ended up with (an existing tab in the focused column wins over the id
+ *  asked for). */
 function openPlainTab(type: string, data: Record<string, unknown> = {}): string {
   layout().actions.addTab({
     id: type,
@@ -64,7 +65,9 @@ function openPlainTab(type: string, data: Record<string, unknown> = {}): string 
     dirty: false,
     data,
   });
-  return layout().activeTabId ?? type;
+  const { destination, destinationShown, activeTabId } = layout();
+  if (destinationShown && destination?.type === type) return destination.id;
+  return activeTabId ?? type;
 }
 
 export async function performOpen(request: UiActionRequest): Promise<unknown> {

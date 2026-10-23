@@ -143,6 +143,8 @@ import { listenModelDone } from "@/features/settings/lib/models-api";
 import { useModelsStore } from "@/features/settings/stores/models-store";
 import { useLoadProjectSettings } from "@/features/settings/lib/use-scoped-setting";
 import { toggleSourceControl } from "@/features/layout/lib/source-control";
+import { toggleTeamChat } from "@/features/layout/lib/team-chat";
+import { toggleDestination } from "@/features/layout/lib/destinations";
 
 /** Minimum gap between two wake-triggered account re-pulls. Long enough that a
  *  burst of focus edges (Space switches) costs one pull; short enough that a
@@ -596,7 +598,6 @@ export function App() {
   const [filePickerOpen, setFilePickerOpen] = useState(false);
   const {
     toggleLeftPanel,
-    toggleTeamChat,
     toggleChatSidebar,
     addTab,
     setActiveTab,
@@ -1336,29 +1337,13 @@ export function App() {
     // ⌘⇧B — source control, a surface tab beside the agent. The id keeps its
     // old name so a user's rebinding of it still applies.
     "panels.right": toggleSourceControl,
-    // ⌘⇧C — team chat, the right slot's only occupant.
+    // ⌘⇧C — team chat, a surface tab that follows you between projects.
     "panels.teamChat": toggleTeamChat,
     "panels.terminal": toggleTerminal,
     "panels.agentSidebar": toggleChatSidebar,
-    // ⌥J — open the Knowledge Base, or jump to it if already open, WITHIN
-    // the focused split column.
-    "panels.knowledge": () => {
-      const st = useLayoutStore.getState();
-      const g = st.focusedGroupId;
-      const existing = st.tabs.find((t) => (t.groupId ?? "main") === g && t.type === "knowledge");
-      if (existing) {
-        setActiveTab(existing.id);
-        return;
-      }
-      addTab({
-        id: `knowledge-${Date.now()}`,
-        type: "knowledge",
-        title: "Knowledge",
-        closable: true,
-        dirty: false,
-        data: {},
-      });
-    },
+    // ⌥J — Knowledge, a destination: opens it, or goes back to the session
+    // when it is the one on screen.
+    "panels.knowledge": () => toggleDestination("knowledge"),
     // ⌘1–8 select by index; ⌘9 always jumps to the LAST tab (browser
     // convention) — the store treats i<0 as "last".
     ...Object.fromEntries(
@@ -1447,16 +1432,8 @@ export function App() {
     // ⌘, toggles: Settings covers the window, so the same key takes you back.
     "app.settings": () =>
       useSettingsNav.getState().open ? closeSettings() : openSettingsSection(),
-    // The org's Usage dashboard — a singleton tab, so re-running focuses it.
-    "usage.open": () =>
-      addTab({
-        id: "usage",
-        type: "usage",
-        title: "Usage",
-        closable: true,
-        dirty: false,
-        data: {},
-      }),
+    // The org's Usage dashboard, a destination: the same key goes back.
+    "usage.open": () => toggleDestination("usage"),
     // Session Capture (the popover behind the titlebar's project pill). Local
     // `captureOpen` state lives in `ProjectLabel`, so this reaches it via the
     // same `atlas:open-capture` event the command palette entry dispatches.

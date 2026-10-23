@@ -8,6 +8,8 @@ import {
   LEGACY_TAB_TYPES,
   ORG_SCOPED_TYPES,
   TAB_TYPES,
+  WINDOW_TYPES,
+  isDestination,
   migrateTabType,
   type TabType,
 } from "@/lib/constants";
@@ -43,7 +45,6 @@ interface ZenSnapshot {
   focusedGroupId: string;
   tabGroups: Record<string, string>;
   leftVisible: boolean;
-  rightVisible: boolean;
 }
 
 interface LayoutState {
@@ -51,12 +52,6 @@ interface LayoutState {
     visible: boolean;
     width: number;
     activeSection: "files" | "knowledge";
-  };
-  /** The right slot: team chat (⌘⇧C). Source control used to share it; it is
-   *  a surface tab now (`source-control.ts`). */
-  rightPanel: {
-    visible: boolean;
-    width: number;
   };
   /** The source-control surface's last section, kept across reopening it. */
   sourceControl: {
@@ -108,8 +103,8 @@ interface LayoutState {
   activeByGroup: Record<string, string | null>;
   /** The column that owns keyboard focus (tab hotkeys target it). */
   focusedGroupId: string;
-  /** Zen mode: a focused Session │ Knowledge │ Browser 3-column split with the
-   *  global side panels hidden. `zenPrev` snapshots the layout to restore. */
+  /** Zen mode: the session beside a browser, with the global side panels
+   *  hidden. `zenPrev` snapshots the layout to restore. */
   zen: boolean;
   zenPrev: ZenSnapshot | null;
   /** The surfaces pane — every split column after the first, which is the
@@ -118,6 +113,15 @@ interface LayoutState {
    *  collapsing the main pane instead. Not persisted: a relaunch starts with
    *  both on screen. */
   surfaces: SurfacesMode;
+  /**
+   * The destination (ADR-0024): a full-page view taking the area right of the
+   * rail, one at a time, never a tab in a column. `destinationShown` false is
+   * Back: the view stays mounted, hidden, so returning to it is instant, until
+   * another destination replaces it or it is closed. Not persisted: a relaunch
+   * starts at the session.
+   */
+  destination: Tab | null;
+  destinationShown: boolean;
   // Back/forward stack of tab ids — entries are pushed every time the user
   // navigates to a tab; back() / forward() rewind/advance an index.
   tabHistory: string[];
@@ -135,8 +139,6 @@ interface LayoutActions {
     /** Show, hide or expand the surfaces pane (see `surfaces`). */
     setSurfaces: (mode: SurfacesMode) => void;
     toggleLeftPanel: () => void;
-    /** ⌘⇧C — show or hide team chat in the right slot. */
-    toggleTeamChat: () => void;
     toggleChatSidebar: () => void;
     toggleKnowledgeSidebar: () => void;
     toggleKnowledgeInspector: () => void;
@@ -152,6 +154,8 @@ interface LayoutActions {
     addTab: (tab: Tab, groupId?: string) => void;
     closeTab: (id: string) => void;
     setActiveTab: (id: string) => void;
+    /** Back to the session from a destination; it stays mounted, hidden. */
+    hideDestination: () => void;
     setTabDirty: (id: string, dirty: boolean) => void;
     navigateTabBack: () => void;
     navigateTabForward: () => void;
@@ -167,8 +171,8 @@ interface LayoutActions {
     /** Close a split column, moving its tabs to the left neighbour (never the
      *  last remaining column). */
     closeGroup: (groupId: string) => void;
-    /** Toggle Zen mode: a Session │ Knowledge │ Browser 3-column split with the
-     *  global side panels hidden; toggling again restores the prior layout. */
+    /** Toggle Zen mode: the session beside a browser with the global side
+     *  panels hidden; toggling again restores the prior layout. */
     toggleZenMode: () => void;
     /** Apply a predefined layout template to the active project: set panels +
      *  split columns + a tab of each template type per column (reusing existing
@@ -194,10 +198,6 @@ const initialState: LayoutState = {
     visible: true,
     width: 240,
     activeSection: "files",
-  },
-  rightPanel: {
-    visible: false,
-    width: 280,
   },
   sourceControl: {
     section: "changes",
@@ -242,6 +242,8 @@ const initialState: LayoutState = {
   zen: false,
   zenPrev: null,
   surfaces: "shown",
+  destination: null,
+  destinationShown: false,
   tabHistory: ["welcome-chat"],
   tabHistoryIndex: 0,
 };
@@ -402,7 +404,7 @@ function captureView(s: LayoutState): ProjectView {
  * Exported for `org-tabs.test.ts`.
  */
 export function persistsInEditorState(t: { type: TabType; closable: boolean }): boolean {
-  return t.closable && !ORG_SCOPED_TYPES.has(t.type);
+  return t.closable && !ORG_SCOPED_TYPES.has(t.type) && !WINDOW_TYPES.has(t.type);
 }
 
 /**
@@ -425,7 +427,10 @@ export function isRetiredTab(tab: { type: string; data?: Record<string, unknown>
  */
 export function restoredTabType(saved: string): TabType | null {
   const type = migrateTabType(saved);
-  if (type === null || ORG_SCOPED_TYPES.has(type)) return null;
+  if (type === null || ORG_SCOPED_TYPES.has(type) || WINDOW_TYPES.has(type)) return null;
+  // A destination is never a column tab (ADR-0024). Files saved before then
+  // carry Knowledge or Timeline tabs; they do not come back as columns.
+  if (isDestination(type)) return null;
   return type;
 }
 
@@ -471,6 +476,47 @@ function applyView(s: LayoutState, v: ProjectView): void {
   s.tabHistoryIndex = v.tabHistoryIndex;
 }
 
+/** Team chat's tab. One per window (`WINDOW_TYPES`); `team-chat.ts` opens it. */
+export const TEAM_CHAT_TAB: Tab = {
+  id: "team-chat",
+  type: "team-chat",
+  title: "Team chat",
+  closable: true,
+  dirty: false,
+  data: {},
+};
+
+/**
+ * `applyView`, except that the window's own tabs (team chat) come along
+ * instead of being swapped out with the outgoing project. The incoming view's
+ * copy, captured when that project was last left, is stale: the window's
+ * current state wins, so a team chat closed elsewhere stays closed.
+ *
+ * A carried tab keeps its column position when the incoming view has a column
+ * there (never the main one), else it opens in the surfaces pane; and it stays
+ * the column's active tab if it was. Exported for `window-tabs.test.ts`.
+ */
+export function applyViewKeepingWindowTabs(s: LayoutState, v: ProjectView): void {
+  const carried = s.tabs
+    .filter((t) => WINDOW_TYPES.has(t.type))
+    .map((t) => ({
+      tab: { ...t },
+      column: s.groupOrder.indexOf(groupOf(t)),
+      active: s.activeByGroup[groupOf(t)] === t.id,
+    }));
+  applyView(s, {
+    ...v,
+    tabs: v.tabs.filter((t) => !WINDOW_TYPES.has(t.type) && !isDestination(t.type)),
+  });
+  for (const c of carried) {
+    const gid =
+      c.column > 0 && c.column < s.groupOrder.length ? s.groupOrder[c.column] : surfaceGroupFor(s);
+    s.tabs.push({ ...c.tab, groupId: gid });
+    if (c.active || !s.activeByGroup[gid]) s.activeByGroup[gid] = c.tab.id;
+  }
+  reconcileGroups(s);
+}
+
 export const useLayoutStore = createSelectors(
   create<LayoutState & LayoutActions>()(
     persist(
@@ -480,10 +526,6 @@ export const useLayoutStore = createSelectors(
           toggleLeftPanel: () =>
             set((s) => {
               s.leftPanel.visible = !s.leftPanel.visible;
-            }),
-          toggleTeamChat: () =>
-            set((s) => {
-              s.rightPanel.visible = !s.rightPanel.visible;
             }),
           toggleChatSidebar: () =>
             set((s) => {
@@ -535,6 +577,35 @@ export const useLayoutStore = createSelectors(
             }),
           addTab: (tab, groupId) =>
             set((s) => {
+              // A destination never enters a column (ADR-0024). One at a time:
+              // the same kind reopens in place, keeping its mounted state; a
+              // Space is per conversation, so another one replaces it.
+              if (isDestination(tab.type)) {
+                const perConversation = tab.type === "spaces";
+                const same =
+                  s.destination?.type === tab.type &&
+                  (!perConversation || s.destination.id === tab.id);
+                s.destination = same
+                  ? { ...s.destination!, title: tab.title, data: tab.data }
+                  : { ...tab, groupId: undefined };
+                s.destinationShown = true;
+                return;
+              }
+              s.destinationShown = false;
+              // Source control and team chat are one per window, wherever the
+              // open one is.
+              if (tab.type === "source-control" || WINDOW_TYPES.has(tab.type)) {
+                const open = s.tabs.find((t) => t.type === tab.type);
+                if (open) {
+                  const grp = groupOf(open);
+                  s.focusedGroupId = grp;
+                  s.activeByGroup[grp] = open.id;
+                  revealGroup(s, grp);
+                  pushTabHistory(s, open.id);
+                  syncActiveMirror(s);
+                  return;
+                }
+              }
               // chat: each session is its own tab. File-backed viewers (editor /
               // diff / media / svg / pdf / notebook / unsupported) are one-per-FILE (deduped
               // by id, which is `${type}:${path}`) so opening a different file
@@ -555,8 +626,6 @@ export const useLayoutStore = createSelectors(
                 // One per DRAFT (id is `comms-draft-{id}`): the singleton rule
                 // would focus draft A when asked to open draft B.
                 tab.type === "comms-draft" ||
-                // One per CONVERSATION (id is `spaces-{convId}`), same rule.
-                tab.type === "spaces" ||
                 tab.type === "unsupported";
 
               let targetId = tab.id;
@@ -596,6 +665,11 @@ export const useLayoutStore = createSelectors(
             }),
           closeTab: (id) =>
             set((s) => {
+              if (s.destination?.id === id) {
+                s.destination = null;
+                s.destinationShown = false;
+                return;
+              }
               const idx = s.tabs.findIndex((t) => t.id === id);
               if (idx === -1) return;
               const tab = s.tabs[idx];
@@ -626,8 +700,18 @@ export const useLayoutStore = createSelectors(
               }
               syncActiveMirror(s);
             }),
+          hideDestination: () =>
+            set((s) => {
+              s.destinationShown = false;
+            }),
           setActiveTab: (id) =>
             set((s) => {
+              if (s.destination?.id === id) {
+                s.destinationShown = true;
+                return;
+              }
+              // Going to any session or surface leaves the destination.
+              s.destinationShown = false;
               const tab = s.tabs.find((t) => t.id === id);
               const target = tab ? id : (s.tabs[0]?.id ?? null);
               if (target === null) return;
@@ -768,7 +852,6 @@ export const useLayoutStore = createSelectors(
               if (s.zen && s.zenPrev) {
                 const p = s.zenPrev;
                 s.leftPanel.visible = p.leftVisible;
-                s.rightPanel.visible = p.rightVisible;
                 s.groupOrder = p.groupOrder.length ? [...p.groupOrder] : [DEFAULT_GROUP];
                 s.activeByGroup = { ...p.activeByGroup };
                 s.focusedGroupId = p.focusedGroupId;
@@ -779,8 +862,8 @@ export const useLayoutStore = createSelectors(
                 keepMainForSessions(s);
                 return;
               }
-              // Enter: snapshot the current layout, then build Session │ Knowledge │
-              // Browser with the side panels hidden.
+              // Enter: snapshot the current layout, then build Session │ Browser
+              // with the side panels hidden.
               const tabGroups: Record<string, string> = {};
               for (const t of s.tabs) tabGroups[t.id] = groupOf(t);
               s.zenPrev = {
@@ -789,9 +872,7 @@ export const useLayoutStore = createSelectors(
                 focusedGroupId: s.focusedGroupId,
                 tabGroups,
                 leftVisible: s.leftPanel.visible,
-                rightVisible: s.rightPanel.visible,
               };
-              const G_KB = "zen-kb";
               const G_CHAT = "zen-chat";
               const G_BROWSER = "zen-browser";
               // Reuse the existing singleton tab if present, else create one.
@@ -813,7 +894,6 @@ export const useLayoutStore = createSelectors(
                 });
                 return id;
               };
-              const kbId = ensure("knowledge", "Knowledge", G_KB);
               // A chat tab always exists (welcome-chat is the non-closable baseline).
               let chat = s.tabs.find((x) => x.type === "chat");
               if (!chat) {
@@ -832,11 +912,12 @@ export const useLayoutStore = createSelectors(
               }
               const browserId = ensure("browser", "Browser", G_BROWSER);
               // The agent first: the main column holds the session.
-              s.groupOrder = [G_CHAT, G_KB, G_BROWSER];
-              s.activeByGroup = { [G_KB]: kbId, [G_CHAT]: chat.id, [G_BROWSER]: browserId };
+              s.groupOrder = [G_CHAT, G_BROWSER];
+              s.activeByGroup = { [G_CHAT]: chat.id, [G_BROWSER]: browserId };
               s.focusedGroupId = G_CHAT;
+              // Team chat, like every tab outside the three, stays where it
+              // was and comes back on exit.
               s.leftPanel.visible = false;
-              s.rightPanel.visible = false;
               s.zen = true;
               syncActiveMirror(s);
             }),
@@ -891,8 +972,7 @@ export const useLayoutStore = createSelectors(
               // beside it stay open but out of sight.
               if (template.columns.length === 1 && s.groupOrder.length > 1) s.surfaces = "hidden";
 
-              // The left panel is the template's to set; team chat in the right
-              // slot is the user's and stays as it was.
+              // The left panel is the template's to set.
               s.leftPanel.visible = !!template.panels.left;
               if (template.leftSection) s.leftPanel.activeSection = template.leftSection;
             }),
@@ -928,7 +1008,7 @@ export const useLayoutStore = createSelectors(
           loadProjectView: (wsId) =>
             set((s) => {
               const v = s.viewsByWs[wsId] ?? welcomeView(wsId);
-              applyView(s, v);
+              applyViewKeepingWindowTabs(s, v);
               keepMainForSessions(s);
               s.currentViewWsId = wsId;
             }),
@@ -1043,7 +1123,8 @@ export const useLayoutStore = createSelectors(
         version: 2,
         partialize: (s) => ({
           leftPanel: s.leftPanel,
-          rightPanel: s.rightPanel,
+          // Derived, not a field: the tab is the truth while the app runs.
+          teamChat: { open: s.tabs.some((t) => t.type === "team-chat") },
           sourceControl: s.sourceControl,
           knowledgePanel: s.knowledgePanel,
           chatSidebar: s.chatSidebar,
@@ -1057,13 +1138,18 @@ export const useLayoutStore = createSelectors(
         merge: (persisted, current) => {
           const p = (persisted ?? {}) as Partial<LayoutState>;
           const leftPanel = { ...current.leftPanel, ...p.leftPanel };
-          // The slot is team chat's alone now. A save from when source control
-          // shared it says which one was open; only an open chat carries over.
-          const saved = p.rightPanel as (LayoutState["rightPanel"] & { mode?: string }) | undefined;
-          const rightPanel = {
-            visible: !!saved?.visible && (saved.mode === undefined || saved.mode === "chat"),
-            width: saved?.width ?? current.rightPanel.width,
+          // Team chat open at quit reopens. A save from before it was a tab
+          // says so as the right slot showing chat (`rightPanel`, which source
+          // control shared before that, with `mode`).
+          const persisted_ = (persisted ?? {}) as {
+            teamChat?: { open?: boolean };
+            rightPanel?: { visible?: boolean; mode?: string };
           };
+          const legacyRight = persisted_.rightPanel;
+          const teamChatOpen =
+            persisted_.teamChat?.open ??
+            (!!legacyRight?.visible &&
+              (legacyRight.mode === undefined || legacyRight.mode === "chat"));
           const sourceControl = { ...current.sourceControl, ...p.sourceControl };
           // Coerce section ids that no longer belong to this panel (e.g. a
           // pre-move `state.json` with "git-graph" on the left or "analysis"
@@ -1087,18 +1173,33 @@ export const useLayoutStore = createSelectors(
               const id = t.id in LEGACY_TAB_TYPES ? LEGACY_TAB_TYPES[t.id] : t.id;
               return { ...t, id, type };
             })
-            .filter((t) => validTypes.has(t.type) && !isRetiredTab(t));
+            .filter(
+              (t) =>
+                validTypes.has(t.type) && !isRetiredTab(t) && !isDestination(t.type as TabType),
+            );
+          // Seeded into the tab set here so the first `loadProjectView` (or the
+          // projectless shell) carries it like any open team chat.
+          if (teamChatOpen && !tabs.some((t) => t.type === "team-chat")) {
+            tabs.push({ ...TEAM_CHAT_TAB });
+          }
           let activeTabId = p.activeTabId ?? current.activeTabId;
           if (activeTabId !== null && !tabs.some((t) => t.id === activeTabId)) {
             activeTabId = tabs[0]?.id ?? null;
           }
+          const {
+            rightPanel: _legacy,
+            teamChat: _derived,
+            ...rest
+          } = p as Partial<LayoutState> & {
+            rightPanel?: unknown;
+            teamChat?: unknown;
+          };
           return {
             ...current,
-            ...p,
+            ...rest,
             tabs,
             activeTabId,
             leftPanel,
-            rightPanel,
             sourceControl,
             knowledgePanel: { ...current.knowledgePanel, ...p.knowledgePanel },
             chatSidebar: { ...current.chatSidebar, ...p.chatSidebar },

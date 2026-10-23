@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import type { TabType } from "@/lib/constants";
 import { revealSourceControl, toggleSourceControl } from "@/features/layout/lib/source-control";
+import { toggleTeamChat } from "@/features/layout/lib/team-chat";
 
 interface Command {
   id: string;
@@ -57,7 +58,6 @@ export function CommandPalette({
   const {
     addTab,
     toggleLeftPanel,
-    toggleTeamChat,
     toggleChatSidebar,
     toggleZenMode,
     setLeftSection,
@@ -210,7 +210,7 @@ export function CommandPalette({
       },
       {
         id: "toggle-right-chat",
-        label: "Toggle Team Chat Panel",
+        label: "Toggle Team Chat",
         actionId: "panels.teamChat",
         icon: MessageSquare,
         category: "Layout",
@@ -318,7 +318,6 @@ export function CommandPalette({
     [
       addTab,
       toggleLeftPanel,
-      toggleTeamChat,
       toggleChatSidebar,
       toggleZenMode,
       setLeftSection,

@@ -32,6 +32,14 @@ Glossary of domain terms as this project uses them. Decisions with lasting conse
 - **Installed-agents map** — the one record of which ACP agents exist. Installing writes an entry, uninstalling removes it, and nothing else makes an agent runnable. A fresh install has an empty map and offers only the native agent. See ADR-0002.
 - **Detection** — an agent found on the user's `PATH` that Atlas has *not* installed. An offer, never a spawn candidate: **accepting a detection** is a user action that writes an installed-agents-map entry pointing at their own binary, downloading nothing. Finding a binary installs nothing by itself.
 
+## Window layout
+
+- **Session column** — the main column, left of the surfaces pane. It holds sessions only and shows no tab strip; the session's title is the breadcrumb's last segment. *Avoid: chat column, main pane.*
+- **Surface** — a tool used beside the session, opened as a tab in the **surfaces pane** (the columns right of the session column): the editor, a terminal, the browser, a diff, source control, team chat. Built to work at column width, and declares the minimum width it needs. See ADR-0024.
+- **Destination** — a full-page view that takes the area right of the rail, one at a time, while the session keeps running underneath: Timeline, Usage, Knowledge, the knowledge graph, Memory, Spaces. Esc or the back arrow returns to the session. *Avoid: page, screen, for this concept.* Settings is similar but separate: it takes the whole window and is not a tab type. See ADR-0024.
+- **Peek** — a compact view of a destination, designed for a column, that can sit beside the session. Added for a destination only when someone needs it; none exists yet.
+- **Placement** — which of session, surface or destination a tab type is (`TAB_PLACEMENT`). Every tab type has exactly one.
+
 ## Shared memory domain
 
 **Shared memory** is the one record every agent on a project reads and writes, native and ACP alike, so that a second agent inherits what the first learned. It is Atlas-owned; no agent's private store is shared memory. It holds exactly seven kinds of entry (six decided 2026-09-17; preference added 2026-10-06):

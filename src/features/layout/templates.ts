@@ -39,18 +39,6 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
     focus: 0,
   },
   {
-    id: "research",
-    name: "Research",
-    description: "Knowledge, agent and the web side by side.",
-    panels: {},
-    columns: [
-      { type: "chat", title: "Agents" },
-      { type: "knowledge", title: "Knowledge" },
-      { type: "browser", title: "Browser" },
-    ],
-    focus: 0,
-  },
-  {
     id: "terminal",
     name: "Terminal",
     description: "Agent next to a terminal, with the file tree.",
@@ -72,16 +60,5 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       { type: "source-control", title: "Source control" },
     ],
     focus: 0,
-  },
-  {
-    id: "usage",
-    name: "Usage",
-    description: "Organization token usage and cost, beside the agent.",
-    panels: {},
-    columns: [
-      { type: "chat", title: "Agents" },
-      { type: "usage", title: "Usage" },
-    ],
-    focus: 1,
   },
 ];

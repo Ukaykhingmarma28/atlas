@@ -48,8 +48,8 @@ const VSCODE: PresetBindings = {
   // terminal IS the bottom panel, so both land on it.
   "panels.terminal": ["ctrl+`", "cmd+j"],
   "tabs.newTerminal": ["ctrl+shift+`"],
-  // Atlas's right panel is Source Control: ⌥⌘B is VS Code's secondary side
-  // bar, ⌃⇧G its Source Control view.
+  // `panels.right` is Source Control (the id predates it being a surface):
+  // ⌥⌘B is VS Code's secondary side bar, ⌃⇧G its Source Control view.
   "panels.right": ["cmd+alt+b", "ctrl+shift+g"],
   "panels.agentSidebar": ["cmd+ctrl+i"],
   "tabs.prev": ["cmd+alt+left", "cmd+shift+["],
@@ -87,7 +87,7 @@ export const PRESETS: readonly Preset[] = [
       "nav.commandPalette": ["cmd+shift+p"],
       "panels.terminal": ["ctrl+`", "cmd+j"],
       "tabs.newTerminal": ["ctrl+shift+`"],
-      // Zed's right dock is ⌘R and its git panel ⌃⇧G; Atlas's right panel is
+      // Zed's right dock is ⌘R and its git panel ⌃⇧G; `panels.right` is
       // Source Control, so it takes both.
       "panels.right": ["ctrl+shift+g", "cmd+r"],
       "panels.agentSidebar": ["cmd+shift+/"],

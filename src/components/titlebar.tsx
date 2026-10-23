@@ -111,14 +111,14 @@ export function useWindowDrag() {
  * One column's slice of the bar.
  *
  * Atlas has no full-width titlebar. Each column — the file tree, every split
- * column, the right panel, the project rail — draws its own header at
- * `h-titlebar` with no bottom rule, so side by side they read as one strip,
- * broken only by the full-height column borders running through it (the T3
- * Code shell). The window's own controls then have to live in whichever
- * column is at the window's edge: `leading` (traffic-light inset, the
- * project and left-panel toggles, the `org / project` label) goes in the
- * leftmost header and `trailing` (update, notifications, right panel,
- * account, and the Windows/Linux window buttons) in the rightmost. See
+ * column, the project rail — draws its own header at `h-titlebar` with no
+ * bottom rule, so side by side they read as one strip, broken only by the
+ * full-height column borders running through it. The window's own controls
+ * then have to live in whichever column is at the window's edge: `leading`
+ * (traffic-light inset, the project and left-panel toggles, the
+ * `org / project` label) goes in the leftmost header and `trailing` (update,
+ * notifications, account, and the Windows/Linux window buttons) in the
+ * rightmost. See
  * `useShellEdges` for which column that is.
  *
  * Every stretch of it drags the window.
@@ -168,7 +168,7 @@ export function PaneHeader({
 /**
  * The window's top bar: the leading cluster (traffic-light inset, project and
  * left-panel toggles, `org / project`), the dev badge centred, and the
- * trailing dock (update, notifications, right panel, account, and the
+ * trailing dock (update, notifications, account, and the
  * Windows/Linux window buttons). Every stretch of it drags the window.
  */
 export function Titlebar() {
@@ -350,7 +350,7 @@ export function WindowControls() {
  * The titlebar's action dock.
  *
  * A component rather than three inlined hook calls so the hooks' subscriptions
- * — updater phase, notification counts, right-panel visibility — re-render
+ * — updater phase, notification counts — re-render
  * this and nothing else. Put them in `Titlebar` itself and every notification
  * would re-render the project label and the org switcher beside it.
  */

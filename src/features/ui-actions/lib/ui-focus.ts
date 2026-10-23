@@ -10,6 +10,7 @@ import {
   sourceControlShown,
   toggleSourceControl,
 } from "@/features/layout/lib/source-control";
+import { teamChatShown, toggleTeamChat } from "@/features/layout/lib/team-chat";
 import { useExplorerStore } from "@/features/explorer/stores/explorer-store";
 import { runAction } from "@/features/keybindings/lib/action-registry";
 import { readArgs, refuse } from "./args";
@@ -19,7 +20,7 @@ import type { UiActionRequest } from "./types";
 const TARGETS = ["tab", "panel", "section", "group", "explorer"] as const;
 const PANELS = [
   "left",
-  "right",
+  "team_chat",
   "source_control",
   "chat_sidebar",
   "terminal",
@@ -34,8 +35,8 @@ function panelVisible(name: Panel): boolean {
   switch (name) {
     case "left":
       return s.leftPanel.visible;
-    case "right":
-      return s.rightPanel.visible;
+    case "team_chat":
+      return teamChatShown(s);
     case "source_control":
       return sourceControlShown(s);
     case "chat_sidebar":
@@ -55,8 +56,8 @@ function togglePanel(name: Panel): void {
   switch (name) {
     case "left":
       return a.toggleLeftPanel();
-    case "right":
-      return a.toggleTeamChat();
+    case "team_chat":
+      return toggleTeamChat();
     case "source_control":
       return toggleSourceControl();
     case "chat_sidebar":

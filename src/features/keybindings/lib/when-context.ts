@@ -34,8 +34,14 @@ function isTextInput(el: Element | null): boolean {
 export function liveWhenContext(): WhenContext {
   const ctx: Record<string, boolean> = { isMac, isWindows, isLinux };
 
-  const { tabs, activeTabId } = useLayoutStore.getState();
-  const tab = activeTabId ? tabs.find((t) => t.id === activeTabId) : undefined;
+  const { tabs, activeTabId, destination, destinationShown } = useLayoutStore.getState();
+  // A destination on screen is what the keyboard is in (ADR-0024).
+  const tab =
+    destinationShown && destination
+      ? destination
+      : activeTabId
+        ? tabs.find((t) => t.id === activeTabId)
+        : undefined;
   const surface = tab ? TAB_SURFACE[tab.type] : undefined;
   if (surface) ctx[surface] = true;
   if (tab?.type === "knowledge") ctx.knowledgeOpen = true;

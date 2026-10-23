@@ -16,16 +16,15 @@ import { useMembersStore } from "@/features/organisations/stores/members-store";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { conversationTitle, memberName } from "../lib/derive";
 import type { ChatConversation, OrgMemberProfile } from "../types";
-import { PaneHeader } from "@/components/titlebar";
 
 /**
- * Team chat, in the right panel slot (⌘⇧C).
+ * Team chat, a surface tab (⌘⇧C, ADR-0024).
  *
- * Conversations open as TABS in the header rather than replacing one another,
- * because chat here is org-scoped and someone watching #atlas-desktop while
- * answering a DM is the ordinary case, not the exception. The tab strip mirrors
- * the source-control panel's 29px header band so the two occupants of the slot
- * are visually interchangeable.
+ * Conversations open as tabs in a bar of their own rather than replacing one
+ * another, because chat here is org-scoped and someone watching
+ * #atlas-desktop while answering a DM is the ordinary case, not the
+ * exception. The bar sits under the column's tab strip; the window's
+ * controls are the column header's, not this panel's.
  */
 export function CommsPanel() {
   const conversations = useCommsStore.use.conversations();
@@ -133,10 +132,7 @@ export function CommsPanel() {
     // an empty 29px strip labelled "Team Chat" only repeats what the panel
     // already is. The placeholder gets the whole surface.
     return (
-      <div className="atlas-vibrant-panel flex h-full flex-col bg-[var(--sidebar)]">
-        {/* This column may be the window's right edge, and the window's
-            trailing controls need a header to sit in. */}
-        <PaneHeader trailing />
+      <div className="flex h-full flex-col bg-background">
         <CommsSurface>
           <CommsNotConnected org={activeOrg} />
         </CommsSurface>
@@ -154,13 +150,13 @@ export function CommsPanel() {
   if (conversations.length === 0 && connection.state !== "open") {
     const terminal = connection.state === "unavailable";
     return (
-      <div className="atlas-vibrant-panel flex h-full flex-col bg-[var(--sidebar)]">
-        <PaneHeader trailing>
+      <div className="flex h-full flex-col bg-background">
+        <ConversationBar>
           <div className="flex h-[26px] items-center gap-1.5 rounded-lg bg-[var(--atlas-element-selected)] pl-2.5 pr-2.5 text-sm font-medium text-foreground select-none">
             <MessagesSquare size={11} className="shrink-0 opacity-70" />
             Chats
           </div>
-        </PaneHeader>
+        </ConversationBar>
         <CommsSurface>
           {terminal ? (
             <CommsConnecting
@@ -177,11 +173,8 @@ export function CommsPanel() {
   }
 
   return (
-    <div className="atlas-vibrant-panel flex h-full flex-col bg-[var(--sidebar)]">
-      {/* The header lives on the BACKDROP, not the card — that separation is
-          the whole depth trick. Taller than the old 29px band so the tabs
-          breathe like the reference. */}
-      <PaneHeader trailing>
+    <div className="flex h-full flex-col bg-background">
+      <ConversationBar>
         <div
           className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto hide-scrollbar"
           // A gradient overlay in the backdrop colour never quite matched it —
@@ -220,17 +213,9 @@ export function CommsPanel() {
             </button>
           </Hint>
         </div>
-      </PaneHeader>
+      </ConversationBar>
 
-      {/* `overflow-hidden` so a view can never paint outside the panel, and the
-          transition is OPACITY ONLY. A transform here was the bug: this panel
-          carries `atlas-vibrant-panel`, whose grain overlay blends with
-          `mix-blend-mode: soft-light`, and translating a descendant across it
-          made WKWebView re-composite the blended layer every frame — which it
-          did wrong, flashing black and clipping the view mid-slide. The house
-          rule from the notification panel is that blur and animation belong on
-          ONE element; the honest way to keep a transition here is to move no
-          geometry at all. */}
+      {/* `overflow-hidden` so a view can never paint outside the panel. */}
       <CommsSurface>
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
           {activeConv ? (
@@ -248,14 +233,19 @@ export function CommsPanel() {
   );
 }
 
-/**
- * The conversation's surface, flat under the header band. It used to be a
- * rounded card inset on the panel's backdrop — a panel inside the panel — so
- * now a hairline under the tabs is the only seam.
- */
+/** The open conversations, as tabs, under the column's own tab strip. */
+function ConversationBar({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex h-9 shrink-0 items-center gap-1 border-b border-[var(--border)] pl-1.5">
+      {children}
+    </div>
+  );
+}
+
+/** The conversation's surface, flat under the conversation bar. */
 function CommsSurface({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-[var(--border)] bg-[var(--background)]">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--background)]">
       {children}
     </div>
   );
