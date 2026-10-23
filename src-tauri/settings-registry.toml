@@ -863,21 +863,6 @@ How wide the conversation and the composer may grow: "normal" (760 pixels),
 validation = "exactly one of these three strings"
 
 [[setting]]
-key = "chatCodeWrap"
-type = "boolean"
-default = true
-status = "live"
-page = "chat"
-section = "Layout"
-title = "Wrap code in sessions"
-summary = "Wrap long lines in a session's code blocks instead of scrolling sideways."
-doc = """
-Wrap long lines in a session's code blocks. Off: they keep their lines and scroll
-sideways.
-"""
-validation = "—"
-
-[[setting]]
 key = "wordWrap"
 type = "boolean"
 default = true
@@ -885,11 +870,11 @@ status = "live"
 page = "appearance"
 section = "Interface"
 title = "Word wrap"
-summary = "Wrap long lines in files and diffs instead of scrolling sideways."
+summary = "Wrap long lines in files, diffs and a session's code blocks instead of scrolling sideways."
 doc = """
-Wrap long lines in file tabs and diffs. Off: lines keep their shape and scroll
-sideways. The wrap button in a file's or the review diff's header flips this
-same setting. A session's code blocks follow chatCodeWrap instead.
+Wrap long lines in file tabs, diffs and a session's code blocks. Off: lines keep
+their shape and scroll sideways. The wrap button in a file's or the review
+diff's header flips this same setting.
 """
 validation = "—"
 

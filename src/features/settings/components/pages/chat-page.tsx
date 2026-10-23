@@ -57,7 +57,6 @@ export function ChatPage() {
 
       <SettingsSection title="Layout">
         <SettingsGroup>
-          <SettingsRow setting="chatCodeWrap" control={<SettingSwitch setting="chatCodeWrap" />} />
           <SettingsRow
             setting="sidebarSort"
             control={<SettingSelect setting="sidebarSort" options={SIDEBAR_SORTS} />}
