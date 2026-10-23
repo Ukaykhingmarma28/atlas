@@ -21,8 +21,10 @@ export interface DiffFileStat {
   path: string;
   /** The path before a rename or copy. */
   oldPath?: string;
-  additions: number;
-  deletions: number;
+  /** `null` when not counted (an untracked file over 4 MB, or past the first
+   *  5,000 untracked files); the source is then `truncated`. */
+  additions: number | null;
+  deletions: number | null;
   status: DiffFileStatus;
   /** Omitted when false. */
   binary?: boolean;
@@ -41,7 +43,8 @@ export interface DiffSource {
   diff: string;
   /** Changes when `diff` or `files` does. */
   diffHash: string;
-  /** `diff` holds only a prefix of `files`; load the rest per file. */
+  /** Some file in `files` is not in `diff` (past the cap, or too large to
+   *  count): check each file's presence and load the missing ones per file. */
   truncated: boolean;
   /** Every changed file, even when `diff` is truncated. */
   files: DiffFileStat[];

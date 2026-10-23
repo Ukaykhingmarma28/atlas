@@ -290,7 +290,14 @@ function restoreChange(path: string, status: string, isStaged: boolean): void {
   partial.delete(path);
 }
 
-const PREVIEW_STATUSES = new Set<string>(["added", "deleted", "modified", "renamed", "untracked"]);
+const PREVIEW_STATUSES = new Set<string>([
+  "added",
+  "deleted",
+  "modified",
+  "renamed",
+  "conflicted",
+  "untracked",
+]);
 
 /** A working-tree change as `git_diff_preview` lists it. */
 function previewChange(change: FakeChange): PreviewChange {

@@ -6,8 +6,9 @@
 //! merge base with the base branch, so it holds the branch's commits too. Each
 //! carries the complete per-file numstat and a patch capped at
 //! [`PATCH_CAP`]. The cap cuts at a file boundary, so every file the patch
-//! holds is whole; when `truncated` is set the viewer renders those and loads
-//! the rest one at a time through `git_diff_file_contents`.
+//! holds is whole. `truncated` means some listed file is not in the patch —
+//! past the cap, or an untracked file too large to count — and the viewer
+//! loads each missing one through `git_diff_file_contents`.
 //!
 //! Untracked files belong in a review — they are usually most of what an agent
 //! wrote — but `git diff` cannot see them. Rather than staging them into a
@@ -33,8 +34,11 @@ pub const PATCH_CAP: usize = 120_000;
 /// Text per side for `git_diff_file_contents`.
 pub const FILE_CAP: usize = 1024 * 1024;
 /// Untracked files whose lines are counted. Past this they are listed with
-/// zero counts and the source is marked truncated.
+/// unknown counts and the source is marked truncated.
 const UNTRACKED_COUNT_MAX: usize = 5_000;
+/// The largest untracked file whose lines are counted. Counting means reading
+/// it, on every refresh; a stray video or dump should not cost that.
+const COUNT_CAP: u64 = 4 * 1024 * 1024;
 /// Git's own binary sniff: a NUL in the first 8000 bytes.
 const BINARY_SNIFF: usize = 8000;
 
@@ -66,8 +70,11 @@ pub struct DiffFileStat {
     /// The path before a rename or copy.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub old_path: Option<String>,
-    pub additions: u32,
-    pub deletions: u32,
+    /// `None` when not counted: an untracked file over [`COUNT_CAP`], or past
+    /// the first [`UNTRACKED_COUNT_MAX`] untracked files. The source is then
+    /// marked truncated. Binary files count 0, as git's `-` does.
+    pub additions: Option<u32>,
+    pub deletions: Option<u32>,
     /// "added" | "deleted" | "modified" | "renamed" | "copied" |
     /// "conflicted" | "untracked".
     pub status: &'static str,
@@ -89,6 +96,7 @@ pub struct DiffSource {
     pub diff: String,
     /// Changes when the patch or the file list does; stable within a run.
     pub diff_hash: String,
+    /// Some file in `files` is not in `diff`; check each before rendering.
     pub truncated: bool,
     /// Complete even when `diff` is truncated.
     pub files: Vec<DiffFileStat>,
@@ -113,16 +121,62 @@ pub struct DiffFileContents {
 
 // ── Commands ────────────────────────────────────────────────────────────────
 
-type PreviewCell = Arc<tokio::sync::OnceCell<Result<DiffPreview, String>>>;
+/// Coalescing state for one `(path, base_ref, ignore_ws)`.
+///
+/// Runs are serialised by `run`. A caller may only take the result of a run
+/// that STARTED after it arrived: one arriving mid-run may be asking because
+/// of a write that run cannot have seen (an agent saves `foo.rs`, the watcher
+/// asks again while the earlier run is still reading). So each caller notes
+/// the number of the next run to start, waits its turn, and either finds that
+/// run's result already stored or starts it itself. Every caller that queued
+/// behind the same run shares it.
+#[derive(Default)]
+struct Slot {
+    run: tokio::sync::Mutex<()>,
+    state: parking_lot::Mutex<SlotState>,
+}
 
-fn inflight() -> &'static Mutex<HashMap<String, PreviewCell>> {
-    static MAP: OnceLock<Mutex<HashMap<String, PreviewCell>>> = OnceLock::new();
+#[derive(Default)]
+struct SlotState {
+    /// Runs started so far.
+    started: u64,
+    /// The newest finished run: its number and result.
+    last: Option<(u64, Result<DiffPreview, String>)>,
+}
+
+fn slots() -> &'static Mutex<HashMap<String, Arc<Slot>>> {
+    static MAP: OnceLock<Mutex<HashMap<String, Arc<Slot>>>> = OnceLock::new();
     MAP.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Drops the slot once its last caller is gone, on every exit path —
+/// including a caller whose future is dropped mid-run — so neither the slot
+/// nor its stored result outlives the callers that wanted it.
+struct SlotGuard {
+    key: String,
+    slot: Arc<Slot>,
+}
+
+impl Drop for SlotGuard {
+    fn drop(&mut self) {
+        let mut map = slots()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // Clones are only made under this lock: map + this guard = no one else.
+        if Arc::strong_count(&self.slot) == 2 {
+            map.remove(&self.key);
+        }
+    }
+}
+
 /// Both review sources for the project at `path`. Concurrent identical calls
-/// (the watcher's refresh racing the panel's own) share one computation.
+/// (the watcher's refresh racing the panel's own) share one computation, but
+/// never one that started before they were made.
 #[tauri::command]
+#[expect(
+    clippy::await_holding_invalid_type,
+    reason = "the turn guard must span the run: it is what serialises runs per key so callers can queue behind one"
+)]
 pub async fn git_diff_preview(
     path: String,
     base_ref: Option<String>,
@@ -130,35 +184,36 @@ pub async fn git_diff_preview(
 ) -> Result<DiffPreview, String> {
     let ignore_ws = ignore_whitespace.unwrap_or(false);
     let key = format!("{path}\0{}\0{ignore_ws}", base_ref.as_deref().unwrap_or(""));
-    let (cell, owner) = {
-        let mut map = inflight().lock().expect("diff preview inflight lock");
-        match map.get(&key) {
-            Some(c) => (c.clone(), false),
-            None => {
-                let c: PreviewCell = Arc::new(tokio::sync::OnceCell::new());
-                map.insert(key.clone(), c.clone());
-                (c, true)
+    let guard = {
+        let mut map = slots()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let slot = map.entry(key.clone()).or_default().clone();
+        SlotGuard { key, slot }
+    };
+    let slot = &guard.slot;
+    let wanted = slot.state.lock().started + 1;
+
+    // Held until this run's result is stored. A dropped future releases it
+    // with nothing stored, and the next caller in line runs instead.
+    let _turn = slot.run.lock().await;
+    let number = {
+        let mut st = slot.state.lock();
+        if let Some((n, result)) = &st.last {
+            if *n >= wanted {
+                return result.clone();
             }
         }
+        st.started += 1;
+        st.started
     };
-
-    let result = cell
-        .get_or_init(|| async move {
-            tokio::task::spawn_blocking(move || {
-                compute_preview(Path::new(&path), base_ref.as_deref(), ignore_ws)
-            })
-            .await
-            .map_err(|e| e.to_string())?
-        })
-        .await
-        .clone();
-
-    if owner {
-        inflight()
-            .lock()
-            .expect("diff preview inflight lock")
-            .remove(&key);
-    }
+    let result = tokio::task::spawn_blocking(move || {
+        compute_preview(Path::new(&path), base_ref.as_deref(), ignore_ws)
+    })
+    .await
+    .map_err(|e| e.to_string())
+    .and_then(|r| r);
+    slot.state.lock().last = Some((number, result.clone()));
     result
 }
 
@@ -192,9 +247,12 @@ pub async fn git_diff_file_contents(
 
 /// A read-only git: `--no-optional-locks` so a background read never takes
 /// `index.lock` from under a commit (see `git::git_read`), and unquoted paths.
+/// `LC_ALL=C` keeps git's messages in English whatever the user's locale, so
+/// nothing that reads stderr depends on a translation.
 fn git(cwd: &Path) -> Command {
     let mut cmd = atlas_process::command("git");
     cmd.args(["--no-optional-locks", "-c", "core.quotePath=false"])
+        .env("LC_ALL", "C")
         .current_dir(cwd);
     cmd
 }
@@ -239,16 +297,15 @@ fn run_capped(mut cmd: Command, cap: usize) -> Result<(Vec<u8>, bool, bool), Str
     let mut out = Vec::new();
     let mut stdout = child.stdout.take().expect("piped stdout");
     // One byte past the cap tells "exactly cap" from "more than cap".
-    (&mut stdout)
-        .take(cap as u64 + 1)
-        .read_to_end(&mut out)
-        .map_err(|e| e.to_string())?;
-    if out.len() > cap {
+    let read = (&mut stdout).take(cap as u64 + 1).read_to_end(&mut out);
+    drop(stdout);
+    // Reaped on every path: a read error must not leave a zombie behind.
+    if read.is_err() || out.len() > cap {
         let _ = child.kill();
         let _ = child.wait();
+        read.map_err(|e| e.to_string())?;
         return Ok((out, true, true));
     }
-    drop(stdout);
     let status = child.wait().map_err(|e| e.to_string())?;
     Ok((out, false, status.success()))
 }
@@ -268,13 +325,13 @@ fn resolve_head(cwd: &Path) -> Result<Head, String> {
             String::from_utf8_lossy(&o.stdout).trim().to_string(),
         ));
     }
-    if o.stderr.contains("not a git repository") {
-        return Ok(Head::NotARepo);
+    // `--verify --quiet` exits 1, silently, when HEAD names no commit yet;
+    // every fatal error — outside a repository among them — is 128.
+    match o.code {
+        Some(1) => Ok(Head::Unborn),
+        Some(128) if o.stderr.contains("not a git repository") => Ok(Head::NotARepo),
+        _ => Err(o.stderr.trim().to_string()),
     }
-    if o.code == Some(1) || o.stderr.trim().is_empty() {
-        return Ok(Head::Unborn);
-    }
-    Err(o.stderr.trim().to_string())
 }
 
 /// The empty tree's id, for diffing a repository with no commits. Asked of
@@ -387,36 +444,47 @@ fn status_word(c: u8) -> &'static str {
 }
 
 /// Parse `git diff --raw --numstat -z`: every raw record, then every numstat
-/// record, in the same order.
+/// record.
 ///
 /// ```text
 /// raw:     :100644 100644 <sha> <sha> M\0path\0
 ///          :100644 100644 <sha> <sha> R087\0old\0new\0
+///          :000000 000000 <sha> <sha> U\0path\0      (unmerged)
 /// numstat: 3\t1\tpath\0
 ///          3\t1\t\0old\0new\0         (rename / copy)
 ///          -\t-\tpath\0               (binary)
 /// ```
+///
+/// Statuses join the counts by path, not by position: an unmerged path gets
+/// a `U` record and, beside it, a content record, so the two lists need not
+/// line up. A path listed twice is reported once, `conflicted` winning.
 pub fn parse_raw_numstat(out: &[u8]) -> Vec<DiffFileStat> {
     let mut fields = out.split(|b| *b == 0);
-    let mut statuses: Vec<u8> = Vec::new();
+    let mut statuses: HashMap<String, u8> = HashMap::new();
     let mut files: Vec<DiffFileStat> = Vec::new();
+    let mut seen: HashMap<String, usize> = HashMap::new();
     let text = |b: &[u8]| String::from_utf8_lossy(b).into_owned();
     while let Some(f) = fields.next() {
         if f.is_empty() {
             continue;
         }
         if f[0] == b':' {
-            // Status is the last space-separated word; R/C carry two paths.
+            // Status is the last space-separated word; R/C carry two paths,
+            // and the second is the one numstat names.
             let status = f
                 .rsplit(|b| *b == b' ')
                 .next()
-                .and_then(|w| w.first().copied());
-            let status = status.unwrap_or(b'M');
-            let paths = if matches!(status, b'R' | b'C') { 2 } else { 1 };
-            for _ in 0..paths {
+                .and_then(|w| w.first().copied())
+                .unwrap_or(b'M');
+            if matches!(status, b'R' | b'C') {
                 fields.next();
             }
-            statuses.push(status);
+            if let Some(p) = fields.next() {
+                let e = statuses.entry(text(p)).or_insert(status);
+                if status == b'U' {
+                    *e = b'U';
+                }
+            }
             continue;
         }
         let mut cols = f.splitn(3, |b| *b == b'\t');
@@ -437,22 +505,37 @@ pub fn parse_raw_numstat(out: &[u8]) -> Vec<DiffFileStat> {
         } else {
             (text(rest), None)
         };
+        if seen.contains_key(&path) {
+            continue;
+        }
+        seen.insert(path.clone(), files.len());
         files.push(DiffFileStat {
             path,
             old_path,
-            additions: num(a),
-            deletions: num(d),
+            additions: Some(num(a)),
+            deletions: Some(num(d)),
             status: "modified",
             binary,
         });
     }
-    // Same diff queue, same order — the raw record N is numstat record N.
-    for (file, s) in files.iter_mut().zip(statuses.iter()) {
-        file.status = status_word(*s);
+    for f in &mut files {
+        f.status = match statuses.get(&f.path) {
+            Some(s) => status_word(*s),
+            None if f.old_path.is_some() => "renamed",
+            None => "modified",
+        };
     }
-    if statuses.len() != files.len() {
-        for f in files.iter_mut().filter(|f| f.old_path.is_some()) {
-            f.status = "renamed";
+    // An unmerged path with no numstat line of its own still belongs in the list.
+    for (path, s) in statuses {
+        if s == b'U' && !seen.contains_key(&path) {
+            files.push(DiffFileStat {
+                path,
+                old_path: None,
+                additions: Some(0),
+                deletions: Some(0),
+                status: "conflicted",
+                binary: false,
+            });
         }
     }
     files
@@ -474,6 +557,9 @@ pub fn cut_at_file_boundary(mut patch: Vec<u8>, cap: usize) -> Vec<u8> {
 }
 
 /// The repository's untracked, non-ignored files under `cwd`, relative to it.
+///
+/// An embedded repository (a nested clone, an unregistered submodule) comes
+/// back as `sub/`: a directory, not a file anyone can diff, so it is dropped.
 fn untracked(cwd: &Path) -> Result<Vec<String>, String> {
     let mut cmd = git(cwd);
     cmd.args(["ls-files", "--others", "--exclude-standard", "-z", "--"]);
@@ -483,107 +569,180 @@ fn untracked(cwd: &Path) -> Result<Vec<String>, String> {
     }
     Ok(o.stdout
         .split(|b| *b == 0)
-        .filter(|f| !f.is_empty())
+        .filter(|f| !f.is_empty() && !f.ends_with(b"/"))
         .map(|f| String::from_utf8_lossy(f).into_owned())
         .collect())
+}
+
+/// Every unmerged path, relative to `cwd`: the files a merge or rebase left
+/// in conflict.
+fn unmerged(cwd: &Path) -> Vec<String> {
+    let mut cmd = git(cwd);
+    cmd.args(["diff", "--relative", "--name-only", "--diff-filter=U", "-z"]);
+    match run(cmd) {
+        Ok(o) if o.ok => o
+            .stdout
+            .split(|b| *b == 0)
+            .filter(|f| !f.is_empty())
+            .map(|f| String::from_utf8_lossy(f).into_owned())
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// What became of an untracked file's patch.
+enum NewPatch {
+    Ready(Vec<u8>),
+    /// Larger than the room left: the source is truncated from here on.
+    TooBig,
+    /// Counted but not rendered (counts unknown, or past the count limit).
+    /// Truncates the source too, so the viewer loads it on its own.
+    Skipped,
 }
 
 /// An untracked file, read once: its stat row and, when it fits, its patch.
 struct NewFile {
     stat: DiffFileStat,
-    patch: Option<Vec<u8>>,
+    patch: NewPatch,
+}
+
+/// Git's C-style quoting of a path in a patch header: a name holding `"`,
+/// `\` or a control character is wrapped in quotes and escaped, so the
+/// parser can find where it ends. Anything else goes out as is (non-ASCII
+/// included, as with `core.quotePath=false`).
+pub fn quote_path(prefix: &str, path: &str) -> String {
+    let needs = path
+        .bytes()
+        .any(|b| b < 0x20 || b == b'"' || b == b'\\' || b == 0x7f);
+    if !needs {
+        return format!("{prefix}{path}");
+    }
+    let mut s = String::with_capacity(path.len() + prefix.len() + 4);
+    s.push('"');
+    s.push_str(prefix);
+    for c in path.chars() {
+        match c {
+            '"' => s.push_str("\\\""),
+            '\\' => s.push_str("\\\\"),
+            '\t' => s.push_str("\\t"),
+            '\n' => s.push_str("\\n"),
+            '\r' => s.push_str("\\r"),
+            '\x07' => s.push_str("\\a"),
+            '\x08' => s.push_str("\\b"),
+            '\x0b' => s.push_str("\\v"),
+            '\x0c' => s.push_str("\\f"),
+            c if (c as u32) < 0x20 || c as u32 == 0x7f => {
+                s.push_str(&format!("\\{:03o}", c as u32));
+            }
+            c => s.push(c),
+        }
+    }
+    s.push('"');
+    s
 }
 
 /// Count and (budget permitting) render one untracked file as all-added.
-fn new_file(cwd: &Path, rel: &str, budget: usize, count: bool) -> NewFile {
+/// `None` when it is not a file or link (a directory) or vanished since
+/// `ls-files` listed it: nothing to show, and nothing to charge the budget.
+fn new_file(cwd: &Path, rel: &str, budget: usize, count: bool) -> Option<NewFile> {
     let mut stat = DiffFileStat {
         path: rel.to_string(),
         old_path: None,
-        additions: 0,
-        deletions: 0,
+        additions: None,
+        deletions: Some(0),
         status: "untracked",
         binary: false,
     };
-    if !count {
-        return NewFile { stat, patch: None };
-    }
     let abs = cwd.join(rel);
-    let (bytes, mode) = match std::fs::symlink_metadata(&abs) {
-        Ok(m) if m.file_type().is_symlink() => match std::fs::read_link(&abs) {
-            Ok(t) => (t.to_string_lossy().into_owned().into_bytes(), "120000"),
-            Err(_) => return NewFile { stat, patch: None },
-        },
+    let meta = std::fs::symlink_metadata(&abs).ok()?;
+    let ft = meta.file_type();
+    if !ft.is_file() && !ft.is_symlink() {
+        return None;
+    }
+    if !count {
+        stat.deletions = None;
+        return Some(NewFile {
+            stat,
+            patch: NewPatch::Skipped,
+        });
+    }
+    let (bytes, mode) = if ft.is_symlink() {
+        let t = std::fs::read_link(&abs).ok()?;
+        (t.to_string_lossy().into_owned().into_bytes(), "120000")
+    } else if meta.len() > COUNT_CAP {
+        // Unknown counts beat reading a 2 GB file on every refresh.
+        stat.deletions = None;
+        return Some(NewFile {
+            stat,
+            patch: NewPatch::Skipped,
+        });
+    } else if meta.len() as usize > budget {
         // Too big to patch anyway: count it without holding it in memory.
-        Ok(m) if m.len() as usize > budget => {
-            if let Some((lines, binary)) = count_streaming(&abs) {
-                stat.additions = if binary { 0 } else { lines };
-                stat.binary = binary;
+        let (lines, binary) = count_streaming(&abs)?;
+        stat.additions = Some(if binary { 0 } else { lines });
+        stat.binary = binary;
+        return Some(NewFile {
+            stat,
+            patch: NewPatch::TooBig,
+        });
+    } else {
+        let b = std::fs::read(&abs).ok()?;
+        #[cfg(unix)]
+        let mode = {
+            use std::os::unix::fs::PermissionsExt;
+            if meta.permissions().mode() & 0o111 != 0 {
+                "100755"
+            } else {
+                "100644"
             }
-            return NewFile { stat, patch: None };
-        }
-        Ok(m) => match std::fs::read(&abs) {
-            Ok(b) => {
-                #[cfg(unix)]
-                let mode = {
-                    use std::os::unix::fs::PermissionsExt;
-                    if m.permissions().mode() & 0o111 != 0 {
-                        "100755"
-                    } else {
-                        "100644"
-                    }
-                };
-                #[cfg(not(unix))]
-                let mode = {
-                    let _ = m;
-                    "100644"
-                };
-                (b, mode)
-            }
-            Err(_) => return NewFile { stat, patch: None },
-        },
-        Err(_) => return NewFile { stat, patch: None },
+        };
+        #[cfg(not(unix))]
+        let mode = "100644";
+        (b, mode)
     };
+
+    let a_path = quote_path("a/", rel);
+    let b_path = quote_path("b/", rel);
+    let mut patch = format!("diff --git {a_path} {b_path}\nnew file mode {mode}\n").into_bytes();
 
     if bytes[..bytes.len().min(BINARY_SNIFF)].contains(&0) {
         stat.binary = true;
-        let patch = format!(
-            "diff --git a/{rel} b/{rel}\nnew file mode {mode}\nBinary files /dev/null and b/{rel} differ\n"
-        )
-        .into_bytes();
-        return NewFile {
-            stat,
-            patch: (patch.len() <= budget).then_some(patch),
-        };
-    }
-
-    let lines = bytes.split_inclusive(|b| *b == b'\n').count();
-    stat.additions = lines as u32;
-    let mut patch = format!("diff --git a/{rel} b/{rel}\nnew file mode {mode}\n").into_bytes();
-    if lines > 0 {
-        let range = if lines == 1 {
-            "1".to_string()
-        } else {
-            format!("1,{lines}")
-        };
-        patch.extend_from_slice(
-            format!("--- /dev/null\n+++ b/{rel}\n@@ -0,0 +{range} @@\n").as_bytes(),
-        );
-        // The '+' prefixes add one byte per line.
-        if patch.len() + bytes.len() + lines + 32 > budget {
-            return NewFile { stat, patch: None };
-        }
-        for line in bytes.split_inclusive(|b| *b == b'\n') {
-            patch.push(b'+');
-            patch.extend_from_slice(line);
-        }
-        if bytes.last() != Some(&b'\n') {
-            patch.extend_from_slice(b"\n\\ No newline at end of file\n");
+        stat.additions = Some(0);
+        patch.extend_from_slice(format!("Binary files /dev/null and {b_path} differ\n").as_bytes());
+    } else {
+        let lines = bytes.split_inclusive(|b| *b == b'\n').count();
+        stat.additions = Some(lines as u32);
+        if lines > 0 {
+            let range = if lines == 1 {
+                "1".to_string()
+            } else {
+                format!("1,{lines}")
+            };
+            patch.extend_from_slice(
+                format!("--- /dev/null\n+++ {b_path}\n@@ -0,0 +{range} @@\n").as_bytes(),
+            );
+            // The '+' prefixes add one byte per line.
+            if patch.len() + bytes.len() + lines + 32 > budget {
+                return Some(NewFile {
+                    stat,
+                    patch: NewPatch::TooBig,
+                });
+            }
+            for line in bytes.split_inclusive(|b| *b == b'\n') {
+                patch.push(b'+');
+                patch.extend_from_slice(line);
+            }
+            if bytes.last() != Some(&b'\n') {
+                patch.extend_from_slice(b"\n\\ No newline at end of file\n");
+            }
         }
     }
-    NewFile {
-        stat,
-        patch: (patch.len() <= budget).then_some(patch),
-    }
+    let patch = if patch.len() <= budget {
+        NewPatch::Ready(patch)
+    } else {
+        NewPatch::TooBig
+    };
+    Some(NewFile { stat, patch })
 }
 
 /// Line count and binary sniff for a file, read in chunks.
@@ -609,28 +768,40 @@ fn count_streaming(path: &Path) -> Option<(u32, bool)> {
 
 /// Append untracked files to a source: every stat row, and patches until the
 /// first one that does not fit (keeping the patch a prefix of whole files).
+/// Marks unmerged paths `conflicted`.
 fn assemble(
     kind: SourceKind,
     base_ref: Option<String>,
     merge_base: Option<String>,
     tracked: Tracked,
     news: &[NewFile],
-    news_truncated: bool,
+    conflicted: &[String],
 ) -> DiffSource {
     let Tracked {
         mut files,
         mut patch,
         mut truncated,
     } = tracked;
-    truncated |= news_truncated;
+    for f in &mut files {
+        if conflicted.contains(&f.path) {
+            f.status = "conflicted";
+        }
+    }
+    // Once the patch is full nothing more goes in. A skipped file leaves a
+    // gap (so `truncated`) but does not close it.
+    let mut full = truncated;
     for n in news {
         files.push(n.stat.clone());
-        if truncated {
+        if full {
             continue;
         }
         match &n.patch {
-            Some(p) if patch.len() + p.len() <= PATCH_CAP => patch.extend_from_slice(p),
-            _ => truncated = true,
+            NewPatch::Ready(p) if patch.len() + p.len() <= PATCH_CAP => patch.extend_from_slice(p),
+            NewPatch::Skipped => truncated = true,
+            _ => {
+                truncated = true;
+                full = true;
+            }
         }
     }
     let diff = String::from_utf8_lossy(&patch).into_owned();
@@ -663,9 +834,9 @@ pub fn compute_preview(
         None => empty_tree(cwd)?,
     };
 
-    // The base, its merge base, the untracked list and the working-tree diff
-    // are independent; run them together.
-    let (range, working, untracked_paths) = std::thread::scope(|s| {
+    // The base, its merge base, the untracked and unmerged lists and the
+    // working-tree diff are independent; run them together.
+    let (range, working, untracked_paths, conflicted) = std::thread::scope(|s| {
         let range = s.spawn(|| {
             head.as_ref()?;
             let base = base_ref.map(str::to_string).or_else(|| default_base(cwd))?;
@@ -674,10 +845,12 @@ pub fn compute_preview(
         });
         let working = s.spawn(|| diff_against(cwd, &head_rev, ignore_ws));
         let untracked_paths = s.spawn(|| untracked(cwd));
+        let conflicted = s.spawn(|| unmerged(cwd));
         (
             range.join().ok().flatten(),
             working.join(),
             untracked_paths.join(),
+            conflicted.join().unwrap_or_default(),
         )
     });
     let working = working.map_err(|_| "diff panicked".to_string())??;
@@ -690,7 +863,6 @@ pub fn compute_preview(
         _ => None,
     };
 
-    let news_truncated = untracked_paths.len() > UNTRACKED_COUNT_MAX;
     // Room left after the smaller tracked patch: no untracked patch larger
     // than this can land in either source, so none is built.
     let tracked_len = working
@@ -701,10 +873,16 @@ pub fn compute_preview(
     let news: Vec<NewFile> = untracked_paths
         .iter()
         .enumerate()
-        .map(|(i, p)| {
-            let n = new_file(cwd, p, budget, i < UNTRACKED_COUNT_MAX);
-            budget = budget.saturating_sub(n.patch.as_ref().map_or(budget, Vec::len));
-            n
+        .filter_map(|(i, p)| {
+            let n = new_file(cwd, p, budget, i < UNTRACKED_COUNT_MAX)?;
+            // Only a patch that was built spends the budget; one that did not
+            // fit closes it, since nothing after it may be shown either.
+            match &n.patch {
+                NewPatch::Ready(p) => budget = budget.saturating_sub(p.len()),
+                NewPatch::TooBig => budget = 0,
+                NewPatch::Skipped => {}
+            }
+            Some(n)
         })
         .collect();
 
@@ -728,7 +906,7 @@ pub fn compute_preview(
                 None,
                 working,
                 &news,
-                news_truncated,
+                &conflicted,
             ),
             assemble(
                 SourceKind::BranchRange,
@@ -736,7 +914,7 @@ pub fn compute_preview(
                 mb,
                 range_tracked,
                 &news,
-                news_truncated,
+                &conflicted,
             ),
         ],
     })
@@ -922,10 +1100,10 @@ mod tests {
         assert_eq!(files.len(), 3);
         assert_eq!(files[0].path, "new/name.ts");
         assert_eq!(files[0].old_path.as_deref(), Some("old/name.ts"));
-        assert_eq!((files[0].additions, files[0].deletions), (2, 1));
+        assert_eq!((files[0].additions, files[0].deletions), (Some(2), Some(1)));
         assert_eq!(files[0].status, "renamed");
         assert_eq!(files[1].status, "modified");
-        assert_eq!(files[1].additions, 4);
+        assert_eq!(files[1].additions, Some(4));
         assert_eq!(files[2].status, "added");
         assert!(files[2].binary);
     }
@@ -942,7 +1120,7 @@ mod tests {
         let f = w.files.iter().find(|f| f.path == "src/b.ts").unwrap();
         assert_eq!(f.old_path.as_deref(), Some("src/a.ts"));
         assert_eq!(f.status, "renamed");
-        assert_eq!((f.additions, f.deletions), (1, 0));
+        assert_eq!((f.additions, f.deletions), (Some(1), Some(0)));
         assert!(w.diff.contains("rename from src/a.ts"));
         assert!(!w.truncated);
     }
@@ -958,7 +1136,7 @@ mod tests {
         let w = r.working();
         let f = w.files.iter().find(|f| f.path == "new.txt").unwrap();
         assert_eq!(f.status, "untracked");
-        assert_eq!(f.additions, 2);
+        assert_eq!(f.additions, Some(2));
         assert!(w.files.iter().all(|f| f.path != "ignored.txt"));
         assert!(w
             .diff
@@ -1022,6 +1200,86 @@ mod tests {
         let mb = range.merge_base.as_deref();
         let c = file_contents(&r.0, SourceKind::BranchRange, mb, "b.txt", None).unwrap();
         assert_eq!((c.old_text.as_str(), c.new_text.as_str()), ("", "b\n"));
+    }
+
+    #[test]
+    fn an_embedded_repository_does_not_cost_the_other_untracked_patches() {
+        let r = Repo::new("nested");
+        r.write("a.txt", "a\n");
+        r.commit("init");
+        // `ls-files --others` reports this as `aaa-nested/`, sorted first.
+        let nested = Repo(r.0.join("aaa-nested"));
+        std::fs::create_dir_all(&nested.0).unwrap();
+        nested.git(&["init", "-q"]);
+        nested.write("inner.txt", "inner\n");
+        r.write("zz-new.txt", "z\n");
+        let w = r.working();
+        assert!(w.files.iter().all(|f| !f.path.starts_with("aaa-nested")));
+        assert!(!w.truncated, "{w:?}");
+        assert!(w.diff.contains("+++ b/zz-new.txt\n@@ -0,0 +1 @@\n+z\n"));
+    }
+
+    #[test]
+    fn a_huge_untracked_file_is_listed_with_unknown_counts() {
+        let r = Repo::new("huge");
+        r.write("a.txt", "a\n");
+        r.commit("init");
+        let line = "x".repeat(99) + "\n";
+        r.write("big.log", &line.repeat((COUNT_CAP as usize / 100) + 10));
+        r.write("small.txt", "s\n");
+        let w = r.working();
+        let big = w.files.iter().find(|f| f.path == "big.log").unwrap();
+        assert_eq!((big.additions, big.deletions), (None, None));
+        assert!(w.truncated);
+        // A gap, not a stop: the file after it still has its patch.
+        assert!(w.diff.contains("+++ b/small.txt"));
+    }
+
+    #[test]
+    fn unmerged_paths_are_conflicted() {
+        let r = Repo::new("conflict");
+        r.write("c.txt", "base\n");
+        r.commit("init");
+        r.git(&["checkout", "-q", "-b", "other"]);
+        r.write("c.txt", "theirs\n");
+        r.commit("theirs");
+        r.git(&["checkout", "-q", "main"]);
+        r.write("c.txt", "ours\n");
+        r.commit("ours");
+        let o = atlas_process::command("git")
+            .args(["merge", "-q", "other"])
+            .current_dir(&r.0)
+            .output()
+            .unwrap();
+        assert!(!o.status.success(), "the merge should conflict");
+        let w = r.working();
+        let c: Vec<_> = w.files.iter().filter(|f| f.path == "c.txt").collect();
+        assert_eq!(c.len(), 1, "{:?}", w.files);
+        assert_eq!(c[0].status, "conflicted");
+    }
+
+    #[test]
+    fn header_paths_are_quoted_like_git() {
+        assert_eq!(quote_path("b/", "plain name.ts"), "b/plain name.ts");
+        assert_eq!(quote_path("b/", "naïve.ts"), "b/naïve.ts");
+        assert_eq!(quote_path("b/", "a\"b\\c\td"), "\"b/a\\\"b\\\\c\\td\"");
+    }
+
+    #[tokio::test]
+    async fn a_call_made_mid_run_gets_a_fresh_result() {
+        let r = Repo::new("coalesce");
+        r.write("a.txt", "a\n");
+        r.commit("init");
+        let path = r.0.to_string_lossy().into_owned();
+        let first = tokio::spawn(git_diff_preview(path.clone(), None, None));
+        // Let the first run start, then write and ask again.
+        tokio::task::yield_now().await;
+        r.write("a.txt", "changed\n");
+        let second = git_diff_preview(path.clone(), None, None).await.unwrap();
+        let _ = first.await.unwrap();
+        let w = &second.sources[0];
+        assert_eq!(w.files.len(), 1, "the write is in the second answer");
+        assert!(slots().lock().unwrap().is_empty(), "the slot is gone");
     }
 
     #[test]

@@ -67,7 +67,10 @@ pub struct DirListing {
 #[tauri::command]
 pub async fn read_directories(root: String, paths: Vec<String>) -> Result<Vec<DirListing>, String> {
     tokio::task::spawn_blocking(move || {
-        let root = PathBuf::from(root);
+        // Canonical from here on: the containment check below compares real
+        // paths, and the ignore cache and the watcher (which reports real
+        // paths, `/private/tmp` for `/tmp`) must agree on one spelling.
+        let root = std::fs::canonicalize(&root).map_err(|e| format!("{root}: {e}"))?;
         if !root.is_dir() {
             return Err(format!("Not a directory: {}", root.display()));
         }
@@ -98,7 +101,7 @@ fn safe_relative(rel: &str) -> Result<&Path, String> {
     let p = Path::new(rel);
     for c in p.components() {
         match c {
-            Component::Normal(n) if n == ".git" => {
+            Component::Normal(n) if is_dot_git(n) => {
                 return Err(format!("Refusing to list inside .git: {rel}"));
             }
             Component::Normal(_) | Component::CurDir => {}
@@ -108,13 +111,36 @@ fn safe_relative(rel: &str) -> Result<&Path, String> {
     Ok(p)
 }
 
+/// `.git`, spelled any way the filesystem treats as the same name: APFS and
+/// NTFS are case-insensitive, so `.GIT` opens the same directory there.
+fn is_dot_git(name: &std::ffi::OsStr) -> bool {
+    if cfg!(any(target_os = "macos", windows)) {
+        name.to_str()
+            .is_some_and(|n| n.eq_ignore_ascii_case(".git"))
+    } else {
+        name == ".git"
+    }
+}
+
+/// `root` must be canonical.
 fn list_one(
     root: &Path,
     rel: &str,
     ignores: Option<&RepoIgnores>,
 ) -> Result<Vec<DirEntryWire>, String> {
     let rel_path = safe_relative(rel)?;
-    let dir = root.join(rel_path);
+    // Resolved, so a symlinked directory cannot walk the listing out of the
+    // project (or into its `.git`) however the request spells it.
+    let dir = std::fs::canonicalize(root.join(rel_path)).map_err(|e| format!("{rel}: {e}"))?;
+    if !dir.starts_with(root) {
+        return Err(format!("{rel} resolves outside the project root"));
+    }
+    if dir
+        .strip_prefix(root)
+        .is_ok_and(|r| r.components().any(|c| is_dot_git(c.as_os_str())))
+    {
+        return Err(format!("Refusing to list inside .git: {rel}"));
+    }
     let read = std::fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
 
     // Prefix for every child's wire path, built once.
@@ -129,7 +155,7 @@ fn list_one(
     let mut entries = Vec::new();
     for entry in read.flatten() {
         let name = entry.file_name();
-        if name == ".git" {
+        if is_dot_git(&name) {
             continue;
         }
         let Ok(ft) = entry.file_type() else { continue };
@@ -284,20 +310,17 @@ impl RepoIgnores {
         false
     }
 
-    fn forget(&self, dirs: &[PathBuf], all: bool) {
+    fn forget(&self, dirs: &[PathBuf]) {
         let mut map = self.per_dir.lock();
-        if all {
-            map.clear();
-        } else {
-            for d in dirs {
-                map.remove(d);
-            }
+        for d in dirs {
+            map.remove(d);
         }
     }
 }
 
-/// Project root → its repository's matchers (`None`: not in a repository).
-type IgnoreCache = Mutex<HashMap<PathBuf, Option<Arc<RepoIgnores>>>>;
+/// Canonical project root → its repository's matchers. Only roots inside a
+/// repository are kept, so a later `git init` is seen on the next call.
+type IgnoreCache = Mutex<HashMap<PathBuf, Arc<RepoIgnores>>>;
 
 fn cache() -> &'static IgnoreCache {
     static CACHE: OnceLock<IgnoreCache> = OnceLock::new();
@@ -332,43 +355,51 @@ fn find_repo(root: &Path) -> Option<(PathBuf, Option<PathBuf>)> {
     None
 }
 
-/// The cached matchers for the repository holding `root`. Keyed by the
-/// project root as asked, so the walk up to `.git` happens once per root.
+/// The cached matchers for the repository holding `root` (canonical). Keyed
+/// by the project root, so the walk up to `.git` happens once per root.
 pub fn repo_ignores(root: &Path) -> Option<Arc<RepoIgnores>> {
     if let Some(hit) = cache().lock().get(root) {
-        return hit.clone();
+        return Some(hit.clone());
     }
-    let built = find_repo(root).map(|(top, git_dir)| Arc::new(RepoIgnores::new(top, git_dir)));
-    cache()
-        .lock()
-        .entry(root.to_path_buf())
-        .or_insert(built)
-        .clone()
+    let (top, git_dir) = find_repo(root)?;
+    let built = Arc::new(RepoIgnores::new(top, git_dir));
+    Some(
+        cache()
+            .lock()
+            .entry(root.to_path_buf())
+            .or_insert(built)
+            .clone(),
+    )
 }
 
-/// Drop cached matchers after the watcher saw `paths` change. A changed
-/// `.gitignore` drops its own directory's matcher; `all` (an opaque rename
-/// the watcher cannot pin down) drops every matcher of the repository.
+/// Drop cached matchers after the watcher saw `paths` change under `root`.
+/// A changed `.gitignore` drops its own directory's matcher. `all` (an opaque
+/// rename the watcher cannot pin down) drops the repository's whole entry,
+/// `info/exclude` and the global excludes included, to be rebuilt on demand.
 pub fn invalidate<'a>(root: &Path, paths: impl IntoIterator<Item = &'a Path>, all: bool) {
-    let repos: Vec<Arc<RepoIgnores>> = cache()
-        .lock()
-        .iter()
-        .filter(|(key, _)| key.starts_with(root) || root.starts_with(key))
-        .filter_map(|(_, v)| v.clone())
-        .collect();
-    if repos.is_empty() {
+    let root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    let related = |key: &PathBuf| key.starts_with(&root) || root.starts_with(key);
+    if all {
+        cache().lock().retain(|key, _| !related(key));
         return;
     }
     let dirs: Vec<PathBuf> = paths
         .into_iter()
         .filter(|p| is_gitignore(p))
-        .filter_map(|p| p.parent().map(Path::to_path_buf))
+        .filter_map(|p| p.parent())
+        .map(|d| std::fs::canonicalize(d).unwrap_or_else(|_| d.to_path_buf()))
         .collect();
-    if dirs.is_empty() && !all {
+    if dirs.is_empty() {
         return;
     }
+    let repos: Vec<Arc<RepoIgnores>> = cache()
+        .lock()
+        .iter()
+        .filter(|(key, _)| related(key))
+        .map(|(_, v)| v.clone())
+        .collect();
     for repo in repos {
-        repo.forget(&dirs, all);
+        repo.forget(&dirs);
     }
 }
 
@@ -390,7 +421,8 @@ mod tests {
             ));
             let _ = std::fs::remove_dir_all(&p);
             std::fs::create_dir_all(p.join(".git").join("info")).unwrap();
-            Self(p)
+            // As `read_directories` hands it on: canonical.
+            Self(std::fs::canonicalize(p).unwrap())
         }
         fn file(&self, rel: &str, body: &str) {
             let p = self.0.join(rel);
@@ -488,5 +520,48 @@ mod tests {
         assert!(list_one(&t.0, "../", None).is_err());
         assert!(list_one(&t.0, "/etc", None).is_err());
         assert!(list_one(&t.0, ".git", None).is_err());
+        if cfg!(target_os = "macos") {
+            assert!(list_one(&t.0, ".GIT", None).is_err());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_cannot_walk_the_listing_out_of_the_root() {
+        let t = Tmp::new("symlink");
+        let outside = Tmp::new("symlink-target");
+        outside.file("secret.txt", "");
+        std::os::unix::fs::symlink(&outside.0, t.0.join("out")).unwrap();
+        std::os::unix::fs::symlink(t.0.join(".git"), t.0.join("g")).unwrap();
+        t.file("inside/a.txt", "");
+        std::os::unix::fs::symlink(t.0.join("inside"), t.0.join("in")).unwrap();
+        assert!(list_one(&t.0, "out", None).is_err());
+        assert!(list_one(&t.0, "g", None).is_err());
+        let listed = list_one(&t.0, "in", None).unwrap();
+        assert_eq!(listed[0].path, "in/a.txt");
+    }
+
+    #[test]
+    fn a_root_outside_a_repo_is_not_cached_so_git_init_is_seen() {
+        let t = Tmp::new("late-init");
+        std::fs::remove_dir_all(t.0.join(".git")).unwrap();
+        t.file(".gitignore", "x.log\n");
+        t.file("x.log", "");
+        // Not a repository yet: nothing is ignored, and nothing is cached.
+        assert!(!ignored_of(&t.list(""), "x.log"));
+        assert!(!cache().lock().contains_key(&t.0));
+        std::fs::create_dir_all(t.0.join(".git")).unwrap();
+        assert!(ignored_of(&t.list(""), "x.log"));
+    }
+
+    #[test]
+    fn a_full_invalidate_rebuilds_info_exclude_too() {
+        let t = Tmp::new("full");
+        t.file("a.txt", "");
+        assert!(!ignored_of(&t.list(""), "a.txt"));
+        t.file(".git/info/exclude", "a.txt\n");
+        assert!(!ignored_of(&t.list(""), "a.txt"), "cached until told");
+        invalidate(&t.0, std::iter::empty(), true);
+        assert!(ignored_of(&t.list(""), "a.txt"));
     }
 }
