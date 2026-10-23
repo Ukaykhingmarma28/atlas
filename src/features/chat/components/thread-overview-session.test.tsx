@@ -65,7 +65,7 @@ describe("SessionBody", () => {
       projectPath: "/p",
       remoteProjectId: "rp-1",
     });
-    expect(useLayoutStore.getState().tabs.some((t) => t.type === "artifacts")).toBe(true);
+    expect(useLayoutStore.getState().destination?.type).toBe("artifacts");
   });
 
   it("does nothing on a click while off", () => {
