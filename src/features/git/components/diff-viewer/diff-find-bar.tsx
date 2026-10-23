@@ -14,11 +14,13 @@ import { IconButton } from "@/ui/icon-button";
 import { Hint } from "@/ui/tooltip";
 import {
   clearMatches,
+  createPaintedRanges,
   findInDiff,
   firstMatchFrom,
   groupByFile,
   MAX_DIFF_FIND_MATCHES,
   paintMatches,
+  rotateTo,
   type DiffFindMatch,
 } from "../../lib/diff-find";
 
@@ -63,6 +65,9 @@ interface Results {
   byFile: Map<string, DiffFindMatch[]>;
   /** The fileDiffs searched, to tell a fold from new text. */
   searched: readonly unknown[];
+  /** The file a capped search started from (it wraps round from there), so a
+   *  re-search keeps the same window of matches. `null`: the first file. */
+  startId: string | null;
 }
 
 const EMPTY: Results = {
@@ -71,6 +76,7 @@ const EMPTY: Results = {
   matches: [],
   byFile: new Map(),
   searched: [],
+  startId: null,
 };
 
 /** The file at the top of the viewport: the mounted one starting last at or
@@ -116,6 +122,12 @@ export const DiffFindBar = memo(function DiffFindBar({
   itemsRef.current = items;
   const viewerRef = useRef(viewer);
   viewerRef.current = viewer;
+  // Read through a ref: the panel's callback is rebuilt as files load, and a
+  // new identity must not re-run the search (which would drop the match).
+  const onUnfoldRef = useRef(onUnfold);
+  onUnfoldRef.current = onUnfold;
+  /** The ranges this bar has painted: only these are ever taken back. */
+  const painted = useRef(createPaintedRanges());
   /** A match waiting for its file to arrive unfolded. */
   const pending = useRef<DiffFindMatch | null>(null);
 
@@ -127,13 +139,13 @@ export const DiffFindBar = memo(function DiffFindBar({
     if (!instance) return;
     const { matches, byFile } = results.current;
     if (matches.length === 0) {
-      clearMatches();
+      clearMatches(painted.current);
       return;
     }
     const mounted = instance
       .getRenderedItems()
       .map((item) => ({ id: item.id, root: item.element.shadowRoot ?? item.element }));
-    paintMatches(mounted, byFile, matches[index.current] ?? null);
+    paintMatches(painted.current, mounted, byFile, matches[index.current] ?? null);
   }, []);
   const repaint = useCallback(() => {
     if (frame.current || results.current.matches.length === 0) return;
@@ -151,7 +163,7 @@ export const DiffFindBar = memo(function DiffFindBar({
   useEffect(
     () => () => {
       if (frame.current) cancelAnimationFrame(frame.current);
-      clearMatches();
+      clearMatches(painted.current);
     },
     [],
   );
@@ -162,7 +174,7 @@ export const DiffFindBar = memo(function DiffFindBar({
       const item = itemsRef.current.find((i) => i.id === match.id);
       if (item?.collapsed) {
         pending.current = match;
-        onUnfold(match.id);
+        onUnfoldRef.current(match.id);
         return;
       }
       pending.current = null;
@@ -175,7 +187,7 @@ export const DiffFindBar = memo(function DiffFindBar({
       });
       repaint();
     },
-    [onUnfold, repaint],
+    [repaint],
   );
 
   const select = useCallback(
@@ -204,39 +216,61 @@ export const DiffFindBar = memo(function DiffFindBar({
     (text: string, caseSensitive: boolean, keep: boolean) => {
       const current = itemsRef.current;
       const previous = keep ? results.current.matches[index.current] : undefined;
-      const matches = findInDiff(current, { text, matchCase: caseSensitive });
+      const query = { text, matchCase: caseSensitive };
+      const top = keep ? null : topItemId(viewerRef.current);
+      let startId = keep ? results.current.startId : null;
+      let order = rotateTo(current, startId);
+      let matches = findInDiff(order, query);
+      // Capped: the matches near the viewer may be past the cap. Search again
+      // from the file at the top of the viewer, wrapping round, so the first
+      // match shown is near where the reader is.
+      if (!keep && matches.length >= MAX_DIFF_FIND_MATCHES && top) {
+        startId = top;
+        order = rotateTo(current, top);
+        matches = findInDiff(order, query);
+      }
       results.current = {
         query: text,
         matchCase: caseSensitive,
         matches,
         byFile: groupByFile(matches),
         searched: current.map((i) => i.fileDiff),
+        startId,
       };
       let next = -1;
       if (previous) next = matches.findIndex((m) => sameMatch(m, previous));
       if (next === -1 && !keep) {
         // Start from the file at the top of the viewer, not the first file.
-        const top = topItemId(viewerRef.current);
         next = firstMatchFrom(
           matches,
-          current.map((i) => i.id),
+          order.map((i) => i.id),
           top,
         );
       }
       index.current = next;
       setStatus({ index: next, total: matches.length, searched: text !== "" });
-      if (matches.length === 0) clearMatches();
+      if (matches.length === 0) clearMatches(painted.current);
       else if (!keep && matches[next]) show(matches[next]);
       else repaint();
     },
     [repaint, show],
   );
 
-  // A keystroke only schedules the search.
+  // A keystroke only schedules the search. Keyed on the query alone, with
+  // `run` read through a ref: nothing but typing may restart it.
+  const runRef = useRef(run);
+  runRef.current = run;
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    const timer = setTimeout(() => run(query, matchCase, false), DIFF_FIND_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [query, matchCase, run]);
+    timer.current = setTimeout(() => {
+      timer.current = null;
+      runRef.current(query, matchCase, false);
+    }, DIFF_FIND_DEBOUNCE_MS);
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
+    };
+  }, [query, matchCase]);
 
   // New items: a fold only needs a repaint; new text needs the search again,
   // keeping the current match where it survives.
@@ -281,10 +315,12 @@ export const DiffFindBar = memo(function DiffFindBar({
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();
-            // Typed faster than the debounce: search now, then step.
-            if (results.current.query !== query || results.current.matchCase !== matchCase)
+            // Typed faster than the debounce: search now, once.
+            if (results.current.query !== query || results.current.matchCase !== matchCase) {
+              if (timer.current) clearTimeout(timer.current);
+              timer.current = null;
               run(query, matchCase, false);
-            else step(e.shiftKey ? -1 : 1);
+            } else step(e.shiftKey ? -1 : 1);
           } else if (e.key === "Escape") {
             e.preventDefault();
             e.stopPropagation();

@@ -54,18 +54,24 @@ function trimLineBreak(text: string): string {
   return text;
 }
 
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 /**
  * Every occurrence of `query` in the files' changed and unchanged hunk lines,
  * in the order the unified view draws them (a change block's removals before
  * its additions). Plain text, not a pattern; case-insensitive unless asked.
+ *
+ * Matched against the line as it is, never a case-folded copy: folding can
+ * change a string's length (`İ` lowercases to two code units), which would
+ * shift every offset after it off the rendered text.
  */
 export function findInDiff(
   items: readonly DiffFindItem[],
   query: DiffFindQuery,
   limit = MAX_DIFF_FIND_MATCHES,
 ): DiffFindMatch[] {
-  const needle = query.matchCase ? query.text : query.text.toLowerCase();
-  if (needle === "" || needle.includes("\n")) return [];
+  if (query.text === "" || query.text.includes("\n")) return [];
+  const pattern = new RegExp(escapeRegExp(query.text), query.matchCase ? "gu" : "giu");
   const out: DiffFindMatch[] = [];
 
   const scan = (
@@ -78,20 +84,18 @@ export function findInDiff(
   ): boolean => {
     if (raw === undefined) return true;
     const line = trimLineBreak(raw);
-    const hay = query.matchCase ? line : line.toLowerCase();
-    let from = hay.indexOf(needle);
-    while (from !== -1) {
+    pattern.lastIndex = 0;
+    for (let m = pattern.exec(line); m; m = pattern.exec(line)) {
       out.push({
         id,
         side,
         context,
         lineNumber,
         deletionLineNumber,
-        start: from,
-        end: from + needle.length,
+        start: m.index,
+        end: m.index + m[0].length,
       });
       if (out.length >= limit) return false;
-      from = hay.indexOf(needle, from + needle.length);
     }
     return true;
   };
@@ -206,6 +210,16 @@ function highlights(): Highlights | null {
   return shared;
 }
 
+/** The ranges one find bar has painted. The highlight entries are the page's
+ *  and shared: two panels each searching their own diff must only ever take
+ *  back their own ranges, never clear the other's. */
+export interface PaintedRanges {
+  all: Range[];
+  current: Range[];
+}
+
+export const createPaintedRanges = (): PaintedRanges => ({ all: [], current: [] });
+
 /** One rendered file: its id and the root its rows are drawn in. */
 export interface MountedFile {
   id: string;
@@ -215,17 +229,17 @@ export interface MountedFile {
 /**
  * Paint `matches` over the rows that are mounted now, the `current` one in
  * its own highlight. Returns the current match's line element when it is
- * mounted. Clears every previous range first: one find bar owns the entries.
+ * mounted. Takes back what `painted` held first, and records what it adds.
  */
 export function paintMatches(
+  painted: PaintedRanges,
   mounted: readonly MountedFile[],
   byFile: ReadonlyMap<string, readonly DiffFindMatch[]>,
   current: DiffFindMatch | null,
 ): Element | null {
   const h = highlights();
   if (!h) return null;
-  h.all.clear();
-  h.current.clear();
+  clearMatches(painted);
   let currentElement: Element | null = null;
   for (const file of mounted) {
     const matches = byFile.get(file.id);
@@ -247,8 +261,12 @@ export function paintMatches(
           if (!range) continue;
           if (match === current) {
             h.current.add(range);
+            painted.current.push(range);
             currentElement ??= element;
-          } else h.all.add(range);
+          } else {
+            h.all.add(range);
+            painted.all.push(range);
+          }
         }
       }
     }
@@ -256,10 +274,24 @@ export function paintMatches(
   return currentElement;
 }
 
-export function clearMatches(): void {
+/** Take back one find bar's ranges, and only its. */
+export function clearMatches(painted: PaintedRanges): void {
   const h = highlights();
-  h?.all.clear();
-  h?.current.clear();
+  if (h) {
+    for (const range of painted.all) h.all.delete(range);
+    for (const range of painted.current) h.current.delete(range);
+  }
+  painted.all.length = 0;
+  painted.current.length = 0;
+}
+
+/** `items` turned to start at `fromId`'s file, wrapping round. */
+export function rotateTo<T extends { id: string }>(
+  items: readonly T[],
+  fromId: string | null,
+): T[] {
+  const start = fromId ? items.findIndex((i) => i.id === fromId) : -1;
+  return start <= 0 ? [...items] : [...items.slice(start), ...items.slice(0, start)];
 }
 
 /** Matches grouped by file, in order. */

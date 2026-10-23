@@ -137,6 +137,44 @@ describe("DiffFindBar", () => {
     );
   });
 
+  it("keeps its place when the panel re-renders with new callbacks and new files", async () => {
+    const { viewer, scrollTo } = fakeViewer();
+    const props = { viewer, onClose: vi.fn() };
+    const { rerender } = render(
+      <DiffFindBar {...props} onUnfold={vi.fn()} items={itemsWith({})} />,
+    );
+    await type("needle");
+    fireEvent.click(screen.getByRole("button", { name: /next match/i }));
+    fireEvent.click(screen.getByRole("button", { name: /next match/i }));
+    expect(count()).toBe("3 of 3");
+    scrollTo.mockClear();
+    // A pending file loading: a new `onUnfold` and new items (fresh objects,
+    // same text) — nothing about the search changed.
+    rerender(<DiffFindBar {...props} onUnfold={vi.fn()} items={itemsWith({})} />);
+    await act(async () => {
+      vi.advanceTimersByTime(DIFF_FIND_DEBOUNCE_MS + 1);
+    });
+    expect(count()).toBe("3 of 3");
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it("searches once when Enter beats the debounce", async () => {
+    const { viewer, scrollTo } = fakeViewer();
+    render(
+      <DiffFindBar viewer={viewer} items={itemsWith({})} onUnfold={vi.fn()} onClose={vi.fn()} />,
+    );
+    const input = screen.getByRole("textbox", { name: "Find in diff" });
+    fireEvent.change(input, { target: { value: "needle" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(count()).toBe("1 of 3");
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    // The debounced search was cancelled, not run again over the same query.
+    await act(async () => {
+      vi.advanceTimersByTime(DIFF_FIND_DEBOUNCE_MS + 1);
+    });
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+  });
+
   it("closes on Escape", () => {
     const { viewer } = fakeViewer();
     const onClose = vi.fn();

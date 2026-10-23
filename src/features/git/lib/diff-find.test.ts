@@ -2,12 +2,14 @@
 import { describe, expect, it } from "vitest";
 import { parsePatchFiles } from "@pierre/diffs";
 import {
+  createPaintedRanges,
   findInDiff,
   firstMatchFrom,
   groupByFile,
   lineKeyOfElement,
   lineKeysOf,
   paintMatches,
+  rotateTo,
   textRange,
 } from "./diff-find";
 
@@ -133,6 +135,38 @@ describe("painting", () => {
   });
 
   it("is a no-op where the highlight API is missing", () => {
-    expect(paintMatches([], new Map(), null)).toBeNull();
+    expect(paintMatches(createPaintedRanges(), [], new Map(), null)).toBeNull();
+  });
+});
+
+describe("findInDiff offsets", () => {
+  const PATCH_U = `diff --git a/u.ts b/u.ts
+--- a/u.ts
++++ b/u.ts
+@@ -1,1 +1,1 @@
+-x
++İstanbul name; a.b*c
+`;
+  const items = parsePatchFiles(PATCH_U)[0]!.files.map((fileDiff) => ({ id: "u", fileDiff }));
+
+  it("keeps offsets on the line as written when case folding changes its length", () => {
+    // "İ".toLowerCase() is two code units: a folded copy would put "name" at 10.
+    const [match] = findInDiff(items, { text: "NAME", matchCase: false });
+    expect(match).toMatchObject({ start: 9, end: 13 });
+  });
+
+  it("matches a query's pattern characters literally", () => {
+    expect(findInDiff(items, { text: "b*c", matchCase: true })).toHaveLength(1);
+    expect(findInDiff(items, { text: "a.b", matchCase: true })).toHaveLength(1);
+    expect(findInDiff(items, { text: "a.c", matchCase: true })).toHaveLength(0);
+  });
+});
+
+describe("rotateTo", () => {
+  const ids = [{ id: "a" }, { id: "b" }, { id: "c" }];
+  it("starts at the given file and wraps round", () => {
+    expect(rotateTo(ids, "b").map((i) => i.id)).toEqual(["b", "c", "a"]);
+    expect(rotateTo(ids, null).map((i) => i.id)).toEqual(["a", "b", "c"]);
+    expect(rotateTo(ids, "missing").map((i) => i.id)).toEqual(["a", "b", "c"]);
   });
 });

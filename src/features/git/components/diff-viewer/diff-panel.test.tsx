@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import type { ReviewFile } from "../../lib/use-review-files";
 
 // No Tauri here: the settings store subscribes to config changes at import,
@@ -23,7 +24,13 @@ vi.mock("../../lib/git-review-api", () => ({
 
 const FILE: ReviewFile = {
   stat: { path: "src/long.ts", status: "modified", additions: 1, deletions: 0 },
-  fileDiff: { name: "src/long.ts", hunks: [], cacheKey: "long" },
+  fileDiff: {
+    name: "src/long.ts",
+    hunks: [],
+    additionLines: [],
+    deletionLines: [],
+    cacheKey: "long",
+  },
   state: "ready",
   truncated: false,
 } as unknown as ReviewFile;
@@ -39,10 +46,21 @@ vi.mock("../../lib/use-review-files", () => ({
 }));
 
 // The viewer itself renders in a shadow root off a worker pool; what matters
-// here is the `overflow` the panel hands it.
+// here is what the panel hands it: the `overflow`, each item's fold, and the
+// header tail it draws for each file.
 vi.mock("./styled-code-view", () => ({
-  StyledCodeView: (props: { options: { overflow: string } }) => (
-    <div data-testid="viewer" data-overflow={props.options.overflow} />
+  StyledCodeView: (props: {
+    options: { overflow: string };
+    items: { id: string; collapsed?: boolean }[];
+    renderHeaderMetadata?: (item: { id: string; collapsed?: boolean }) => ReactNode;
+  }) => (
+    <div data-testid="viewer" data-overflow={props.options.overflow}>
+      {props.items.map((item) => (
+        <div key={item.id} data-testid="item" data-collapsed={String(item.collapsed === true)}>
+          {props.renderHeaderMetadata?.(item)}
+        </div>
+      ))}
+    </div>
   ),
 }));
 
@@ -51,6 +69,7 @@ const { useSettingsStore } = await import("@/features/settings/stores/settings-s
 const { DEFAULT_SETTINGS } = await import("@/features/settings/lib/app-settings");
 const { useLayoutStore } = await import("@/features/layout/stores/layout-store");
 const { isMac } = await import("@/lib/platform");
+const { useDiffPanelStore } = await import("../../stores/diff-panel-store");
 
 const updateSettings = vi.fn((partial: Partial<typeof DEFAULT_SETTINGS>) =>
   useSettingsStore.setState((s) => ({ settings: { ...s.settings, ...partial } })),
@@ -67,6 +86,7 @@ function renderPanel() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useDiffPanelStore.setState({ viewed: {}, collapsed: {} });
   useSettingsStore.setState({
     settings: { ...DEFAULT_SETTINGS },
     actions: { ...useSettingsStore.getState().actions, updateSettings },
@@ -147,5 +167,57 @@ describe("DiffPanel find (⌘F)", () => {
       fireEvent.click(screen.getByRole("button", { name: /find in diff/i }));
     });
     expect(screen.getByRole("search", { name: "Find in diff" })).toBeTruthy();
+  });
+});
+
+describe("DiffPanel viewed files", () => {
+  const viewedCount = () => screen.getByText(/viewed$/).textContent;
+  // Base UI's box forwards a click to its hidden native input, which is what
+  // the test DOM can toggle.
+  const tick = () =>
+    act(() => {
+      const box = screen.getAllByRole("checkbox")[0]!;
+      fireEvent.click(box.parentElement!.querySelector("input")!);
+    });
+
+  it("counts files and viewed ones, and a tick folds the file", async () => {
+    renderPanel();
+    await screen.findByTestId("viewer");
+    expect(screen.getByText("1 file")).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "Viewed" })).toBeTruthy();
+    expect(viewedCount()).toBe("0 / 1 viewed");
+    expect(screen.getByTestId("item").dataset.collapsed).toBe("false");
+
+    tick();
+    expect(viewedCount()).toBe("1 / 1 viewed");
+    expect(screen.getByTestId("item").dataset.collapsed).toBe("true");
+    const marks = Object.values(useDiffPanelStore.getState().viewed)[0];
+    expect(Object.keys(marks ?? {})).toEqual(["src/long.ts"]);
+
+    // Unticking opens it again.
+    tick();
+    expect(viewedCount()).toBe("0 / 1 viewed");
+    expect(screen.getByTestId("item").dataset.collapsed).toBe("false");
+  });
+
+  it("reads as changed when the file's diff moved since it was viewed", async () => {
+    renderPanel();
+    await screen.findByTestId("viewer");
+    tick();
+    // The mark as if made against another version of the diff.
+    act(() => {
+      const viewed = useDiffPanelStore.getState().viewed;
+      const [scope, marks] = Object.entries(viewed)[0]!;
+      const mark = marks["src/long.ts"]!;
+      useDiffPanelStore.setState({
+        viewed: { [scope]: { "src/long.ts": { ...mark, sig: (mark.sig ?? 0) + 1 } } },
+      });
+    });
+    expect(
+      screen.getByRole("checkbox", { name: /changed since you marked it viewed/i }),
+    ).toBeTruthy();
+    expect(screen.getByText("Changed")).toBeTruthy();
+    // Still counted: it was viewed, it just needs another look.
+    expect(viewedCount()).toBe("1 / 1 viewed");
   });
 });

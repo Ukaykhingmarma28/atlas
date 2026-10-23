@@ -53,7 +53,11 @@ export const DIFF_VIEW_CSS = `
 
   --diffs-bg-context-override: var(--atlas-diff-context-background);
   --diffs-bg-hover-override: var(--atlas-element-hover);
-  --diffs-bg-separator-override: var(--atlas-editor-gutter-background);
+  --diffs-bg-separator-override: color-mix(
+    in srgb,
+    var(--atlas-editor-background) 95%,
+    var(--atlas-editor-foreground)
+  );
   --diffs-bg-buffer-override: var(--atlas-editor-gutter-background);
   --diffs-bg-selection-override: var(--atlas-editor-selection-background);
 
@@ -136,18 +140,30 @@ export const DIFF_VIEW_CSS = `
   box-shadow: inset 3px 0 color-mix(in srgb, var(--atlas-editor-foreground) 24%, transparent);
 }
 
-/* Hunk separators lead to the unchanged lines between hunks: quiet controls
-   one step off the code surface, brought forward on hover. */
+/* Hunk separators lead to the unchanged lines between hunks ("N unmodified
+   lines", the expand control in its own cell): a band one step off the code
+   surface, its text half-strength, both brought forward on hover. */
 :is([data-separator="line-info"], [data-separator="line-info-basic"]) {
   /* Exact and margin-free: the virtualizer places rows by hunkSeparatorHeight. */
   height: 24px !important;
   margin-block: 0 !important;
-  --diffs-bg-separator: var(--atlas-editor-gutter-background);
+  --diffs-bg-separator: color-mix(
+    in srgb,
+    var(--atlas-editor-background) 97%,
+    var(--atlas-editor-foreground)
+  );
 }
 
 :is([data-separator="line-info"], [data-separator="line-info-basic"]) [data-separator-content],
 :is([data-separator="line-info"], [data-separator="line-info-basic"]) [data-expand-button] {
-  color: var(--atlas-editor-gutter-foreground) !important;
+  color: color-mix(
+    in srgb,
+    var(--atlas-editor-foreground) 50%,
+    var(--atlas-editor-background)
+  ) !important;
+}
+
+:is([data-separator="line-info"], [data-separator="line-info-basic"]) [data-separator-content] {
   font-family: var(--font-sans) !important;
   font-size: var(--text-xs) !important;
   text-decoration: none !important;
@@ -156,7 +172,11 @@ export const DIFF_VIEW_CSS = `
 :is([data-separator="line-info"], [data-separator="line-info-basic"])[data-expand-index]
   :is([data-separator-content], [data-expand-button]):hover {
   color: var(--atlas-editor-foreground) !important;
-  background-color: var(--atlas-element-hover) !important;
+  background-color: color-mix(
+    in srgb,
+    var(--atlas-editor-background) 92%,
+    var(--atlas-editor-foreground)
+  ) !important;
 }
 
 [data-diffs-header] [data-header-content],
