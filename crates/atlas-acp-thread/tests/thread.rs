@@ -199,6 +199,35 @@ async fn a_protocol_chunk_does_not_merge_into_the_optimistic_prompt() {
 
     assert_eq!(user_messages(&thread), vec!["typed", "from agent"]);
 }
+/// A retry re-sends the last user message's prompt text. A turn that carried a
+/// large paste as a text block must give it back whole and set apart from the
+/// prose, in the form the composer's queue reads back (`withPastesInline`).
+#[tokio::test]
+async fn a_prompt_with_a_paste_comes_back_whole_for_a_retry() {
+    let (mut thread, _events, _conn) = new_thread();
+    let paste = prompt::PastedText {
+        id: "p1".into(),
+        text: "log line 1\nlog line 2".into(),
+    };
+    let blocks = prompt::with_pasted_texts(
+        vec![text_block("summarise @paste:p1")],
+        vec![paste.clone()],
+        false,
+    );
+    let id = Some(ClientUserMessageId::new());
+    for block in blocks {
+        thread.push_user_content_block(id.clone(), block);
+    }
+
+    let Some(AgentThreadEntry::UserMessage(msg)) = thread.entries().last() else {
+        panic!("expected the user message");
+    };
+    assert_eq!(
+        msg.prompt_text(),
+        format!("summarise @paste:p1\n\n{}", prompt::paste_as_text(&paste))
+    );
+}
+
 #[tokio::test]
 async fn an_echoed_user_chunk_is_not_rendered_twice() {
     let (mut thread, _events, _conn) = new_thread();
