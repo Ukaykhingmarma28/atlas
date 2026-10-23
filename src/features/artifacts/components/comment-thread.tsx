@@ -1011,6 +1011,11 @@ function Composer({
             rows={1}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => {
+              // An input method is mid-composition: its Enter confirms a
+              // candidate and its Escape abandons one. Neither is ours.
+              // 229 covers WebKit, which reports the key before
+              // `isComposing` flips.
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
               if (e.key === "Escape" && onCancel) {
                 // Leave the edit without closing the popover around it.
                 e.preventDefault();
