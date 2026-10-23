@@ -33,6 +33,9 @@ export interface ProjectTreeRowProps {
   active: boolean;
   cut: boolean;
   dropTarget: boolean;
+  /** Absolute: the outer folder of a compacted row something is dragged
+   *  over (its name is a drop target of its own). */
+  dropSegment: string | null;
   dragging: boolean;
   /** Status colour for a changed file, or the strongest one below a
    *  collapsed folder. */
@@ -60,6 +63,7 @@ export const ProjectTreeRow = memo(function ProjectTreeRow({
   active,
   cut,
   dropTarget,
+  dropSegment,
   dragging,
   gitColor,
   additions,
@@ -90,7 +94,10 @@ export const ProjectTreeRow = memo(function ProjectTreeRow({
           : active
             ? "bg-card text-foreground"
             : "text-secondary-foreground hover:bg-element-hover hover:text-foreground",
-        focused && "ring-1 ring-border-strong ring-inset",
+        // Keyboard only: a mouse user sees the fill; the ring marks where
+        // arrow keys move from.
+        focused &&
+          "group-focus-visible/tree:ring-1 group-focus-visible/tree:ring-border-strong group-focus-visible/tree:ring-inset",
         dropTarget &&
           "bg-[var(--atlas-primary-muted)] text-foreground ring-1 ring-primary/40 ring-inset",
         dragging && "opacity-40",
@@ -141,7 +148,15 @@ export const ProjectTreeRow = memo(function ProjectTreeRow({
           )}
           style={!isDir && gitColor && !row.ignored ? { color: gitColor } : undefined}
         >
-          {row.chain ? <ChainLabel chain={row.chain} /> : row.name}
+          {row.chain ? (
+            <ChainLabel
+              chain={row.chain}
+              base={absPath.slice(0, absPath.length - row.path.length)}
+              dropSegment={dropSegment}
+            />
+          ) : (
+            row.name
+          )}
         </span>
       )}
       {!renaming && row.kind === "symlink" && (
@@ -193,14 +208,36 @@ export const ProjectTreeRow = memo(function ProjectTreeRow({
   );
 });
 
-/** A compacted folder chain's name: each folder's, between quiet slashes. */
-function ChainLabel({ chain }: { chain: readonly string[] }) {
-  return chain.map((path, i) => (
-    <Fragment key={path}>
-      {i > 0 && <span className="px-1 text-muted-foreground">/</span>}
-      {nameOf(path)}
-    </Fragment>
-  ));
+/**
+ * A compacted folder chain's name: each folder's, between quiet slashes.
+ * Clicks, menus and rename act on the row, which is the innermost folder;
+ * each outer name is a drop target for its own folder.
+ */
+function ChainLabel({
+  chain,
+  base,
+  dropSegment,
+}: {
+  chain: readonly string[];
+  /** The root with its trailing slash: `base + link` is a link's path. */
+  base: string;
+  dropSegment: string | null;
+}) {
+  return chain.map((path, i) => {
+    const abs = base + path;
+    const outer = i < chain.length - 1;
+    return (
+      <Fragment key={path}>
+        {i > 0 && <span className="px-1 text-muted-foreground">/</span>}
+        <span
+          data-tree-drop-path={outer ? abs : undefined}
+          className={cn(dropSegment === abs && "rounded-sm bg-[var(--atlas-primary-muted)]")}
+        >
+          {nameOf(path)}
+        </span>
+      </Fragment>
+    );
+  });
 }
 
 /**

@@ -27,6 +27,30 @@ export function normalizeTreeQuery(query: string): string {
   return (trimmed.includes("\\") ? trimmed.replaceAll("\\", "/") : trimmed).toLowerCase();
 }
 
+/**
+ * The query as the index should read it: literally. The index's matcher
+ * (nucleo's `Pattern::parse`) splits on spaces and treats a leading `!`, `^`
+ * or `'` and a trailing `$` as operators; each is escaped with `\`, so the
+ * whole query is one fuzzy needle. Takes a normalised query (no `\` left).
+ */
+export function literalIndexQuery(query: string): string {
+  let out = query.replaceAll(" ", "\\ ");
+  if (/^[!^']/.test(out)) out = `\\${out}`;
+  if (out.endsWith("$")) out = `${out.slice(0, -1)}\\$`;
+  return out;
+}
+
+/** What a tree's search keeps between views of one project root (see
+ *  `ProjectTreeModel.view`). */
+export interface TreeSearchState {
+  /** The field's text. */
+  query: string;
+  /** The answer the tree is filtered by; null until the first one lands. */
+  applied: { query: string; indexHits: readonly string[] } | null;
+  /** Folders closed by hand during this search. */
+  collapsed: ReadonlySet<string>;
+}
+
 /** Any segment starts with a dot. */
 export const isHiddenPath = (path: string) => path.startsWith(".") || path.includes("/.");
 
@@ -41,6 +65,39 @@ export interface TreeMatches {
   /** Ignored folders the listings know of, so a folder shown above a hit
    *  is dimmed like it would be in the tree. */
   ignoredDirs: Set<string>;
+  /** Index answers that passed the substring rule and are still on disk:
+   *  what "more matches available" is judged by. */
+  indexMatched: number;
+}
+
+/** Each listing's paths as a set, built once per listing object. */
+const pathSetCache = new WeakMap<readonly ProjectEntry[], Set<string>>();
+function pathSet(entries: readonly ProjectEntry[]): Set<string> {
+  let set = pathSetCache.get(entries);
+  if (!set) {
+    set = new Set(entries.map((e) => e.path));
+    pathSetCache.set(entries, set);
+  }
+  return set;
+}
+
+/**
+ * Whether the loaded listings still agree that `path` exists: every folder
+ * above it whose listing is loaded lists the next step down. The index lags
+ * the disk, so a file deleted or renamed a moment ago can still be in its
+ * answer; the tree's own listings, refreshed by the watcher, know better.
+ */
+export function stillListed(
+  listings: ReadonlyMap<string, readonly ProjectEntry[]>,
+  path: string,
+): boolean {
+  let child = path;
+  for (let dir = parentOf(path); ; dir = parentOf(dir)) {
+    const entries = listings.get(dir);
+    if (entries && !pathSet(entries).has(child)) return false;
+    if (dir === "") return true;
+    child = dir;
+  }
 }
 
 /** Lower-cased paths per listing, built once per listing object. */
@@ -56,19 +113,21 @@ function lowerPaths(entries: readonly ProjectEntry[]): string[] {
 
 /**
  * Every path whose root-relative path holds `query` (already normalised):
- * the loaded listings' entries, then the index's files. A hidden path (any
- * segment starting with a dot) counts only when hidden files are shown.
+ * the loaded listings' entries, then the index's files that the listings do
+ * not contradict (`stillListed`). A hidden path (any segment starting with a
+ * dot) counts only when hidden files are shown.
  */
 export function collectMatches(
-  listings: Iterable<readonly ProjectEntry[]>,
+  listings: ReadonlyMap<string, readonly ProjectEntry[]>,
   indexHits: readonly string[],
   query: string,
   showHidden: boolean,
 ): TreeMatches {
   const hits = new Map<string, Hit>();
   const ignoredDirs = new Set<string>();
-  if (!query) return { hits, ignoredDirs };
-  for (const entries of listings) {
+  let indexMatched = 0;
+  if (!query) return { hits, ignoredDirs, indexMatched };
+  for (const entries of listings.values()) {
     const lower = lowerPaths(entries);
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i];
@@ -79,11 +138,13 @@ export function collectMatches(
     }
   }
   for (const path of indexHits) {
-    if (hits.has(path) || !path.toLowerCase().includes(query)) continue;
+    if (!path.toLowerCase().includes(query)) continue;
     if (!showHidden && isHiddenPath(path)) continue;
-    hits.set(path, { kind: "file", ignored: false });
+    if (!stillListed(listings, path)) continue;
+    indexMatched++;
+    if (!hits.has(path)) hits.set(path, { kind: "file", ignored: false });
   }
-  return { hits, ignoredDirs };
+  return { hits, ignoredDirs, indexMatched };
 }
 
 interface SearchNode {
@@ -109,6 +170,8 @@ export interface SearchRows {
   rows: TreeRowData[];
   /** Hits drawn (a hit under a folder closed by hand still counts). */
   matchCount: number;
+  /** The index answered a full page that all held: there may be more. */
+  truncated: boolean;
   /** The first hit in tree order, for the tree's focus. */
   firstMatch: string | null;
 }
@@ -120,7 +183,7 @@ export interface SearchRows {
  * child is a folder is compacted with it, as in the tree.
  */
 export function buildSearchRows(
-  { hits, ignoredDirs }: TreeMatches,
+  { hits, ignoredDirs, indexMatched }: TreeMatches,
   collapsed: ReadonlySet<string> = new Set(),
 ): SearchRows {
   const root: SearchNode = {
@@ -187,5 +250,10 @@ export function buildSearchRows(
     }
   };
   walk(root, 0);
-  return { rows, matchCount: hits.size, firstMatch };
+  return {
+    rows,
+    matchCount: hits.size,
+    truncated: hits.size > 0 && indexMatched >= SEARCH_INDEX_LIMIT,
+    firstMatch,
+  };
 }

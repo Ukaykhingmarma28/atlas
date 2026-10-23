@@ -45,6 +45,7 @@ import {
 } from "../lib/fs-api";
 import {
   chainOpen,
+  chainOwners,
   nameOf,
   parentOf,
   projectTreeModel,
@@ -53,9 +54,11 @@ import {
 import {
   buildSearchRows,
   collectMatches,
+  literalIndexQuery,
   normalizeTreeQuery,
   SEARCH_DEBOUNCE_MS,
   SEARCH_INDEX_LIMIT,
+  type TreeSearchState,
 } from "../lib/tree-search";
 import { searchProjectFiles } from "@/features/file-picker/lib/file-picker-api";
 import { useProjectStore } from "@/features/projects/stores/project-store";
@@ -187,47 +190,71 @@ export function ProjectFileTree({
   // the project's file index is asked, and the tree is filtered from its
   // answer plus the listings already loaded (`tree-search.ts`). Until then
   // the tree shows what it showed before, so typing never waits on a filter.
+  //
+  // The search belongs to the project root, not to this view: it is kept on
+  // the root's model, so picking a hit on the Files surface (which hands off
+  // to the file's tab) carries the search into that tab's tree.
   const workspaceId = useProjectStore((s) => s.projects.find((p) => p.path === root)?.id ?? null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const [query, setQuery] = useState("");
-  const [search, setSearch] = useState<{
-    query: string;
-    indexHits: readonly string[];
-    truncated: boolean;
-  } | null>(null);
+  const saved = model.view.search;
+  const [query, setQuery] = useState(saved?.query ?? "");
+  const [search, setSearch] = useState<TreeSearchState["applied"]>(saved?.applied ?? null);
   /** Folders closed by hand during this search; every other one is open. */
-  const [searchCollapsed, setSearchCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+  const [searchCollapsed, setSearchCollapsed] = useState<ReadonlySet<string>>(
+    () => saved?.collapsed ?? new Set(),
+  );
+  useEffect(() => {
+    model.view.search = query ? { query, applied: search, collapsed: searchCollapsed } : null;
+  }, [model, query, search, searchCollapsed]);
   const searchSeq = useRef(0);
+  /** The query of the answer on screen. */
+  const appliedRef = useRef(saved?.applied?.query ?? null);
+  /** Bumped to ask the index again for the same query (refresh, disk change). */
   const [searchNonce, setSearchNonce] = useState(0);
   useEffect(() => {
     const q = normalizeTreeQuery(query);
     if (!q) {
       searchSeq.current++;
+      appliedRef.current = null;
       setSearch(null);
       return;
     }
     const seq = ++searchSeq.current;
     const timer = setTimeout(() => {
       const answer = workspaceId
-        ? searchProjectFiles(workspaceId, root, q, SEARCH_INDEX_LIMIT).then(
+        ? searchProjectFiles(workspaceId, root, literalIndexQuery(q), SEARCH_INDEX_LIMIT).then(
             (hits) => hits.map((h) => h.rel),
             () => [] as string[],
           )
         : Promise.resolve([] as string[]);
       void answer.then((indexHits) => {
         if (seq !== searchSeq.current) return;
-        setSearchCollapsed(new Set());
-        setSearch({ query: q, indexHits, truncated: indexHits.length >= SEARCH_INDEX_LIMIT });
+        // A new query starts with every folder open; the same one asked
+        // again keeps what the user closed.
+        if (appliedRef.current !== q) setSearchCollapsed(new Set());
+        appliedRef.current = q;
+        setSearch({ query: q, indexHits });
       });
     }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [query, root, workspaceId, searchNonce]);
   const searching = search !== null;
+  // The listings changed under a search (a file added, deleted, renamed):
+  // ask the index again once things settle. Stale hits are already dropped
+  // by `collectMatches`; this is what brings new ones in.
+  const listingsChanged = useRef(snapshot);
+  useEffect(() => {
+    if (listingsChanged.current === snapshot) return;
+    listingsChanged.current = snapshot;
+    if (!searching) return;
+    const timer = setTimeout(() => setSearchNonce((n) => n + 1), 300);
+    return () => clearTimeout(timer);
+  }, [snapshot, searching]);
   const searchResult = useMemo(
     () =>
       search
         ? buildSearchRows(
-            collectMatches(model.listingEntries(), search.indexHits, search.query, showHidden),
+            collectMatches(model.listingMap(), search.indexHits, search.query, showHidden),
             searchCollapsed,
           )
         : null,
@@ -241,6 +268,7 @@ export function ProjectFileTree({
     setQuery("");
     searchSeq.current++;
     setSearch(null);
+    setSearchCollapsed(new Set());
   }, []);
 
   useEffect(() => model.setShowHidden(showHidden), [model, showHidden]);
@@ -260,6 +288,22 @@ export function ProjectFileTree({
   const [clipboard, setClipboard] = useState<{ paths: string[]; isCut: boolean } | null>(null);
   const [deleteTargets, setDeleteTargets] = useState<TreeRowData[] | null>(null);
   const [menuTarget, setMenuTarget] = useState<TreeRowData | null>(null);
+
+  // A folder that was a row of its own can fold into a compacted chain once
+  // its listing loads (or a refresh leaves it one child). Focus and
+  // selection on it follow it to the row now drawing it, or ↓ would start
+  // from nowhere and "New file" would land at the root.
+  const owners = useMemo(() => chainOwners(rows), [rows]);
+  useEffect(() => {
+    if (owners.size === 0) return;
+    const to = (path: string) => owners.get(path) ?? path;
+    setFocused((f) => (f && owners.has(f) ? to(f) : f));
+    setSelection((s) => {
+      const moved = [...s.paths].some((p) => owners.has(p)) || (!!s.anchor && owners.has(s.anchor));
+      if (!moved) return s;
+      return { paths: new Set([...s.paths].map(to)), anchor: s.anchor && to(s.anchor) };
+    });
+  }, [owners]);
 
   const display = useMemo<readonly DisplayRow[]>(() => {
     if (!newEntry) return rows;
@@ -312,13 +356,20 @@ export function ProjectFileTree({
 
   // A fresh answer starts at the top, with the first hit focused, so Tab
   // or ↓ from the field lands on it.
+  const appliedQuery = search?.query ?? null;
+  const restoredQuery = useRef(saved?.applied?.query ?? null);
   useEffect(() => {
-    if (!search) return;
+    if (!appliedQuery) return;
+    // A search carried over from another view keeps its place.
+    if (appliedQuery === restoredQuery.current) {
+      restoredQuery.current = null;
+      return;
+    }
     virtualizer.scrollToOffset(0);
     if (searchResult?.firstMatch) setFocused(searchResult.firstMatch);
-    // Per answer, not per re-filter while folders load.
+    // Per new query, not per re-ask or re-filter while folders load.
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  }, [appliedQuery]);
 
   // ── Reveal the active file ──────────────────────────────────────────────
   const lastViewed = useActiveFilePath();
@@ -327,11 +378,11 @@ export function ProjectFileTree({
   // A file opened from the tree is already in view: revealing it must not
   // end the search it was picked from. Anything else that points the tree
   // at a file (another tab, ⌘P, an agent) does.
-  const openedFromTree = useRef<string | null>(null);
+  // Kept on the model: the tree that reveals it is often a different view
+  // (the file's tab) from the one that opened it (the Files surface).
   useEffect(() => {
     if (!activeRel) return;
-    if (activeAbs !== openedFromTree.current) clearSearch();
-    openedFromTree.current = null;
+    if (activeAbs !== model.view.openedFromTree) clearSearch();
     let cancelled = false;
     void model.reveal(activeRel).then((index) => {
       if (cancelled || index < 0) return;
@@ -362,13 +413,13 @@ export function ProjectFileTree({
 
   const open = useCallback(
     (abs: string) => {
-      openedFromTree.current = abs;
+      model.view.openedFromTree = abs;
       // After the file's tab exists: a caller that closes its own tab on
       // this (the Files surface) must not empty the column first. Neither
       // happens if the project changed while the file was being classified.
       void openInProject(abs, onFileOpened);
     },
-    [onFileOpened],
+    [model, onFileOpened],
   );
 
   /** A folder row's open state: during a search, open unless closed by hand
@@ -681,6 +732,9 @@ export function ProjectFileTree({
     const isDir = row.kind === "directory";
     const targets = targetsFor(row);
     const count = targets.length > 1 ? ` (${targets.length})` : "";
+    // A compacted row is its innermost folder; say which, since the row
+    // shows several names.
+    const which = row.chain && targets.length === 1 ? ` ${row.name}` : "";
     const changed = !isDir && changes.files.has(abs);
     return (
       <>
@@ -765,13 +819,14 @@ export function ProjectFileTree({
           <ContextMenuItem onClick={() => ignore(row.path)}>Add to .gitignore</ContextMenuItem>
         )}
         <ContextMenuItem onClick={() => setRenaming(row.path)}>
-          Rename
+          Rename{which}
           <ContextMenuShortcut>
             <KbdCombo combo="↵" />
           </ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuItem onClick={() => setDeleteTargets(targets)}>
-          Delete{count}
+          Delete{which}
+          {count}
           <ContextMenuShortcut>
             <KbdCombo combo="⌘⌫" />
           </ContextMenuShortcut>
@@ -816,13 +871,13 @@ export function ProjectFileTree({
   const refresh = () => {
     void model.refresh();
     // The index has its own watcher; asking again picks up what it saw.
-    if (search) setSearchNonce((n) => n + 1);
+    if (searching) setSearchNonce((n) => n + 1);
   };
 
   // One quiet row: refresh, the search field filling the width, then the
   // tree's own buttons.
   const header = (
-    <div className="flex h-control-lg shrink-0 items-center gap-1 border-b border-border px-2">
+    <div className="flex h-control-lg shrink-0 items-center gap-1 px-2">
       {leading}
       <Hint label="Refresh">
         <IconButton size="sm" icon={RefreshCw} label="Refresh files" onClick={refresh} />
@@ -969,6 +1024,11 @@ export function ProjectFileTree({
               active={abs === activeAbs}
               cut={clipboard?.isCut === true && clipboard.paths.includes(abs)}
               dropTarget={isDir && dropTarget === abs}
+              dropSegment={
+                row.chain && dropTarget && row.chain.some((l) => absoluteOf(root, l) === dropTarget)
+                  ? dropTarget
+                  : null
+              }
               dragging={dragState.draggedItem?.path === abs}
               gitColor={gitColor}
               additions={change?.stat.additions ?? null}
@@ -988,7 +1048,7 @@ export function ProjectFileTree({
   return (
     <div className="flex h-full min-h-0 flex-col bg-[var(--atlas-editor-background)]">
       {header}
-      {search?.truncated && (
+      {searchResult?.truncated && (
         <div className="shrink-0 px-3 py-1 text-xs text-muted-foreground">
           More matches available. Refine your search.
         </div>
@@ -1004,7 +1064,7 @@ export function ProjectFileTree({
             tabIndex={0}
             data-tree-root
             className={cn(
-              "relative min-h-0 flex-1 overflow-auto py-1 outline-none",
+              "group/tree relative min-h-0 flex-1 overflow-auto py-1 outline-none",
               dropTarget === ROOT_DROP &&
                 "bg-[var(--atlas-primary-muted)] ring-1 ring-primary/40 ring-inset",
             )}

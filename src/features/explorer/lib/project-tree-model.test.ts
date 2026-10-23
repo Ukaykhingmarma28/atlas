@@ -3,6 +3,8 @@ import type { DirectoryListing, ProjectEntry } from "./fs-api";
 import {
   ancestorsOf,
   BATCH_SIZE,
+  chainOwners,
+  rowIndexOf,
   dropProjectTreeModel,
   flattenTree,
   MAX_MODELS,
@@ -466,6 +468,34 @@ describe("compacted folder chains", () => {
     );
     expect(flattenTree(listings, new Set(), false)[0].chain).toEqual(["pkg", "pkg/src"]);
     expect(flattenTree(listings, new Set(), true)[0].chain).toBeUndefined();
+  });
+
+  it("finds a chain row by any of its links", async () => {
+    const rows = flattenTree(new Map(Object.entries(CHAIN)), new Set(), true);
+    expect(rowIndexOf(rows, "vendor")).toBe(0);
+    expect(rowIndexOf(rows, "vendor/engine")).toBe(0);
+    expect(rowIndexOf(rows, "src")).toBe(1);
+    expect(rowIndexOf(rows, "nowhere")).toBe(-1);
+    // So revealing an outer link highlights the chain row.
+    const { read } = disk(CHAIN);
+    const m = new ProjectTreeModel("/c", read);
+    await m.load([""]);
+    await m.reveal("vendor/engine/core/lib.rs");
+    expect(m.indexOf("vendor")).toBe(0);
+  });
+
+  it("maps a folder that folded into a chain to the row now drawing it", () => {
+    // `vendor` was a row of its own (focused, selected) until its listing
+    // loaded; then it became the outer link of `vendor / engine / core`.
+    const before = flattenTree(new Map([["", CHAIN[""]]]), new Set(), true);
+    expect(before[0].path).toBe("vendor");
+    const after = flattenTree(new Map(Object.entries(CHAIN)), new Set(), true);
+    const owners = chainOwners(after);
+    expect(owners.get("vendor")).toBe("vendor/engine/core");
+    expect(owners.get("vendor/engine")).toBe("vendor/engine/core");
+    // The row's own path and plain rows are not remapped.
+    expect(owners.has("vendor/engine/core")).toBe(false);
+    expect(owners.has("src")).toBe(false);
   });
 
   it("opening the head of a chain opens the whole chain as it loads", async () => {

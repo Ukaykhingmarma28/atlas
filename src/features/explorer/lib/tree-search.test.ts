@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectEntry } from "./fs-api";
-import { buildSearchRows, collectMatches, isHiddenPath, normalizeTreeQuery } from "./tree-search";
+import {
+  buildSearchRows,
+  collectMatches,
+  isHiddenPath,
+  literalIndexQuery,
+  normalizeTreeQuery,
+  SEARCH_INDEX_LIMIT,
+  stillListed,
+} from "./tree-search";
 
 const dir = (path: string, ignored?: boolean): ProjectEntry => ({
   path,
@@ -9,11 +17,12 @@ const dir = (path: string, ignored?: boolean): ProjectEntry => ({
 });
 const file = (path: string): ProjectEntry => ({ path, kind: "file" });
 
-const LISTINGS: ProjectEntry[][] = [
-  [dir("src"), dir("node_modules", true), file(".env"), file("README.md")],
-  [dir("src/lib"), file("src/main.ts")],
-  [dir("node_modules/react", true)],
-];
+const LISTINGS = new Map<string, readonly ProjectEntry[]>([
+  ["", [dir("src"), dir("node_modules", true), file(".env"), file("README.md")]],
+  ["src", [dir("src/lib"), file("src/main.ts")]],
+  ["node_modules", [dir("node_modules/react", true)]],
+]);
+const NONE = new Map<string, readonly ProjectEntry[]>();
 
 const paths = (rows: { path: string }[]) => rows.map((r) => r.path);
 
@@ -24,11 +33,35 @@ describe("normalizeTreeQuery", () => {
   });
 });
 
+describe("literalIndexQuery", () => {
+  it("escapes the index matcher's operators so the query is taken literally", () => {
+    expect(literalIndexQuery("main.ts")).toBe("main.ts");
+    expect(literalIndexQuery("^src")).toBe("\\^src");
+    expect(literalIndexQuery("'src")).toBe("\\'src");
+    expect(literalIndexQuery("!src")).toBe("\\!src");
+    expect(literalIndexQuery("ts$")).toBe("ts\\$");
+    // A space would split the query into separate words.
+    expect(literalIndexQuery("my file")).toBe("my\\ file");
+  });
+});
+
 describe("isHiddenPath", () => {
   it("is any segment starting with a dot", () => {
     expect(isHiddenPath(".env")).toBe(true);
     expect(isHiddenPath("a/.cache/b")).toBe(true);
     expect(isHiddenPath("a/b.c")).toBe(false);
+  });
+});
+
+describe("stillListed", () => {
+  it("trusts the index for folders not loaded, and the listings where they are", () => {
+    expect(stillListed(LISTINGS, "src/main.ts")).toBe(true);
+    // `src/lib` is not loaded: nothing contradicts the index.
+    expect(stillListed(LISTINGS, "src/lib/deep/util.ts")).toBe(true);
+    // `src` is loaded and has no `gone.ts`: deleted or renamed.
+    expect(stillListed(LISTINGS, "src/gone.ts")).toBe(false);
+    // The root has no `old`: its whole subtree is gone.
+    expect(stillListed(LISTINGS, "old/a/b.ts")).toBe(false);
   });
 });
 
@@ -47,7 +80,12 @@ describe("collectMatches", () => {
 
   it("narrows the index's fuzzy answers to the same substring rule", () => {
     // A fuzzy matcher answers `mt` with `main.ts`; the tree does not.
-    expect(collectMatches([], ["src/main.ts"], "mt", false).hits.size).toBe(0);
+    expect(collectMatches(NONE, ["src/main.ts"], "mt", false).hits.size).toBe(0);
+  });
+
+  it("drops an index hit the loaded listings say is gone", () => {
+    const { hits } = collectMatches(LISTINGS, ["src/deleted.ts", "src/main.ts"], ".ts", false);
+    expect([...hits.keys()]).toEqual(["src/main.ts"]);
   });
 
   it("finds ignored entries the tree has loaded, flagged as ignored", () => {
@@ -59,7 +97,7 @@ describe("collectMatches", () => {
   it("skips hidden paths unless hidden files are shown", () => {
     expect(collectMatches(LISTINGS, [], "env", false).hits.has(".env")).toBe(false);
     expect(collectMatches(LISTINGS, [], "env", true).hits.has(".env")).toBe(true);
-    expect(collectMatches([], [".github/ci.yml"], "ci", false).hits.size).toBe(0);
+    expect(collectMatches(NONE, [".github/ci.yml"], "ci", false).hits.size).toBe(0);
   });
 
   it("matches nothing for an empty query", () => {
@@ -70,7 +108,7 @@ describe("collectMatches", () => {
 describe("buildSearchRows", () => {
   it("shows each hit under its folders, all open, folders first then by name", () => {
     const { rows, matchCount, firstMatch } = buildSearchRows(
-      collectMatches([], ["src/z/util.ts", "src/a.ts", "b.ts", "A.ts"], ".ts", false),
+      collectMatches(NONE, ["src/z/util.ts", "src/a.ts", "b.ts", "A.ts"], ".ts", false),
     );
     // `src` holds a folder and a file, so it is not compacted; `src/z` is.
     expect(paths(rows)).toEqual(["src", "src/z", "src/z/util.ts", "src/a.ts", "A.ts", "b.ts"]);
@@ -81,7 +119,7 @@ describe("buildSearchRows", () => {
 
   it("compacts a folder whose only shown child is a folder, and marks hits", () => {
     const { rows } = buildSearchRows(
-      collectMatches([], ["a/b/c/one.ts", "a/b/c/two.ts"], "c/", false),
+      collectMatches(NONE, ["a/b/c/one.ts", "a/b/c/two.ts"], "c/", false),
     );
     expect(rows[0]).toMatchObject({ path: "a/b/c", depth: 0, chain: ["a", "a/b", "a/b/c"] });
     expect(rows[0].match).toBe(false);
@@ -92,7 +130,7 @@ describe("buildSearchRows", () => {
   });
 
   it("keeps a folder the user closed during the search closed", () => {
-    const matches = collectMatches([], ["src/a.ts", "src/b.ts", "top.ts"], ".ts", false);
+    const matches = collectMatches(NONE, ["src/a.ts", "src/b.ts", "top.ts"], ".ts", false);
     expect(paths(buildSearchRows(matches, new Set(["src"])).rows)).toEqual(["src", "top.ts"]);
   });
 
@@ -104,5 +142,15 @@ describe("buildSearchRows", () => {
       ignored: true,
       match: true,
     });
+  });
+
+  it("says there may be more only when a full page of index hits held", () => {
+    const page = Array.from({ length: SEARCH_INDEX_LIMIT }, (_, i) => `f/x-${i}.ts`);
+    expect(buildSearchRows(collectMatches(NONE, page, "x-", false)).truncated).toBe(true);
+    // A full fuzzy page that the substring rule empties is no matches, not "more".
+    const fuzzyOnly = buildSearchRows(collectMatches(NONE, page, "zzz", false));
+    expect(fuzzyOnly).toMatchObject({ matchCount: 0, truncated: false });
+    // Fewer than a page held: everything is shown.
+    expect(buildSearchRows(collectMatches(NONE, page, "x-1", false)).truncated).toBe(false);
   });
 });

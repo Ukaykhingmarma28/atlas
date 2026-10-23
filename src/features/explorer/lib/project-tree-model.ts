@@ -18,6 +18,7 @@
 // `read_directories` answers them.
 
 import type { DirectoryListing, ProjectEntry, ProjectEntryKind } from "./fs-api";
+import type { TreeSearchState } from "./tree-search";
 
 /** One drawn row. Immutable and shared between flattens; see `rowsOf`. */
 export interface TreeRowData {
@@ -172,6 +173,27 @@ function compacted(
 }
 
 /** A compacted row is open when every folder in its chain is. */
+/** Index of the row showing `path`: its own, or a compacted row it is a
+ *  link of. -1 when no row shows it. */
+export function rowIndexOf(rows: readonly TreeRowData[], path: string): number {
+  return rows.findIndex((r) => r.path === path || (r.chain?.includes(path) ?? false));
+}
+
+/**
+ * For each compacted row, its outer links → the row's own path. A path that
+ * was a row of its own (focused, selected) and has since been folded into a
+ * chain, because its listing loaded or a refresh left it one child, maps to
+ * the row now drawing it.
+ */
+export function chainOwners(rows: readonly TreeRowData[]): Map<string, string> {
+  const owners = new Map<string, string>();
+  for (const row of rows) {
+    if (!row.chain) continue;
+    for (const link of row.chain) if (link !== row.path) owners.set(link, row.path);
+  }
+  return owners;
+}
+
 export function chainOpen(row: TreeRowData, expanded: ReadonlySet<string>): boolean {
   if (!row.chain) return expanded.has(row.path);
   for (const path of row.chain) if (!expanded.has(path)) return false;
@@ -302,8 +324,8 @@ export class ProjectTreeModel {
   }
 
   /** Every loaded listing, for a search over what is already known. */
-  listingEntries(): IterableIterator<readonly ProjectEntry[]> {
-    return this.listings.values();
+  listingMap(): ReadonlyMap<string, readonly ProjectEntry[]> {
+    return this.listings;
   }
 
   get hiddenShown(): boolean {
@@ -640,9 +662,18 @@ export class ProjectTreeModel {
     return this.indexOf(path);
   }
 
+  /** The row showing `path`: its own, or the compacted row it is a link of. */
   indexOf(path: string): number {
-    return this.getSnapshot().rows.findIndex((r) => r.path === path);
+    return rowIndexOf(this.getSnapshot().rows, path);
   }
+
+  /** What the tree's search keeps for this root between views of it (the
+   *  Files surface hands off to a file tab's tree mid-search), and the file
+   *  this tree last opened, so that tab's reveal knows it came from here. */
+  view: { search: TreeSearchState | null; openedFromTree: string | null } = {
+    search: null,
+    openedFromTree: null,
+  };
 
   // ── Refresh ───────────────────────────────────────────────────────────
 

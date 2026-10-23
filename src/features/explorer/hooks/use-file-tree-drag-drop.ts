@@ -131,11 +131,14 @@ export function useFileTreeDragDrop(opts: {
         clearAutoExpand();
         return null;
       }
-      const rowEl = el?.closest<HTMLElement>("[data-tree-path]");
+      // A folder name inside a compacted row (`vendor / engine`) is a
+      // drop target of its own; the row as a whole is its innermost folder.
+      const segment = el?.closest<HTMLElement>("[data-tree-drop-path]");
+      const rowEl = segment ?? el?.closest<HTMLElement>("[data-tree-path]");
       if (rowEl) {
-        const path = rowEl.getAttribute("data-tree-path");
+        const path = rowEl.getAttribute(segment ? "data-tree-drop-path" : "data-tree-path");
         if (!path) return null;
-        const isDir = rowEl.getAttribute("data-tree-is-dir") === "true";
+        const isDir = !!segment || rowEl.getAttribute("data-tree-is-dir") === "true";
         // Refuse dropping a folder onto itself or a descendant.
         if (path === dragged.path || (dragged.isDir && path.startsWith(dragged.path + "/"))) {
           return null;
