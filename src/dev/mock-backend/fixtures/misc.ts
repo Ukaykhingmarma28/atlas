@@ -673,7 +673,7 @@ export const miscHandlers: MockHandlers = {
   // Rust re-writes mentions into ACP resource links; the fake keeps the prose
   // verbatim and links whatever file mentions came through, which is enough
   // for the composer's chips to survive a send.
-  compose_prompt: ({ prose, mentions }): ComposedPrompt => ({
+  compose_prompt: ({ prose, mentions }): Omit<ComposedPrompt, "pastedTexts"> => ({
     prose: String(prose ?? ""),
     resourceLinks: ((mentions ?? []) as { kind?: string; id?: string; label?: string }[])
       .filter((mention) => mention.kind === "file")

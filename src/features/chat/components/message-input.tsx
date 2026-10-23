@@ -120,6 +120,7 @@ import { useAppStore } from "@/features/app/stores/app-store";
 import { useComposerDraft } from "@/components/composer/use-composer-draft";
 import type { MentionData } from "../lib/mentions";
 import { COMMENT_LINK_EVENT, type CommentLinkDetail } from "../lib/comment-mentions";
+import { pastedTextMention, withPastesInline } from "../lib/pasted-text";
 
 // Start the editor chunk download at module-evaluation time. Vite still
 // excludes it from `<link rel="modulepreload">` because the static analysis
@@ -1412,28 +1413,15 @@ export function MessageInput({
   );
 
   // A paste over the large-paste limit (`isLargePaste`: ~4,000 characters or
-  // 80 lines) — a log, a stack dump, a whole file — rides the way an attached
-  // file does: spooled to a scratch `.txt` and referenced by a path chip, so
-  // the agent receives it as an ACP `ResourceLink` (`compose_prompt`) and the
-  // editor never holds it. If the spool fails the text is pasted after all;
-  // losing what the user copied is worse than a long prompt.
-  const handlePasteLargeText = useCallback(
-    (text: string) => {
-      const lines = text.split("\n").length;
-      const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-      const file = new File([text], `pasted-text-${lines}-lines-${stamp}.txt`, {
-        type: "text/plain",
-      });
-      void scratchPathForFile(file)
-        .then((path) => insertFileChips([path]))
-        .catch((err) => {
-          console.warn("large paste spool failed:", err);
-          inputRef.current?.insertText(text);
-        });
-      return true;
-    },
-    [insertFileChips],
-  );
+  // 80 lines) — a log, a stack dump, a whole file — becomes a chip holding
+  // the whole text, so the editor never lays it out. The text goes to the
+  // agent in full at send, in whichever form it accepts (`pasted-text.ts`).
+  const handlePasteLargeText = useCallback((text: string) => {
+    const input = inputRef.current;
+    if (!input) return false;
+    input.insertMention(pastedTextMention(text));
+    return true;
+  }, []);
 
   // `submit` (below) is defined after `handleSlashSelect` but the latter
   // needs to invoke it — routed through a ref (set right after `submit` is
@@ -1763,8 +1751,10 @@ export function MessageInput({
       // strings and the agent will see whatever shortform text was in the
       // composer. Mentions are dropped here intentionally; promoting the
       // queue to a structured shape is a follow-up. Staged images likewise
-      // stay in the composer strip and ride the next direct send.
-      enqueueMessage(tabId, trimmed);
+      // stay in the composer strip and ride the next direct send. A paste is
+      // the exception: its token alone would lose what the user pasted, so
+      // its text goes into the queued string.
+      enqueueMessage(tabId, withPastesInline(trimmed, mentions));
     } else {
       if (modeUnrestored || heldForTerminal) return;
       const images = stagedImages;

@@ -945,6 +945,8 @@ function secondaryLabel(m: MentionData): string {
           : "direct message";
     case "recorded_session":
       return "recorded session · Timeline";
+    case "pasted_text":
+      return `${m.lines} lines`;
     case "comment":
       return [
         m.parentId ? "reply" : "comment",
@@ -1025,5 +1027,7 @@ function mentionTitle(m: MentionData): string {
       return `Recorded session ${m.sessionId}`;
     case "comment":
       return `${m.authorName}: ${m.body}`;
+    case "pasted_text":
+      return m.text.slice(0, 200);
   }
 }

@@ -13,6 +13,7 @@ import {
   BookOpen,
   Boxes,
   Bot,
+  ClipboardPaste,
   FolderGit2,
   GitBranch,
   Hash,
@@ -100,6 +101,8 @@ function ChipIcon({ mention }: { mention: MentionData }) {
       return <Layers size={size} />;
     case "comment":
       return <MessageSquareQuote size={size} />;
+    case "pasted_text":
+      return <ClipboardPaste size={size} />;
   }
 }
 
@@ -130,6 +133,9 @@ function chipTitle(m: MentionData): string {
       return `recorded session · ${m.displayName}`;
     case "comment":
       return `${m.parentId ? "reply" : "comment"} on ${m.anchorLabel} · ${m.authorName}: ${m.body}`;
+    case "pasted_text":
+      // The first lines, so a hover tells two pastes apart.
+      return m.text.split("\n").slice(0, 12).join("\n");
   }
 }
 

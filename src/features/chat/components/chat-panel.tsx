@@ -1483,13 +1483,20 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     // instead (P2.1) — see `mentions.ts::composePrompt`.
     let wirePrompt: string;
     let resourceLinks: { uri: string; name: string }[] = [];
+    let pastedTexts: { id: string; text: string }[] = [];
     try {
       const composed = await composePrompt(actualContent, mentions);
       wirePrompt = composed.prose;
       resourceLinks = composed.resourceLinks;
+      pastedTexts = composed.pastedTexts;
     } catch (err) {
       console.warn("composePrompt failed, sending raw text:", err);
       wirePrompt = actualContent;
+      // A paste is never only in the prose (just its `@paste:` token), so it
+      // must survive a failed compose too.
+      pastedTexts = mentions.flatMap((m) =>
+        m.kind === "pasted_text" ? [{ id: m.id, text: m.text }] : [],
+      );
     }
 
     // Ask the agent to end its reply with a hidden `<next_steps>` block — it has
@@ -1508,7 +1515,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
       session_id: bound.acpSessionId,
     };
     try {
-      await agents.send(key, wirePrompt, attachments, resourceLinks);
+      await agents.send(key, wirePrompt, attachments, resourceLinks, pastedTexts);
       logEvent({
         source: "agent",
         kind: "stream-started",

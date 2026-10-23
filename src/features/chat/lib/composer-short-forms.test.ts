@@ -137,6 +137,13 @@ const EVERY_KIND: MentionData[] = [
     resolved: false,
     createdAt: "2026-10-01T10:00:00Z",
   },
+  {
+    kind: "pasted_text",
+    id: "k3x9q2",
+    displayName: "Pasted text · 2 lines",
+    lines: 2,
+    text: "first\nsecond",
+  },
 ];
 
 beforeEach(() => resetMentionRegistryForTests());

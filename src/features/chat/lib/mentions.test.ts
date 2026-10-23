@@ -386,6 +386,6 @@ describe("sending", () => {
     });
     const composed = await composePrompt("send it", mentions);
     expect(invoke).toHaveBeenCalledWith("compose_prompt", { prose: "send it", mentions });
-    expect(composed).toEqual({ prose: "send it", resourceLinks: links });
+    expect(composed).toEqual({ prose: "send it", resourceLinks: links, pastedTexts: [] });
   });
 });
