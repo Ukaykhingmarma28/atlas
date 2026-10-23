@@ -72,6 +72,7 @@ import { AgentElicitationHost } from "@/features/chat/components/agent-elicitati
 import { UiActionBridge } from "@/features/ui-actions/components/ui-action-bridge";
 import { OrgActionLogBridge } from "@/features/org-actions/components/org-action-log-bridge";
 import { initWindowFocusTracking, isWindowFocused } from "@/lib/window-focus";
+import { initAnimationVisibility } from "@/lib/visible-animation";
 import { initDockBadgeClearing } from "@/lib/dock-badge";
 import { primeNativeNotificationPermission } from "@/lib/native-notify";
 import {
@@ -703,6 +704,7 @@ export function App() {
     // Native window focus + the "cold wake" signal live in `src/lib/window-focus.ts`
     // now — the terminal notifier needs the same answer this file did.
     const stopFocusTracking = initWindowFocusTracking();
+    const stopAnimationVisibility = initAnimationVisibility();
     const stopBadgeClearing = initDockBadgeClearing();
     // Opening a thread/terminal/conversation clears its stale banners + unread items.
     const stopSourceOpened = initSourceOpenedClearing();
@@ -1122,6 +1124,7 @@ export function App() {
       if (backstopId !== null) clearTimeout(backstopId);
       window.removeEventListener("atlas:window-active", flushOnWake);
       stopFocusTracking();
+      stopAnimationVisibility();
       stopBadgeClearing();
       stopSourceOpened();
       window.removeEventListener("pointerdown", onUserActivity);
