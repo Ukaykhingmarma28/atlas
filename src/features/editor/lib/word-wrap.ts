@@ -1,4 +1,4 @@
-import { Compartment, type Extension } from "@codemirror/state";
+import { Compartment, type EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 
 /**
@@ -10,6 +10,12 @@ export const wrapCompartment = new Compartment();
 
 export function wordWrapExtension(wrap: boolean): Extension {
   return wrapCompartment.of(wrap ? EditorView.lineWrapping : []);
+}
+
+/** Whether this state's view wraps lines. False when the compartment isn't
+ *  installed at all (an editor that never offered wrapping). */
+export function isWrapping(state: EditorState): boolean {
+  return wrapCompartment.get(state) === EditorView.lineWrapping;
 }
 
 export function setWordWrap(view: EditorView, wrap: boolean): void {

@@ -10,9 +10,10 @@
 
 import { EditorView, Decoration, WidgetType, ViewPlugin } from "@codemirror/view";
 import type { DecorationSet, ViewUpdate } from "@codemirror/view";
-import { StateField, StateEffect, RangeSet, RangeValue } from "@codemirror/state";
+import { Facet, StateField, StateEffect, RangeSet, RangeValue } from "@codemirror/state";
 import type { Extension, Text } from "@codemirror/state";
 import type { BlameLine } from "@/features/git/lib/git-blame-api";
+import { isWrapping } from "./word-wrap";
 
 /** Push a fresh blame snapshot into the editor. An empty array clears the
  *  state entirely (untracked file / not a repo → nothing is rendered). */
@@ -105,7 +106,10 @@ export function relativeTime(ms: number, now = Date.now()): string {
 }
 
 /** One coloured run of the annotation; `kind` picks its `.cm-blame-<kind>` class. */
-type BlamePart = { kind: "author" | "time" | "summary" | "uncommitted" | "sep"; text: string };
+export type BlamePart = {
+  kind: "author" | "time" | "summary" | "uncommitted" | "sep";
+  text: string;
+};
 
 class BlameWidget extends WidgetType {
   constructor(readonly parts: BlamePart[]) {
@@ -156,9 +160,27 @@ function blamePartsFor(state: BlameState, doc: Text, head: number): BlamePart[] 
   return parts;
 }
 
+/** Where the cursor line's attribution goes while the editor wraps lines. */
+export type WrappedBlameSink = (parts: BlamePart[] | null) => void;
+
+const wrappedBlameSink = Facet.define<WrappedBlameSink, WrappedBlameSink | null>({
+  combine: (sinks) => sinks[0] ?? null,
+});
+
+const samePartsAs = (a: BlamePart[] | null, b: BlamePart[] | null) =>
+  a === b ||
+  (a !== null &&
+    b !== null &&
+    a.length === b.length &&
+    a.every((p, i) => p.kind === b[i].kind && p.text === b[i].text));
+
 const blameDecorations = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
+    /** Where wrapped-mode attribution goes, and what it was last told, so
+     *  it hears only changes. */
+    sink: WrappedBlameSink | null = null;
+    reported: BlamePart[] | null = null;
 
     constructor(view: EditorView) {
       this.decorations = this.build(view);
@@ -166,17 +188,47 @@ const blameDecorations = ViewPlugin.fromClass(
 
     update(update: ViewUpdate) {
       const blameChanged = update.transactions.some((tr) => tr.effects.some((e) => e.is(setBlame)));
-      if (update.docChanged || update.selectionSet || update.focusChanged || blameChanged) {
+      const wrapChanged = isWrapping(update.state) !== isWrapping(update.startState);
+      if (
+        update.docChanged ||
+        update.selectionSet ||
+        update.focusChanged ||
+        blameChanged ||
+        wrapChanged
+      ) {
         this.decorations = this.build(update.view);
       }
     }
 
+    destroy() {
+      this.report(null);
+    }
+
+    report(parts: BlamePart[] | null) {
+      if (samePartsAs(parts, this.reported)) return;
+      this.reported = parts;
+      this.sink?.(parts);
+    }
+
     build(view: EditorView): DecorationSet {
+      this.sink = view.state.facet(wrappedBlameSink);
       const parts = blamePartsFor(
         view.state.field(blameField),
         view.state.doc,
         view.state.selection.main.head,
       );
+      // Word wrap on: no widget in the text at all. Any inline note, however
+      // styled, either adds visual rows to the cursor's line (the text below
+      // jumps at every arrow key, and an "open at line" target grows after it
+      // was centred) or pushes past the right edge, and an overlay hides the
+      // very spot the user types at. The attribution goes to the sink, which
+      // the file header shows beside the path. Line heights never depend on
+      // where the cursor is.
+      if (isWrapping(view.state)) {
+        this.report(parts);
+        return Decoration.none;
+      }
+      this.report(null);
       if (parts === null) return Decoration.none;
       const line = view.state.doc.lineAt(view.state.selection.main.head);
       const deco = Decoration.widget({ widget: new BlameWidget(parts), side: 1 });
@@ -205,10 +257,6 @@ const blameTheme = EditorView.baseTheme({
     pointerEvents: "none",
     userSelect: "none",
   },
-  // With word wrap on, an unbreakable annotation is the widest thing on its
-  // line, and it would hold the content wider than the editor: every line
-  // would wrap past the right edge. Let it wrap with the code.
-  ".cm-lineWrapping .cm-blame-inline": { whiteSpace: "pre-wrap" },
   ".cm-blame-author": { color: "var(--atlas-syntax-function)" },
   ".cm-blame-time": { color: "var(--atlas-syntax-number)" },
   ".cm-blame-summary": { color: "var(--atlas-syntax-string)" },
@@ -217,7 +265,14 @@ const blameTheme = EditorView.baseTheme({
 });
 
 /** The inline-blame extension. Add to the editor's extensions, then dispatch
- *  `setBlame` snapshots (via `applyBlame`) to populate it. */
-export function blameInline(): Extension {
-  return [blameField, blameDecorations, blameTheme];
+ *  `setBlame` snapshots (via `applyBlame`) to populate it. While the editor
+ *  wraps lines the note is not drawn in the text; `onWrapped` receives the
+ *  cursor line's attribution instead (`null` when there is none to show). */
+export function blameInline(opts: { onWrapped?: WrappedBlameSink } = {}): Extension {
+  return [
+    blameField,
+    blameDecorations,
+    blameTheme,
+    opts.onWrapped ? wrappedBlameSink.of(opts.onWrapped) : [],
+  ];
 }
