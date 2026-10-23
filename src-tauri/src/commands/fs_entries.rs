@@ -1,14 +1,10 @@
 //! Root-relative directory listings with a per-entry `ignored` flag, for the
 //! virtualised file tree.
 //!
-//! A sibling of `fs::read_directory` rather than an extension of it. That
-//! command answers with absolute paths plus `size` / `extension`, and the
-//! current explorer, its collision probe and the mock all read that shape.
-//! Adding fields to it would grow every payload the old tree fetches, and
-//! changing its paths would break it. This command is shaped for the new tree
-//! instead: one IPC call for any number of directories, paths relative to the
-//! project root, and nothing per entry beyond `path`, `kind` and `ignored`.
-//! A single directory is a batch of one, so there is no single-path twin.
+//! Shaped for the tree: one IPC call for any number of directories, paths
+//! relative to the project root, and nothing per entry beyond `path`, `kind`
+//! and `ignored`. A single directory is a batch of one, so there is no
+//! single-path twin.
 //!
 //! `ignored` comes from `.gitignore` matchers built with the `ignore` crate,
 //! not from `git check-ignore`. Spawning git per directory costs a process and

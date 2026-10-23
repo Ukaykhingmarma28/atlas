@@ -100,18 +100,18 @@ pub(super) fn tools() -> Vec<Tool> {
         ),
         tool(
             "ui_focus",
-            "Activate a tab, show/hide a panel (omit visible to toggle; team_chat and source_control are surface tabs), \
-             pick a section (side left: files/knowledge; side source_control: changes/github/git-graph), \
-             focus a split column by its index in ui_state.groups, or reveal a path in the explorer.",
+            "Activate a tab, show/hide a panel (omit visible to toggle; files, team_chat and source_control are surface tabs), \
+             pick a section (side source_control: changes/github/git-graph), \
+             focus a split column by its index in ui_state.groups, or reveal a path in the Files surface (target explorer).",
             json!({
                 "type": "object",
                 "properties": {
                     "target": { "type": "string", "enum": ["tab", "panel", "section", "group", "explorer"] },
                     "id": { "type": "string" },
-                    "name": { "type": "string", "enum": ["left", "team_chat", "source_control", "chat_sidebar", "terminal", "timeline_sidebar"] },
+                    "name": { "type": "string", "enum": ["files", "team_chat", "source_control", "chat_sidebar", "terminal", "timeline_sidebar"] },
                     "visible": { "type": "boolean" },
-                    "side": { "type": "string", "enum": ["left", "source_control"] },
-                    "section": { "type": "string", "enum": ["files", "knowledge", "changes", "github", "git-graph"] },
+                    "side": { "type": "string", "enum": ["source_control"] },
+                    "section": { "type": "string", "enum": ["changes", "github", "git-graph"] },
                     "index": { "type": "integer" },
                     "path": { "type": "string" }
                 },

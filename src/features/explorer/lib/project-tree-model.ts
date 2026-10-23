@@ -11,8 +11,8 @@
 //  - Loads are batched. Every directory asked for in one tick goes out as ONE
 //    `read_directories` call, so revealing `a/b/c/d.ts` (four listings) or a
 //    watcher burst touching twenty folders costs one IPC round trip.
-//  - It outlives the view. The model is cached per project root, so switching
-//    the review panel between Changes and Files keeps what was open.
+//  - It outlives the view. The model is cached per project root, so closing
+//    the Files surface and opening a file tab keeps what was open.
 //
 // Paths are root-relative and `/`-separated, `""` being the root, as
 // `read_directories` answers them.
@@ -597,6 +597,30 @@ export function projectTreeModel(
     dropProjectTreeModel(oldest);
   }
   return model;
+}
+
+/**
+ * Re-read what `root`'s tree has loaded after a change on disk, if a tree for
+ * it is cached; never creates one. `dirs` are absolute (the watcher's); those
+ * outside `root` are skipped, and without `dirs` everything loaded is re-read.
+ *
+ * The one place watcher events reach the tree, mounted or not: a model kept
+ * for a project whose tree is not on screen stays current, so reopening Files
+ * never shows what was there before.
+ */
+export function refreshProjectTree(root: string, dirs?: readonly string[]): void {
+  const model = models.get(root);
+  if (!model) return;
+  if (!dirs) {
+    void model.refresh();
+    return;
+  }
+  const rel: string[] = [];
+  for (const dir of dirs) {
+    if (dir === root) rel.push("");
+    else if (dir.startsWith(`${root}/`)) rel.push(dir.slice(root.length + 1));
+  }
+  if (rel.length > 0) void model.refresh(rel);
 }
 
 /** Drop a root's model (a project closed for good; tests). */

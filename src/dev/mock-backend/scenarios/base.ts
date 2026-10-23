@@ -5,7 +5,6 @@
 // `bun run typecheck` flags a fake that no longer matches what Rust returns.
 
 import type { UpdaterSnapshot } from "@/features/updater/lib/updater-api";
-import type { FileEntry } from "@/features/explorer/stores/explorer-store";
 import type { SavedTheme, Theme, ThemeCatalogSummary } from "@/features/theme/lib/theme-api";
 import { themeIdSlug } from "@/features/theme/lib/theme-import-api";
 import type { MockHandlers } from "../types";
@@ -15,7 +14,7 @@ import { agentHandlers } from "../fake-agent";
 import { artifactsHandlers } from "../fixtures/artifacts";
 import { captureHandlers } from "../fixtures/capture";
 import { commsHandlers } from "../fixtures/comms";
-import { fsHandlers, listDir } from "../fixtures/files";
+import { fsHandlers } from "../fixtures/files";
 import { fontHandlers } from "../fixtures/fonts";
 import { gitHandlers } from "../fixtures/git";
 import { iconThemeHandlers } from "../fixtures/icon-themes";
@@ -148,7 +147,6 @@ export const baseHandlers: MockHandlers = {
   load_editor_state: () => "{}",
   save_editor_state: nothing,
   load_project_session: () => "{}",
-  read_directory: ({ path }): FileEntry[] => listDir(path),
   log_interaction: nothing,
 
   // ── knowledge ───────────────────────────────────────────────────────────

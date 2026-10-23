@@ -39,7 +39,7 @@ const SpacesTab = lazy(() =>
 );
 
 /**
- * The destination (ADR-0024): a full-page view over the file tree and the
+ * The destination (ADR-0024): a full-page view over the split
  * columns, right of the rail, while the session keeps running underneath.
  *
  * Back hides it rather than unmounting it, so returning is instant and the

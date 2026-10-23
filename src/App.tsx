@@ -45,7 +45,6 @@ import { useProjectStore } from "@/features/projects/stores/project-store";
 import { pickAndAddProject } from "@/features/projects/lib/pick-project";
 import { flushAll } from "@/features/projects/lib/flush-registry";
 import { captureSnapshot } from "@/features/projects/lib/project-snapshot";
-import { useExplorerStore } from "@/features/explorer/stores/explorer-store";
 import { useGitStore } from "@/features/git/stores/git-store";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -146,6 +145,8 @@ import { listenModelDone } from "@/features/settings/lib/models-api";
 import { useModelsStore } from "@/features/settings/stores/models-store";
 import { useLoadProjectSettings } from "@/features/settings/lib/use-scoped-setting";
 import { toggleSourceControl } from "@/features/layout/lib/source-control";
+import { toggleFiles } from "@/features/layout/lib/files-surface";
+import { refreshProjectTree } from "@/features/explorer/lib/project-tree-model";
 import { toggleTeamChat } from "@/features/layout/lib/team-chat";
 import { toggleDestination } from "@/features/layout/lib/destinations";
 
@@ -615,7 +616,6 @@ export function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [filePickerOpen, setFilePickerOpen] = useState(false);
   const {
-    toggleLeftPanel,
     toggleChatSidebar,
     addTab,
     setActiveTab,
@@ -1155,9 +1155,11 @@ export function App() {
 
   // Live file-tree updates. The fileindex watcher (started in
   // `fileindex_open_project`) emits `atlas:explorer:changed` with the
-  // set of parent directories touched in each debounced batch. We
-  // reconcile each loaded directory in place — agent-side file writes
-  // appear in the tree without the user touching a refresh button.
+  // set of parent directories touched in each debounced batch. The project's
+  // cached tree re-reads the ones it has open — agent-side file writes appear
+  // in it without a refresh button, whether or not a tree is on screen. A
+  // backgrounded project's resident watcher reports too, and updates that
+  // project's tree, not the active one's.
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | null = null;
@@ -1168,21 +1170,10 @@ export function App() {
     };
     listen<Payload>("atlas:explorer:changed", (e) => {
       if (cancelled) return;
-      // Ignore changes from a backgrounded project's resident watcher —
-      // only the active project's explorer should reconcile.
-      const active = activeProjectId();
-      if (e.payload.workspaceId && active && e.payload.workspaceId !== active) {
-        return;
-      }
-      const actions = useExplorerStore.getState().actions;
-      const { dirs, fullRefresh } = e.payload;
-      if (fullRefresh) {
-        void actions.refresh();
-        return;
-      }
-      for (const dir of dirs) {
-        void actions.reconcileDirectory(dir);
-      }
+      const id = e.payload.workspaceId ?? activeProjectId();
+      const root = useProjectStore.getState().projects.find((p) => p.id === id)?.path;
+      if (!root) return;
+      refreshProjectTree(root, e.payload.fullRefresh ? undefined : e.payload.dirs);
     }).then((un) => {
       if (cancelled) un();
       else unlisten = un;
@@ -1353,7 +1344,9 @@ export function App() {
     "nav.commandPalette": () => setCommandPaletteOpen(true),
     "nav.filePicker": () => setFilePickerOpen(true),
     "nav.search": () => setSearchOpen(true),
-    "panels.left": toggleLeftPanel,
+    // ⌘B — the project tree, a surface tab beside the agent. The id keeps its
+    // old name (it toggled the left file panel) so a rebinding still applies.
+    "panels.left": toggleFiles,
     // ⌘⇧B — source control, a surface tab beside the agent. The id keeps its
     // old name so a user's rebinding of it still applies.
     "panels.right": toggleSourceControl,

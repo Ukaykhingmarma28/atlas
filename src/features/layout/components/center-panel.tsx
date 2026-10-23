@@ -13,7 +13,7 @@ import {
 import { Kbd } from "@/ui/kbd";
 import { IconButton } from "@/ui/icon-button";
 import { PaneHeader } from "@/components/titlebar";
-import { useColumnChrome } from "../lib/shell-edges";
+import { columnChrome } from "../lib/shell-edges";
 import { OPEN_SURFACE_MENU_EVENT, SURFACES, openSurface, surfaceForKey } from "../lib/surfaces";
 import { Group, Panel, Separator, useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { useLayoutStore, type Tab, type ProjectView } from "../stores/layout-store";
@@ -413,8 +413,7 @@ function ColumnPanel({
 }) {
   const panelRef = usePanelRef();
   // Synced again on the next frame: on mount the Group has not measured itself
-  // yet, so a collapse or expand issued then is a no-op or throws (`AppLayout`'s
-  // left panel has the same dance).
+  // yet, so a collapse or expand issued then is a no-op or throws.
   useEffect(() => {
     const sync = () => {
       const panel = panelRef.current;
@@ -486,7 +485,7 @@ const TabColumn = memo(function TabColumn({
   const activeId = view.activeByGroup[groupId] ?? null;
   const activeTab = tabs.find((t) => t.id === activeId) ?? null;
   const isFocused = isActive && view.focusedGroupId === groupId;
-  const chrome = useColumnChrome(atLeft, atRight);
+  const chrome = columnChrome(atLeft, atRight);
   const main = role === "main";
   // The main column is the session: it names it in the breadcrumb and never
   // draws a strip. Sessions switch from the sidebar; everything else opens in
@@ -936,9 +935,8 @@ function ProjectlessCenter() {
   const activeByGroup = useLayoutStore.use.activeByGroup();
   const focusedGroupId = useLayoutStore.use.focusedGroupId();
   const { setActiveTab } = useLayoutStore.use.actions();
-  // No project means no left panel, so this is always the leftmost column,
-  // and the rightmost.
-  const chrome = useColumnChrome(true, true);
+  // The only column: the leftmost and the rightmost.
+  const chrome = columnChrome(true, true);
   // Home is LOCAL state, not a store id: `setActiveTab` validates ids and
   // falls back to `tabs[0]` on a miss, so a sentinel id would re-activate
   // the very tab the user clicked away from.

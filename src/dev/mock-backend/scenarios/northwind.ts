@@ -59,7 +59,7 @@ import {
   zuhayerOnline,
   zuhayerTyping,
 } from "./northwind-comms";
-import { northwindGitCommands, northwindGitRawCommands } from "./northwind-git";
+import { northwindGitCommands } from "./northwind-git";
 import {
   northwindMiscCommands,
   northwindMiscInit,
@@ -186,7 +186,7 @@ export const northwind: Scenario = {
     ...northwindSpacesCommands,
     ...northwindTimelineCommands,
   },
-  rawCommands: { ...northwindMiscRawCommands, ...northwindGitRawCommands },
+  rawCommands: northwindMiscRawCommands,
   init: () => {
     installNorthwindAgent({
       effects: {

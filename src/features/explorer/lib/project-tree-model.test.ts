@@ -8,6 +8,7 @@ import {
   MAX_MODELS,
   projectTreeModel,
   ProjectTreeModel,
+  refreshProjectTree,
   type DirectoryReader,
 } from "./project-tree-model";
 
@@ -51,6 +52,24 @@ describe("projectTreeModel", () => {
     // /r0 was the oldest: asking again builds a new one.
     expect(projectTreeModel("/r0", read)).not.toBe(first);
     for (let i = 0; i <= MAX_MODELS; i++) dropProjectTreeModel(`/r${i}`);
+  });
+
+  it("takes the watcher's absolute folders to a cached tree, and never creates one", async () => {
+    const { read, calls } = disk(TREE);
+    refreshProjectTree("/w", ["/w/a"]);
+    await flushed();
+    expect(calls).toEqual([]);
+
+    const model = projectTreeModel("/w", read);
+    await model.load([""]);
+    await model.expand("a");
+    calls.length = 0;
+    // `/w-other` shares the prefix but is another folder; `/elsewhere` is
+    // outside the root. Only the root and `a` are this tree's.
+    refreshProjectTree("/w", ["/w", "/w/a", "/w-other/a", "/elsewhere"]);
+    await flushed();
+    expect(calls).toEqual([["", "a"]]);
+    dropProjectTreeModel("/w");
   });
 });
 

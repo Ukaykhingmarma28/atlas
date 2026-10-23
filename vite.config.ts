@@ -380,8 +380,6 @@ export default defineConfig(() => ({
         "./src/styles/globals.css",
         "./src/features/layout/components/app-layout.tsx",
         "./src/features/layout/components/center-panel.tsx",
-        "./src/features/layout/components/left-panel.tsx",
-        "./src/features/layout/components/right-panel.tsx",
         "./src/features/layout/stores/layout-store.ts",
         "./src/features/app/stores/app-store.ts",
         "./src/features/app/components/welcome-screen.tsx",

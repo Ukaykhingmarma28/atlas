@@ -1,7 +1,7 @@
 /**
- * `ui_focus`: activate a tab, show or hide a panel, pick the left panel's or
- * source control's section, focus a split column, or reveal a path in the
- * explorer. Always through the layout store's own actions.
+ * `ui_focus`: activate a tab, show or hide a panel, pick source control's
+ * section, focus a split column, or reveal a path in the Files surface (the
+ * project tree). Always through the layout store's own actions.
  */
 
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
@@ -11,7 +11,8 @@ import {
   toggleSourceControl,
 } from "@/features/layout/lib/source-control";
 import { teamChatShown, toggleTeamChat } from "@/features/layout/lib/team-chat";
-import { useExplorerStore } from "@/features/explorer/stores/explorer-store";
+import { FILES_TAB, revealFiles, toggleFiles } from "@/features/layout/lib/files-surface";
+import { singletonShown } from "@/features/layout/lib/singleton-surface";
 import { runAction } from "@/features/keybindings/lib/action-registry";
 import { readArgs, refuse } from "./args";
 import { activeProject, resolvePath, tabInScope } from "./scope";
@@ -19,7 +20,7 @@ import type { UiActionRequest } from "./types";
 
 const TARGETS = ["tab", "panel", "section", "group", "explorer"] as const;
 const PANELS = [
-  "left",
+  "files",
   "team_chat",
   "source_control",
   "chat_sidebar",
@@ -33,8 +34,8 @@ const layout = () => useLayoutStore.getState();
 function panelVisible(name: Panel): boolean {
   const s = layout();
   switch (name) {
-    case "left":
-      return s.leftPanel.visible;
+    case "files":
+      return singletonShown(s, FILES_TAB.type);
     case "team_chat":
       return teamChatShown(s);
     case "source_control":
@@ -54,8 +55,8 @@ function togglePanel(name: Panel): void {
   const s = layout();
   const a = s.actions;
   switch (name) {
-    case "left":
-      return a.toggleLeftPanel();
+    case "files":
+      return toggleFiles();
     case "team_chat":
       return toggleTeamChat();
     case "source_control":
@@ -90,13 +91,7 @@ export async function performFocus(request: UiActionRequest): Promise<unknown> {
       return { panel: name, visible: panelVisible(name) };
     }
     case "section": {
-      const side = a.oneOf("side", ["left", "source_control"] as const);
-      if (side === "left") {
-        const section = a.oneOf("section", ["files", "knowledge"] as const);
-        if (!layout().leftPanel.visible) actions.toggleLeftPanel();
-        actions.setLeftSection(section);
-        return { side, section };
-      }
+      const side = a.oneOf("side", ["source_control"] as const);
       const section = a.oneOf("section", ["changes", "github", "git-graph"] as const);
       revealSourceControl(section);
       return { side, section };
@@ -117,24 +112,11 @@ export async function performFocus(request: UiActionRequest): Promise<unknown> {
   }
 }
 
-/** Show the Files panel, open every folder down to `path`, and select it. */
-async function revealInExplorer(path: string): Promise<unknown> {
+/** Show the Files surface, open every folder down to `path`, and highlight it. */
+function revealInExplorer(path: string): unknown {
   const root = activeProject().path;
   if (path !== root && !path.startsWith(`${root}/`))
     return refuse(`${path} is outside the active project`);
-  const actions = layout().actions;
-  if (!layout().leftPanel.visible) actions.toggleLeftPanel();
-  actions.setLeftSection("files");
-  const explorer = useExplorerStore.getState().actions;
-  const parts = path
-    .slice(root.length + 1)
-    .split("/")
-    .filter(Boolean);
-  let dir = root;
-  for (const part of parts.slice(0, -1)) {
-    dir = `${dir}/${part}`;
-    await explorer.ensureExpanded(dir).catch(() => {});
-  }
-  explorer.setSelection([path], path);
+  revealFiles(path);
   return { path };
 }

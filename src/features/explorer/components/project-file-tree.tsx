@@ -10,7 +10,6 @@ import {
   type ReactNode,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import {
   ChevronsDownUp,
@@ -21,7 +20,6 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { activeProjectId } from "@/features/projects/lib/active-project";
 import { openInProject } from "../lib/open-in-project";
 import { IconButton } from "@/ui/icon-button";
 import { Hint } from "@/ui/tooltip";
@@ -54,8 +52,8 @@ import { ProjectTreeRow, RenameInput } from "./project-tree-row";
 import { FileTreeConfirmDelete } from "./file-tree-confirm-delete";
 
 /**
- * The project's files, as a lazily loaded, virtualized tree: the review
- * panel's Files view.
+ * The project's files, as a lazily loaded, virtualized tree: the Files
+ * surface, and the column beside every file tab.
  *
  * The model (`project-tree-model.ts`) owns what is loaded and what is open
  * and hands back a flat list of rows; this component owns everything the user
@@ -174,32 +172,9 @@ export function ProjectFileTree({
     void model.load([""]);
   }, [model]);
 
-  // ── Live: the watcher reports the folders each burst touched ────────────
-  useEffect(() => {
-    let disposed = false;
-    const off = listen<{ workspaceId?: string; dirs?: string[]; fullRefresh?: boolean }>(
-      "atlas:explorer:changed",
-      (e) => {
-        if (disposed) return;
-        // A backgrounded project's resident watcher reports too; its full
-        // refreshes are not this tree's to act on.
-        const active = activeProjectId();
-        if (e.payload?.workspaceId && active && e.payload.workspaceId !== active) return;
-        if (e.payload?.fullRefresh) {
-          void model.refresh();
-          return;
-        }
-        const dirs = (e.payload?.dirs ?? [])
-          .map((d) => relativeTo(root, d))
-          .filter((d): d is string => d !== null);
-        if (dirs.length > 0) void model.refresh(dirs);
-      },
-    );
-    return () => {
-      disposed = true;
-      void off.then((fn) => fn());
-    };
-  }, [model, root]);
+  // Live updates reach the model from `App`'s watcher listener
+  // (`refreshProjectTree`), which keeps a cached tree current while it is not
+  // on screen too.
 
   // ── What the user is doing ──────────────────────────────────────────────
   const [selection, setSelection] = useState<Selection>(NO_SELECTION);

@@ -53,8 +53,8 @@ export function useFileTreeDragDrop(opts: {
   rootPath: string | null;
   onMove: (src: string, destDir: string) => void;
   onAutoExpand: (path: string) => void;
-  /** This tree's own container. With two trees mounted (the explorer and the
-   *  review panel's Files view), a drop over the other one is not ours. */
+  /** This tree's own container. With several trees mounted (the Files surface
+   *  and file tabs in other columns), a drop over another one is not ours. */
   scopeRef?: React.RefObject<HTMLElement | null>;
 }) {
   const [dragState, setDragState] = useState<FileTreeDragState>(INITIAL);

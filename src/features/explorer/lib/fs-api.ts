@@ -1,8 +1,5 @@
 // Bridge to `commands::fs_entries` — root-relative directory listings with a
 // per-entry `ignored` flag, shaped for the virtualised file tree.
-//
-// The older `read_directory` (absolute paths, size, extension) still backs the
-// current explorer; this is the one the new tree reads.
 
 import { invoke } from "@tauri-apps/api/core";
 

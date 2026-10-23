@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { teamChatShown } from "@/features/layout/lib/team-chat";
+import { singletonShown } from "@/features/layout/lib/singleton-surface";
 
 // The settings store subscribes to config events when it loads.
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}), emit: vi.fn() }));
@@ -317,13 +318,15 @@ describe("ui_focus", () => {
     expect(teamChatShown(layout())).toBe(true);
     result(await act("ui_focus", { target: "panel", name: "team_chat", visible: true }));
     expect(teamChatShown(layout())).toBe(true);
-    result(await act("ui_focus", { target: "panel", name: "left" }));
-    expect(layout().leftPanel.visible).toBe(false);
+    result(await act("ui_focus", { target: "panel", name: "files" }));
+    expect(singletonShown(layout(), "files")).toBe(true);
+    result(await act("ui_focus", { target: "panel", name: "files", visible: false }));
+    expect(layout().tabs.some((t) => t.type === "files")).toBe(false);
     result(await act("ui_focus", { target: "panel", name: "chat_sidebar", visible: false }));
     expect(layout().chatSidebar.visible).toBe(false);
   });
 
-  it("reveals a section of the left panel or of source control", async () => {
+  it("reveals a section of source control", async () => {
     result(
       await act("ui_focus", { target: "section", side: "source_control", section: "git-graph" }),
     );
@@ -332,12 +335,9 @@ describe("ui_focus", () => {
     const sc = layout().tabs.find((t) => t.type === "source-control");
     expect(sc?.groupId).toBe("g2");
     expect(layout().activeByGroup.g2).toBe(sc?.id);
-    useLayoutStore.setState({ leftPanel: { ...layout().leftPanel, visible: false } });
-    result(await act("ui_focus", { target: "section", side: "left", section: "knowledge" }));
-    expect(layout().leftPanel).toMatchObject({ visible: true, activeSection: "knowledge" });
     expect(
-      error(await act("ui_focus", { target: "section", side: "left", section: "changes" })),
-    ).toMatch(/files/);
+      error(await act("ui_focus", { target: "section", side: "left", section: "files" })),
+    ).toMatch(/source_control/);
   });
 
   it("toggles source control as a tab: closed when shown, reopened when not", async () => {
@@ -347,14 +347,11 @@ describe("ui_focus", () => {
     expect(layout().tabs.some((t) => t.type === "source-control")).toBe(false);
   });
 
-  it("reveals a path in the explorer, opening the Files panel", async () => {
-    useLayoutStore.setState({
-      leftPanel: { ...layout().leftPanel, visible: false, activeSection: "knowledge" },
-    });
-    const { useExplorerStore } = await import("@/features/explorer/stores/explorer-store");
+  it("reveals a path in the explorer, opening the Files surface", async () => {
+    const { useFilesRevealStore } = await import("@/features/explorer/stores/files-reveal-store");
     result(await act("ui_focus", { target: "explorer", path: "src/App.tsx" }));
-    expect(layout().leftPanel).toMatchObject({ visible: true, activeSection: "files" });
-    expect(useExplorerStore.getState().selectedPaths).toEqual(["/p/src/App.tsx"]);
+    expect(singletonShown(layout(), "files")).toBe(true);
+    expect(useFilesRevealStore.getState().request?.path).toBe("/p/src/App.tsx");
     expect(error(await act("ui_focus", { target: "explorer", path: "/etc/hosts" }))).toMatch(
       /outside/,
     );

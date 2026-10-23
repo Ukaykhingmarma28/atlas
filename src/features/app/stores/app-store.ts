@@ -266,13 +266,14 @@ export async function loadProjectStores(path: string): Promise<void> {
   //
   // The stores load through `import()` on purpose: this file is in the BOOT
   // chunk (app hydration runs before first paint), and its static imports
-  // dragged the git/knowledge/session/explorer stores — ~340KB of app code —
+  // dragged the git/knowledge/session stores — hundreds of KB of app code —
   // into that chunk. Nothing here runs before a project opens, so the chunks
   // can arrive when a project does. All of them are prefetched by the time a
   // human clicks anything; the split is for cold boot, not for these calls.
-  void import("@/features/explorer/stores/explorer-store")
-    .then((m) => m.useExplorerStore.getState().actions.openFolder(path))
-    .catch((e) => console.error("Explorer failed:", e));
+  //
+  // The project tree is not loaded here: each tree loads its root when it
+  // mounts (`ProjectFileTree`), and is kept per root, so a switch needs
+  // nothing from it.
   void import("@/features/git/stores/git-store")
     .then((m) => m.useGitStore.getState().actions.loadStatus(path))
     .catch((e) => console.error("Git failed:", e));
