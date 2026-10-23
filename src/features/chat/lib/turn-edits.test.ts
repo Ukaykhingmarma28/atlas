@@ -229,21 +229,21 @@ describe("listEditTurns", () => {
     message("a2", "assistant", { toolCalls: [edit("src/login.tsx"), edit("src/login.tsx", "x")] }),
     message("a3", "assistant", { toolCalls: [edit("src/auth.ts")] }),
     message("u4", "user", { content: "Where is the cookie set?" }),
-    message("a5", "assistant", { toolCalls: [toolCall({ toolName: "Read" })] }),
+    message("a5", "assistant", { toolCalls: [toolCall({ id: "r5", toolName: "Read" })] }),
     message("u6", "user", {
       content: "Long prompt\n\nwith context",
       atlasProse: `Add a users route ${"and more words ".repeat(10)}`,
     }),
     message("a7", "assistant", {
-      toolCalls: [toolCall({ contentBlocks: [diffBlock("/repo/routes.ts", "a", "b")] })],
+      toolCalls: [toolCall({ id: "d7", contentBlocks: [diffBlock("/repo/routes.ts", "a", "b")] })],
     }),
   ];
 
   it("lists the turns that changed files, newest first, numbered among all turns", () => {
     const turns = listEditTurns(messages, REPO);
     expect(turns.map((t) => [t.turnId, t.number, t.fileCount])).toEqual([
-      ["t:a7", 3, 1],
-      ["t:a2", 1, 2],
+      ["tc:d7", 3, 1],
+      ["tc:src/login.tsx", 1, 2],
     ]);
   });
 
@@ -264,6 +264,33 @@ describe("listEditTurns", () => {
   });
 });
 
+describe("a turn's name", () => {
+  // The transcript names a run by its first NON-empty message; an engine
+  // that opens a turn with a bare "\n\n" chunk puts an empty one first.
+  const messages = [
+    message("u0", "user", { content: "Go" }),
+    message("a1", "assistant", { content: "\n\n" }),
+    message("a2", "assistant", { toolCalls: [edit("src/a.ts", "e2")] }),
+  ];
+
+  it("resolves from any message of the run, so the card and the picker agree", () => {
+    const [listed] = listEditTurns(messages, REPO);
+    expect(listed.turnId).toBe("tc:e2");
+    for (const ref of ["t:a1", "t:a2", "tc:e2"]) {
+      expect(collectTurnEdits(messages, ref, REPO).files).toEqual(["src/a.ts"]);
+    }
+  });
+
+  it("does not count a run of nothing but empty messages as a turn", () => {
+    const withBlank = [
+      message("u0", "user"),
+      message("a1", "assistant", { content: " " }),
+      ...messages,
+    ];
+    expect(listEditTurns(withBlank, REPO)[0].number).toBe(1);
+  });
+});
+
 describe("editsSignature", () => {
   it("ignores streamed prose and changes when a call arrives or settles", () => {
     const base = [message("u1", "user"), message("a2", "assistant", { content: "Hel" })];
@@ -278,5 +305,122 @@ describe("editsSignature", () => {
     ];
     expect(editsSignature(settled)).not.toBe(editsSignature(called));
     expect(editsSignature([...base, message("u3", "user")])).not.toBe(sig);
+  });
+
+  it("moves with the store's tool revision, whichever message a call is in", () => {
+    const base = [message("u1", "user"), message("a2", "assistant", { content: "Hi" })];
+    expect(editsSignature(base, 4)).not.toBe(editsSignature(base, 3));
+  });
+});
+
+/** The native engine's edit: `{ paths, patch }`, each file's text joined. */
+const engineEdit = (id: string, files: [string, string][]) =>
+  toolCall({
+    id,
+    toolName: `Edit /repo/${files[0][0]}`,
+    kind: "edit",
+    arguments: {
+      paths: files.map(([path]) => `/repo/${path}`),
+      patch: files.map(([, text]) => text).join("\n"),
+    },
+  });
+
+describe("edits the native engine reported", () => {
+  const hunks = "@@ -2,2 +2,3 @@\n a\n+b\n c\n";
+
+  it("keeps a file's one diff as it is: real line numbers, not an excerpt", () => {
+    const edits = collectTurnEdits(turn(engineEdit("n1", [["src/x.rs", hunks]])), "t:m1", REPO);
+    expect(edits.files).toEqual(["src/x.rs"]);
+    expect(edits.sources["src/x.rs"]).toEqual({ old: "a\nc\n", new: "a\nb\nc\n", patch: hunks });
+    expect(edits.excerpts.size).toBe(0);
+  });
+
+  it("splits a patch naming several files, created ones whole", () => {
+    const edits = collectTurnEdits(
+      turn(
+        engineEdit("n1", [
+          ["src/a.rs", hunks],
+          ["src/new.rs", "fn main() {}\n"],
+        ]),
+      ),
+      "t:m1",
+      REPO,
+    );
+    expect(edits.files).toEqual(["src/a.rs", "src/new.rs"]);
+    expect(edits.sources["src/new.rs"]).toEqual({ old: "", new: "fn main() {}\n" });
+  });
+
+  it("folds two diffs to one file into an excerpt", () => {
+    const edits = collectTurnEdits(
+      turn(engineEdit("n1", [["src/x.rs", hunks]]), engineEdit("n2", [["src/x.rs", hunks]])),
+      "t:m1",
+      REPO,
+    );
+    expect(edits.sources["src/x.rs"].patch).toBeUndefined();
+    expect([...edits.excerpts]).toEqual(["src/x.rs"]);
+  });
+
+  it("lists the turn, and names it by the call", () => {
+    const messages = [message("u0", "user"), ...turn(engineEdit("n1", [["src/x.rs", hunks]]))];
+    expect(listEditTurns(messages, REPO).map((t) => [t.turnId, t.fileCount])).toEqual([
+      ["tc:n1", 1],
+    ]);
+  });
+});
+
+describe("a Write, then Edits to the file it wrote", () => {
+  it("applies each fragment to the written text: the file the turn left", () => {
+    const edits = collectTurnEdits(
+      turn(
+        toolCall({
+          id: "w",
+          toolName: "Write",
+          arguments: { file_path: "/repo/a.ts", content: "one\ntwo\n" },
+        }),
+        toolCall({
+          id: "e",
+          toolName: "Edit",
+          arguments: { file_path: "/repo/a.ts", old_string: "two", new_string: "$& TWO" },
+        }),
+      ),
+      "t:m1",
+      REPO,
+    );
+    // `$&` is text, not a replacement pattern.
+    expect(edits.sources["a.ts"]).toEqual({ old: "", new: "one\n$& TWO\n" });
+    expect(edits.excerpts.size).toBe(0);
+  });
+
+  it("falls back to the excerpt when a fragment is not in the written text", () => {
+    const edits = collectTurnEdits(
+      turn(
+        toolCall({
+          id: "w",
+          toolName: "Write",
+          arguments: { file_path: "/repo/a.ts", content: "one\n" },
+        }),
+        toolCall({
+          id: "e",
+          toolName: "Edit",
+          arguments: { file_path: "/repo/a.ts", old_string: "zzz", new_string: "Z" },
+        }),
+      ),
+      "t:m1",
+      REPO,
+    );
+    expect(edits.sources["a.ts"]).toEqual({ old: "zzz", new: "one\nZ" });
+    expect([...edits.excerpts]).toEqual(["a.ts"]);
+  });
+
+  it("applies the engine's hunks to a file the turn created", () => {
+    const edits = collectTurnEdits(
+      turn(
+        engineEdit("n1", [["src/x.rs", "a\nc\n"]]),
+        engineEdit("n2", [["src/x.rs", "@@ -1,2 +1,3 @@\n a\n+b\n c\n"]]),
+      ),
+      "t:m1",
+      REPO,
+    );
+    expect(edits.sources["src/x.rs"]).toEqual({ old: "", new: "a\nb\nc\n" });
   });
 });

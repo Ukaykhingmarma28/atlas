@@ -27,8 +27,9 @@ export type DiffLayout = "unified" | "split";
 interface DiffPanelState {
   /** Per panel (its tab id). Absent: the panel's own default. */
   scope: Record<string, DiffScope>;
-  /** Per panel: the turn the `turn` scope shows, a turn id or
-   *  {@link LATEST_TURN}. Absent: the latest. */
+  /** Per panel: the turn the `turn` scope shows, its stable key
+   *  (`stableTurnKey`, which survives a relaunch) or {@link LATEST_TURN}.
+   *  Absent: the latest. */
   turn: Record<string, string>;
   /** Per repository: the base branch the branch range compares against.
    *  Absent or `null`: the remote default, as the backend picks it. */

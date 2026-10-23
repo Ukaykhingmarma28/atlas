@@ -229,7 +229,9 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
   );
 
   // ── The turn scope: one turn's own edits, from the session's message log ──
-  const turns = useSessionEditTurns(sessionId, repoPath);
+  // Walked only while something shows them: the turn scope, or its picker.
+  const [scopeMenuOpen, setScopeMenuOpen] = useState(false);
+  const turns = useSessionEditTurns(sessionId, repoPath, scope === "turn" || scopeMenuOpen);
   const latestTurn = turns[0] ?? null;
   const selectedTurn =
     scope !== "turn"
@@ -435,7 +437,7 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
   const header = (
     <div className="flex h-control-lg shrink-0 items-center gap-1 border-b border-border px-2">
       {leading}
-      <DropdownMenu>
+      <DropdownMenu onOpenChange={(open) => setScopeMenuOpen(open)}>
         <DropdownMenuTrigger
           render={
             <Button variant="ghost" size="sm" aria-label={`Diff scope: ${scopeLabel}`}>

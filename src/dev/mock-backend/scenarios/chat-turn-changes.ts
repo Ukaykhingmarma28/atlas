@@ -56,7 +56,7 @@ function write(path: string, content: string): ToolCall {
 function patch(path: string, before: string, after: string): ToolCall {
   return {
     ...tool.edit(path, before, after),
-    // `turnFileOfToolCall` finds the path here, and counts the arguments.
+    // `turnFilesOfToolCall` finds the path here, and counts the arguments.
     arguments: { file_path: abs(path), old_string: before, new_string: after },
   };
 }
@@ -212,4 +212,143 @@ export const chatTurnChangesLong: Scenario = {
     await playTurns(Array.from({ length: 30 }, (_, i) => exchange(i, i * 300)).flat());
   },
   actions: { streamTurn },
+};
+
+// ── The native engine's shape ────────────────────────────────────────────
+//
+// The native agent reports an edit as kind `edit` with `{ paths, patch }`: no
+// replaced text, no diff block. `patch` is each file's own text in `paths`
+// order (the engine sorts them), joined with a newline — an update's
+// headerless hunks, a created file's whole content, and for a rename a
+// `Moved to:` note after the hunks (`crates/atlas-native-agent/src/engine/
+// sink.rs`, the `FileChange` arm). `chat-turn-changes-native` plays only that.
+
+/** The engine's edit: one call naming every file of the patch. */
+function engineEdit(files: { path: string; text: string }[]): ToolCall {
+  const sorted = [...files].sort((a, b) => abs(a.path).localeCompare(abs(b.path)));
+  const first = abs(sorted[0].path);
+  const title =
+    sorted.length === 1 ? `Edit ${first}` : `Edit ${first} (+${sorted.length - 1} more)`;
+  return {
+    id: nextId(),
+    tool_name: title,
+    title,
+    kind: "edit",
+    status: "completed",
+    result: null,
+    locations: sorted.map((f) => ({ path: abs(f.path) })),
+    arguments: {
+      paths: sorted.map((f) => abs(f.path)),
+      patch: sorted.map((f) => f.text).join("\n"),
+    },
+  };
+}
+
+const loginHunks = `@@ -1,5 +1,7 @@
+ use crate::auth::verify;
++use crate::rate_limit::Limiter;
+
+ pub async fn login(req: Request) -> Response {
++    Limiter::global().check(&req.ip())?;
+     let creds = req.json().await?;
+     verify(creds).await
+`;
+
+const rateLimitContent = `use std::time::Duration;
+
+/// Ten attempts a minute per address.
+pub struct Limiter {
+    window: Duration,
+    max: u32,
+}
+`;
+
+const configHunks = `@@ -3,3 +3,4 @@
+ pub struct Config {
+     pub port: u16,
++    pub login_per_minute: u32,
+ }
+@@ -20,2 +21,3 @@
+     port: 8080,
++    login_per_minute: 10,
+ }
+`;
+
+const metricsContent = `pub fn record_login(ok: bool) {
+    counter!("login", "ok" => ok.to_string()).increment(1);
+}
+`;
+
+const modHunks = `@@ -1,2 +1,3 @@
+ pub mod login;
++pub mod metrics;
+ pub mod rate_limit;
+`;
+
+const renameHunks = `@@ -1,2 +1,2 @@
+-mod handlers;
++mod routes;
+ pub use routes::*;
+`;
+
+function nativeExchange(base: number): SessionMessage[][] {
+  const at = (s: number) => t(base + s);
+  const all = [
+    user("Rate-limit the login endpoint, and make the limit configurable.", at(0)),
+    // The engine often opens a turn with a bare newline chunk: an empty
+    // message the transcript skips, which must not change the turn's name.
+    text("\n\n", at(1)),
+    tools(
+      [
+        engineEdit([
+          { path: "src/server/login.rs", text: loginHunks },
+          { path: "src/server/rate_limit.rs", text: rateLimitContent },
+        ]),
+        engineEdit([{ path: "src/server/config.rs", text: configHunks }]),
+      ],
+      at(3),
+    ),
+    ended(text("Login is limited to ten attempts a minute per address.", at(20)), 17),
+
+    user("Count logins, and register the new modules.", at(60)),
+    tools(
+      [
+        engineEdit([
+          { path: "src/server/metrics.rs", text: metricsContent },
+          { path: "src/server/mod.rs", text: modHunks },
+        ]),
+      ],
+      at(62),
+    ),
+    ended(text("`metrics::record_login` counts each attempt.", at(70)), 8),
+
+    user("Rename the handlers module to routes.", at(120)),
+    tools(
+      [
+        engineEdit([
+          {
+            path: "src/server/handlers.rs",
+            text: `${renameHunks}\n\nMoved to: ${abs("src/server/routes.rs")}`,
+          },
+        ]),
+      ],
+      at(122),
+    ),
+    ended(text("`handlers` is now `routes`.", at(128)), 6),
+  ];
+  const turns: SessionMessage[][] = [];
+  for (const message of all) {
+    if (message.role === "user") turns.push([]);
+    turns[turns.length - 1].push(message);
+  }
+  return turns;
+}
+
+export const chatTurnChangesNative: Scenario = {
+  name: "chat-turn-changes-native",
+  description: "Turns the native engine edited: per-file hunks and whole files in one patch.",
+  setup: async () => {
+    await new Promise((r) => setTimeout(r, BIND_WAIT_MS));
+    await playTurns(nativeExchange(0));
+  },
 };

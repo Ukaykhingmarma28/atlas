@@ -36,7 +36,7 @@ import {
   type ChangedFile,
   type ChangedRow,
 } from "../lib/changed-files-tree";
-import { openTurnDiff } from "../lib/open-turn-diff";
+import { isAbsolutePath, joinPath, openTurnDiff } from "../lib/open-turn-diff";
 import { HEADER_INSET } from "../lib/row-metrics";
 import { useChangedFilesStore } from "../stores/changed-files-store";
 
@@ -97,10 +97,12 @@ export function DiffCounts({
 }
 
 export const ChangedFilesCard = memo(function ChangedFilesCard({
-  turnId,
+  turnKey,
   files: turnFiles,
 }: {
-  turnId: string;
+  /** The turn's stable key (`stableTurnKey`): what the card opens, and
+   *  what its expand-all answer is remembered by across relaunches. */
+  turnKey: string;
   /** The turn's frozen `turnSummary.files`; reads are left out here. */
   files: readonly TurnFile[];
 }) {
@@ -110,7 +112,7 @@ export const ChangedFilesCard = memo(function ChangedFilesCard({
   const tree = useMemo(() => buildChangedFilesTree(files), [files]);
   const hasFolders = tree.some((n) => n.kind === "dir");
 
-  const allExpanded = useChangedFilesStore((s) => s.expanded[turnId] === true);
+  const allExpanded = useChangedFilesStore((s) => s.expanded[turnKey] === true);
   const { setExpanded } = useChangedFilesStore.use.actions();
   // What the card measures before it has ever been laid out (see `cardStyle`).
   const firstRows = useMemo(() => {
@@ -141,12 +143,12 @@ export const ChangedFilesCard = memo(function ChangedFilesCard({
                 icon={allExpanded ? ChevronsDownUp : ChevronsUpDown}
                 label={allExpanded ? "Collapse all folders" : "Expand all folders"}
                 aria-pressed={allExpanded}
-                onClick={() => setExpanded(turnId, !allExpanded)}
+                onClick={() => setExpanded(turnKey, !allExpanded)}
               />
             </Hint>
           )}
           <Hint label="Open this turn's diff" side="top">
-            <Button variant="ghost" size="xs" onClick={() => openTurnDiff(turnId)}>
+            <Button variant="ghost" size="xs" onClick={() => openTurnDiff(turnKey)}>
               <FileDiff size={12} />
               Open diff
             </Button>
@@ -157,7 +159,7 @@ export const ChangedFilesCard = memo(function ChangedFilesCard({
         <ChangedFilesTree
           // A new expand-all answer starts the folders afresh, as it says.
           key={allExpanded ? "all" : "folded"}
-          turnId={turnId}
+          turnKey={turnKey}
           repoPath={repoPath}
           tree={tree}
           allExpanded={allExpanded}
@@ -168,12 +170,12 @@ export const ChangedFilesCard = memo(function ChangedFilesCard({
 });
 
 const ChangedFilesTree = memo(function ChangedFilesTree({
-  turnId,
+  turnKey,
   repoPath,
   tree,
   allExpanded,
 }: {
-  turnId: string;
+  turnKey: string;
   repoPath: string;
   tree: ReturnType<typeof buildChangedFilesTree>;
   allExpanded: boolean;
@@ -206,7 +208,7 @@ const ChangedFilesTree = memo(function ChangedFilesTree({
     setMenuFile(row?.node.kind === "file" ? row.node.file : null);
   };
   const absolute = (file: ChangedFile) =>
-    file.source.startsWith("/") || !repoPath ? file.source : `${repoPath}/${file.path}`;
+    isAbsolutePath(file.source) || !repoPath ? file.source : joinPath(repoPath, file.path);
 
   return (
     <ContextMenu>
@@ -221,7 +223,7 @@ const ChangedFilesTree = memo(function ChangedFilesTree({
             open={row.node.kind === "dir" && (open[row.node.path] ?? allExpanded)}
             flat={flat}
             onToggle={toggle}
-            onOpen={(file) => openTurnDiff(turnId, file.source)}
+            onOpen={(file) => openTurnDiff(turnKey, file.source)}
           />
         ))}
         {rows.length > shown.length && (
@@ -236,7 +238,7 @@ const ChangedFilesTree = memo(function ChangedFilesTree({
       </ContextMenuTrigger>
       {menuFile && (
         <ContextMenuContent>
-          <ContextMenuItem onClick={() => openTurnDiff(turnId, menuFile.source)}>
+          <ContextMenuItem onClick={() => openTurnDiff(turnKey, menuFile.source)}>
             Show diff
           </ContextMenuItem>
           <ContextMenuItem onClick={() => void openReviewFile(absolute(menuFile))}>

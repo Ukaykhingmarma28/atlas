@@ -6,7 +6,9 @@
 // answer and three correct turn diffs, and once the edits are committed git
 // reports nothing at all. The turn's text pairs come from the session's
 // message log (`collectTurnEdits`); the backend diffs each pair
-// (`diff_texts_patch`) and this thread only parses the patch.
+// (`diff_texts_patch`) and this thread only parses the patch. A file the
+// native engine edited once already has its diff (`TurnEdit.patch`), which is
+// parsed as it is, with no round trip.
 //
 // Everything here is keyed so a settled turn costs nothing per render: the
 // session is watched through `editsSignature` (a string that ignores streamed
@@ -33,31 +35,52 @@ import { countChangedLines } from "@/features/chat/lib/tool-files";
 
 type ChatState = ReturnType<typeof useChatStore.getState>;
 
+/** The chat session whose agent session is `sessionId`. */
+function chatSessionOf(state: ChatState, sessionId: string | null) {
+  if (!sessionId) return undefined;
+  for (const session of Object.values(state.sessions)) {
+    if (session.acpSessionId === sessionId) return session;
+  }
+  return undefined;
+}
+
 /** The message log of the chat whose agent session is `sessionId`. */
 export function sessionMessages(
   state: ChatState,
   sessionId: string | null,
 ): ChatMessage[] | undefined {
-  if (!sessionId) return undefined;
-  for (const session of Object.values(state.sessions)) {
-    if (session.acpSessionId === sessionId) return session.messages;
-  }
-  return undefined;
+  return chatSessionOf(state, sessionId)?.messages;
 }
 
 /** Re-renders only when the session's edits may have changed. */
 function useEditsSignature(sessionId: string | null): string {
-  return useChatStore((s) => editsSignature(sessionMessages(s, sessionId)));
+  return useChatStore((s) => {
+    const session = chatSessionOf(s, sessionId);
+    return editsSignature(session?.messages, session?.toolRevision);
+  });
 }
 
-/** The session's turns that changed files, newest first. */
-export function useSessionEditTurns(sessionId: string | null, repoPath: string): EditTurn[] {
-  const signature = useEditsSignature(sessionId);
+const NO_TURNS: EditTurn[] = [];
+
+/**
+ * The session's turns that changed files, newest first. `enabled` false
+ * walks nothing and returns none: the list is only wanted while the turn
+ * scope shows, or its picker is open.
+ */
+export function useSessionEditTurns(
+  sessionId: string | null,
+  repoPath: string,
+  enabled = true,
+): EditTurn[] {
+  const signature = useEditsSignature(enabled ? sessionId : null);
   return useMemo(
-    () => listEditTurns(sessionMessages(useChatStore.getState(), sessionId) ?? [], repoPath),
+    () =>
+      enabled
+        ? listEditTurns(sessionMessages(useChatStore.getState(), sessionId) ?? [], repoPath)
+        : NO_TURNS,
     // `signature` stands for the messages, read here through `getState`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [signature, sessionId, repoPath],
+    [signature, sessionId, repoPath, enabled],
   );
 }
 
@@ -80,7 +103,10 @@ export function useTurnEdits(
     for (const path of edits.files) {
       const next = edits.sources[path];
       const prior = previous.current[path];
-      sources[path] = prior && prior.old === next.old && prior.new === next.new ? prior : next;
+      sources[path] =
+        prior && prior.old === next.old && prior.new === next.new && prior.patch === next.patch
+          ? prior
+          : next;
     }
     previous.current = sources;
     return { ...edits, sources };
@@ -89,8 +115,13 @@ export function useTurnEdits(
   }, [signature, sessionId, turnId, repoPath]);
 }
 
-/** A text pair's own change: an empty side is a file that did not exist. */
-export function statusOfSource(source: TurnEdit): DiffFileStat["status"] {
+/**
+ * What happened to the file. Only a whole-file pair can say it was created or
+ * deleted, by an empty side; an excerpt or a diff names part of a file that
+ * exists either side, so an emptied fragment is a modification, not a delete.
+ */
+export function statusOfSource(source: TurnEdit, excerpt: boolean): DiffFileStat["status"] {
+  if (excerpt || source.patch !== undefined) return "modified";
   if (source.old === "" && source.new !== "") return "added";
   if (source.new === "" && source.old !== "") return "deleted";
   return "modified";
@@ -134,6 +165,7 @@ function fingerprintOf(source: TurnEdit): string {
   let fp = fingerprints.get(source);
   if (fp === undefined) {
     fp = `${textFingerprint(source.old)}|${textFingerprint(source.new)}`;
+    if (source.patch !== undefined) fp += `|${textFingerprint(source.patch)}`;
     fingerprints.set(source, fp);
   }
   return fp;
@@ -160,8 +192,15 @@ export function useTurnReviewFiles({
         staleTime: Infinity,
         gcTime: 60_000,
         queryFn: async () => {
+          const status = statusOfSource(source, edits!.excerpts.has(path));
+          // The engine's own diff needs only its file headers to parse.
+          // Its whitespace is as the engine diffed it.
+          if (source.patch !== undefined) {
+            const patch = `--- a/${path}\n+++ b/${path}\n${source.patch}`;
+            return loadedOf(path, { patch, binary: false, truncated: false }, status);
+          }
           const res = await diffTextsPatch(source.old, source.new, path, ignoreWhitespace);
-          return loadedOf(path, res, statusOfSource(source));
+          return loadedOf(path, res, status);
         },
       };
     }),
@@ -176,7 +215,10 @@ export function useTurnReviewFiles({
   const placeholders = useMemo(() => {
     const map = new Map<string, FileDiffMetadata>();
     for (const path of paths)
-      map.set(path, placeholderOf(path, statusOfSource(edits!.sources[path])));
+      map.set(
+        path,
+        placeholderOf(path, statusOfSource(edits!.sources[path], edits!.excerpts.has(path))),
+      );
     return map;
   }, [paths, edits]);
 
@@ -186,7 +228,7 @@ export function useTurnReviewFiles({
         const source = edits!.sources[path];
         const result = results[i];
         const data = result?.data;
-        const status = statusOfSource(source);
+        const status = statusOfSource(source, edits!.excerpts.has(path));
         const ready = data?.state === "ready" && data.fileDiff;
         // The patch's own counts once it is parsed; until then, the pair's.
         const counts = ready ? getDiffLineStat([data.fileDiff!]) : null;

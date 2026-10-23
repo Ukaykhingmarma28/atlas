@@ -41,7 +41,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { extractPlanMarkdown, type PlanRecord } from "../lib/plans";
 import { extractNextSteps } from "../lib/next-steps";
-import { turnFileOfToolCall } from "../lib/tool-files";
+import { turnFilesOfToolCall } from "../lib/tool-files";
 import { withPastesInline } from "../lib/pasted-text";
 import { withCitesInline } from "../lib/cited-text";
 import type { MentionData } from "../lib/mentions";
@@ -69,20 +69,21 @@ function reconstructTurnSummaries(messages: ChatMessage[]): void {
       if (m.role !== "assistant") continue;
       lastAsst = i;
       for (const tc of m.toolCalls) {
-        const file = turnFileOfToolCall({
+        const files = turnFilesOfToolCall({
           toolName: tc.toolName,
           kind: tc.kind,
           arguments: (tc.arguments ?? {}) as Record<string, unknown>,
           locations: tc.locations,
         });
-        if (!file) continue;
-        const ex = byPath.get(file.path);
-        if (!ex) byPath.set(file.path, file);
-        else {
-          ex.added += file.added;
-          ex.removed += file.removed;
-          if (file.kind === "edit") ex.kind = "edit";
-          if (file.created === false) ex.created = false;
+        for (const file of files) {
+          const ex = byPath.get(file.path);
+          if (!ex) byPath.set(file.path, file);
+          else {
+            ex.added += file.added;
+            ex.removed += file.removed;
+            if (file.kind === "edit") ex.kind = "edit";
+            if (file.created === false) ex.created = false;
+          }
         }
       }
     }
@@ -2460,16 +2461,27 @@ function applyDeltaToDraft(s: ChatDraft, env: AgentDelta): void {
       // message rescan). Frozen into the trailing message at turn_finished.
       if (session.turnScratch) {
         const tc = env.tool_call;
-        const file = turnFileOfToolCall({
+        const files = turnFilesOfToolCall({
           toolName: tc.tool_name,
           kind: tc.kind,
           arguments: (tc.arguments ?? {}) as Record<string, unknown>,
           locations: toolLocations(tc.locations),
         });
         // A later sighting that names no file (a bare status update) must not
-        // erase what an earlier one recorded.
-        if (file) session.turnScratch.tools[tc.id] = file;
+        // erase what an earlier one recorded. A call that names several files
+        // (the native engine's patch) keeps the first under its id and the
+        // rest under `id#n`, replaced whole on each sighting.
+        if (files.length > 0) {
+          const tools = session.turnScratch.tools;
+          for (let n = 1; `${tc.id}#${n}` in tools; n++) delete tools[`${tc.id}#${n}`];
+          files.forEach((file, n) => {
+            tools[n === 0 ? tc.id : `${tc.id}#${n}`] = file;
+          });
+        }
       }
+      // Any tool call changing, in any message, is something a view of the
+      // session's edits must hear (`editsSignature`).
+      session.toolRevision = (session.toolRevision ?? 0) + 1;
       // Incremental in-flight index — the O(1) source for the composer's
       // busy check (hasInFlightToolCalls), replacing a per-frame scan of
       // every message's toolCalls.

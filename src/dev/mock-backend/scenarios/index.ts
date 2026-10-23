@@ -30,7 +30,7 @@ import {
 import { chatLongPrompt } from "./chat-long-prompt";
 import { chatMarkdown } from "./chat-markdown";
 import { chatTools } from "./chat-tools";
-import { chatTurnChanges, chatTurnChangesLong } from "./chat-turn-changes";
+import { chatTurnChanges, chatTurnChangesLong, chatTurnChangesNative } from "./chat-turn-changes";
 import { collab } from "./collab";
 import { designSystem } from "./design-system";
 import { diffLarge } from "./diff-large";
@@ -86,6 +86,7 @@ const all: Scenario[] = [
   chatMarkdown,
   chatTurnChanges,
   chatTurnChangesLong,
+  chatTurnChangesNative,
   gitConflict,
   diffLarge,
   filesLarge,

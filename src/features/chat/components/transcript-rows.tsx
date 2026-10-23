@@ -903,7 +903,7 @@ export const TurnFooterRowView = memo(function TurnFooterRowView({ row }: { row:
   if (edited) {
     return (
       <Column className="pt-1 pb-4">
-        <ChangedFilesCard turnId={row.turnId} files={row.files} />
+        <ChangedFilesCard turnKey={row.turnKey} files={row.files} />
       </Column>
     );
   }

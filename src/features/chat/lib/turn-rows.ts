@@ -36,6 +36,7 @@ import {
   countEditLines,
   isFileCreated,
 } from "./tool-files";
+import { isEmptyMessage, stableTurnKey } from "./turn-identity";
 import { splitAtlasContext } from "./atlas-context";
 import { stripNextSteps, stripNextStepsDirective } from "./next-steps";
 
@@ -285,6 +286,9 @@ export interface TurnFooterRow extends RowBase {
    *  projection, so a settled turn's changed-files card never re-renders. */
   files: TurnFile[];
   repoAtTurn: boolean;
+  /** The turn's stable key (`stableTurnKey`): what the card opens and
+   *  remembers its folders by, since `turnId` changes when the log reloads. */
+  turnKey: string;
   /** Message id, so the footer can reach usage/suggestions/contextUsage. */
   messageId: string;
   hasSuggestions: boolean;
@@ -823,26 +827,6 @@ function formatGap(ms: number): string {
   const h = Math.round(m / 60);
   if (h < 24) return `${h}h`;
   return `${Math.round(h / 24)}d`;
-}
-
-/**
- * A message renders nothing at all — no prose, no thinking, no tools, no files,
- * no plan. claude-agent-acp routinely emits signature-only `thinking` blocks
- * with empty content as turn markers; projecting them produced phantom rows
- * whose padding read as unexplained gaps. Filtered here rather than in the
- * list, so the row index never contains one.
- */
-function isEmptyMessage(m: ChatMessage): boolean {
-  return (
-    !(m.content && m.content.trim()) &&
-    !(m.thinking && m.thinking.trim()) &&
-    m.toolCalls.length === 0 &&
-    m.fileChanges.length === 0 &&
-    !(m.plan && m.plan.length > 0) &&
-    // A turn cut off before any output keeps an otherwise empty message just
-    // to carry its interruption record (`recordInterruption`).
-    !m.interruption
-  );
 }
 
 /**
@@ -1389,6 +1373,7 @@ function projectSegment(
         turnId,
         firstInTurn: false,
         files: footerMsg.turnSummary.files,
+        turnKey: stableTurnKey(messages, { start: turnFirstIdx, end: i }) ?? turnId,
         repoAtTurn: footerMsg.turnSummary.repoAtTurn,
         messageId: footerMsg.id,
         hasSuggestions: (footerMsg.suggestions?.chips.length ?? 0) > 0,

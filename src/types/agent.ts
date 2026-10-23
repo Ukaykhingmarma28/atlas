@@ -281,6 +281,10 @@ export interface ChatSession {
     seq: number;
     tools: Record<string, TurnFile>;
   };
+  /** Bumped on every `tool_call_upserted`, whichever message the call is in.
+   *  A cheap "the session's edits may have changed" for views that would
+   *  otherwise rescan the log (`editsSignature`). Only ever compared. */
+  toolRevision?: number;
   workingDirectory: string;
   tasks: AgentTask[];
   createdAt: string;

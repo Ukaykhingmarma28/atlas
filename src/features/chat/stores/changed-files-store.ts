@@ -4,6 +4,10 @@
 // stays open across a relaunch. Kept out of the chat store so a toggle
 // re-renders the one card that reads its turn and nothing else; the
 // transcript's rows never subscribe to the chat store.
+//
+// Keyed by the turn's stable key (`stableTurnKey`, `tc:<tool call id>`). A
+// turn without one is named by its transcript id, which is re-minted when the
+// log reloads, so that answer lasts the session and is never written out.
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
@@ -12,11 +16,14 @@ import { createSelectors } from "@/lib/create-selectors";
 /** Turns remembered. Insertion order is recency; the oldest go past this. */
 export const MAX_REMEMBERED_TURNS = 200;
 
+/** Only stable keys survive a reload; anything else would name nothing. */
+const isStableKey = (key: string) => key.startsWith("tc:");
+
 interface ChangedFilesState {
-  /** Turn id → every folder expanded. Absent: the default, folded. */
+  /** Turn key → every folder expanded. Absent: the default, folded. */
   expanded: Record<string, true>;
   actions: {
-    setExpanded: (turnId: string, expanded: boolean) => void;
+    setExpanded: (turnKey: string, expanded: boolean) => void;
   };
 }
 
@@ -26,17 +33,19 @@ export const useChangedFilesStore = createSelectors(
       (set) => ({
         expanded: {},
         actions: {
-          setExpanded: (turnId, expanded) =>
+          setExpanded: (turnKey, expanded) =>
             set((s) => {
-              const entries = Object.entries(s.expanded).filter(([id]) => id !== turnId);
-              if (expanded) entries.push([turnId, true]);
+              const entries = Object.entries(s.expanded).filter(([key]) => key !== turnKey);
+              if (expanded) entries.push([turnKey, true]);
               return { expanded: Object.fromEntries(entries.slice(-MAX_REMEMBERED_TURNS)) };
             }),
         },
       }),
       {
         name: "atlas.chat.changed-files",
-        partialize: (s) => ({ expanded: s.expanded }),
+        partialize: (s) => ({
+          expanded: Object.fromEntries(Object.entries(s.expanded).filter(([k]) => isStableKey(k))),
+        }),
       },
     ),
   ),

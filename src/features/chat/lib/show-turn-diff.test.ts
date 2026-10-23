@@ -11,6 +11,9 @@ vi.mock("@tauri-apps/api/event", () => ({
   emit: vi.fn(async () => {}),
 }));
 
+const toastInfo = vi.fn();
+vi.mock("sonner", () => ({ toast: { info: (...a: unknown[]) => toastInfo(...a) } }));
+
 const openSessionChanges = vi.fn();
 vi.mock("@/features/git/lib/open-session-changes", () => ({
   openSessionChanges: (...a: unknown[]) => openSessionChanges(...a),
@@ -64,6 +67,7 @@ function seed(acpSessionId: string | undefined) {
 }
 
 beforeEach(() => {
+  toastInfo.mockReset();
   openSessionChanges.mockReset();
   useAppStore.setState({ currentProject: { path: "/repo" } } as never);
   seed("acp-1");
@@ -77,25 +81,36 @@ describe("showTurnDiff", () => {
         projectPath: "/repo",
         sessionId: "acp-1",
         file: "src/b.ts",
-        turnId: "t:a2",
+        // The stable key, which the panel persists.
+        turnId: "tc:c1",
       }),
     );
   });
 
   it("lands on the turn's first file for the card's Open diff", () => {
-    showTurnDiff("tab-1", { turnId: "t:a2" });
+    showTurnDiff("tab-1", { turnId: "tc:c1" });
     expect(openSessionChanges.mock.calls[0][0].file).toBe("src/a.ts");
   });
 
-  it("opens nothing for a turn with no edits, or one another chat holds", () => {
-    expect(showTurnDiff("tab-1", { turnId: "t:a4" })).toBe(false);
+  it("ignores a turn another chat holds, without a word", () => {
     expect(showTurnDiff("tab-2", { turnId: "t:a2" })).toBe(false);
+    expect(showTurnDiff("tab-1", { turnId: "t:elsewhere" })).toBe(false);
     expect(openSessionChanges).not.toHaveBeenCalled();
+    expect(toastInfo).not.toHaveBeenCalled();
   });
 
-  it("opens nothing before the session is bound: the panel is keyed by it", () => {
+  it("shows the session's changes, and says why, for a turn with no recorded edits", () => {
+    expect(showTurnDiff("tab-1", { turnId: "t:a4", file: "/repo/src/c.ts" })).toBe(true);
+    const [opts] = openSessionChanges.mock.calls[0];
+    expect(opts).toMatchObject({ sessionId: "acp-1", file: "src/c.ts" });
+    expect(opts.turnId).toBeUndefined();
+    expect(toastInfo).toHaveBeenCalledTimes(1);
+  });
+
+  it("says why before the session is bound: the panel is keyed by it", () => {
     seed(undefined);
     expect(showTurnDiff("tab-1", { turnId: "t:a2" })).toBe(false);
     expect(openSessionChanges).not.toHaveBeenCalled();
+    expect(toastInfo).toHaveBeenCalledTimes(1);
   });
 });

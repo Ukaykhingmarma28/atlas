@@ -22,7 +22,8 @@ export function openSessionChanges(opts: {
   title?: string;
   /** Show this turn's own edits (the panel's turn scope) rather than the
    *  session's files. Without it, a panel left on a turn goes back to the
-   *  session: the file asked for may not be in that turn. */
+   *  session: the file asked for may not be in that turn. The turn's stable
+   *  key (`stableTurnKey`): it is persisted. */
   turnId?: string;
 }): void {
   const { projectPath, sessionId, file, title, turnId } = opts;
