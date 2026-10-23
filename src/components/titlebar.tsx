@@ -4,6 +4,7 @@ import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcu
 import { Popover } from "@base-ui/react/popover";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { useProjectStore } from "@/features/projects/stores/project-store";
+import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import {
   useNotificationsStore,
   hasUnread,
@@ -516,15 +517,73 @@ const DEV_PILL_CREAM = "#FFFFE2";
 // ratchet-allow: ink on that fixed cream; a theme foreground could be pale on it.
 const DEV_PILL_INK = "#1A1A14";
 
+/**
+ * Where the dev badge's centre goes: over the session the main column shows
+ * (the area the Atlas mark and the composer centre on, beside the session
+ * list), else over the main column, else the window. Re-measured whenever any
+ * of them resizes or the main column switches tab.
+ */
+function useSessionCentreX(): number | null {
+  const [x, setX] = useState<number | null>(null);
+  useEffect(() => {
+    let frame = 0;
+    const observer = new ResizeObserver(() => schedule());
+    let watched: Element[] = [];
+    const measure = () => {
+      const column = document.querySelector<HTMLElement>("[data-main-column]");
+      // The visible one: hidden persistent tabs keep their (inert) chat mounted.
+      const session = column
+        ? [...column.querySelectorAll<HTMLElement>("[data-chat-drop-zone]")].find(
+            (el) => el.getClientRects().length > 0 && !el.closest("[inert]"),
+          )
+        : undefined;
+      const target = session ?? column;
+      const next = target ? [column!, target] : [];
+      if (next.some((el, i) => el !== watched[i]) || next.length !== watched.length) {
+        observer.disconnect();
+        for (const el of next) observer.observe(el);
+        watched = next;
+      }
+      if (!target) return setX(null);
+      const r = target.getBoundingClientRect();
+      setX(Math.round(r.left + r.width / 2));
+    };
+    const schedule = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    };
+    schedule();
+    window.addEventListener("resize", schedule);
+    const unsubscribe = useLayoutStore.subscribe(schedule);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("resize", schedule);
+      unsubscribe();
+    };
+  }, []);
+  return x;
+}
+
 export function DevModePill() {
   if (!isDev || !isTauri()) return null;
+  return <DevModeBadge />;
+}
+
+function DevModeBadge() {
+  const centre = useSessionCentreX();
   return (
-    // Dead-centre of the window's bar, whichever column is under it — fixed
-    // to the viewport because no single header spans the window any more.
+    // Centred over the session below it rather than the window: the bar's
+    // left holds the breadcrumb and its right the controls, so the window's
+    // centre lines up with nothing, while the session's lines up with the
+    // mark and the composer. Fixed, because no single header spans it.
     // `pointer-events-none` keeps the bar beneath it fully draggable: it's an
     // indicator, not a control. Flat, in the mark's cream: it should say which
     // build this is without being the loudest thing on screen.
-    <div className="pointer-events-none fixed left-1/2 top-0 z-titlebar flex h-titlebar -translate-x-1/2 items-center">
+    <div
+      className="pointer-events-none fixed top-0 z-titlebar flex h-titlebar -translate-x-1/2 items-center"
+      style={{ left: centre ?? "50%" }}
+    >
       <span
         className="flex h-5 shrink-0 items-center gap-1 rounded-full px-2 text-xs leading-none font-medium"
         style={{ backgroundColor: DEV_PILL_CREAM, color: DEV_PILL_INK }}
