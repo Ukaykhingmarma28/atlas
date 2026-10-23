@@ -431,3 +431,50 @@ describe("slept_mid_turn: Rust SleptMidTurn ↔ the renderer's delta (#9)", () =
     expect(store).toMatch(/env\.turn_seq/);
   });
 });
+
+describe("timing: tool-call and turn times ↔ the renderer (#10)", () => {
+  // A call's start/end and a turn's wall time travel from Rust so "Worked for",
+  // "Stopped after" and each step's duration survive a reload. Every name here
+  // is a string to `tsc`: a rename on either side compiles, and the durations
+  // silently vanish from every reloaded session.
+  const types = read("crates", "atlas-agent-wire", "src", "types.rs");
+  const delta = read("crates", "atlas-agent-wire", "src", "delta.rs");
+  const wireTs = read("src", "types", "agents.ts");
+  const store = read("src", "features", "chat", "stores", "chat-store.ts");
+  const snapshot = read("src", "features", "chat", "lib", "snapshot-message.ts");
+
+  it("a tool call's times are declared on both sides and mapped by the store", () => {
+    const rust = rustStructFields(rustItem(types, "struct", "ToolCall").body);
+    const ts = tsInterfaceProps(wireTs, "ToolCall");
+    for (const field of ["started_at_ms", "ended_at_ms"]) {
+      expect(rust).toContain(field);
+      expect(ts).toContain(field);
+      expect(store).toContain(`tc.${field}`);
+      expect(snapshot).toContain(`tc.${field}`);
+    }
+  });
+
+  it("a snapshot message carries its turn's timing on both sides", () => {
+    const rust = rustStructFields(rustItem(types, "struct", "Message").body);
+    const ts = tsInterfaceProps(wireTs, "SessionMessage");
+    for (const field of ["worked_ms", "stop_reason"]) {
+      expect(rust).toContain(field);
+      expect(ts).toContain(field);
+      expect(snapshot).toContain(`m.${field}`);
+    }
+  });
+
+  it("turn_finished carries the turn's start and end on both sides", () => {
+    const rust = /TurnFinished\s*\{([\s\S]*?)\n\s{4}\},/.exec(delta);
+    expect(rust, "the TurnFinished variant").not.toBeNull();
+    const ts = /kind: "turn_finished";([\s\S]*?)\}/.exec(wireTs);
+    expect(ts, "the turn_finished member of AgentDelta").not.toBeNull();
+    for (const field of ["started_at_ms", "worked_ms"]) {
+      expect(rust![1]).toMatch(new RegExp(`\\b${field}: Option<(i64|u64)>,`));
+      expect(ts![1]).toMatch(new RegExp(`\\b${field}\\?: number;`));
+      expect(store).toContain(`env.${field}`);
+    }
+    expect(rust![1]).toMatch(/\bended_at_ms: Option<i64>,/);
+    expect(ts![1]).toMatch(/\bended_at_ms\?: number;/);
+  });
+});

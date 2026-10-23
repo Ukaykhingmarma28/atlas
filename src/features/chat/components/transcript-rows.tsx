@@ -504,6 +504,18 @@ export const MarkerRowView = memo(function MarkerRowView({
           )}
         </span>
       )}
+      {/* The step's own time, in the same gutter and style as a block's live
+          elapsed figure. Only from a second up — see `settledFigure`. */}
+      {row.durationMs !== undefined && row.durationMs >= 1000 && (
+        <span
+          className={cn(
+            "shrink-0 font-mono text-2xs text-[var(--atlas-text-disabled)] tabular-nums",
+            row.added === 0 && row.removed === 0 && "ml-auto",
+          )}
+        >
+          {settledFigure(row.durationMs)}
+        </span>
+      )}
     </button>
   );
   // A discussed call wears its pill beside the line; the wrapper exists only
@@ -823,8 +835,11 @@ export const WorkHeaderRowView = memo(function WorkHeaderRowView({
     )
   ) : row.workedMs !== null ? (
     <>
-      Worked for <span className="tabular-nums">{formatWorked(row.workedMs)}</span>
+      {row.stopped ? "Stopped after" : "Worked for"}{" "}
+      <span className="tabular-nums">{formatWorked(row.workedMs)}</span>
     </>
+  ) : row.stopped ? (
+    "Stopped"
   ) : (
     "Worked"
   );

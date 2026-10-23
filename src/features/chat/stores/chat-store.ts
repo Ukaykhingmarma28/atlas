@@ -318,6 +318,11 @@ function toChatToolCall(tc: AgentToolCall): ChatMessage["toolCalls"][number] {
     // arrive on one session, interleaved.
     parentToolCallId: tc.parent_tool_call_id,
     locations: toolLocations(tc.locations),
+    // Rust's times, which survive a reload. Spread only when present:
+    // `Object.assign` onto an existing call must not blank a start with an
+    // `undefined`.
+    ...(tc.started_at_ms !== undefined ? { startedAt: tc.started_at_ms } : {}),
+    ...(tc.ended_at_ms !== undefined ? { endedAt: tc.ended_at_ms } : {}),
     status:
       tc.status === "pending"
         ? "pending"
@@ -503,6 +508,10 @@ interface ChatActions {
         model?: string | null;
         /** Images a user message carried, restored from the snapshot. */
         attachments?: ImageAttachment[];
+        /** The turn's wall time and how it stopped, on the message that
+         *  ends it (snapshot `worked_ms` / `stop_reason`). */
+        workedMs?: number;
+        stopReason?: string;
         toolCalls?: Array<{
           /** The agent's own tool call id, when the caller has it. Optional
            *  only because not every paint path carries one; a caller that has
@@ -515,6 +524,10 @@ interface ChatActions {
           /** How the tool call actually ended. Absent means unknown, which is
            *  the only case that may be assumed completed. */
           status?: ToolCallStatus;
+          /** Epoch ms the call was first seen and first settled, as Rust
+           *  stamped them. */
+          startedAt?: number;
+          endedAt?: number;
         }>;
       }>,
     ) => void;
@@ -1523,12 +1536,20 @@ export const useChatStore = createSelectors(
                   result: tc.result ?? null,
                   status: tc.status ?? ("completed" as const),
                   duration: null,
+                  ...(tc.startedAt !== undefined ? { startedAt: tc.startedAt } : {}),
+                  ...(tc.endedAt !== undefined ? { endedAt: tc.endedAt } : {}),
                 })),
                 fileChanges: [],
                 plan: null,
                 timestamp: m.timestamp ?? new Date().toISOString(),
                 ...(m.role === "assistant" && m.model ? { model: m.model } : {}),
                 ...(m.attachments?.length ? { attachments: m.attachments } : {}),
+                ...(m.role === "assistant" && m.workedMs !== undefined
+                  ? { workedMs: m.workedMs }
+                  : {}),
+                ...(m.role === "assistant" && m.stopReason !== undefined
+                  ? { stopReason: m.stopReason }
+                  : {}),
                 ...(split && split.context !== null
                   ? {
                       atlasProse: split.prose,
@@ -2084,6 +2105,18 @@ function applyDeltaToDraft(s: ChatDraft, env: AgentDelta): void {
       // Reject a terminal for a turn already superseded by a newer send —
       // don't flip to idle or inject an empty-turn placeholder for stale turns.
       if (isStaleTurn(session, env.turn_seq)) return;
+      // A terminal for no turn Rust saw open, landing on a turn that already
+      // ended: a late duplicate (a cancel answered behind the stop it raced).
+      // Applying it would relabel the finished turn — "Stopped after" on a
+      // reply that completed. Rust swallows these; this is the backstop.
+      const tail = session.messages[session.messages.length - 1];
+      if (
+        env.started_at_ms === undefined &&
+        tail?.role === "assistant" &&
+        tail.stopReason !== undefined
+      ) {
+        return;
+      }
       // Empty-turn detection: if no assistant content arrived
       // between the last user message and turn-end, insert a
       // placeholder so the UI doesn't show a vanishing spinner.
@@ -2215,13 +2248,21 @@ function applyDeltaToDraft(s: ChatDraft, env: AgentDelta): void {
         }
         session.turnScratch = undefined;
       }
-      // "Worked for 7m 37s": the turn's wall time, measured from the user's
-      // message. Only a live turn can be timed honestly — see `workedMs`.
-      if (lastUserIdx >= 0 && responded) {
-        const sentAt = Date.parse(session.messages[lastUserIdx].timestamp);
+      // "Worked for 7m 37s" / "Stopped after 12s": the turn's run time as
+      // Rust measured it (monotonic, so a sleep or a clock step does not
+      // stretch it), and how it ended — the same pair a snapshot puts on the
+      // same message, so the header reads the same after a reload.
+      //
+      // Only onto a message this turn produced. After a rewind (`/undo`) the
+      // trailing message can be the PREVIOUS turn's reply, and stamping it
+      // would overwrite that turn's own figure with this one's.
+      if (responded) {
         const last = session.messages[session.messages.length - 1];
-        if (Number.isFinite(sentAt) && last.role === "assistant") {
-          last.workedMs = Math.max(0, Date.now() - sentAt);
+        const ours =
+          env.started_at_ms === undefined || Date.parse(last.timestamp) >= env.started_at_ms;
+        if (last.role === "assistant" && ours) {
+          if (env.worked_ms !== undefined) last.workedMs = env.worked_ms;
+          last.stopReason = env.stop_reason;
         }
       }
       // Agent-generated next-step chips: extract the trailing assistant reply's
@@ -2426,18 +2467,19 @@ function applyDeltaToDraft(s: ChatDraft, env: AgentDelta): void {
       }
       const found = findToolCall(session, env.tool_call.id);
       if (found) {
-        // `toChatToolCall` mints a fresh record with no `startedAt`; assigning
-        // it over the existing one leaves the stamp from first sight in place,
-        // which is the whole point — the clock must not restart on the
-        // pending→running→completed updates for the same call.
+        // Rust's start never moves across the pending→running→completed
+        // updates for one call, and `toChatToolCall` carries a time only when
+        // the wire did, so a first-sight stamp on a call that arrived without
+        // one is left in place rather than blanked.
         Object.assign(found.tc, toChatToolCall(env.tool_call));
         return;
       }
-      // First sight of this call: stamp the start the live elapsed figure
-      // counts from. The delta arrives when the agent announces the call, so
-      // this is its start to within one IPC hop.
+      // First sight of this call. Rust stamps its start; only a call that
+      // arrived without one is stamped here, at first sight — the delta comes
+      // when the agent announces the call, so that is its start to within one
+      // IPC hop.
       const fresh = toChatToolCall(env.tool_call);
-      fresh.startedAt = Date.now();
+      fresh.startedAt ??= Date.now();
       // Collapse consecutive tool calls into ONE assistant message
       // so the thread doesn't render N separate message-item boxes
       // (each with its own padding) for every Find/Read/Bash the

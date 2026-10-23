@@ -309,11 +309,33 @@ export function setStatus(
 /** End the turn the way the real projector does — a `turn_finished` terminal,
  *  not a bare status flip. The store only freezes turn-end state (the turn's
  *  "Worked for" time, its files footer, next-step chips) on the terminal, so a
- *  mock that just went idle never showed any of it. */
-export function finishTurn(sessionId?: string): Promise<void> {
+ *  mock that just went idle never showed any of it.
+ *
+ *  Timed from the turn's prompt to now, which is the span Rust reports; the
+ *  held snapshot gets the same figure on its last message, so a re-read says
+ *  what the live turn said. */
+export function finishTurn(sessionId?: string, stopReason = "end_turn"): Promise<void> {
   const s = latest(sessionId);
   if (!s) return Promise.resolve();
-  return sendDelta({ kind: "turn_finished", ...at(s), stop_reason: "end_turn", turn_seq: 0 });
+  const prompt = [...s.messages].reverse().find((m) => m.role === "user");
+  const started = prompt ? Date.parse(prompt.timestamp) : Number.NaN;
+  const ended = Date.now();
+  const worked = Math.max(0, ended - started);
+  const timing = Number.isFinite(started)
+    ? { started_at_ms: started, ended_at_ms: ended, worked_ms: worked }
+    : {};
+  const last = s.messages[s.messages.length - 1];
+  if (last?.role === "assistant") {
+    if (Number.isFinite(started)) last.worked_ms = worked;
+    last.stop_reason = stopReason;
+  }
+  return sendDelta({
+    kind: "turn_finished",
+    ...at(s),
+    stop_reason: stopReason,
+    turn_seq: 0,
+    ...timing,
+  });
 }
 
 // ── The computer sleeping mid-turn ───────────────────────────────────────

@@ -521,6 +521,18 @@ pub struct ToolCall {
     /// with the launch's result, and later updates of the same call do not
     /// repeat it.
     pub launched_async: bool,
+    /// When the thread first saw this call. Set once, at construction; no
+    /// update moves it.
+    pub started_at: chrono::DateTime<chrono::Utc>,
+    /// The same moment on the monotonic clock, which is what the call's span
+    /// is measured on: a wall clock stepped by NTP (or by hand) mid-call would
+    /// otherwise stretch or shrink it.
+    pub started_clock: Instant,
+    /// When the call first reached a terminal status: `started_at` plus the
+    /// monotonic time it ran. Set once, by the thread as it announces the
+    /// change ([`AcpThread::entry_updated`]); a later update to a call that
+    /// has already ended does not move it.
+    pub ended_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl ToolCall {
@@ -556,7 +568,29 @@ impl ToolCall {
             parent_tool_call_id,
             launched_subagent,
             launched_async,
+            started_at: chrono::Utc::now(),
+            started_clock: Instant::now(),
+            ended_at: None,
         })
+    }
+
+    /// Whether this call has ended, one way or another.
+    pub fn is_settled(&self) -> bool {
+        matches!(
+            self.status,
+            ToolCallStatus::Completed
+                | ToolCallStatus::Failed
+                | ToolCallStatus::Rejected
+                | ToolCallStatus::Canceled
+        )
+    }
+
+    /// Stamp the end the first time the call is seen settled.
+    fn note_settled(&mut self) {
+        if self.ended_at.is_none() && self.is_settled() {
+            let ran = chrono::Duration::from_std(self.started_clock.elapsed()).unwrap_or_default();
+            self.ended_at = Some(self.started_at + ran);
+        }
     }
 
     /// Nothing renders markdown in this crate, so no escaping happens here; only
@@ -949,7 +983,10 @@ pub enum AcpThreadEvent {
     ElicitationRequested(ElicitationEntryId),
     ElicitationResponded(ElicitationEntryId),
     Retry(RetryStatus),
-    Stopped(acp::StopReason),
+    /// The turn stopped. Carries the turn's own record, so a consumer that
+    /// drains events behind the thread reads THIS turn's timing rather than
+    /// whatever `AcpThread::turns` holds by the time it looks.
+    Stopped(acp::StopReason, TurnRecord),
     Error,
     LoadError(LoadError),
     PromptCapabilitiesUpdated,
@@ -958,6 +995,42 @@ pub enum AcpThreadEvent {
     ModeUpdated(acp::SessionModeId),
     ConfigOptionsUpdated(Vec<acp::SessionConfigOption>),
     WorkingDirectoriesUpdated,
+}
+
+/// One finished turn, as the thread timed it.
+///
+/// What a snapshot needs to say "worked for 4m 12s" about a turn after the
+/// client that watched it live has reloaded: the live figure travels on
+/// `turn_finished`, and this is the same figure kept where a snapshot can
+/// read it back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TurnRecord {
+    /// When `begin_turn` opened it. `None` for a stop announced with no turn
+    /// opened, which has no start to measure from.
+    pub started_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub ended_at: chrono::DateTime<chrono::Utc>,
+    pub stop_reason: acp::StopReason,
+    /// The entries the turn produced. The prompt is pushed before the turn
+    /// opens, so this is the agent's half only.
+    pub entries: Range<usize>,
+    /// How long it ran, on the monotonic clock — the figure "Worked for"
+    /// shows. Not `ended_at - started_at`: the wall clock can be stepped
+    /// mid-turn, and it keeps running while the machine sleeps, where the
+    /// monotonic clock pauses on macOS and Linux. The time a
+    /// `slept_mid_turn` notice reports is exactly that pause (the sleep
+    /// watch measures the wall clock running ahead of this one), so it is
+    /// already left out and must not be subtracted again. `None` with
+    /// `started_at`.
+    pub worked_ms: Option<u64>,
+}
+
+/// The open turn: when it began, on both clocks, and how many entries there
+/// were then.
+#[derive(Debug, Clone, Copy)]
+struct OpenTurn {
+    at: chrono::DateTime<chrono::Utc>,
+    clock: Instant,
+    entries: usize,
 }
 
 /// The turn currently in flight, if any. The send task lives with the caller, so
@@ -1062,6 +1135,12 @@ pub struct AcpThread {
     /// its own ended as: the agent holds a turn open until such children
     /// settle, so the turn's end is theirs too — a Stop stopped them.
     last_stop_reason: Option<acp::StopReason>,
+    /// When the open turn began, and how many entries there were then. Kept
+    /// apart from `running_turn` because a cancel clears that before the
+    /// cancelled turn reports its own stop, and the stop still needs a start.
+    turn_opened: Option<OpenTurn>,
+    /// Every turn that stopped, oldest first.
+    turns: Vec<TurnRecord>,
     connection: Arc<dyn AgentConnection>,
     token_usage: Option<TokenUsage>,
     cost: Option<SessionCost>,
@@ -1097,6 +1176,8 @@ impl AcpThread {
             turn_id: 0,
             running_turn: None,
             last_stop_reason: None,
+            turn_opened: None,
+            turns: Vec::new(),
             connection,
             token_usage: None,
             cost: None,
@@ -1245,8 +1326,30 @@ impl AcpThread {
         self.last_stop_reason
     }
 
+    /// Every turn that stopped, oldest first, with its timing.
+    pub fn turns(&self) -> &[TurnRecord] {
+        &self.turns
+    }
+
     fn emit(&self, event: AcpThreadEvent) {
         let _ = self.events.send(event);
+    }
+
+    /// Announce that the entry at `ix` changed.
+    ///
+    /// Every change goes through here, which is what makes it the one place a
+    /// tool call's end is stamped: whichever path settled it — an agent
+    /// update, a permission answer, a cancel — the time it first reads as
+    /// ended is the time it is announced as such.
+    fn entry_updated(&mut self, ix: usize) {
+        self.note_settled(ix);
+        self.emit(AcpThreadEvent::EntryUpdated(ix));
+    }
+
+    fn note_settled(&mut self, ix: usize) {
+        if let Some(AgentThreadEntry::ToolCall(call)) = self.entries.get_mut(ix) {
+            call.note_settled();
+        }
     }
 
     /// Drop every entry from `from` to the end, announcing the removal.
@@ -1262,6 +1365,13 @@ impl AcpThread {
         }
         self.entries.truncate(from);
         self.entry_created_at.truncate(from);
+        // A turn whose output was taken back is not one to time any more.
+        self.turns.retain(|turn| turn.entries.end <= from);
+        // And a turn still open counts from where the thread now ends: left
+        // past it, the turn's range would miss everything it goes on to say.
+        if let Some(open) = &mut self.turn_opened {
+            open.entries = open.entries.min(from);
+        }
         self.emit(AcpThreadEvent::EntriesRemoved(from..len));
     }
 
@@ -1380,6 +1490,8 @@ impl AcpThread {
         self.entries.push(entry);
         self.entry_created_at.push(chrono::Utc::now());
         debug_assert_eq!(self.entries.len(), self.entry_created_at.len());
+        // A call can arrive already finished (a replay, a fast tool).
+        self.note_settled(self.entries.len() - 1);
         self.emit(AcpThreadEvent::NewEntry);
     }
 
@@ -1440,7 +1552,7 @@ impl AcpThread {
                 }
                 content.append(chunk.clone());
                 chunks.push(chunk);
-                self.emit(AcpThreadEvent::EntryUpdated(entries_len - 1));
+                self.entry_updated(entries_len - 1);
                 return;
             }
         }
@@ -1512,7 +1624,7 @@ impl AcpThread {
                         });
                     }
                 }
-                self.emit(AcpThreadEvent::EntryUpdated(idx));
+                self.entry_updated(idx);
                 return;
             }
         }
@@ -1612,7 +1724,7 @@ impl AcpThread {
             };
             result.map_err(|e| acp::Error::internal_error().data(e.to_string()))?;
 
-            self.emit(AcpThreadEvent::EntryUpdated(ix));
+            self.entry_updated(ix);
         } else {
             let tool_call: acp::ToolCall = update.try_into().map_err(|_| {
                 acp::Error::invalid_params().data("tool call update is not a full tool call")
@@ -1649,6 +1761,9 @@ impl AcpThread {
                     raw_input: None,
                     raw_output: None,
                     tool_name: None,
+                    started_at: chrono::Utc::now(),
+                    started_clock: Instant::now(),
+                    ended_at: None,
                 };
                 self.push_entry(AgentThreadEntry::ToolCall(failed_tool_call));
                 return Ok(());
@@ -1678,7 +1793,7 @@ impl AcpThread {
         };
         result?;
 
-        self.emit(AcpThreadEvent::EntryUpdated(ix));
+        self.entry_updated(ix);
         Ok(())
     }
 
@@ -1789,7 +1904,7 @@ impl AcpThread {
         }
 
         call.status = ToolCallStatus::Canceled;
-        self.emit(AcpThreadEvent::EntryUpdated(ix));
+        self.entry_updated(ix);
         self.emit(AcpThreadEvent::ToolAuthorizationReceived(id.clone()));
     }
 
@@ -1828,7 +1943,7 @@ impl AcpThread {
                 .ok();
         }
 
-        self.emit(AcpThreadEvent::EntryUpdated(ix));
+        self.entry_updated(ix);
     }
 
     // ---- elicitations ---------------------------------------------------
@@ -1870,7 +1985,7 @@ impl AcpThread {
         if !self.elicitations.respond_to_elicitation_by_id(id, response) {
             return;
         }
-        self.emit(AcpThreadEvent::EntryUpdated(ix));
+        self.entry_updated(ix);
     }
 
     pub fn complete_url_elicitation(&mut self, elicitation_id: &acp::ElicitationId) {
@@ -1886,7 +2001,7 @@ impl AcpThread {
         if !self.elicitations.complete_url_elicitation_by_id(&entry_id) {
             return;
         }
-        self.emit(AcpThreadEvent::EntryUpdated(ix));
+        self.entry_updated(ix);
     }
 
     pub fn cancel_elicitation(&mut self, id: &ElicitationEntryId) {
@@ -1896,7 +2011,7 @@ impl AcpThread {
         if !self.elicitations.cancel_elicitation_by_id(id, true) {
             return;
         }
-        self.emit(AcpThreadEvent::EntryUpdated(ix));
+        self.entry_updated(ix);
     }
 
     fn elicitation_entry_ix(&self, id: &ElicitationEntryId) -> Option<usize> {
@@ -1925,7 +2040,7 @@ impl AcpThread {
             }
         }
         for ix in updated {
-            self.emit(AcpThreadEvent::EntryUpdated(ix));
+            self.entry_updated(ix);
         }
     }
 
@@ -2005,7 +2120,7 @@ impl AcpThread {
                 if let AgentThreadEntry::ContextCompaction(compaction) = &mut self.entries[ix] {
                     compaction.status = status;
                 }
-                self.emit(AcpThreadEvent::EntryUpdated(ix));
+                self.entry_updated(ix);
             }
             None => {
                 self.push_entry(AgentThreadEntry::ContextCompaction(ContextCompaction {
@@ -2037,6 +2152,11 @@ impl AcpThread {
         self.cancel_inner(RequestPermissionOutcome::InterruptedByFollowUp);
         self.turn_id += 1;
         self.running_turn = Some(RunningTurn { id: self.turn_id });
+        self.turn_opened = Some(OpenTurn {
+            at: chrono::Utc::now(),
+            clock: Instant::now(),
+            entries: self.entries.len(),
+        });
         self.emit(AcpThreadEvent::StatusChanged);
         self.turn_id
     }
@@ -2052,16 +2172,38 @@ impl AcpThread {
     /// `atlas-agent-delta`'s tests use `end_turn` as "announce Stopped" without
     /// a turn open. Adding the guard would break that use for a case nothing
     /// reaches. Checked while fixing `cancel_inner` below (ATL-218 finding 4).
+    ///
+    /// The one stop it does swallow is a second one for a turn already
+    /// closed: no turn opened since the last stop was recorded. That is a late
+    /// duplicate — a cancel answered after the stop it raced — and announcing
+    /// it would relabel the finished turn with the duplicate's reason. Only
+    /// the very first stop of a thread may arrive with no turn opened.
     pub fn end_turn(&mut self, stop_reason: acp::StopReason) {
+        let opened = self.turn_opened.take();
+        if opened.is_none() && !self.turns.is_empty() {
+            self.running_turn = None;
+            return;
+        }
         self.running_turn = None;
         self.last_stop_reason = Some(stop_reason);
-        self.emit(AcpThreadEvent::Stopped(stop_reason));
+        let start = opened.map_or(0, |turn| turn.entries);
+        let record = TurnRecord {
+            started_at: opened.map(|turn| turn.at),
+            ended_at: chrono::Utc::now(),
+            stop_reason,
+            entries: start.min(self.entries.len())..self.entries.len(),
+            worked_ms: opened
+                .map(|turn| u64::try_from(turn.clock.elapsed().as_millis()).unwrap_or(u64::MAX)),
+        };
+        self.turns.push(record.clone());
+        self.emit(AcpThreadEvent::Stopped(stop_reason, record));
         self.emit(AcpThreadEvent::StatusChanged);
     }
 
     pub fn set_error(&mut self) {
         self.had_error = true;
         self.running_turn = None;
+        self.turn_opened = None;
         self.emit(AcpThreadEvent::Error);
         self.emit(AcpThreadEvent::StatusChanged);
     }
@@ -2124,6 +2266,7 @@ impl AcpThread {
     pub fn emit_load_error(&mut self, error: LoadError) {
         self.had_error = true;
         self.running_turn = None;
+        self.turn_opened = None;
         self.emit(AcpThreadEvent::LoadError(error));
         self.emit(AcpThreadEvent::StatusChanged);
     }
@@ -2199,7 +2342,7 @@ impl AcpThread {
             }
         }
         for ix in updated {
-            self.emit(AcpThreadEvent::EntryUpdated(ix));
+            self.entry_updated(ix);
         }
     }
 
@@ -2238,7 +2381,7 @@ impl AcpThread {
                 .map(|(ix, _)| ix)
                 .collect();
         for ix in updated {
-            self.emit(AcpThreadEvent::EntryUpdated(ix));
+            self.entry_updated(ix);
         }
     }
 

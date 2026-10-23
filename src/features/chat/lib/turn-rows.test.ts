@@ -767,6 +767,21 @@ describe("the work header", () => {
     expect(project(thread())[1]).toMatchObject({ workedMs: null, foldable: true });
   });
 
+  it("says the turn was stopped when the user cancelled it", () => {
+    const stopped = project(thread({ workedMs: 12_000, stopReason: "cancelled" }));
+    expect(stopped[1]).toMatchObject({ workedMs: 12_000, stopped: true });
+    const finished = project(thread({ workedMs: 12_000, stopReason: "end_turn" }));
+    expect(finished[1]).toMatchObject({ stopped: false });
+  });
+
+  it("heads a stopped prose-only turn even with no figure to show", () => {
+    const rows = project([
+      user("u1", "2026-08-23T00:00:00Z"),
+      said("a1", "Partial.", { stopReason: "cancelled" }),
+    ]);
+    expect(rows[1]).toMatchObject({ kind: RowKind.WorkHeader, stopped: true, workedMs: null });
+  });
+
   it("is a plain caption on a prose-only turn, and absent when that turn was not timed", () => {
     const timed = project([
       user("u1", "2026-08-23T00:00:00Z"),
@@ -786,5 +801,19 @@ describe("an Atlas tool's marker", () => {
     expect(toolDisplayName("mcp__github__create_issue")).toBe("mcp__github__create_issue");
     const m = markers(turn(toolCall({ kind: null, toolName: "mcp__atlas_code__repo_map" })))[0];
     expect(m.verb).toBe("Repo map");
+  });
+});
+
+describe("a marker's duration", () => {
+  it("is the span between the call's two stamps, once it settled", () => {
+    const [m] = markers(turn(toolCall({ startedAt: 1_000, endedAt: 4_500 })));
+    expect(m.durationMs).toBe(3_500);
+  });
+
+  it("is absent while the call runs, or when either stamp is missing", () => {
+    expect(
+      markers(turn(toolCall({ status: "running", startedAt: 1_000 })))[0].durationMs,
+    ).toBeUndefined();
+    expect(markers(turn(toolCall({ endedAt: 4_500 })))[0].durationMs).toBeUndefined();
   });
 });
