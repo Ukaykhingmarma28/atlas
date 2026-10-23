@@ -634,7 +634,6 @@ pub fn run() {
             commands::usage_dashboard::usage_export_markdown,
             commands::usage_dashboard::usage_write_file,
             commands::git::git_diff_file,
-            commands::git::git_diff_paths,
             commands::git::git_stage,
             commands::git::git_unstage,
             commands::git::git_list_branches,
@@ -750,9 +749,6 @@ pub fn run() {
             commands::github::fetch_cloned_repo_meta,
             // Legacy Claude-CLI subprocess commands (claude_run/stream/stop/check/version)
             // were replaced by ACP. Session-history readers below are still in use.
-            commands::gitdiff::git_diff_structured,
-            commands::gitdiff::diff_structured_text,
-            commands::gitdiff::git_commit_changed_files,
             commands::gitdiff::git_diff_line_status,
             commands::diff_preview::git_diff_preview,
             commands::diff_preview::git_diff_file_contents,

@@ -28,7 +28,7 @@ import type { RecentFile } from "@/features/chat/stores/recent-files-store";
 import type { CodeGrepMatch, CodeGrepResult } from "@/components/code-search-api";
 import type { BlameLine } from "@/features/git/lib/git-blame-api";
 import type { BranchPullRequest, RepoPullRequests } from "@/features/git/lib/git-pr-api";
-import type { CommitFile, DiffLineStatus, FileDiff } from "@/features/git/lib/git-diff-api";
+import type { DiffLineStatus } from "@/features/git/lib/git-diff-api";
 import type { DiffFileContents, DiffPreview } from "@/features/git/lib/git-review-api";
 import type { DirectoryListing } from "@/features/explorer/lib/fs-api";
 import type { GitErrorPayload } from "@/features/git/lib/git-errors";
@@ -50,7 +50,13 @@ import type { CommitSession } from "@/features/git/components/commit-view";
 import type { RawGitStatus } from "@/features/terminal/components/block-terminal";
 import type { GitSummary } from "@/features/projects/stores/project-git-store";
 import type { MockArgs, MockHandlers, MockResponses, TypedHandlers } from "../types";
-import { buildFileDiff, diffPreviewOf, lineStatusOf, unifiedDiff } from "../fixtures/diff";
+import {
+  buildFileDiff,
+  diffPreviewOf,
+  lineStatusOf,
+  unifiedDiff,
+  type FileDiff,
+} from "../fixtures/diff";
 import { directoryListings, fsHandlers, listDir } from "../fixtures/files";
 import { gitHandlers } from "../fixtures/git";
 import { NORTHWIND_LANE_COLOR, northwindFilesAt } from "../fixtures/northwind-repo";
@@ -247,16 +253,6 @@ function commitTrees(commit: CommitContent): { before: Tree; after: Tree } {
   }
   seededTrees.set(commit.key, touched);
   return touched;
-}
-
-function commitFiles(commit: CommitContent): CommitFile[] {
-  const { before, after } = commitTrees(commit);
-  return Object.keys(after)
-    .sort()
-    .map((path) => ({
-      path,
-      status: before[path] === null ? "A" : after[path] === null ? "D" : "M",
-    }));
 }
 
 function commitDiff(commit: CommitContent): string {
@@ -916,11 +912,6 @@ export const northwindGitCommands: Partial<TypedHandlers<MockResponses>> = {
     const commit = commitBySha(args.commitSha);
     return commit ? commitSessions(commit) : [];
   },
-  git_commit_changed_files: (args): CommitFile[] | Promise<CommitFile[]> => {
-    if (!ours(args.path)) return gitHandlers.git_commit_changed_files(args);
-    const commit = commitBySha(args.sha);
-    return commit ? commitFiles(commit) : [];
-  },
   git_graph_signature: (args) =>
     ours(args.path)
       ? `${headCommit().sha}:${ahead}:${epoch}`
@@ -929,16 +920,6 @@ export const northwindGitCommands: Partial<TypedHandlers<MockResponses>> = {
     ours(args.path) ? graph(Number(args.limit ?? 1000)) : gitHandlers.git_graph_build(args),
 
   // ── git: diffs and blame ────────────────────────────────────────────────
-  git_diff_structured: (args): FileDiff | Promise<FileDiff> => {
-    if (!ours(args.path)) return gitHandlers.git_diff_structured(args);
-    const file = String(args.file);
-    const commit = args.commit ? commitBySha(args.commit) : undefined;
-    if (commit) {
-      const { before, after } = commitTrees(commit);
-      return buildFileDiff(before[file] ?? "", after[file] ?? "", file);
-    }
-    return workingDiff(file);
-  },
   git_diff_line_status: (args): DiffLineStatus | Promise<DiffLineStatus> =>
     ours(args.path)
       ? lineStatusOf(workingDiff(String(args.file)))

@@ -24,7 +24,7 @@ import { emit } from "@tauri-apps/api/event";
 import type { BlameLine } from "@/features/git/lib/git-blame-api";
 import type { RepoPullRequests } from "@/features/git/lib/git-pr-api";
 import type { RepoAvatars } from "@/features/git/lib/git-avatars-api";
-import type { CommitFile, DiffLineStatus, FileDiff } from "@/features/git/lib/git-diff-api";
+import type { DiffLineStatus } from "@/features/git/lib/git-diff-api";
 import type {
   DiffFileContents,
   DiffFileStatus,
@@ -61,8 +61,15 @@ import {
   diffPreviewOf,
   lineStatusOf,
   unifiedDiff,
+  type FileDiff,
   type PreviewChange,
 } from "./diff";
+
+/** A file a fixture commit touched, with its porcelain status letter. */
+export interface CommitFile {
+  path: string;
+  status: string;
+}
 import { fileText } from "./files";
 
 /** Apply ordered substitutions, refusing to produce a no-op diff silently. */
@@ -1062,11 +1069,8 @@ export interface GitResponses {
   git_log: GitLogEntry[];
   git_show: CommitDetail;
   capture_commit_sessions: CommitSession[];
-  git_commit_changed_files: CommitFile[];
   git_graph_signature: string;
   git_graph_build: BuiltGraph;
-  git_diff_structured: FileDiff;
-  diff_structured_text: FileDiff;
   git_diff_line_status: DiffLineStatus;
   git_diff_file: string;
   git_diff_all: string;
@@ -1306,17 +1310,11 @@ export const gitHandlers: TypedHandlers<GitResponses> = {
     }
     return sessions;
   },
-  git_commit_changed_files: ({ sha }): CommitFile[] =>
-    COMMITS.find((commit) => commit.sha.startsWith(String(sha)))?.files ?? [],
-
   // `epoch` is what makes the graph refetch after a write: the query keys off
   // this string and is otherwise `staleTime: Infinity`.
   git_graph_signature: (): string => `${HEAD().sha}:${BRANCHES.length}:${stashes.length}:${epoch}`,
   git_graph_build: (): BuiltGraph => graph(),
 
-  git_diff_structured: ({ file }): FileDiff => diffFor(String(file)),
-  diff_structured_text: ({ oldText, newText, file }): FileDiff =>
-    buildFileDiff(String(oldText ?? ""), String(newText ?? ""), String(file)),
   git_diff_line_status: ({ file }): DiffLineStatus => lineStatusOf(diffFor(String(file))),
   git_diff_file: ({ file }): string => {
     const change = changeFor(String(file));

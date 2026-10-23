@@ -12,19 +12,39 @@
 // is *representative* — added, removed, modified and context lines, with word
 // spans inside the modified ones — not byte-identical to git's.
 
-import type {
-  DiffLineStatus,
-  DiffRow,
-  DiffSegment,
-  DiffSide,
-  FileDiff,
-} from "@/features/git/lib/git-diff-api";
+import type { DiffLineStatus } from "@/features/git/lib/git-diff-api";
 import type {
   DiffFileStat,
   DiffFileStatus,
   DiffPreview,
   DiffSource,
 } from "@/features/git/lib/git-review-api";
+
+// The engine's structured row model. The app no longer reads it (the review
+// diff parses unified patches), so it is the mock's own: the fakes derive the
+// editor gutter's line status and their +/- counts from it.
+type DiffLineKind = "context" | "added" | "removed" | "changed";
+interface DiffSegment {
+  text: string;
+  emph: boolean;
+}
+interface DiffSide {
+  lineNo: number;
+  kind: DiffLineKind;
+  segments: DiffSegment[];
+}
+interface DiffRow {
+  left: DiffSide | null;
+  right: DiffSide | null;
+}
+export interface FileDiff {
+  path: string;
+  language: string;
+  isBinary: boolean;
+  rows: DiffRow[];
+  stats: { additions: number; deletions: number };
+  changeBlocks: number[];
+}
 
 type LineOp = { kind: "eq" | "del" | "ins"; text: string };
 

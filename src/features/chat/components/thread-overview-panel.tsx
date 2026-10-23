@@ -228,7 +228,7 @@ function SubagentsSection({ tabId }: { tabId: string }) {
  * the moment they land. Either alone was wrong in a way the reader could not
  * see — the tally missed every shell edit, and read nothing until turn end.
  */
-/** Source Control's colours for the same letters (`changed-files-tree.tsx`). */
+/** The diff's file tree's colours for the same letters (`diff-file-tree.tsx`). */
 const STATUS_COLOR = {
   A: "var(--atlas-status-success-foreground)",
   M: "var(--atlas-status-warning-foreground)",
