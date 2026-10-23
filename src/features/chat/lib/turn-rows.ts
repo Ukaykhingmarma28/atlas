@@ -328,6 +328,8 @@ export interface Turn {
 export interface Projection {
   rows: Row[];
   turns: Turn[];
+  /** Per-turn pieces, for the next projection to reuse. See `projectRows`. */
+  segments: Segment[];
 }
 
 /**
@@ -899,22 +901,24 @@ export interface ProjectOptions {
 /**
  * Project a thread into rows.
  *
- * This DOES run per applied streaming batch — immer gives `messages` a new
- * identity on every appended chunk — which is why `prev` matters: rows and
- * turns that are field-identical to the previous projection are returned as
- * the PREVIOUS objects, so the memo'd row views hold for every row except the
- * ones that actually changed (typically just the streaming tail). Without the
- * sharing pass, every row object was freshly allocated each frame and every
- * mounted row re-rendered per chunk.
+ * This runs per applied streaming batch: immer gives `messages` a new identity
+ * on every appended chunk. Two things keep that cheap on a long session:
+ *
+ * - Per-turn reuse. The thread is projected turn by turn into segments
+ *   (`Segment`), and a turn whose messages, neighbour and options are the
+ *   same objects as last time is not projected again: its rows come back as
+ *   last time's. While an agent streams, only the live turn is projected, so
+ *   the per-frame cost tracks that turn, not the length of the thread.
+ * - Structural sharing inside a re-projected turn. Rows that are
+ *   field-identical to the previous projection's are returned as the PREVIOUS
+ *   objects, so the memo'd row views hold for every row except the ones that
+ *   actually changed (typically just the streaming tail).
  */
 export function projectRows(
   messages: ChatMessage[],
   opts: ProjectOptions,
   prev?: Projection | null,
 ): Projection {
-  const rows: Row[] = [];
-  const turns: Turn[] = [];
-
   // A child's calls are attributed to it by `parentToolCallId`, and they can
   // arrive in a LATER message than the launch — the agent announces the call
   // and assigns it afterwards. So they are collected in one pass up front
@@ -936,58 +940,200 @@ export function projectRows(
     }
   }
 
+  const prevSegments = new Map<string, Segment>();
+  if (prev) for (const s of prev.segments) prevSegments.set(s.id, s);
+
+  const rows: Row[] = [];
+  const turns: Turn[] = [];
+  const segments: Segment[] = [];
   const lastIdx = messages.length - 1;
+  const turnInProgress = opts.turnInProgress ?? opts.streaming;
   let i = 0;
 
   while (i < messages.length) {
     const m = messages[i];
     const isStreamingTail = opts.streaming && i === lastIdx && m.role === "assistant";
-
     if (!isStreamingTail && isEmptyMessage(m)) {
       i += 1;
       continue;
     }
 
-    // ── User turn: exactly one row. ────────────────────────────────────────
-    if (m.role === "user") {
-      const derived = derivedUser(m);
-      const text = derived.text;
-      const turnId = `t:${m.id}`;
-      // The gap separator belongs BETWEEN turns, so it is emitted before
-      // `rowStart` is captured — otherwise a turn's first row would be the
-      // separator, and both `firstInTurn` and every scroll anchor that targets
-      // "the start of this turn" would point one row too high.
-      maybeGapSeparator(rows, messages, i, turnId);
-      const rowStart = rows.length;
-
-      rows.push({
-        kind: RowKind.User,
-        id: `u:${m.id}`,
-        turnId,
-        firstInTurn: true,
-        text,
-        contextBlocks: derived.contextBlocks,
-        expanded: opts.expanded.has(`u:${m.id}`),
-        attachments: m.attachments ?? NO_ATTACHMENTS,
-        timestamp: m.timestamp,
-      });
-
-      turns.push({
-        id: turnId,
-        role: "user",
-        rowStart,
-        rowEnd: rows.length,
-        messageIndex: i,
-        status: "settled",
-        preview: derived.preview,
-        timestamp: m.timestamp,
-        toolCount: 0,
-        fileCount: 0,
-      });
-      i += 1;
-      continue;
+    // A user turn is one message; an assistant turn is the whole consecutive
+    // run of them (the store emits one message per block).
+    let end = i + 1;
+    if (m.role === "assistant") {
+      while (end < messages.length && messages[end].role === "assistant") end += 1;
     }
+    const final = end === messages.length;
 
+    const old = prevSegments.get(m.id);
+    let seg: Segment;
+    if (old && segmentHolds(old, messages, i, end, opts, final, turnInProgress)) {
+      seg = old.offset === rows.length && old.start === i ? old : shiftSegment(old, rows.length, i);
+    } else {
+      seg = projectSegment(messages, i, end, opts, childCalls, rows.length);
+      if (old) shareRows(seg, old);
+    }
+    segments.push(seg);
+    for (const r of seg.rows) rows.push(r);
+    for (const t of seg.turns) turns.push(t);
+    i = end;
+  }
+
+  return { rows, turns, segments };
+}
+
+/**
+ * One turn's slice of a projection, and what it was projected from — the
+ * inputs `segmentHolds` checks before handing it back unchanged.
+ */
+interface Segment {
+  /** The turn's first message id. */
+  id: string;
+  /** The messages it was projected from, by identity. */
+  messages: ChatMessage[];
+  /** The message just before it: the gap separator and the live clock read
+   *  its timestamp. */
+  before: ChatMessage | undefined;
+  /** It ran to the end of the thread, where streaming and the live turn
+   *  apply. */
+  final: boolean;
+  streaming: boolean;
+  turnInProgress: boolean;
+  expanded: ReadonlySet<string>;
+  expandedTurns: ReadonlySet<string>;
+  /** Where its rows and first message sat when its `turns` were stamped. */
+  offset: number;
+  start: number;
+  rows: Row[];
+  /** With absolute `rowStart`/`rowEnd`/`messageIndex`, per `offset`/`start`. */
+  turns: Turn[];
+}
+
+function segmentHolds(
+  s: Segment,
+  messages: ChatMessage[],
+  start: number,
+  end: number,
+  opts: ProjectOptions,
+  final: boolean,
+  turnInProgress: boolean,
+): boolean {
+  // A delegating session re-projects every turn: a child's calls can land in
+  // messages outside its launching turn, so the slice is not the whole input.
+  if (opts.subagents) return false;
+  if (s.final !== final) return false;
+  if (final && (s.streaming !== opts.streaming || s.turnInProgress !== turnInProgress)) {
+    return false;
+  }
+  if (s.expanded !== opts.expanded || s.expandedTurns !== opts.expandedTurns) return false;
+  if (s.before !== messages[start - 1]) return false;
+  if (s.messages.length !== end - start) return false;
+  for (let k = 0; k < s.messages.length; k++) {
+    if (s.messages[k] !== messages[start + k]) return false;
+  }
+  return true;
+}
+
+/** The same segment at a new place in the thread: older history loaded above
+ *  it, or a turn above it changed its row count. Only the indices move. */
+function shiftSegment(s: Segment, offset: number, start: number): Segment {
+  const dRow = offset - s.offset;
+  const dMsg = start - s.start;
+  return {
+    ...s,
+    offset,
+    start,
+    turns: s.turns.map((t) => ({
+      ...t,
+      rowStart: t.rowStart + dRow,
+      rowEnd: t.rowEnd + dRow,
+      messageIndex: t.messageIndex + dMsg,
+    })),
+  };
+}
+
+/** Hand back the previous segment's row and marker objects wherever the new
+ *  ones are field-identical. Runs after `firstInTurn` is final, or a shared
+ *  object could be mutated in place where no memo would see it. */
+function shareRows(seg: Segment, old: Segment): void {
+  const prevRows = new Map<string, Row>();
+  for (const r of old.rows) prevRows.set(r.id, r);
+  for (let k = 0; k < seg.rows.length; k++) {
+    const row = seg.rows[k];
+    const was = prevRows.get(row.id);
+    if (!was) continue;
+    if (was.kind === RowKind.MarkerGroup && row.kind === RowKind.MarkerGroup) {
+      const oldMarkers = new Map(was.markers.map((marker) => [marker.id, marker]));
+      row.markers = row.markers.map((marker) => {
+        const previous = oldMarkers.get(marker.id);
+        return previous && sameShallow(previous, marker) ? previous : marker;
+      });
+    }
+    if (sameShallow(was, row)) seg.rows[k] = was;
+  }
+  const prevTurns = new Map<string, Turn>();
+  for (const t of old.turns) prevTurns.set(t.id, t);
+  for (let k = 0; k < seg.turns.length; k++) {
+    const was = prevTurns.get(seg.turns[k].id);
+    if (was && sameShallow(was, seg.turns[k])) seg.turns[k] = was;
+  }
+}
+
+/**
+ * Project one turn: the user message at `start`, or the assistant run
+ * `[start, end)`. `offset` is where its rows land in the whole projection.
+ */
+function projectSegment(
+  messages: ChatMessage[],
+  start: number,
+  end: number,
+  opts: ProjectOptions,
+  childCalls: Map<string, ToolCallDisplay[]>,
+  offset: number,
+): Segment {
+  const rows: Row[] = [];
+  const turns: Turn[] = [];
+  const lastIdx = messages.length - 1;
+  let i = start;
+  const m = messages[i];
+  // ── User turn: exactly one row. ────────────────────────────────────────
+  if (m.role === "user") {
+    const derived = derivedUser(m);
+    const text = derived.text;
+    const turnId = `t:${m.id}`;
+    // The gap separator belongs BETWEEN turns, so it is emitted before
+    // `rowStart` is captured — otherwise a turn's first row would be the
+    // separator, and both `firstInTurn` and every scroll anchor that targets
+    // "the start of this turn" would point one row too high.
+    maybeGapSeparator(rows, messages, i, turnId);
+    const rowStart = rows.length;
+
+    rows.push({
+      kind: RowKind.User,
+      id: `u:${m.id}`,
+      turnId,
+      firstInTurn: true,
+      text,
+      contextBlocks: derived.contextBlocks,
+      expanded: opts.expanded.has(`u:${m.id}`),
+      attachments: m.attachments ?? NO_ATTACHMENTS,
+      timestamp: m.timestamp,
+    });
+
+    turns.push({
+      id: turnId,
+      role: "user",
+      rowStart,
+      rowEnd: rows.length,
+      messageIndex: i,
+      status: "settled",
+      preview: derived.preview,
+      timestamp: m.timestamp,
+      toolCount: 0,
+      fileCount: 0,
+    });
+  } else {
     // ── Assistant turn: consume the whole consecutive assistant run. ───────
     // The store emits one message per block (text / tool / thinking); a turn is
     // the run of them between user messages. Collapsing that run here is what
@@ -1218,38 +1364,28 @@ export function projectRows(
     }
   }
 
-  // Mark the first row of each turn now that splices are done.
+  // Mark the first row of each turn now that splices are done, then place
+  // the turn in the whole projection.
   for (const t of turns) {
     if (rows[t.rowStart]) rows[t.rowStart].firstInTurn = true;
+    t.rowStart += offset;
+    t.rowEnd += offset;
   }
 
-  // Structural sharing — must run AFTER the firstInTurn pass above, or a reused
-  // (shared) object could be mutated in place and the change would be invisible
-  // to a memo comparing identities.
-  if (prev) {
-    const prevRows = new Map<string, Row>();
-    for (const r of prev.rows) prevRows.set(r.id, r);
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      const old = prevRows.get(row.id);
-      if (old?.kind === RowKind.MarkerGroup && row.kind === RowKind.MarkerGroup) {
-        const oldMarkers = new Map(old.markers.map((marker) => [marker.id, marker]));
-        row.markers = row.markers.map((marker) => {
-          const previous = oldMarkers.get(marker.id);
-          return previous && sameShallow(previous, marker) ? previous : marker;
-        });
-      }
-      if (old && sameShallow(old, row)) rows[i] = old;
-    }
-    const prevTurns = new Map<string, Turn>();
-    for (const t of prev.turns) prevTurns.set(t.id, t);
-    for (let i = 0; i < turns.length; i++) {
-      const old = prevTurns.get(turns[i].id);
-      if (old && sameShallow(old, turns[i])) turns[i] = old;
-    }
-  }
-
-  return { rows, turns };
+  return {
+    id: m.id,
+    messages: messages.slice(start, end),
+    before: messages[start - 1],
+    final: end === messages.length,
+    streaming: opts.streaming,
+    turnInProgress: opts.turnInProgress ?? opts.streaming,
+    expanded: opts.expanded,
+    expandedTurns: opts.expandedTurns,
+    offset,
+    start,
+    rows,
+    turns,
+  };
 }
 
 /**
