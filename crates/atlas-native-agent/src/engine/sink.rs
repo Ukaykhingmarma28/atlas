@@ -823,6 +823,12 @@ pub(crate) fn tool_call_of(item: &ThreadItem) -> Option<acp::ToolCall> {
                     // wants full old/new text, which a unified diff cannot
                     // reconstruct.
                     "patch": diffs,
+                    // The same edit file by file, for the renderer's per-turn
+                    // view: `patch` alone cannot say a whole-content entry was
+                    // an add or a delete, nor where two of them meet.
+                    // Additive: capture reads `patch` first and stores the
+                    // arguments whole.
+                    "changes": changes.iter().map(file_change_json).collect::<Vec<_>>(),
                 }));
             if !diffs.trim().is_empty() {
                 call = call.content(vec![acp::ToolCallContent::Content(acp::Content::new(
@@ -872,6 +878,41 @@ pub(crate) fn tool_call_of(item: &ThreadItem) -> Option<acp::ToolCall> {
             Some(call)
         }
         _ => None,
+    }
+}
+
+/// One file of a `FileChange`, as the edit's `changes` argument carries it:
+/// `{ path, kind, diff }`, plus `movePath` for a rename.
+///
+/// `kind` is `add` or `delete`, whose `diff` is the file's whole content, or
+/// `update` / `rename`, whose `diff` is the headerless unified diff. A rename's
+/// diff is the hunks alone: the engine appends a `Moved to:` note to it for
+/// display, which `movePath` states as data instead.
+fn file_change_json(
+    change: &atlas_engine_app_server_protocol::FileUpdateChange,
+) -> serde_json::Value {
+    use atlas_engine_app_server_protocol::PatchChangeKind as K;
+    match &change.kind {
+        K::Add => serde_json::json!({ "path": change.path, "kind": "add", "diff": change.diff }),
+        K::Delete => {
+            serde_json::json!({ "path": change.path, "kind": "delete", "diff": change.diff })
+        }
+        K::Update { move_path: None } => {
+            serde_json::json!({ "path": change.path, "kind": "update", "diff": change.diff })
+        }
+        K::Update {
+            move_path: Some(to),
+        } => {
+            let to = to.to_string_lossy();
+            let note = format!("\n\nMoved to: {to}");
+            let diff = change.diff.strip_suffix(&note).unwrap_or(&change.diff);
+            serde_json::json!({
+                "path": change.path,
+                "kind": "rename",
+                "diff": diff,
+                "movePath": to,
+            })
+        }
     }
 }
 
@@ -1615,6 +1656,65 @@ mod tests {
         assert!(
             patch.contains("+new"),
             "the patch is the engine's own diff: {patch}"
+        );
+    }
+
+    #[test]
+    fn a_file_change_names_each_file_with_its_kind() {
+        // The joined `patch` cannot say whether a whole-content entry was an
+        // add or a delete, nor where two of them meet; `changes` can. It is
+        // additive: `paths` and `patch` stay exactly as capture reads them.
+        use atlas_engine_app_server_protocol::FileUpdateChange;
+        use atlas_engine_app_server_protocol::PatchChangeKind as K;
+        let change = |path: &str, kind: K, diff: &str| FileUpdateChange {
+            path: path.to_string(),
+            kind,
+            diff: diff.to_string(),
+        };
+        let item = ThreadItem::FileChange {
+            id: "item-1".to_string(),
+            status: atlas_engine_app_server_protocol::PatchApplyStatus::Completed,
+            changes: vec![
+                change("/r/a.rs", K::Add, "fn a() {}\n"),
+                change("/r/b.rs", K::Delete, "fn b() {}\n"),
+                change(
+                    "/r/c.rs",
+                    K::Update {
+                        move_path: Some(std::path::PathBuf::from("/r/d.rs")),
+                    },
+                    "@@ -1 +1 @@\n-c\n+d\n\n\nMoved to: /r/d.rs",
+                ),
+                change(
+                    "/r/e.rs",
+                    K::Update { move_path: None },
+                    "@@ -1 +1 @@\n-e\n+E\n",
+                ),
+            ],
+        };
+        let call = tool_call_of(&item).expect("a file change is a tool call");
+        let args = call.raw_input.expect("the edit carries arguments");
+        assert_eq!(
+            args["changes"],
+            serde_json::json!([
+                { "path": "/r/a.rs", "kind": "add", "diff": "fn a() {}\n" },
+                { "path": "/r/b.rs", "kind": "delete", "diff": "fn b() {}\n" },
+                {
+                    "path": "/r/c.rs",
+                    "kind": "rename",
+                    "diff": "@@ -1 +1 @@\n-c\n+d\n",
+                    "movePath": "/r/d.rs",
+                },
+                { "path": "/r/e.rs", "kind": "update", "diff": "@@ -1 +1 @@\n-e\n+E\n" },
+            ]),
+        );
+        assert_eq!(
+            args["paths"],
+            serde_json::json!(["/r/a.rs", "/r/b.rs", "/r/c.rs", "/r/e.rs"]),
+        );
+        assert_eq!(
+            args["patch"],
+            "fn a() {}\n\nfn b() {}\n\n@@ -1 +1 @@\n-c\n+d\n\n\nMoved to: /r/d.rs\n@@ -1 +1 @@\n-e\n+E\n",
+            "the joined patch is unchanged",
         );
     }
 

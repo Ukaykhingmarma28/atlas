@@ -124,3 +124,60 @@ describe("a native edit as the turn's record keeps it", () => {
     expect(isFileCreated(call.toolName, call.arguments, call.kind)).toBe(false);
   });
 });
+
+describe("the edit's per-file `changes`", () => {
+  // Two whole contents side by side: `patch` alone cannot split them, and
+  // cannot say the second was a deletion.
+  const args = {
+    paths: ["/r/a.rs", "/r/b.rs", "/r/c.rs", "/r/d.rs"],
+    patch: join(created, "gone\n", `${update}\n\nMoved to: /r/z.rs`, update),
+    changes: [
+      { path: "/r/a.rs", kind: "add", diff: created },
+      { path: "/r/b.rs", kind: "delete", diff: "gone\n" },
+      { path: "/r/c.rs", kind: "rename", diff: update, movePath: "/r/z.rs" },
+      { path: "/r/d.rs", kind: "update", diff: "@@ -1,3 +1,4 @@\n a\n+b\n\n c\n" },
+    ],
+  };
+
+  it("is read first: each file's kind and counts, and where a rename went", () => {
+    expect(enginePatchFiles(args)).toEqual([
+      { path: "/r/a.rs", shape: "content", text: created, added: 2, removed: 0 },
+      { path: "/r/b.rs", shape: "deleted", text: "gone\n", added: 0, removed: 1 },
+      {
+        path: "/r/c.rs",
+        shape: "hunks",
+        text: update,
+        added: 1,
+        removed: 0,
+        movePath: "/r/z.rs",
+      },
+      // An empty context line gets its space back here too.
+      {
+        path: "/r/d.rs",
+        shape: "hunks",
+        text: "@@ -1,3 +1,4 @@\n a\n+b\n \n c\n",
+        added: 1,
+        removed: 0,
+      },
+    ]);
+  });
+
+  it("counts a deletion as removed lines, never as a created file", () => {
+    expect(turnFilesOfToolCall({ toolName: "Edit", kind: "edit", arguments: args })[1]).toEqual({
+      path: "/r/b.rs",
+      kind: "edit",
+      added: 0,
+      removed: 1,
+      created: false,
+    });
+  });
+
+  it("falls back to splitting `patch` when an entry is not the engine's shape", () => {
+    const files = enginePatchFiles({
+      paths: ["/r/a.rs"],
+      patch: update,
+      changes: [{ path: "/r/a.rs", kind: "mystery", diff: update }],
+    })!;
+    expect(files.map((f) => f.shape)).toEqual(["hunks"]);
+  });
+});

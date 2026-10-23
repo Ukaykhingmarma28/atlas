@@ -61,6 +61,13 @@ function foldWrite(f: Fold, content: string) {
   f.edits++;
 }
 
+/** A whole file removed, `content` being what it held. */
+function foldDelete(f: Fold, content: string) {
+  f.pair = f.edits === 0 ? { old: content, new: "" } : f.pair && { ...f.pair, new: "" };
+  f.concat = { old: f.concat.old + content, new: f.concat.new };
+  f.edits++;
+}
+
 /** A fragment replaced: applied to the whole file when the turn has it. */
 function foldFragment(f: Fold, old: string, neu: string) {
   if (f.pair) {
@@ -109,14 +116,16 @@ function foldHunks(f: Fold, hunks: string) {
  *   applied for real (a string replace), so `Write` then `Edit` reads as the
  *   file the turn left. Otherwise fragments CONCATENATE into an excerpt — all
  *   the record holds — and the viewer says so.
- * - **The native engine's patch** (`{ paths, patch }`) carries each file's
- *   unified diff, or a created file's whole content (`enginePatchFiles`). A
- *   file whose only edit is one diff renders that diff as it is, with real
- *   line numbers. A diff on a file this turn wrote whole is applied to it;
- *   several diffs to one file otherwise fold into an excerpt, like fragments.
+ * - **The native engine's edit** (`{ paths, patch, changes? }`) carries each
+ *   file's unified diff, a created file's whole content, or a deleted one's
+ *   (`enginePatchFiles`). A file whose only edit is one diff renders that
+ *   diff as it is, with real line numbers. A diff on a file this turn wrote
+ *   whole is applied to it; several diffs to one file otherwise fold into an
+ *   excerpt, like fragments. A deletion is its whole old text against
+ *   nothing, so it reads as deleted.
  *
- * A file the turn only deleted contributes no edit at all and simply does not
- * appear, which is the correct answer — there is nothing to browse.
+ * A file another agent deleted (`rm`, a command) contributes no edit at all
+ * and simply does not appear: nothing recorded its text.
  */
 export function collectTurnEdits(
   messages: ChatMessage[],
@@ -168,6 +177,7 @@ export function collectTurnEdits(
         const path = toRepoRelative(file.path, repoPath);
         see(path);
         if (file.shape === "content") foldWrite(foldOf(path), file.text);
+        else if (file.shape === "deleted") foldDelete(foldOf(path), file.text);
         else foldHunks(foldOf(path), file.text);
       }
     }

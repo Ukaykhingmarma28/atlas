@@ -368,6 +368,37 @@ describe("edits the native engine reported", () => {
   });
 });
 
+describe("edits the native engine reported with per-file `changes`", () => {
+  const edits = collectTurnEdits(
+    turn(
+      toolCall({
+        id: "n1",
+        toolName: "Edit /repo/src/a.rs (+1 more)",
+        kind: "edit",
+        arguments: {
+          paths: ["/repo/src/a.rs", "/repo/src/b.rs"],
+          // Two whole contents side by side: unsplittable from `patch`.
+          patch: "fn a() {}\n\nfn b() {}\n",
+          changes: [
+            { path: "/repo/src/a.rs", kind: "add", diff: "fn a() {}\n" },
+            { path: "/repo/src/b.rs", kind: "delete", diff: "fn b() {}\n" },
+          ],
+        },
+      }),
+    ),
+    "t:m1",
+    REPO,
+  );
+
+  it("keeps created and deleted files apart, each whole", () => {
+    expect(edits.files).toEqual(["src/a.rs", "src/b.rs"]);
+    expect(edits.sources["src/a.rs"]).toEqual({ old: "", new: "fn a() {}\n" });
+    // Its old text against nothing: the review panel calls it deleted.
+    expect(edits.sources["src/b.rs"]).toEqual({ old: "fn b() {}\n", new: "" });
+    expect(edits.excerpts.size).toBe(0);
+  });
+});
+
 describe("a Write, then Edits to the file it wrote", () => {
   it("applies each fragment to the written text: the file the turn left", () => {
     const edits = collectTurnEdits(

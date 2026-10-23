@@ -221,10 +221,20 @@ export const chatTurnChangesLong: Scenario = {
 // order (the engine sorts them), joined with a newline — an update's
 // headerless hunks, a created file's whole content, and for a rename a
 // `Moved to:` note after the hunks (`crates/atlas-native-agent/src/engine/
-// sink.rs`, the `FileChange` arm). `chat-turn-changes-native` plays only that.
+// sink.rs`, the `FileChange` arm). Newer sessions also carry `changes`, each
+// file's `{ path, kind, diff }`; the second turn has it and the others do
+// not, so both readings stay covered. `chat-turn-changes-native` plays only
+// that.
 
-/** The engine's edit: one call naming every file of the patch. */
-function engineEdit(files: { path: string; text: string }[]): ToolCall {
+type EngineKind = "add" | "delete" | "update";
+
+/** The engine's edit: one call naming every file of the patch. With
+ *  `withChanges`, the per-file `changes` too; each file's `kind` matters
+ *  only there. */
+function engineEdit(
+  files: { path: string; text: string; kind?: EngineKind }[],
+  withChanges = false,
+): ToolCall {
   const sorted = [...files].sort((a, b) => abs(a.path).localeCompare(abs(b.path)));
   const first = abs(sorted[0].path);
   const title =
@@ -240,9 +250,24 @@ function engineEdit(files: { path: string; text: string }[]): ToolCall {
     arguments: {
       paths: sorted.map((f) => abs(f.path)),
       patch: sorted.map((f) => f.text).join("\n"),
+      ...(withChanges
+        ? {
+            changes: sorted.map((f) => ({
+              path: abs(f.path),
+              kind: f.kind ?? "update",
+              diff: f.text,
+            })),
+          }
+        : {}),
     },
   };
 }
+
+const legacyAuthContent = `// Superseded by rate_limit.rs.
+pub fn throttle(_ip: &str) -> bool {
+    false
+}
+`;
 
 const loginHunks = `@@ -1,5 +1,7 @@
  use crate::auth::verify;
@@ -310,13 +335,19 @@ function nativeExchange(base: number): SessionMessage[][] {
     ),
     ended(text("Login is limited to ten attempts a minute per address.", at(20)), 17),
 
-    user("Count logins, and register the new modules.", at(60)),
+    user("Count logins, register the new modules, and drop the old throttle.", at(60)),
     tools(
       [
-        engineEdit([
-          { path: "src/server/metrics.rs", text: metricsContent },
-          { path: "src/server/mod.rs", text: modHunks },
-        ]),
+        // `legacy_auth.rs` (deleted) and `metrics.rs` (created) sit side by
+        // side in the joined patch, which only `changes` can split.
+        engineEdit(
+          [
+            { path: "src/server/legacy_auth.rs", text: legacyAuthContent, kind: "delete" },
+            { path: "src/server/metrics.rs", text: metricsContent, kind: "add" },
+            { path: "src/server/mod.rs", text: modHunks, kind: "update" },
+          ],
+          true,
+        ),
       ],
       at(62),
     ),

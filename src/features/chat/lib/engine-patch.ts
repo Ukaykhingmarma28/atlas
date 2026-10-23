@@ -17,17 +17,27 @@
 // the next file starts right after it. A file's whole content has no such
 // bound: it ends where the next file's hunks begin. Two whole-content files in
 // a row cannot be told apart, so those come back `unknown`, with no text.
+//
+// Newer sessions carry `changes` beside them: `[{ path, kind, diff }]`, one
+// entry per file with what happened to it (`add`, `delete`, `update`, or
+// `rename` with its `movePath`). That answers both questions the joined text
+// cannot, so it is read first; `patch` is the fallback for sessions recorded
+// before it existed.
 
 /** One file of a native edit. */
 export interface EnginePatchFile {
   path: string;
-  /** `hunks`: an update's unified diff. `content`: the file's whole text.
+  /** `hunks`: an update's unified diff. `content`: the file's whole text, as
+   *  created (or, from `patch` alone, possibly deleted). `deleted`: the whole
+   *  text of a file the edit removed; only `changes` can say so.
    *  `unknown`: the text could not be split from its neighbour's. */
-  shape: "hunks" | "content" | "unknown";
+  shape: "hunks" | "content" | "deleted" | "unknown";
   /** The hunks, or the content; empty when `unknown`. */
   text: string;
   added: number;
   removed: number;
+  /** Where a renamed file went. */
+  movePath?: string;
 }
 
 const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
@@ -88,12 +98,51 @@ function lineCount(text: string): number {
   return text === "" ? 0 : text.replace(/\n$/, "").split("\n").length;
 }
 
+const CHANGE_KINDS = new Set(["add", "delete", "update", "rename"]);
+
+/** The edit's `changes`, file by file — or null when it has none, or one
+ *  entry is not the shape the engine writes (then `patch` answers). */
+function fromChanges(changes: unknown): EnginePatchFile[] | null {
+  if (!Array.isArray(changes) || changes.length === 0) return null;
+  const out: EnginePatchFile[] = [];
+  for (const entry of changes) {
+    if (!entry || typeof entry !== "object") return null;
+    const { path, kind, diff, movePath } = entry as Record<string, unknown>;
+    if (typeof path !== "string" || path === "" || typeof diff !== "string") return null;
+    if (typeof kind !== "string" || !CHANGE_KINDS.has(kind)) return null;
+    const moved = typeof movePath === "string" && movePath !== "" ? { movePath } : {};
+    if (kind === "add") {
+      out.push({ path, shape: "content", text: diff, added: lineCount(diff), removed: 0 });
+    } else if (kind === "delete") {
+      out.push({ path, shape: "deleted", text: diff, added: 0, removed: lineCount(diff) });
+    } else {
+      const lines = diff.split("\n");
+      const run = hunkRunAt(lines, 0);
+      out.push(
+        run
+          ? {
+              path,
+              shape: "hunks",
+              text: `${run.lines.join("\n")}\n`,
+              added: run.added,
+              removed: run.removed,
+              ...moved,
+            }
+          : { path, shape: "unknown", text: "", added: 0, removed: 0, ...moved },
+      );
+    }
+  }
+  return out;
+}
+
 /**
  * The native engine's edit, file by file — or null when `args` is not that
  * shape. Every path comes back, in order; one whose text could not be split
  * out is `unknown`.
  */
 export function enginePatchFiles(args: Record<string, unknown>): EnginePatchFile[] | null {
+  const structured = fromChanges(args.changes);
+  if (structured) return structured;
   const { paths, patch } = args;
   if (typeof patch !== "string" || !Array.isArray(paths) || paths.length === 0) return null;
   if (!paths.every((p): p is string => typeof p === "string" && p.length > 0)) return null;
