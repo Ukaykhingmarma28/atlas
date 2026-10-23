@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { ChevronLeft } from "lucide-react";
 import { PaneHeader } from "@/components/titlebar";
 import { PanelSkeleton } from "@/components/panel-skeleton";
@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { isDestination, type DestinationType } from "@/lib/constants";
 import { useLayoutStore, type Tab } from "../stores/layout-store";
 import { DESTINATIONS } from "../lib/destinations";
+import { DestinationActionsSlot } from "./destination-actions";
 
 const KnowledgePanel = lazy(() =>
   import("@/features/knowledge/components/knowledge-panel").then((m) => ({
@@ -49,6 +50,8 @@ export function DestinationScreen() {
   const destination = useLayoutStore.use.destination();
   const shown = useLayoutStore.use.destinationShown();
   const { hideDestination } = useLayoutStore.use.actions();
+  // Where the page's own controls render (`DestinationActions`).
+  const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!shown) return;
@@ -84,11 +87,19 @@ export function DestinationScreen() {
             <span className="truncate">{destination.title || meta.title}</span>
           </button>
         </Hint>
+        {/* Fills the bar's free width and right-aligns, so the page's
+            controls sit against the window's trailing dock. */}
+        <div
+          ref={setActionsSlot}
+          className="flex min-w-0 flex-1 items-center justify-end gap-2 pr-1"
+        />
       </PaneHeader>
       <div className="relative min-h-0 flex-1 overflow-hidden">
-        <Suspense fallback={<PanelSkeleton rows={7} />}>
-          <DestinationBody key={destination.id} tab={destination} type={destination.type} />
-        </Suspense>
+        <DestinationActionsSlot.Provider value={actionsSlot}>
+          <Suspense fallback={<PanelSkeleton rows={7} />}>
+            <DestinationBody key={destination.id} tab={destination} type={destination.type} />
+          </Suspense>
+        </DestinationActionsSlot.Provider>
       </div>
     </div>
   );

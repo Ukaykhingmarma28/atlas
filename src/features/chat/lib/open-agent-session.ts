@@ -109,7 +109,7 @@ export async function openAgentSession({
     addTab({
       id: targetTabId,
       type: "chat",
-      title: title.slice(0, 40) || "Chat",
+      title: title.slice(0, 40) || "Session",
       closable: true,
       dirty: false,
       data: {},

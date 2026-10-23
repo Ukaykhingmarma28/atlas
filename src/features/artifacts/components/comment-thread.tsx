@@ -599,8 +599,8 @@ const CommentRow = memo(function CommentRow({
             {actions.link && !busy && (
               <button
                 type="button"
-                aria-label="Reference comment in agent chat"
-                title="Reference in agent chat"
+                aria-label="Reference comment in a session"
+                title="Reference in a session"
                 onClick={() => actions.link?.(comment)}
                 className="flex shrink-0 cursor-pointer items-center rounded p-0.5 text-[var(--muted-foreground)] opacity-0 transition-colors hover:text-[var(--foreground)] focus-visible:opacity-100 group-hover/comment:opacity-100"
               >

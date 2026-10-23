@@ -5,24 +5,20 @@ import { HintItem } from "@/ui/hint-group";
 import { DockButton, DOCK_TRIGGER, HeaderDock } from "@/features/artifacts/components/header-dock";
 import type { DateRange } from "../types";
 import { DateRangeControl } from "./date-range-control";
+import { DestinationActions } from "@/features/layout/components/destination-actions";
 
 export type ExportKind = "pdf" | "jpeg" | "markdown" | "copy-markdown";
 
 /**
- * The Usage header: what window you are looking through, and the two actions
- * on the page.
+ * The Usage controls: what window you are looking through, and the two
+ * actions on the page. They sit in the destination bar (ADR-0024), which
+ * already says "Usage" and the organization, so there is no title row of
+ * their own repeating it.
  *
- * Built to the Timeline's bar rather than its own thing — a name on the left,
- * one round-ended track for the setting, one icon dock on the right. What it
- * replaced drew five bordered boxes across two rows (presets, custom, export,
- * and a label-plus-box for each of group and metric) plus an app icon, which
- * is a lot of chrome to say "last 30 days".
- *
- * No Atlas mark: a tab inside the app does not need to say which app it is,
- * and it was the only icon in a bar whose other glyphs all do something.
+ * One round-ended track for the setting, one icon dock: what this replaced
+ * drew five bordered boxes across two rows to say "last 30 days".
  */
 export function UsageHeader({
-  orgName,
   range,
   onRange,
   earliest,
@@ -31,7 +27,6 @@ export function UsageHeader({
   loading,
   canExport,
 }: {
-  orgName: string | null;
   range: DateRange;
   onRange: (r: DateRange) => void;
   earliest: string | null;
@@ -41,15 +36,8 @@ export function UsageHeader({
   canExport: boolean;
 }) {
   return (
-    <div className="flex h-control-lg shrink-0 items-center gap-2 px-3">
-      <span className="shrink-0 text-sm font-semibold text-[var(--foreground)]">Usage</span>
-      {orgName && (
-        <span className="min-w-0 truncate text-xs text-[var(--muted-foreground)]" title={orgName}>
-          {orgName}
-        </span>
-      )}
-
-      <div className="ml-auto flex shrink-0 items-center gap-2">
+    <DestinationActions>
+      <div className="flex shrink-0 items-center gap-2">
         <DateRangeControl range={range} onChange={onRange} earliest={earliest} />
         {/* No `HintGroup` of its own: `HeaderDock` already is one, and nesting
             a second group gives the dock two sliding tooltips racing the same
@@ -61,7 +49,7 @@ export function UsageHeader({
           </DockButton>
         </HeaderDock>
       </div>
-    </div>
+    </DestinationActions>
   );
 }
 

@@ -151,12 +151,6 @@ export function CommsPanel() {
     const terminal = connection.state === "unavailable";
     return (
       <div className="flex h-full flex-col bg-background">
-        <ConversationBar>
-          <div className="flex h-[26px] items-center gap-1.5 rounded-lg bg-[var(--atlas-element-selected)] pl-2.5 pr-2.5 text-sm font-medium text-foreground select-none">
-            <MessagesSquare size={11} className="shrink-0 opacity-70" />
-            Chats
-          </div>
-        </ConversationBar>
         <CommsSurface>
           {terminal ? (
             <CommsConnecting
@@ -174,46 +168,51 @@ export function CommsPanel() {
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <ConversationBar>
-        <div
-          className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto hide-scrollbar"
-          // A gradient overlay in the backdrop colour never quite matched it —
-          // the vibrant grain composites on top of the token, so the patch
-          // read as its own rectangle. A mask fades the CONTENT instead, and
-          // whatever is behind it shows through exactly.
-          style={{
-            maskImage: "linear-gradient(to right, black, black calc(100% - 28px), transparent)",
-            WebkitMaskImage:
-              "linear-gradient(to right, black, black calc(100% - 28px), transparent)",
-          }}
-        >
-          {tabs.map((tab) => (
-            <TabButton
-              key={tab.id}
-              conv={tab.convId ? (convById.get(tab.convId) ?? null) : null}
-              members={members}
-              me={me}
-              active={tab.id === activeTabId}
-              read={tab.convId ? readBy.get(tab.convId) : undefined}
-              onSelect={() => actions.setActiveTab(tab.id)}
-              onClose={() => actions.closeTab(tab.id)}
-            />
-          ))}
-        </div>
+      {/* Only with two or more open: one view needs no tabs of its own under
+          the column's "Team chat" tab, and a conversation's header already
+          leads back home. ⌘-click a conversation to open a second. */}
+      {tabs.length > 1 && (
+        <ConversationBar>
+          <div
+            className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto hide-scrollbar"
+            // A gradient overlay in the backdrop colour never quite matched it —
+            // the vibrant grain composites on top of the token, so the patch
+            // read as its own rectangle. A mask fades the CONTENT instead, and
+            // whatever is behind it shows through exactly.
+            style={{
+              maskImage: "linear-gradient(to right, black, black calc(100% - 28px), transparent)",
+              WebkitMaskImage:
+                "linear-gradient(to right, black, black calc(100% - 28px), transparent)",
+            }}
+          >
+            {tabs.map((tab) => (
+              <TabButton
+                key={tab.id}
+                conv={tab.convId ? (convById.get(tab.convId) ?? null) : null}
+                members={members}
+                me={me}
+                active={tab.id === activeTabId}
+                read={tab.convId ? readBy.get(tab.convId) : undefined}
+                onSelect={() => actions.setActiveTab(tab.id)}
+                onClose={() => actions.closeTab(tab.id)}
+              />
+            ))}
+          </div>
 
-        {/* The project sidebar's add-project button, verbatim. */}
-        <div className="flex shrink-0 items-center pr-1.5">
-          <Hint label="New tab">
-            <button
-              type="button"
-              onClick={() => actions.newTab()}
-              className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border)] text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] outline-none cursor-pointer"
-            >
-              <Plus size={14} />
-            </button>
-          </Hint>
-        </div>
-      </ConversationBar>
+          {/* The project sidebar's add-project button, verbatim. */}
+          <div className="flex shrink-0 items-center pr-1.5">
+            <Hint label="New tab">
+              <button
+                type="button"
+                onClick={() => actions.newTab()}
+                className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border)] text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] outline-none cursor-pointer"
+              >
+                <Plus size={14} />
+              </button>
+            </Hint>
+          </div>
+        </ConversationBar>
+      )}
 
       {/* `overflow-hidden` so a view can never paint outside the panel. */}
       <CommsSurface>

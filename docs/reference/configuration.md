@@ -165,9 +165,9 @@ bookkeeping).
 | `themeOverrides` | table | absent | file only | optional `base`, `palette`, and `keys` patch applied after the active theme variant; a bad entry is dropped, not fatal |
 | `iconTheme` | string | `"material-icon-theme"` | Appearance › File icons › File icon theme | a plain id (letters, digits, `.`, `-`, `_`) — it names a directory under `~/.config/atlas/icon-themes/`. `"minimal"` keeps Atlas's lucide icons. See `docs/reference/icon-themes.md` |
 | `appIcon` | string | `"dark"` | Appearance › Interface › App icon | a plain id (letters, digits, `-`, `_`) from `src-tauri/icons/app-icons/app-icons.json` — today `"dark"` or `"light"`. An id this Atlas does not ship shows the default without rewriting the file |
-| `adaptiveSuggestions` | `"agent"` \| `"off"` | `"agent"` | Chat › Conversation › Next-step suggestions | exactly one of these two strings |
-| `agentSwitchBehavior` | `"reset"` \| `"new-tab"` \| `"handoff"` | `"reset"` | Chat › Switching agents › Switching agents in a chat | exactly one of these three strings. An empty chat always switches in place and a running one always gets a new tab, whatever this says |
-| `rememberBeforeSwitch` | boolean | `false` | Chat › Switching agents › Save to memory before switching agents | — . Acts only on a chat with a conversation whose agent advertises `/remember` (the bundled `remember` skill); waits at most 3 minutes, and the user can switch at once |
+| `adaptiveSuggestions` | `"agent"` \| `"off"` | `"agent"` | Sessions › Conversation › Next-step suggestions | exactly one of these two strings |
+| `agentSwitchBehavior` | `"reset"` \| `"new-tab"` \| `"handoff"` | `"reset"` | Sessions › Switching agents › Switching agents in a chat | exactly one of these three strings. An empty chat always switches in place and a running one always gets a new tab, whatever this says |
+| `rememberBeforeSwitch` | boolean | `false` | Sessions › Switching agents › Save to memory before switching agents | — . Acts only on a chat with a conversation whose agent advertises `/remember` (the bundled `remember` skill); waits at most 3 minutes, and the user can switch at once |
 | `gitBlameInline` | boolean | `true` | Source Control › Editor › Inline Git blame (per project too) | — |
 | `gitAutoFetch` | boolean | `true` | Source Control › Repositories › Auto-fetch from remote (a project can turn it off) | — |
 | `keepAwakeWhileRunning` | boolean | `false` | General › System › Keep awake while an agent is working | no effect on Windows |
@@ -175,7 +175,7 @@ bookkeeping).
 | `curatedPluginSync` | boolean | `false` | Updates › Atlas Agent › Keep Atlas Agent's plugin catalog up to date | — |
 | `instructionSync` | boolean | `false` | Memory › Instructions › Mirror CLAUDE.md and .claude/rules into AGENTS.md | — . See [Mirrored instructions](#mirrored-instructions-instructionsync) |
 | `updaterIgnoredVersion` | string, or absent | absent | managed by Atlas | — |
-| `enterToSend` | boolean | `true` | Chat › Composer › Enter to send | — |
+| `enterToSend` | boolean | `true` | Sessions › Composer › Enter to send | — |
 | `agentUiNavigation` | boolean | `true` | Agents › Atlas Agent permissions › Let Atlas Agent navigate the app (a project can turn it off) | — |
 | `agentOrgAccess` | boolean | `true` | Agents › Atlas Agent permissions › Let Atlas Agent act in your organization (a project can turn it off) | — |
 | `agentCodeTools` | boolean | `true` | Agents › All agents › Let agents search code with Atlas (a project can turn it off) | — |
@@ -196,12 +196,12 @@ bookkeeping).
 | `notifyDisabledKinds` | array of strings | `[]` | Notifications › Kinds › Notification kinds | unknown ids are ignored |
 | `notifyAgentMinDurationMs` | integer | `0` | Notifications › Notifications › Notify on agent finish after | 0 ≤ n ≤ 3600000 |
 | `favoriteModels` | array of strings | `[]` | the star in the composer's model picker | entries are `agentType:modelId`; unknown entries are ignored |
-| `confirmDeleteChat` | boolean | `true` | General › Confirmations › Confirm before deleting a chat | — |
+| `confirmDeleteChat` | boolean | `true` | General › Confirmations › Confirm before deleting a session | — |
 | `confirmQuitWhileRunning` | boolean | `true` | General › Confirmations › Confirm before quitting while an agent is running | — |
-| `defaultAgent` | string | `"atlas-agent"` | Chat › New chats › Default agent (per project too) | a non-empty agent id; one that isn't installed falls back to Atlas Agent |
-| `chatWidth` | `"normal"` \| `"wide"` \| `"full"` | `"normal"` | Appearance › Interface › Chat width | exactly one of these three strings |
-| `chatCodeWrap` | boolean | `true` | Chat › Layout › Wrap code in chat | — |
-| `sidebarSort` | `"recent"` \| `"created"` | `"recent"` | Chat › Layout › Sort chats by | exactly one of these two strings |
+| `defaultAgent` | string | `"atlas-agent"` | Sessions › New sessions › Default agent (per project too) | a non-empty agent id; one that isn't installed falls back to Atlas Agent |
+| `chatWidth` | `"normal"` \| `"wide"` \| `"full"` | `"normal"` | Appearance › Interface › Session width | exactly one of these three strings |
+| `chatCodeWrap` | boolean | `true` | Sessions › Layout › Wrap code in sessions | — |
+| `sidebarSort` | `"recent"` \| `"created"` | `"recent"` | Sessions › Layout › Sort sessions by | exactly one of these two strings |
 | `timeFormat` | `"system"` \| `"12h"` \| `"24h"` | `"system"` | General › System › Time format | exactly one of these three strings |
 | `uiFontFamily` | string | `""` | Appearance › Typography › Interface font | a CSS font-family list, at most 200 characters, with no `{`, `}`, `;`, `<` or `>`; empty uses the system font |
 | `codeFontFamily` | string | `""` | Appearance › Typography › Code font | a CSS font-family list, at most 200 characters, with no `{`, `}`, `;`, `<` or `>`; empty uses the default |

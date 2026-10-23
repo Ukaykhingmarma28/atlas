@@ -174,6 +174,9 @@ interface CommsState {
 
     /** Navigate the ACTIVE tab to a conversation (creates a tab if none). */
     openConversation: (convId: string) => void;
+    /** Open a conversation in a tab of its own (⌘-click), keeping the
+     *  current one. */
+    openConversationInNewTab: (convId: string) => void;
     /** Navigate the active tab back to the home view. */
     goHome: () => void;
     /** A fresh view, starting at home. */
@@ -589,6 +592,12 @@ export const useCommsStore = createSelectors(
           panelOpen: true,
         }));
         releaseIfUnshown(leaving, tabs);
+        loadConversation(convId, set);
+      },
+
+      openConversationInNewTab: (convId) => {
+        const tab = { id: `tab_${uid()}`, convId };
+        set((s) => ({ tabs: [...s.tabs, tab], activeTabId: tab.id, panelOpen: true }));
         loadConversation(convId, set);
       },
 

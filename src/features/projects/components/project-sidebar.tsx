@@ -802,7 +802,7 @@ export function ProjectSidebar() {
       out.push({
         kind: "section",
         id: "sec:chats",
-        label: "Chats",
+        label: "Sessions",
         key: "s:chats",
       });
       // Active (live-running) chats float to the top of the stack; the rest keep

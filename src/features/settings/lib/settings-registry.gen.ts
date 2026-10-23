@@ -73,7 +73,7 @@ export interface AppSettings {
    */
   appIcon: string;
   /**
-   * Next-step suggestion chips in the agent chat's per-turn card. Exactly "agent" or "off",
+   * Next-step suggestion chips in the session's per-turn card. Exactly "agent" or "off",
    * nothing else.
    */
   adaptiveSuggestions: "agent" | "off";
@@ -219,9 +219,9 @@ export interface AppSettings {
    */
   favoriteModels: string[];
   /**
-   * Ask before deleting a chat from the sidebar or the history. A deleted chat's transcript
-   * stays with its agent, but Atlas forgets the chat. Archiving never asks, because it can be
-   * undone.
+   * Ask before deleting a session from the sidebar or the history. A deleted session's
+   * transcript stays with its agent, but Atlas forgets the session. Archiving never asks,
+   * because it can be undone.
    */
   confirmDeleteChat: boolean;
   /**
@@ -230,8 +230,9 @@ export interface AppSettings {
    */
   confirmQuitWhileRunning: boolean;
   /**
-   * The agent a new chat starts with: "atlas-agent" for Atlas Agent, or the id of an installed
-   * ACP agent, such as "claude-code". An agent that isn't installed falls back to Atlas Agent.
+   * The agent a new session starts with: "atlas-agent" for Atlas Agent, or the id of an
+   * installed ACP agent, such as "claude-code". An agent that isn't installed falls back to
+   * Atlas Agent.
    */
   defaultAgent: string;
   /**
@@ -239,11 +240,11 @@ export interface AppSettings {
    * pixels) or "full" (the whole panel).
    */
   chatWidth: "normal" | "wide" | "full";
-  /** Wrap long lines in a chat's code blocks. Off: they keep their lines and scroll sideways. */
+  /** Wrap long lines in a session's code blocks. Off: they keep their lines and scroll sideways. */
   chatCodeWrap: boolean;
   /**
-   * The order of chats in the sidebar: "recent" puts the chat with the latest activity first,
-   * "created" the one started most recently.
+   * The order of sessions in the sidebar: "recent" puts the session with the latest activity
+   * first, "created" the one started most recently.
    */
   sidebarSort: "recent" | "created";
   /**
@@ -401,8 +402,8 @@ export const SETTINGS_PAGES = [
   },
   {
     id: "chat",
-    title: "Chat",
-    description: "New chats, the composer, layout, and switching agents.",
+    title: "Sessions",
+    description: "New sessions, the composer, layout, and switching agents.",
   },
   {
     id: "agents",
@@ -897,8 +898,8 @@ export const SETTINGS_REGISTRY: readonly SettingMeta[] = [
     status: "live",
     page: "general",
     section: "Confirmations",
-    title: "Confirm before deleting a chat",
-    summary: "Ask first when you delete a chat from the sidebar or history.",
+    title: "Confirm before deleting a session",
+    summary: "Ask first when you delete a session from the sidebar or history.",
   },
   {
     key: "confirmQuitWhileRunning",
@@ -914,9 +915,9 @@ export const SETTINGS_REGISTRY: readonly SettingMeta[] = [
     type: "string",
     status: "live",
     page: "chat",
-    section: "New chats",
+    section: "New sessions",
     title: "Default agent",
-    summary: "The agent a new chat starts with.",
+    summary: "The agent a new session starts with.",
     project: true,
   },
   {
@@ -925,7 +926,7 @@ export const SETTINGS_REGISTRY: readonly SettingMeta[] = [
     status: "live",
     page: "appearance",
     section: "Interface",
-    title: "Chat width",
+    title: "Session width",
     summary: "How wide the conversation and the composer may grow.",
     values: ["normal", "wide", "full"],
   },
@@ -935,8 +936,8 @@ export const SETTINGS_REGISTRY: readonly SettingMeta[] = [
     status: "live",
     page: "chat",
     section: "Layout",
-    title: "Wrap code in chat",
-    summary: "Wrap long lines in a chat's code blocks instead of scrolling sideways.",
+    title: "Wrap code in sessions",
+    summary: "Wrap long lines in a session's code blocks instead of scrolling sideways.",
   },
   {
     key: "sidebarSort",
@@ -944,8 +945,8 @@ export const SETTINGS_REGISTRY: readonly SettingMeta[] = [
     status: "live",
     page: "chat",
     section: "Layout",
-    title: "Sort chats by",
-    summary: "Order the sidebar's chats by their latest activity or by when they started.",
+    title: "Sort sessions by",
+    summary: "Order the sidebar's sessions by their latest activity or by when they started.",
     values: ["recent", "created"],
   },
   {

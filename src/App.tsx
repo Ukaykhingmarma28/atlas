@@ -926,7 +926,7 @@ export function App() {
           projectName: basename(path),
           // Strip any Atlas-injected memory scaffolding the title may carry
           // (resumed sessions); a dirty fragment cleans to "" → fall back.
-          title: stripInjectedContext(s.title) || "Chat",
+          title: stripInjectedContext(s.title) || "Session",
           status: s.status,
           agentType: s.agentType,
           acpSessionId: s.acpSessionId,

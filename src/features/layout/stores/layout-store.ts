@@ -364,7 +364,7 @@ function keepMainForSessions(s: LayoutState): void {
 const WELCOME_TAB = (groupId: string): Tab => ({
   id: "welcome-chat",
   type: "chat",
-  title: "Chat",
+  title: "Session",
   closable: false,
   dirty: false,
   data: {},
@@ -917,7 +917,7 @@ export const useLayoutStore = createSelectors(
                 chat = {
                   id: "chat-zen",
                   type: "chat",
-                  title: "Chat",
+                  title: "Session",
                   closable: true,
                   dirty: false,
                   data: {},

@@ -76,8 +76,8 @@ description = "Themes, icons, fonts, and how the interface is drawn."
 
 [[page]]
 id = "chat"
-title = "Chat"
-description = "New chats, the composer, layout, and switching agents."
+title = "Sessions"
+description = "New sessions, the composer, layout, and switching agents."
 
 [[page]]
 id = "agents"
@@ -324,7 +324,7 @@ section = "Conversation"
 title = "Next-step suggestions"
 summary = "After each turn, the agent suggests two or three follow-ups as clickable chips."
 doc = """
-Next-step suggestion chips in the agent chat's per-turn card. Exactly "agent"
+Next-step suggestion chips in the session's per-turn card. Exactly "agent"
 or "off", nothing else.
 """
 validation = "exactly one of these two strings"
@@ -805,12 +805,12 @@ default = true
 status = "live"
 page = "general"
 section = "Confirmations"
-title = "Confirm before deleting a chat"
-summary = "Ask first when you delete a chat from the sidebar or history."
+title = "Confirm before deleting a session"
+summary = "Ask first when you delete a session from the sidebar or history."
 doc = """
-Ask before deleting a chat from the sidebar or the history. A deleted chat's
-transcript stays with its agent, but Atlas forgets the chat. Archiving never
-asks, because it can be undone.
+Ask before deleting a session from the sidebar or the history. A deleted
+session's transcript stays with its agent, but Atlas forgets the session.
+Archiving never asks, because it can be undone.
 """
 validation = "—"
 
@@ -836,11 +836,11 @@ default = "atlas-agent"
 status = "live"
 project = true
 page = "chat"
-section = "New chats"
+section = "New sessions"
 title = "Default agent"
-summary = "The agent a new chat starts with."
+summary = "The agent a new session starts with."
 doc = """
-The agent a new chat starts with: "atlas-agent" for Atlas Agent, or the id of
+The agent a new session starts with: "atlas-agent" for Atlas Agent, or the id of
 an installed ACP agent, such as "claude-code". An agent that isn't installed
 falls back to Atlas Agent.
 """
@@ -854,7 +854,7 @@ default = "normal"
 status = "live"
 page = "appearance"
 section = "Interface"
-title = "Chat width"
+title = "Session width"
 summary = "How wide the conversation and the composer may grow."
 doc = """
 How wide the conversation and the composer may grow: "normal" (760 pixels),
@@ -869,10 +869,10 @@ default = true
 status = "live"
 page = "chat"
 section = "Layout"
-title = "Wrap code in chat"
-summary = "Wrap long lines in a chat's code blocks instead of scrolling sideways."
+title = "Wrap code in sessions"
+summary = "Wrap long lines in a session's code blocks instead of scrolling sideways."
 doc = """
-Wrap long lines in a chat's code blocks. Off: they keep their lines and scroll
+Wrap long lines in a session's code blocks. Off: they keep their lines and scroll
 sideways.
 """
 validation = "—"
@@ -885,10 +885,10 @@ default = "recent"
 status = "live"
 page = "chat"
 section = "Layout"
-title = "Sort chats by"
-summary = "Order the sidebar's chats by their latest activity or by when they started."
+title = "Sort sessions by"
+summary = "Order the sidebar's sessions by their latest activity or by when they started."
 doc = """
-The order of chats in the sidebar: "recent" puts the chat with the latest
+The order of sessions in the sidebar: "recent" puts the session with the latest
 activity first, "created" the one started most recently.
 """
 validation = "exactly one of these two strings"

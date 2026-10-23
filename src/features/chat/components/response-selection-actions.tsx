@@ -340,7 +340,7 @@ function SelectionToolbar({
           collisionBoundary={viewportRef.current ?? undefined}
         />
       ) : (
-        <Hint label="Share this chat to comment on a response">
+        <Hint label="Share this session to comment on a response">
           <button
             type="button"
             aria-label="Comment"

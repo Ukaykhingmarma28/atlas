@@ -37,7 +37,7 @@ export type ActionCategory =
   | "Tabs"
   | "Splits"
   | "View"
-  | "Chat"
+  | "Session"
   | "Terminal"
   | "Knowledge"
   | "PDF"
@@ -69,7 +69,7 @@ export const WHEN_LABELS: Record<When, string> = {
 const modelPickerJump = (n: number): ActionDef => ({
   id: `modelPicker.jump${n}`,
   title: `Pick model ${n}`,
-  category: "Chat",
+  category: "Session",
   when: "modelPicker",
   defaults: [`cmd+${n}`],
 });
@@ -300,42 +300,42 @@ export const ACTIONS = [
   {
     id: "chat.cycleAgent",
     title: "Cycle coding agent",
-    category: "Chat",
+    category: "Session",
     when: "global",
     defaults: ["alt+/"],
   },
   {
     id: "chat.cyclePermissionMode",
     title: "Cycle permission mode",
-    category: "Chat",
+    category: "Session",
     when: "chatFocus",
     defaults: ["shift+tab"],
   },
   {
     id: "chat.find",
     title: "Find in session",
-    category: "Chat",
+    category: "Session",
     when: "chatFocus",
     defaults: ["cmd+f"],
   },
   {
     id: "chat.toggleModelPicker",
     title: "Open model picker",
-    category: "Chat",
+    category: "Session",
     when: "chatFocus",
     defaults: ["cmd+shift+m"],
   },
   {
     id: "modelPicker.previousProvider",
     title: "Previous agent in model picker",
-    category: "Chat",
+    category: "Session",
     when: "modelPicker",
     defaults: ["cmd+shift+up"],
   },
   {
     id: "modelPicker.nextProvider",
     title: "Next agent in model picker",
-    category: "Chat",
+    category: "Session",
     when: "modelPicker",
     defaults: ["cmd+shift+down"],
   },
@@ -343,7 +343,7 @@ export const ACTIONS = [
     // ⌘⇧S: "stick" (pin). Unbound anywhere else, and the reference ships no default.
     id: "modelPicker.toggleFavorite",
     title: "Pin or unpin the highlighted model",
-    category: "Chat",
+    category: "Session",
     when: "modelPicker",
     defaults: ["cmd+shift+s"],
   },
@@ -527,7 +527,7 @@ export const CATEGORY_ORDER: readonly ActionCategory[] = [
   "Tabs",
   "Splits",
   "View",
-  "Chat",
+  "Session",
   "Terminal",
   "Knowledge",
   "PDF",

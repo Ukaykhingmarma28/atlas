@@ -42,10 +42,10 @@ export function ChatPage() {
   return (
     <SettingsPage
       scopeable
-      title="Chat"
-      description="New chats, the composer, layout, and switching agents."
+      title="Sessions"
+      description="New sessions, the composer, layout, and switching agents."
     >
-      <SettingsSection title="New chats">
+      <SettingsSection title="New sessions">
         <SettingsGroup>
           <SettingsRow
             setting="defaultAgent"
@@ -130,7 +130,7 @@ function DefaultAgentSelect() {
       value={scoped.value}
       options={options}
       disabled={scoped.globalOnly}
-      aria-label="New chats: Default agent"
+      aria-label="New sessions: Default agent"
       onValueChange={(next) => scoped.set(next)}
     />
   );

@@ -59,7 +59,7 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
     ),
     (
         "adaptiveSuggestions",
-        "# Next-step suggestion chips in the agent chat's per-turn card. Exactly\n# \"agent\" or \"off\", nothing else. (default: \"agent\")",
+        "# Next-step suggestion chips in the session's per-turn card. Exactly \"agent\"\n# or \"off\", nothing else. (default: \"agent\")",
     ),
     (
         "agentSwitchBehavior",
@@ -183,7 +183,7 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
     ),
     (
         "confirmDeleteChat",
-        "# Ask before deleting a chat from the sidebar or the history. A deleted chat's\n# transcript stays with its agent, but Atlas forgets the chat. Archiving never\n# asks, because it can be undone. (default: true)",
+        "# Ask before deleting a session from the sidebar or the history. A deleted\n# session's transcript stays with its agent, but Atlas forgets the session.\n# Archiving never asks, because it can be undone. (default: true)",
     ),
     (
         "confirmQuitWhileRunning",
@@ -191,7 +191,7 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
     ),
     (
         "defaultAgent",
-        "# The agent a new chat starts with: \"atlas-agent\" for Atlas Agent, or the id\n# of an installed ACP agent, such as \"claude-code\". An agent that isn't\n# installed falls back to Atlas Agent. (default: \"atlas-agent\") A project can\n# override it in its own .atlas/config.toml.",
+        "# The agent a new session starts with: \"atlas-agent\" for Atlas Agent, or the\n# id of an installed ACP agent, such as \"claude-code\". An agent that isn't\n# installed falls back to Atlas Agent. (default: \"atlas-agent\") A project can\n# override it in its own .atlas/config.toml.",
     ),
     (
         "chatWidth",
@@ -199,11 +199,11 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
     ),
     (
         "chatCodeWrap",
-        "# Wrap long lines in a chat's code blocks. Off: they keep their lines and\n# scroll sideways. (default: true)",
+        "# Wrap long lines in a session's code blocks. Off: they keep their lines and\n# scroll sideways. (default: true)",
     ),
     (
         "sidebarSort",
-        "# The order of chats in the sidebar: \"recent\" puts the chat with the latest\n# activity first, \"created\" the one started most recently. (default: \"recent\")",
+        "# The order of sessions in the sidebar: \"recent\" puts the session with the\n# latest activity first, \"created\" the one started most recently. (default:\n# \"recent\")",
     ),
     (
         "timeFormat",

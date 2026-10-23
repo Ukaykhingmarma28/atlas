@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Card } from "@/components/usage-primitives";
 import { GradualBlur } from "@/components/gradual-blur";
-import { useOrgStore } from "@/features/organisations/stores/org-store";
 import { useProjectStore } from "@/features/projects/stores/project-store";
 import { useUsageStore } from "../stores/usage-store";
 import { useUsageView } from "../lib/use-usage-view";
@@ -38,10 +37,6 @@ export function UsagePanel() {
     setTable,
     setSearch,
   } = useUsageStore.use.actions();
-  const orgName = useOrgStore((s) => {
-    const id = s.activeOrganisationId;
-    return s.organisations.find((o) => o.id === id)?.name ?? null;
-  });
   // Re-fetch when the org's project set changes (this also covers an org switch).
   const projectSig = useProjectStore((s) => s.projects.map((p) => p.path).join("|"));
   useEffect(() => {
@@ -83,7 +78,6 @@ export function UsagePanel() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-[var(--background)]">
       <UsageHeader
-        orgName={orgName}
         range={range}
         onRange={setRange}
         earliest={earliest}

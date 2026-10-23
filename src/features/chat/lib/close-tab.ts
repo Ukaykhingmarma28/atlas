@@ -40,7 +40,7 @@ export function requestCloseTab(tabId: string): void {
     void (async () => {
       const ok = await useStopAgentsConfirmStore.getState().actions.ask({
         count: 1,
-        actionLabel: "Closing this chat",
+        actionLabel: "Closing this session",
         confirmLabel: "Stop agent & close",
       });
       if (!ok) return;

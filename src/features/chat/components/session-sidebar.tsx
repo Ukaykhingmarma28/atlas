@@ -514,7 +514,7 @@ export const SessionSidebar = memo(function SessionSidebar({
       addTab({
         id: targetTabId,
         type: "chat",
-        title: item.title.slice(0, 40) || "Chat",
+        title: item.title.slice(0, 40) || "Session",
         closable: true,
         dirty: false,
         data: {},
