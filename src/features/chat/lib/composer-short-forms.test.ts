@@ -145,6 +145,15 @@ const EVERY_KIND: MentionData[] = [
     lines: 2,
     text: "first\nsecond",
   },
+  {
+    kind: "cited_text",
+    id: "c7m2p4",
+    displayName: "“Scope it to the usage page.”",
+    messageId: "msg-7",
+    rowId: "am-42",
+    text: "Scope it to the usage page.",
+    note: "Billing too?",
+  },
 ];
 
 beforeEach(() => resetMentionRegistryForTests());

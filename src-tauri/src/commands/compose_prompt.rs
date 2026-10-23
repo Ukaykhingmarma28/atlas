@@ -183,6 +183,25 @@ pub enum MentionSpec {
         #[serde(default)]
         resolved: bool,
     },
+    /// A passage of one of this session's own agent replies, cited back with
+    /// `@cite:<id>` and an optional note (`cited-text.ts`). Private to the
+    /// agent: it is a block in the prompt, never a comment. The agent already
+    /// holds the reply, so the quote says which part the user means.
+    CitedText {
+        /// Short and unique within the draft — the token's value.
+        id: String,
+        display_name: String,
+        /// The transcript message the passage was selected in.
+        message_id: String,
+        /// The captured row that message is, on a session shared with the
+        /// team; absent when the session is not captured.
+        #[serde(default)]
+        row_id: Option<String>,
+        /// The passage, already capped by the frontend (`CITE_MAX_CHARS`).
+        text: String,
+        #[serde(default)]
+        note: Option<String>,
+    },
 }
 
 impl MentionSpec {
@@ -202,7 +221,8 @@ impl MentionSpec {
             | MentionSpec::Member { id, .. }
             | MentionSpec::Conversation { id, .. }
             | MentionSpec::RecordedSession { id, .. }
-            | MentionSpec::Comment { id, .. } => id,
+            | MentionSpec::Comment { id, .. }
+            | MentionSpec::CitedText { id, .. } => id,
         }
     }
 
@@ -243,6 +263,7 @@ impl MentionSpec {
                 format!("@recorded-session:{}", v(display_name))
             }
             MentionSpec::Comment { display_name, .. } => format!("@comment:{}", v(display_name)),
+            MentionSpec::CitedText { id, .. } => format!("@cite:{id}"),
         }
     }
 }
@@ -591,7 +612,50 @@ fn render_block(m: &MentionSpec) -> Option<String> {
             parent_id.as_deref(),
             *resolved,
         )),
+        MentionSpec::CitedText {
+            message_id,
+            row_id,
+            text,
+            note,
+            ..
+        } => Some(render_cite_block(
+            &m.short_form(),
+            message_id,
+            row_id.as_deref(),
+            text,
+            note.as_deref(),
+        )),
     }
+}
+
+/// The block a cited passage contributes: the passage, said to be from an
+/// earlier reply of the agent's own in this session, then the user's note.
+fn render_cite_block(
+    short_form: &str,
+    message_id: &str,
+    row_id: Option<&str>,
+    text: &str,
+    note: Option<&str>,
+) -> String {
+    let quoted = clip_body(text.trim_matches('\n'))
+        .lines()
+        .map(|line| format!("> {line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let row = row_id
+        .filter(|r| !r.trim().is_empty())
+        .map(|r| format!(", captured row `{r}`"))
+        .unwrap_or_default();
+    let note = note
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .map(|n| format!("\n\nThe user's note on it:\n\n{}", clip_body(n)))
+        .unwrap_or_default();
+    format!(
+        "## {short_form}\n\n\
+         The user is citing this passage from one of your earlier replies in this session \
+         (message `{message_id}`{row}):\n\n{quoted}{note}"
+    )
 }
 
 /// The block a linked comment contributes: who said what, on what, and that
@@ -714,8 +778,11 @@ fn clip_body(body: &str) -> String {
     if body.len() <= MENTION_BODY_BUDGET_BYTES {
         return body.to_string();
     }
-    let head = &body[..MENTION_BODY_BUDGET_BYTES];
-    let elided = body.len() - MENTION_BODY_BUDGET_BYTES;
+    // On a character boundary: slicing inside a multi-byte character panics,
+    // and a body is whatever the user or a file put in it.
+    let cut = body.floor_char_boundary(MENTION_BODY_BUDGET_BYTES);
+    let head = &body[..cut];
+    let elided = body.len() - cut;
     format!("{head}\n\n… (truncated, {elided} bytes elided)")
 }
 
@@ -1045,6 +1112,86 @@ mod org_mention_tests {
             .await
             .unwrap();
         assert_eq!(composed.resource_links.len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod cite_tests {
+    use super::*;
+
+    fn cite(note: Option<&str>, row: Option<&str>) -> MentionSpec {
+        serde_json::from_value(serde_json::json!({
+            "kind": "cited_text",
+            "id": "k3x9q2",
+            "displayName": "“Scope it to the usage page.”",
+            "messageId": "msg-7",
+            "rowId": row,
+            "text": "Scope it to the usage page.\nThen refresh on focus.",
+            "note": note,
+        }))
+        .expect("the frontend's cite shape")
+    }
+
+    /// The passage reaches the agent quoted and labelled as its own earlier
+    /// reply, the note after it; the token in the prose names the block.
+    #[tokio::test]
+    async fn a_cite_quotes_the_passage_as_an_earlier_reply_then_the_note() {
+        let composed = compose_prompt(
+            "why @cite:k3x9q2".into(),
+            vec![cite(Some("Does billing need this too?"), Some("am-42"))],
+        )
+        .await
+        .unwrap();
+        assert!(composed.resource_links.is_empty(), "a cite is not a link");
+        let prose = &composed.prose;
+        assert!(
+            prose.starts_with("why @cite:k3x9q2\n\n---\n# Atlas context\n\n## @cite:k3x9q2\n\n"),
+            "{prose}"
+        );
+        assert!(
+            prose.contains(
+                "citing this passage from one of your earlier replies in this session \
+                 (message `msg-7`, captured row `am-42`):\n\n\
+                 > Scope it to the usage page.\n> Then refresh on focus.\n\n\
+                 The user's note on it:\n\nDoes billing need this too?"
+            ),
+            "{prose}"
+        );
+    }
+
+    /// Without a note or a captured row, the block is just the quote.
+    #[test]
+    fn a_cite_without_a_note_or_row_is_just_the_quote() {
+        let block = render_block(&cite(None, None)).expect("a cite renders a block");
+        assert!(block.ends_with("> Then refresh on focus."), "{block}");
+        assert!(!block.contains("captured row"), "{block}");
+        assert!(!block.contains("note"), "{block}");
+        let blank = render_block(&cite(Some("  "), Some(""))).unwrap();
+        assert_eq!(blank, block, "a blank note or row is no note or row");
+    }
+
+    /// A multi-byte character straddling the budget is kept whole or left
+    /// out, never split: slicing inside it would panic the send.
+    #[test]
+    fn clip_body_cuts_on_a_character_boundary() {
+        // "é" is two bytes; one byte short of the budget puts it across it.
+        let body = format!("{}é tail", "a".repeat(MENTION_BODY_BUDGET_BYTES - 1));
+        let clipped = clip_body(&body);
+        let head = clipped.split("\n\n…").next().unwrap();
+        assert_eq!(head, "a".repeat(MENTION_BODY_BUDGET_BYTES - 1));
+        assert!(clipped.ends_with(&format!(" {} bytes elided)", body.len() - head.len())));
+        // An emoji (four bytes) one byte into the budget's end.
+        let emoji = format!("{}🙂", "a".repeat(MENTION_BODY_BUDGET_BYTES - 1));
+        assert!(clip_body(&emoji).starts_with(&"a".repeat(MENTION_BODY_BUDGET_BYTES - 1)));
+    }
+
+    /// The token is the id alone, and a send dedupes on it.
+    #[test]
+    fn a_cite_short_form_and_dedupe_key_are_its_id() {
+        let a = cite(None, None);
+        let b = cite(Some("again"), None);
+        assert_eq!(a.dedupe_key(), b.dedupe_key());
+        assert_eq!(a.short_form(), "@cite:k3x9q2");
     }
 }
 

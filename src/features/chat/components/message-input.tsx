@@ -121,7 +121,8 @@ import { useComposerDraft } from "@/components/composer/use-composer-draft";
 import type { MentionData } from "../lib/mentions";
 import { COMMENT_LINK_EVENT, type CommentLinkDetail } from "../lib/comment-mentions";
 import { collapsePastes, pastedTextMention } from "../lib/pasted-text";
-import { forgetSentPastes, rememberMention } from "../lib/mention-registry";
+import { collapseCites } from "../lib/cited-text";
+import { forgetSentTexts, rememberMention } from "../lib/mention-registry";
 
 // Start the editor chunk download at module-evaluation time. Vite still
 // excludes it from `<link rel="modulepreload">` because the static analysis
@@ -1680,9 +1681,10 @@ export function MessageInput({
     return () => window.removeEventListener("atlas:chat-insert", handler);
   }, [tabId, writeComposer, valueRef]);
 
-  // A comment popover's link button: this tab's own recorded session's
-  // comment, as a chip at the caret. Linking one already in the draft just
-  // focuses — the agent needs to be pointed at it once.
+  // A comment popover's link button (this tab's own recorded session's
+  // comment) or a reply passage's Cite, as a chip at the caret. Linking one
+  // already in the draft just focuses — the agent needs to be pointed at it
+  // once.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<CommentLinkDetail>).detail;
@@ -1691,8 +1693,10 @@ export function MessageInput({
       if (!input) return;
       const linked = input
         .getMentions()
-        .some((m) => m.kind === "comment" && m.id === detail.mention.id);
+        .some((m) => m.kind === detail.mention.kind && m.id === detail.mention.id);
       if (!linked) input.insertMention(detail.mention, { padBefore: true });
+      // Handled: the cite popover closes only on this (`linkCiteToComposer`).
+      e.preventDefault();
       requestAnimationFrame(() => inputRef.current?.focus());
     };
     window.addEventListener(COMMENT_LINK_EVENT, handler);
@@ -1745,7 +1749,7 @@ export function MessageInput({
       if (queued) {
         const mentions = inputRef.current?.getMentions() ?? [];
         enqueueMessage(tabId, queued, mentions);
-        forgetSentPastes(mentions);
+        forgetSentTexts(mentions);
       }
       writeComposer("");
       return;
@@ -1756,16 +1760,16 @@ export function MessageInput({
       // strings and the agent will see whatever shortform text was in the
       // composer. Mentions are dropped here intentionally; promoting the
       // queue to a structured shape is a follow-up. Staged images likewise
-      // stay in the composer strip and ride the next direct send. A paste is
-      // the exception: its token alone would lose what the user pasted, so
-      // the queue puts its text into the queued string.
+      // stay in the composer strip and ride the next direct send. A paste or
+      // a cite is the exception: its token alone would lose what the user
+      // pasted or cited, so the queue puts its text into the queued string.
       enqueueMessage(tabId, trimmed, mentions);
-      forgetSentPastes(mentions);
+      forgetSentTexts(mentions);
     } else {
       if (modeUnrestored || heldForTerminal) return;
       const images = stagedImages;
       onSend(trimmed, mentions, images.length ? images : undefined);
-      forgetSentPastes(mentions);
+      forgetSentTexts(mentions);
       if (images.length) setStagedImages([]);
     }
     // Through `setValue`, not `clear`, so the send is one undo step away.
@@ -1825,10 +1829,13 @@ export function MessageInput({
                   text={q}
                   onEdit={() => {
                     const cur = inputRef.current?.getValue() ?? "";
-                    // A paste the queue inlined comes back as its chip, not
-                    // as every line it holds.
-                    const { text, pastes } = collapsePastes(q);
+                    // A paste or a cite the queue inlined comes back as its
+                    // chip, not as every line it holds. Cites were written
+                    // last, so they come off first.
+                    const uncited = collapseCites(q);
+                    const { text, pastes } = collapsePastes(uncited.text);
                     for (const p of pastes) rememberMention(p, projectPath);
+                    for (const c of uncited.cites) rememberMention(c, projectPath);
                     const merged = cur.trim() ? `${cur}\n${text}` : text;
                     writeComposer(merged);
                     removeQueueItem(tabId, i);

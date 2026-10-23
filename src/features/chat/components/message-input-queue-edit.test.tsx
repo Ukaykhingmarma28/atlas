@@ -26,6 +26,7 @@ import type { Editor } from "@tiptap/core";
 
 import { useChatStore } from "../stores/chat-store";
 import { pastedTextMention } from "../lib/pasted-text";
+import { citedTextMention } from "../lib/cited-text";
 import { resetMentionRegistryForTests } from "../lib/mention-registry";
 import { MessageInput } from "./message-input";
 
@@ -82,5 +83,45 @@ describe("editing a queued message", () => {
     expect(pm.editor.state.doc.childCount).toBe(1);
     expect(pm.textContent).not.toContain("log line");
     expect(useChatStore.getState().queues[TAB]).toBeUndefined();
+  });
+
+  it("brings an inlined cite back as its chip, after a paste", async () => {
+    const paste = pastedTextMention(big);
+    const cite = citedTextMention({
+      text: "Scope it to the usage page.",
+      note: "Billing too?",
+      messageId: "msg-7",
+      rowId: "am-42",
+    });
+    useChatStore
+      .getState()
+      .actions.enqueueMessage(TAB, `why @cite:${cite.id} @paste:${paste.id}`, [cite, paste]);
+    // The queued string carries the passage and the note, not just the token.
+    const queued = useChatStore.getState().queues[TAB]?.[0] ?? "";
+    expect(queued).toContain("Scope it to the usage page.");
+    expect(queued).toContain("Billing too?");
+
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <MessageInput tabId={TAB} onSend={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    const pm = await waitFor(() => {
+      const el = container.querySelector(".ProseMirror") as
+        | (HTMLElement & { editor: Editor })
+        | null;
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    act(() => {
+      fireEvent.click(screen.getByTitle("Edit / merge into input"));
+    });
+
+    await waitFor(() =>
+      expect(container.querySelector('[data-mention-kind="cited_text"]')).not.toBeNull(),
+    );
+    expect(container.querySelector('[data-mention-kind="pasted_text"]')).not.toBeNull();
+    expect(pm.editor.state.doc.childCount).toBe(1);
+    expect(pm.textContent).not.toContain("Billing too?");
   });
 });
