@@ -178,8 +178,12 @@ export const ComposerEditor = memo(
 
     // Every callback through a ref: the editor is built once, and reads
     // whatever the parent passed last.
+    // Written after commit, never during render: a render React throws away
+    // must not leave its props behind. Nothing reads `live` between the two.
     const live = useRef(props);
-    live.current = props;
+    useLayoutEffect(() => {
+      live.current = props;
+    });
 
     const [emptyFlag] = useState(() => createFlag(initialValue.length === 0));
     const blankRef = useRef(initialValue.trim().length === 0);

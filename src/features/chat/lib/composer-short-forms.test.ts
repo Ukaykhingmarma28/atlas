@@ -21,6 +21,7 @@ import type { Editor } from "@tiptap/core";
 import { closeHistory } from "@tiptap/pm/history";
 
 import { ChatInput, type ChatInputHandle } from "../components/chat-input";
+import { mentionOf, type SessionChipRecord } from "../components/session-mention-chip";
 import { SESSION_MENTION, tokenizeShortForms } from "./composer-short-forms";
 import { rememberMention, resetMentionRegistryForTests } from "./mention-registry";
 import { toShortForm, type MentionData } from "./mentions";
@@ -164,7 +165,8 @@ function composer(initialValue = "") {
 function chips(editor: Editor): MentionData[] {
   const out: MentionData[] = [];
   editor.state.doc.descendants((node) => {
-    if (node.type.name === SESSION_MENTION) out.push(node.attrs.data as MentionData);
+    if (node.type.name === SESSION_MENTION)
+      out.push(mentionOf(node.attrs.data as SessionChipRecord));
   });
   return out;
 }

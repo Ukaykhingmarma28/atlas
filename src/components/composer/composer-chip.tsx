@@ -33,11 +33,38 @@ export interface ComposerChipSpec<T> {
   /** The text this chip stands for. */
   toText: (data: T) => string;
   view: ComponentType<ComposerChipViewProps<T>>;
+  /**
+   * The record a chip pasted as HTML may carry, or null to paste it as text.
+   * The HTML can come from anywhere, so this is the feature's chance to check
+   * the shape and drop what only the feature itself may set. It is handed a
+   * plain JSON object, never an array or a primitive. Without it, any object
+   * is taken as is.
+   */
+  fromHTML?: (record: Record<string, unknown>) => T | null;
+}
+
+/** A `data-chip` attribute's payload as a plain JSON object, or null. */
+export function parseChipRecord(raw: string | null): Record<string, unknown> | null {
+  if (!raw) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 /** A Tiptap node for one kind of chip. */
 export function createChipNode<T>(spec: ComposerChipSpec<T>) {
   const View = memo(spec.view) as ComponentType<ComposerChipViewProps<T>>;
+  const fromElement = (el: HTMLElement): T | null => {
+    const record = parseChipRecord(el.getAttribute("data-chip"));
+    if (!record) return null;
+    return spec.fromHTML ? spec.fromHTML(record) : (record as T);
+  };
   function ChipNodeView({ node, selected }: ReactNodeViewProps) {
     return <View data={node.attrs.data as T} selected={selected} />;
   }
@@ -54,13 +81,7 @@ export function createChipNode<T>(spec: ComposerChipSpec<T>) {
       return {
         data: {
           default: null,
-          parseHTML: (el) => {
-            try {
-              return JSON.parse(el.getAttribute("data-chip") ?? "null");
-            } catch {
-              return null;
-            }
-          },
+          parseHTML: fromElement,
           renderHTML: (attrs) => ({ "data-chip": JSON.stringify(attrs.data) }),
         },
       };
@@ -70,8 +91,8 @@ export function createChipNode<T>(spec: ComposerChipSpec<T>) {
       return [
         {
           tag: `span[data-composer-chip="${spec.name}"]`,
-          // No readable record, no chip: let the span parse as its text.
-          getAttrs: (el) => (el.getAttribute("data-chip") ? null : false),
+          // No usable record, no chip: let the span parse as its text.
+          getAttrs: (el) => (fromElement(el) === null ? false : null),
         },
       ];
     },

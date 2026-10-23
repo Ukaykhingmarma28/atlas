@@ -4,7 +4,10 @@
 //
 // File and folder chips wear the active icon theme's icon for their path —
 // the same icon the explorer shows for it. A media `@file` chip previews its
-// image or video on hover in place of the path tooltip.
+// image or video on hover in place of the path tooltip, but only a chip the
+// user picked or dropped (`picked`): a video preview allow-lists the file's
+// directory for the asset protocol, and a path typed or pasted as text must
+// not be able to do that. A chip rebuilt from text shows its icon and name.
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -33,16 +36,67 @@ import {
   type ComposerChipViewProps,
 } from "@/components/composer/composer-chip";
 import { SESSION_MENTION } from "../lib/composer-short-forms";
+import { knownMention } from "../lib/mention-registry";
 import { toShortForm, type MentionData } from "../lib/mentions";
 
-export const SessionMention = createChipNode<MentionData>({
+/**
+ * What a session chip node carries: the mention, plus whether it came from
+ * the picker or a drop. The flag never leaves the composer: `mentionOf`
+ * strips it before the mention goes anywhere.
+ */
+export type SessionChipRecord = MentionData & { picked?: true };
+
+/** A mention the user picked or dropped, as the chip records it. */
+export function pickedChip(mention: MentionData): SessionChipRecord {
+  return { ...mention, picked: true };
+}
+
+/** The mention a chip stands for, without the composer's own flag. */
+export function mentionOf(record: SessionChipRecord): MentionData {
+  const { picked: _picked, ...mention } = record;
+  return mention as MentionData;
+}
+
+/**
+ * A chip pasted as HTML, or null to paste the span as its text (the short
+ * form). The HTML may come from outside Atlas, so nothing in it is trusted,
+ * `picked` least of all. A record naming a mention this run minted (same
+ * kind, id and short form) becomes that minted record. Otherwise only a path
+ * survives, rebuilt the way its text would be (`rebuildMention`): no flag and
+ * no field beyond the four a path chip has. Every other kind pastes as text.
+ */
+export function chipFromHTML(record: Record<string, unknown>): SessionChipRecord | null {
+  const { kind, id, displayName, absPath } = record;
+  if (typeof kind !== "string" || typeof id !== "string") return null;
+  let text: unknown;
+  try {
+    text = toShortForm(record as unknown as MentionData);
+  } catch {
+    return null;
+  }
+  if (typeof text !== "string") return null;
+  const minted = knownMention(text) as SessionChipRecord | null;
+  if (minted && minted.kind === kind && minted.id === id) return minted;
+  if (
+    (kind === "file" || kind === "folder") &&
+    typeof displayName === "string" &&
+    typeof absPath === "string" &&
+    absPath === id
+  ) {
+    return { kind, id, displayName, absPath };
+  }
+  return null;
+}
+
+export const SessionMention = createChipNode<SessionChipRecord>({
   name: SESSION_MENTION,
   toText: toShortForm,
   view: SessionMentionChip,
+  fromHTML: chipFromHTML,
 });
 
-function SessionMentionChip({ data: mention, selected }: ComposerChipViewProps<MentionData>) {
-  const media = mention.kind === "file" ? mediaKindOf(mention.absPath) : null;
+function SessionMentionChip({ data: mention, selected }: ComposerChipViewProps<SessionChipRecord>) {
+  const media = mention.kind === "file" && mention.picked ? mediaKindOf(mention.absPath) : null;
   const preview = useMediaPreview(mention.kind === "file" ? mention.absPath : null, media);
   return (
     <ComposerChip

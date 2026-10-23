@@ -15,7 +15,7 @@ import { TextSelection } from "@tiptap/pm/state";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => null) }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
 
-import { createChipNode } from "./composer-chip";
+import { createChipNode, parseChipRecord } from "./composer-chip";
 import {
   LARGE_PASTE_CHARS,
   LARGE_PASTE_LINES,
@@ -188,5 +188,21 @@ describe("continueMarkup", () => {
 
   it("declines a line that is not a list or a quote", () => {
     expect(enterAtEnd("plain")).toBe("(declined)");
+  });
+});
+
+describe("chip records from HTML", () => {
+  it("parseChipRecord takes a plain JSON object and nothing else", () => {
+    expect(parseChipRecord('{"a":1}')).toEqual({ a: 1 });
+    for (const raw of [null, "", "null", "[1]", "3", '"s"', "true", "{nope"]) {
+      expect(parseChipRecord(raw)).toBeNull();
+    }
+  });
+
+  it("a span whose payload is not an object pastes as its text", () => {
+    const editor = editorWith("");
+    editor.view.pasteHTML(`<span data-composer-chip="tag" data-chip="[1]">{{kept}}</span>`);
+    expect(docChips(editor.state.doc, "tag")).toEqual([]);
+    expect(editor.state.doc.textContent).toBe("{{kept}}");
   });
 });

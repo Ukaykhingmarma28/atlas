@@ -8,7 +8,7 @@
 // `message-input.tsx`. This file only adapts the core's generic triggers and
 // chips to the session's types.
 
-import { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
+import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef } from "react";
 
 import {
   ComposerEditor,
@@ -23,7 +23,12 @@ import type {
 import { SESSION_MENTION, sessionSerializer } from "../lib/composer-short-forms";
 import { rememberMention } from "../lib/mention-registry";
 import type { MentionData, MentionKind } from "../lib/mentions";
-import { SessionMention } from "./session-mention-chip";
+import {
+  SessionMention,
+  mentionOf,
+  pickedChip,
+  type SessionChipRecord,
+} from "./session-mention-chip";
 
 export interface MentionTrigger {
   /** Position of the trigger char (inclusive). */
@@ -106,11 +111,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
 ) {
   const inner = useRef<ComposerEditorHandle>(null);
   const projectRef = useRef(projectPath);
-  projectRef.current = projectPath;
   const mentionRef = useRef(onMentionTrigger);
-  mentionRef.current = onMentionTrigger;
   const slashRef = useRef(onSlashTrigger);
-  slashRef.current = onSlashTrigger;
+  // After commit, never during render (see `ComposerEditor`'s `live`).
+  useLayoutEffect(() => {
+    projectRef.current = projectPath;
+    mentionRef.current = onMentionTrigger;
+    slashRef.current = onSlashTrigger;
+  });
 
   const serializer = useMemo(() => sessionSerializer(() => projectRef.current), []);
 
@@ -153,14 +161,18 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       getMentions: () => {
         const editor = inner.current?.editor();
         return editor
-          ? docChips(editor.state.doc, SESSION_MENTION).map((n) => n.attrs.data as MentionData)
+          ? docChips(editor.state.doc, SESSION_MENTION).map((n) =>
+              mentionOf(n.attrs.data as SessionChipRecord),
+            )
           : [];
       },
       insertMention: (m, opts) => {
         // Remembered so its short form becomes this chip again when the text
         // comes back (a draft restore, a paste of the composer's own text).
-        rememberMention(m);
-        inner.current?.insertChip(SESSION_MENTION, m, opts);
+        // Every insert is the user's pick or drop, so the chip is `picked`.
+        const chip = pickedChip(m);
+        rememberMention(chip);
+        inner.current?.insertChip(SESSION_MENTION, chip, opts);
       },
       replaceRange: (from, to, text) => inner.current?.replaceRange(from, to, text),
       insertText: (text) => inner.current?.insertText(text),
