@@ -165,13 +165,11 @@ describe("ui_open", () => {
     expect(layout().tabs.filter((t) => t.type === "chat").length).toBeGreaterThanOrEqual(before);
   });
 
-  it("opens a git diff of a file", async () => {
+  it("opens the repository's diff, landing on a file", async () => {
     const r = result(await act("ui_open", { target: "diff", path: "src/main.ts", staged: true }));
-    expect(r.tabId).toBe("diff:src/main.ts:s");
-    expect(layout().tabs.find((t) => t.id === r.tabId)?.data).toMatchObject({
-      repoPath: "/p",
-      staged: true,
-    });
+    // One review diff per repository; the file is where it scrolls to.
+    expect(r.tabId).toBe("diff:/p");
+    expect(layout().tabs.find((t) => t.id === r.tabId)?.data).toMatchObject({ repoPath: "/p" });
   });
 
   it("opens settings on a section and rejects one that does not exist", async () => {

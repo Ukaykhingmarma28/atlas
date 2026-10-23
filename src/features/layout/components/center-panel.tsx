@@ -63,13 +63,12 @@ const NotebookViewer = lazy(() =>
 const CommitView = lazy(() =>
   import("@/features/git/components/commit-view").then((m) => ({ default: m.CommitView })),
 );
-const SessionChangesView = lazy(() =>
-  import("@/features/git/components/session-changes-view").then((m) => ({
-    default: m.SessionChangesView,
+// The review diff (`diff`, `session-changes`). Its own chunk, which is the only
+// thing that imports the diff viewer, Shiki and their workers.
+const ReviewPanel = lazy(() =>
+  import("@/features/git/components/diff-viewer/review-panel").then((m) => ({
+    default: m.ReviewPanel,
   })),
-);
-const GitDiffPanel = lazy(() =>
-  import("@/features/git/components/git-diff-panel").then((m) => ({ default: m.GitDiffPanel })),
 );
 const SourceControlPanel = lazy(() =>
   import("@/features/git/components/source-control-panel").then((m) => ({
@@ -1014,21 +1013,14 @@ function TabContent({ tab }: { tab: Tab }) {
     case "notebook":
       return <NotebookViewer filePath={tab.data.filePath as string} />;
     case "diff":
-      return (
-        <GitDiffPanel
-          repoPath={tab.data.repoPath as string}
-          file={tab.data.file as string}
-          staged={!!tab.data.staged}
-          commit={(tab.data.commit as string | null | undefined) ?? null}
-        />
-      );
+      return <ReviewPanel tabId={tab.id} repoPath={tab.data.repoPath as string} />;
     case "commit":
       return <CommitView repoPath={tab.data.repoPath as string} sha={tab.data.sha as string} />;
     case "session-changes":
       return (
-        <SessionChangesView
+        <ReviewPanel
           tabId={tab.id}
-          projectPath={tab.data.projectPath as string}
+          repoPath={tab.data.projectPath as string}
           sessionId={tab.data.sessionId as string}
         />
       );

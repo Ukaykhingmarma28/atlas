@@ -24,6 +24,14 @@ export function fnv1a32(
   return hash >>> 0;
 }
 
+/** A short stand-in for a text in a cache key: its length and two
+ *  independent hashes, so a key need not hold (and compare) the text. */
+export function textFingerprint(text: string): string {
+  const a = fnv1a32(text).toString(36);
+  const b = fnv1a32(text, SECONDARY_HASH_SEED, SECONDARY_HASH_MULTIPLIER).toString(36);
+  return `${text.length}:${a}:${b}`;
+}
+
 export type RenderablePatch =
   | { kind: "files"; files: FileDiffMetadata[] }
   | { kind: "raw"; text: string; reason: string };

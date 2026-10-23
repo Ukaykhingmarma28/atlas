@@ -28,6 +28,9 @@ export interface DiffFileStat {
   status: DiffFileStatus;
   /** Omitted when false. */
   binary?: boolean;
+  /** The working-tree file's mtime and size: changes on every write, even
+   *  one that leaves the counts alone. Omitted when the file is absent. */
+  sig?: string;
 }
 
 export interface DiffSource {
@@ -87,7 +90,43 @@ export interface DiffFileContentsRequest {
   oldPath?: string | null;
 }
 
-/** Both sides of one file — for a file the capped patch left out. */
+export interface DiffFilePatch {
+  /** One file's unified patch; empty when there is nothing to show (binary,
+   *  unchanged, or too large for even one hunk). */
+  patch: string;
+  /** Over 1 MB: `patch` holds only the hunks that fit, or none. */
+  truncated: boolean;
+  binary: boolean;
+}
+
+/** One file's patch for a review source, diffed by git (whitespace-only
+ *  changes dropped when asked): for a file the capped preview left out. */
+export function getDiffFilePatch(
+  path: string,
+  req: DiffFileContentsRequest & { ignoreWhitespace?: boolean },
+): Promise<DiffFilePatch> {
+  return invoke<DiffFilePatch>("git_diff_file_patch", {
+    path,
+    sourceKind: req.sourceKind,
+    baseRef: req.baseRef ?? null,
+    filePath: req.filePath,
+    oldPath: req.oldPath ?? null,
+    ignoreWhitespace: req.ignoreWhitespace ?? false,
+  });
+}
+
+/** A patch between two texts, with no repository: a session turn's edit,
+ *  diffed from the before/after its tool call carried. */
+export function diffTextsPatch(
+  oldText: string,
+  newText: string,
+  file: string,
+  ignoreWhitespace = false,
+): Promise<DiffFilePatch> {
+  return invoke<DiffFilePatch>("diff_texts_patch", { oldText, newText, file, ignoreWhitespace });
+}
+
+/** Both sides of one file, for expanding the unchanged lines around a hunk. */
 export function getDiffFileContents(
   path: string,
   req: DiffFileContentsRequest,

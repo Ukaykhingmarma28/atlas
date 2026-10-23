@@ -5,26 +5,46 @@
 // spans, everything else left as `added` / `removed` / `context`. Hand-writing
 // that row model per fixture is unreadable and drifts the moment a fixture file
 // is edited, so the fakes hand this module two texts instead and get the same
-// shape back — which is also what `diff_structured_text` does for real.
+// shape back.
 //
 // The pairing heuristic is deliberately simpler than delta's `infer_edits`
 // (index-wise, gated on token similarity). It only has to produce a diff that
 // is *representative* — added, removed, modified and context lines, with word
 // spans inside the modified ones — not byte-identical to git's.
 
-import type {
-  DiffLineStatus,
-  DiffRow,
-  DiffSegment,
-  DiffSide,
-  FileDiff,
-} from "@/features/git/lib/git-diff-api";
+import type { DiffLineStatus } from "@/features/git/lib/git-diff-api";
 import type {
   DiffFileStat,
   DiffFileStatus,
   DiffPreview,
   DiffSource,
 } from "@/features/git/lib/git-review-api";
+
+// The engine's structured row model. The app no longer reads it (the review
+// diff parses unified patches), so it is the mock's own: the fakes derive the
+// editor gutter's line status and their +/- counts from it.
+type DiffLineKind = "context" | "added" | "removed" | "changed";
+interface DiffSegment {
+  text: string;
+  emph: boolean;
+}
+interface DiffSide {
+  lineNo: number;
+  kind: DiffLineKind;
+  segments: DiffSegment[];
+}
+interface DiffRow {
+  left: DiffSide | null;
+  right: DiffSide | null;
+}
+export interface FileDiff {
+  path: string;
+  language: string;
+  isBinary: boolean;
+  rows: DiffRow[];
+  stats: { additions: number; deletions: number };
+  changeBlocks: number[];
+}
 
 type LineOp = { kind: "eq" | "del" | "ins"; text: string };
 
@@ -334,6 +354,8 @@ function previewSource(
       deletions,
       status: change.status,
       ...(change.binary ? { binary: true } : {}),
+      // Rust sends the file's mtime and size; a hash of its text is the same signal.
+      ...(change.after !== null ? { sig: hashOf(change.after) } : {}),
     });
     if (truncated || diff.length + patch.length > PATCH_CAP) truncated = true;
     else diff += patch;

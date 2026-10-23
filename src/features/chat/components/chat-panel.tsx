@@ -111,8 +111,6 @@ import { openNewAgentChat } from "../lib/open-agent-session";
 import { forkSessionToNewTab } from "../lib/fork-session";
 import { projectPathForTab } from "../lib/tab-project";
 import { MemoryUpdatedCard } from "@/features/memory/components/memory-updated-card";
-import { useQueryClient } from "@tanstack/react-query";
-import { prefetchTextDiff } from "@/features/git/lib/git-diff-api";
 import { OPEN_TURN_DIFF_EVENT, type TurnDiffRequest } from "../lib/open-turn-diff";
 import { collectTurnEdits } from "../lib/turn-edits";
 import { CONTENT_COLUMN, HEADER_INSET } from "../lib/row-metrics";
@@ -160,8 +158,8 @@ const DetailPanel = lazy(() => import("./detail-panel").then((m) => ({ default: 
 const ThreadOverviewPanel = lazy(() =>
   import("./thread-overview-panel").then((m) => ({ default: m.ThreadOverviewPanel })),
 );
-// Full-screen side-by-side diff for a turn's changes. Lazy: it pulls the
-// virtualizer + the diff-highlight worker, and most sessions never open it.
+// Full-screen diff for a turn's changes. Lazy: it pulls the diff viewer and
+// Shiki, and most sessions never open it.
 const GitDiffModal = lazy(() =>
   import("@/features/git/components/git-diff-modal").then((m) => ({
     default: m.GitDiffModal,
@@ -346,7 +344,6 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     sources: Record<string, { old: string; new: string }>;
   } | null>(null);
 
-  const queryClient = useQueryClient();
   useEffect(() => {
     const onOpen = (e: Event) => {
       const detail = (e as CustomEvent<TurnDiffRequest>).detail;
@@ -354,30 +351,21 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
       const repo = useAppStore.getState().currentProject?.path ?? "";
       const messages = useChatStore.getState().sessions[tabId]?.messages ?? [];
       const next = collectTurnEdits(messages, detail.turnId, repo, detail.file);
-      // Start the diff BEFORE the modal exists. The viewer would otherwise wait
-      // for its own mount to fire the same request, putting an IPC round trip
-      // after the open animation rather than underneath it.
-      const src = next.sources[next.initial];
-      if (src) prefetchTextDiff(queryClient, repo, next.initial, src);
       setTurnDiff(next);
     };
     window.addEventListener(OPEN_TURN_DIFF_EVENT, onOpen);
     return () => window.removeEventListener(OPEN_TURN_DIFF_EVENT, onOpen);
-  }, [tabId, queryClient]);
+  }, [tabId]);
 
-  // Warm everything the diff modal needs while the reader is idle, so opening
-  // it is a paint rather than a fetch: the chunk itself (which now pulls the
-  // panel with it), and the syntax-highlight worker — WebKit suspends idle
-  // workers, and a cold one costs a round trip on the first highlighted file.
+  // Warm the diff modal's chunk while the reader is idle, so opening it is a
+  // paint rather than a fetch. Not its workers: they start with the first
+  // viewer, and a pool per idle chat would be threads nobody asked for.
   useEffect(() => {
     const w = window as Window & {
       requestIdleCallback?: (cb: () => void, o?: { timeout?: number }) => number;
     };
     const load = () => {
       void import("@/features/git/components/git-diff-modal");
-      void import("@/features/git/lib/diff-highlight-cache").then((m) =>
-        m.warmDiffHighlightWorker?.(),
-      );
     };
     // Short timeout: this competes with nothing the reader can see, and waiting
     // four seconds meant an early click still paid full price.
