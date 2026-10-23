@@ -215,5 +215,12 @@ fn idle_sessions_lists_only_what_the_sweep_could_settle() {
     store.save_all(vec![old, fresh]);
 
     let cutoff = Utc::now() - Duration::days(3);
-    assert_eq!(store.idle_sessions(cutoff), vec![old_session]);
+    let idle = store.idle_sessions(cutoff);
+    assert_eq!(idle.len(), 1);
+    assert_eq!(idle[0].0, old_session);
+    assert_eq!(
+        idle[0].1.paths(),
+        [PathBuf::from("/tmp/atlas")],
+        "with the folders it ran in"
+    );
 }

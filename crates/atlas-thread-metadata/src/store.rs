@@ -868,16 +868,17 @@ impl ThreadMetadataStore {
         })
     }
 
-    /// The sessions the idle sweep would settle at `cutoff`, before the host
-    /// rules out the busy ones. Read under the read lock, ids only: the
-    /// host's busy check is per session and costs a thread lock each, so it
+    /// The sessions the idle sweep would settle at `cutoff`, with the folders
+    /// each ran in, before the host rules out the busy ones. Read under the
+    /// read lock, and only these rows are copied out: the host's busy check
+    /// costs a thread lock and possibly a directory scan per session, so it
     /// runs over this short list rather than every row.
-    pub fn idle_sessions(&self, cutoff: DateTime<Utc>) -> Vec<acp::SessionId> {
+    pub fn idle_sessions(&self, cutoff: DateTime<Utc>) -> Vec<(acp::SessionId, PathList)> {
         read(&self.inner.cache)
             .threads
             .values()
             .filter(|t| due_for_settling(t, cutoff))
-            .filter_map(|t| t.session_id.clone())
+            .filter_map(|t| Some((t.session_id.clone()?, t.folder_paths().clone())))
             .collect()
     }
 

@@ -1,5 +1,14 @@
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
-import { Fragment, memo, useEffect, useMemo, useRef, useState, useCallback } from "react";
+import {
+  Fragment,
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 import { ArrowUp, ChevronRight, History, Search } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -802,8 +811,14 @@ export const SessionSidebar = memo(function SessionSidebar({
     remove: handleDeleteAgent,
     onOpened,
   };
+  // What the settle chord acts on. Written after commit, not during render:
+  // a concurrent render React throws away would otherwise leave the chord
+  // pointing at a session this tab never showed.
+  const openItem = items.find(isActiveItem);
   const openItemRef = useRef<SidebarItem | undefined>(undefined);
-  openItemRef.current = items.find(isActiveItem);
+  useLayoutEffect(() => {
+    openItemRef.current = openItem;
+  }, [openItem]);
   const onOpenCard = useCallback((threadId: string) => {
     const item = itemsByThreadRef.current.get(threadId);
     if (!item) return;

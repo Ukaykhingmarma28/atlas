@@ -625,11 +625,12 @@ fn auto_settle_tick(app: &AppHandle, host: &Arc<AgentHost>) {
     if days == 0 {
         return;
     }
-    let modified = app
-        .try_state::<Arc<super::session_watcher::SessionWatcher>>()
-        .map(|watcher| watcher.last_modified())
-        .unwrap_or_default();
-    match host.auto_settle_idle(chrono::Duration::days(i64::from(days)), &modified) {
+    // Each candidate is judged by its own project's transcripts, read now:
+    // the session watcher only covers the project the sidebar has open.
+    match host.auto_settle_idle(
+        chrono::Duration::days(i64::from(days)),
+        &super::session_watcher::activity_in,
+    ) {
         Ok(0) => {}
         Ok(settled) => {
             tracing::debug!(settled, days, "auto-settled idle sessions");
@@ -1771,14 +1772,22 @@ pub fn threads_archive(thread_id: String, host: State<'_, Arc<AgentHost>>) -> Re
 /// Move a session to the sidebar's Settled shelf. Refused while a turn is
 /// running there, in Atlas or in another process, or just after a send.
 /// Answers whether it moved: `false` for one already settled or gone.
+///
+/// Liveness elsewhere is read from the row's own project's transcripts, which
+/// is file I/O, so the check runs off the async workers.
 #[tauri::command]
-pub fn threads_settle(
+pub async fn threads_settle(
     thread_id: String,
     host: State<'_, Arc<AgentHost>>,
-    watcher: State<'_, Arc<super::session_watcher::SessionWatcher>>,
 ) -> Result<bool, CmdError> {
-    host.settle_thread(parse_thread_id(&thread_id)?, &watcher.last_modified())
-        .map_err(CmdError::from)
+    let thread_id = parse_thread_id(&thread_id)?;
+    let host = host.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        host.settle_thread(thread_id, &super::session_watcher::activity_in)
+    })
+    .await
+    .map_err(|e| CmdError::new(e.to_string(), ErrorClass::Fatal))?
+    .map_err(CmdError::from)
 }
 
 /// Take a session back off the Settled shelf. Answers whether it was on it.
