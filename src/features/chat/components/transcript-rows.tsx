@@ -349,6 +349,7 @@ export const ProseRowView = memo(function ProseRowView({
           text={row.text}
           pinScopeKey={pinScopeKey}
           canBranch={canBranch}
+          showTimestamp={!row.showHeader}
         />
       )}
     </Column>

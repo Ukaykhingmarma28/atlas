@@ -151,6 +151,29 @@ export function ActionButton({
 }
 
 /**
+ * The pin, as one toggle that stays put: dim unpinned, lit and filled pinned.
+ * The label never changes — `aria-pressed` carries the state, so a screen
+ * reader hears "Pin message, toggle button, pressed" rather than an "Unpin"
+ * label stacked on a pressed state. See `message-footer.ts` for why it never
+ * moves between the bar and the menu.
+ */
+export function PinToggle({
+  label,
+  pinned,
+  onToggle,
+}: {
+  label: string;
+  pinned: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <ActionButton label={label} onClick={onToggle} active={pinned}>
+      <Pin size={12} fill={pinned ? "currentColor" : "none"} />
+    </ActionButton>
+  );
+}
+
+/**
  * How a footer comes and goes. Hidden at rest, shown on row hover, on keyboard
  * focus inside it, while one of its popups is open, and always on a touch
  * screen. Snaps, never fades (the note at the top of this file).
@@ -165,19 +188,31 @@ export const FOOTER_REVEAL = cn(
 
 /**
  * When the message was sent, short ("4:34 PM", "yesterday at 4:34 PM",
- * "10/22 4:34 PM") with the whole date in the tooltip. Memoized on the
- * timestamp: a row re-renders for its pin or comment state, and the
- * `Intl` formatting need not run again for that.
+ * "10/22 4:34 PM") with the whole date in the tooltip.
+ *
+ * Not memoized: the formatters are cached (`format-time.ts`), so formatting
+ * is a call, and a memo keyed on the timestamp would hold a stale label
+ * across a 12h/24h switch or midnight on the renders that do happen.
+ *
+ * The full date is built only when the tooltip is about to open, on pointer
+ * enter of the timestamp itself (the tooltip's open delay covers the extra
+ * render). That state lives here, so it
+ * re-renders this `<time>` and nothing else; the row never hears of it.
+ * Until then the label is the short form, which is also a fine accessible
+ * name for the element.
  */
 export function MessageTimestamp({ timestamp }: { timestamp: string }) {
-  const { short, full } = useMemo(
-    () => ({ short: formatDayAwareTime(timestamp), full: formatFullTimestamp(timestamp) }),
-    [timestamp],
-  );
+  const [full, setFull] = useState<string | null>(null);
+  const short = formatDayAwareTime(timestamp);
   if (!short) return null;
+  const prime = () => setFull(formatFullTimestamp(timestamp));
   return (
-    <HintItem label={full}>
-      <time dateTime={timestamp} className="px-1 text-xs tabular-nums text-muted-foreground">
+    <HintItem label={full ?? short}>
+      <time
+        dateTime={timestamp}
+        onPointerEnter={prime}
+        className="px-1 text-xs tabular-nums text-muted-foreground"
+      >
         {short}
       </time>
     </HintItem>
@@ -190,10 +225,22 @@ export interface FooterMenuItem {
   onSelect: () => void;
 }
 
+/** Keys that open a menu button, per the ARIA menu-button pattern. */
 /**
  * The "…" menu for a footer's less frequent actions. Renders nothing when it
  * has no items, so a footer with nothing tucked away carries no empty menu.
- * Base UI mounts the popup only while open, so a closed menu is one button.
+ *
+ * Mounted lazily. A `Menu.Root` costs several times a plain button (its
+ * store, floating-tree context, trigger registration), and one sits on every
+ * windowed prompt, almost none of which is ever opened. So at rest this is
+ * the plain footer button; the first click (or Enter, Space, ArrowDown) swaps
+ * in the real menu, already open — it is controlled, so that first press is
+ * the one that opens it rather than a press that merely arms it. Once mounted it
+ * stays mounted for the row's lifetime.
+ *
+ * The swap replaces the button element, so focus is handed to the new trigger
+ * (`autoFocus`) — otherwise a keyboard open would leave focus on a node that
+ * no longer exists, and closing the menu would return it to `<body>`.
  */
 export function FooterMenu({
   items,
@@ -203,15 +250,45 @@ export function FooterMenu({
   /** The menu's edge that lines up with the button: the footer's outer side. */
   align: "start" | "end";
 }) {
+  const [mounted, setMounted] = useState(false);
+  const [open, setOpen] = useState(false);
   if (items.length === 0) return null;
+
+  const icon = <MoreHorizontal size={12} />;
+  if (!mounted) {
+    const arm = () => {
+      setMounted(true);
+      setOpen(true);
+    };
+    return (
+      <HintItem label="More actions">
+        <FooterButton
+          aria-haspopup="menu"
+          aria-expanded={false}
+          // `click`, not `pointerdown`: swapping the element mid-press left
+          // the rest of the gesture (pointerup, click) to be delivered after
+          // the menu mounted, and a pointer open never showed (checked
+          // headless; the keyboard path was fine). A completed click has
+          // nothing left to deliver. Enter and Space arrive here as a click.
+          onClick={arm}
+          onKeyDown={(e) => {
+            if (e.key !== "ArrowDown") return;
+            e.preventDefault();
+            arm();
+          }}
+        >
+          {icon}
+        </FooterButton>
+      </HintItem>
+    );
+  }
+
   return (
-    <DropdownMenu modal={false}>
+    <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
       <HintItem label="More actions">
         {/* Rendered as the footer's own button, so the trigger is the same
             24px ghost square as its neighbours rather than a restyled one. */}
-        <DropdownMenuTrigger render={<FooterButton />}>
-          <MoreHorizontal size={12} />
-        </DropdownMenuTrigger>
+        <DropdownMenuTrigger render={<FooterButton autoFocus />}>{icon}</DropdownMenuTrigger>
       </HintItem>
       <DropdownMenuContent align={align}>
         {items.map((item) => (
@@ -374,21 +451,15 @@ export function UserRowActions({
     });
   }, [pinScopeKey, messageId, timestamp, text]);
 
-  const actions = useMemo(() => userFooterActions({ canRetry, pinned }), [canRetry, pinned]);
+  const actions = useMemo(() => userFooterActions({ canRetry }), [canRetry]);
   const menuItems = useMemo(
     () =>
-      actions.overflow.map((action): FooterMenuItem =>
-        action === "edit"
-          ? // A turn-out arrow, not a pencil. Nothing is edited in place: the
-            // prompt goes back to the composer and leaves as a NEW turn.
-            {
-              label: "Edit and send as new message",
-              icon: <CornerUpRight />,
-              onSelect: onEdit,
-            }
-          : { label: "Pin message", icon: <Pin />, onSelect: onPin },
+      actions.overflow.map((): FooterMenuItem =>
+        // A turn-out arrow, not a pencil. Nothing is edited in place: the
+        // prompt goes back to the composer and leaves as a NEW turn.
+        ({ label: "Edit and send as new message", icon: <CornerUpRight />, onSelect: onEdit }),
       ),
-    [actions, onEdit, onPin],
+    [actions, onEdit],
   );
 
   return (
@@ -430,9 +501,7 @@ export function UserRowActions({
                 <RefreshCw size={12} />
               </ActionButton>
             ) : action === "pin" ? (
-              <ActionButton key={action} label="Unpin message" onClick={onPin} active>
-                <Pin size={12} fill="currentColor" />
-              </ActionButton>
+              <PinToggle key={action} label="Pin message" pinned={pinned} onToggle={onPin} />
             ) : (
               <CommentAndCopy
                 key={action}

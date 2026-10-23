@@ -46,8 +46,22 @@ describe("formatDayAwareTime", () => {
     expect(fmt(new Date(2026, 9, 24, 9, 29))).toBe("9:29 AM");
   });
 
-  it("treats a timestamp slightly ahead of the clock as today", () => {
+  it("treats a later time on the same day as today", () => {
     expect(fmt(new Date(2026, 9, 24, 9, 31))).toBe("9:31 AM");
+  });
+
+  it("dates a timestamp from a future day rather than passing it off as today", () => {
+    expect(fmt(new Date(2026, 9, 25, 0, 5))).toBe("10/25 12:05 AM");
+    expect(fmt(new Date(2027, 0, 2, 8, 0))).toBe("1/2/2027 8:00 AM");
+  });
+
+  it("picks up a changed hour cycle instead of reusing a cached formatter", () => {
+    const at = new Date(2026, 9, 24, 16, 34);
+    expect(fmt(at)).toBe("4:34 PM");
+    setTimeFormat("24h");
+    expect(fmt(at)).toBe("16:34");
+    setTimeFormat("system");
+    expect(fmt(at)).toBe("4:34 PM");
   });
 
   it("says yesterday for the previous calendar day, however few hours ago", () => {
