@@ -46,6 +46,7 @@ import { useTranscriptScroll } from "../lib/use-transcript-scroll";
 import { useThawed } from "../lib/use-thawed";
 import { useChatStore } from "../stores/chat-store";
 import { sessionCanRetry } from "../lib/retry-gate";
+import { latestResponseRowId } from "../lib/message-footer";
 import { pinScope } from "../stores/chat-pins-store";
 import { cn } from "@/lib/utils";
 import { CONTENT_COLUMN } from "../lib/row-metrics";
@@ -358,6 +359,20 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
     const session = s.sessions[tabId];
     return !!session && !isBusyAgentStatus(session.status) && !session.stopping;
   });
+  // Whether the session could be forked right now — the header's "Branch from
+  // here" gate (agent advertised `fork`, session bound), plus idle: a fork
+  // taken mid-turn would copy a half-written response. Same O(1) bargain.
+  const supportsFork = agentCatalogEntry(agent)?.supportsFork === true;
+  const canBranch = useChatStore((s) => {
+    const session = s.sessions[tabId];
+    return (
+      supportsFork &&
+      !!session?.acpAgentId &&
+      !!session.acpSessionId &&
+      !isBusyAgentStatus(session.status) &&
+      !session.stopping
+    );
+  });
 
   // Delegated children, keyed by their launching call. A stable reference —
   // immer re-identifies it only when a child changes — so this subscription
@@ -459,6 +474,8 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
     }
     return undefined;
   }, [rows]);
+  // Branch belongs to the latest settled response, for the same reason.
+  const latestResponseId = useMemo(() => latestResponseRowId(rows), [rows]);
   const canGrow = safeStart > 0;
 
   // Fold the correction back into state. Rendering from `safeStart` alone
@@ -925,6 +942,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
   // or changes at most once per turn. `visible` is the projection's own slice,
   // so it holds while the projection does.
   const canRetryRowId = canRetry ? lastUserRowId : undefined;
+  const canBranchRowId = canBranch ? latestResponseId : undefined;
   const rowViews = useMemo(
     () =>
       visible.map((row, i) => (
@@ -945,6 +963,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
             priority={safeStart + i}
             onToggleExpand={toggleExpand}
             canRetryRowId={canRetryRowId}
+            canBranchRowId={canBranchRowId}
             canContinue={canContinue}
             pinScopeKey={pinScopeKey}
           />
@@ -957,6 +976,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
       agentLabel,
       entranceMessageId,
       canRetryRowId,
+      canBranchRowId,
       canContinue,
       pinScopeKey,
       toggleTurn,
@@ -1057,6 +1077,7 @@ function RowView({
   onToggleExpand,
   onExpandTurn,
   canRetryRowId,
+  canBranchRowId,
   canContinue,
   pinScopeKey,
 }: {
@@ -1071,6 +1092,9 @@ function RowView({
    *  retry is possible. An id compare here keeps `UserRowView`'s prop a plain
    *  boolean. */
   canRetryRowId?: string;
+  /** Id of the one prose row allowed to show "Branch from here" — the latest
+   *  settled response — or `undefined` when the session cannot fork now. */
+  canBranchRowId?: string;
   /** Whether a message could be sent now (an interrupted turn's Continue). */
   canContinue: boolean;
   /** Pin scope for this thread — resolved once here rather than per row, so a
@@ -1101,6 +1125,7 @@ function RowView({
           agentLabel={agentLabel}
           priority={priority}
           pinScopeKey={pinScopeKey}
+          canBranch={row.id === canBranchRowId}
         />
       );
     case RowKind.Thinking:
