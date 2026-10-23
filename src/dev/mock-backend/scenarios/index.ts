@@ -33,6 +33,7 @@ import { chatTools } from "./chat-tools";
 import { collab } from "./collab";
 import { designSystem } from "./design-system";
 import { diffLarge } from "./diff-large";
+import { filesLarge } from "./files-large";
 import { gitConflict } from "./git-conflict";
 import { keymapFirstRun } from "./keymap-first-run";
 import { knowledge } from "./knowledge";
@@ -84,6 +85,7 @@ const all: Scenario[] = [
   chatMarkdown,
   gitConflict,
   diffLarge,
+  filesLarge,
   knowledge,
   collab,
   northwind,

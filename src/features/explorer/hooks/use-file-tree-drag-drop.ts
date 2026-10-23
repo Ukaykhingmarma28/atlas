@@ -53,6 +53,9 @@ export function useFileTreeDragDrop(opts: {
   rootPath: string | null;
   onMove: (src: string, destDir: string) => void;
   onAutoExpand: (path: string) => void;
+  /** This tree's own container. With two trees mounted (the explorer and the
+   *  review panel's Files view), a drop over the other one is not ours. */
+  scopeRef?: React.RefObject<HTMLElement | null>;
 }) {
   const [dragState, setDragState] = useState<FileTreeDragState>(INITIAL);
 
@@ -64,6 +67,7 @@ export function useFileTreeDragDrop(opts: {
   onMoveRef.current = opts.onMove;
   const onAutoExpandRef = useRef(opts.onAutoExpand);
   onAutoExpandRef.current = opts.onAutoExpand;
+  const scopeRef = opts.scopeRef;
 
   const itemRef = useRef<DraggedItem | null>(null);
   const overRef = useRef<string | null>(null);
@@ -122,6 +126,11 @@ export function useFileTreeDragDrop(opts: {
   const resolveTarget = useCallback(
     (x: number, y: number, dragged: DraggedItem) => {
       const el = document.elementFromPoint(x, y);
+      const scope = scopeRef?.current;
+      if (scope && (!el || !scope.contains(el))) {
+        clearAutoExpand();
+        return null;
+      }
       const rowEl = el?.closest<HTMLElement>("[data-tree-path]");
       if (rowEl) {
         const path = rowEl.getAttribute("data-tree-path");
@@ -147,7 +156,7 @@ export function useFileTreeDragDrop(opts: {
       clearAutoExpand();
       return null;
     },
-    [scheduleAutoExpand, clearAutoExpand],
+    [scheduleAutoExpand, clearAutoExpand, scopeRef],
   );
 
   const beginDrag = useCallback(

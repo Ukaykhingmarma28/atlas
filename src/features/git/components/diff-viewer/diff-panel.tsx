@@ -122,9 +122,11 @@ export interface DiffPanelProps {
   sessionId?: string | null;
   /** Source-control actions (commit, push, branch) go here when they land. */
   actions?: ReactNode;
+  /** Heads the header: the review panel's view switch. */
+  leading?: ReactNode;
 }
 
-export function DiffPanel({ tabId, repoPath, sessionId = null, actions }: DiffPanelProps) {
+export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading }: DiffPanelProps) {
   const scopes: DiffScope[] = sessionId
     ? ["session", "working-tree", "branch-range"]
     : ["working-tree", "branch-range"];
@@ -366,6 +368,7 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions }: DiffPa
 
   const header = (
     <div className="flex h-control-lg shrink-0 items-center gap-1 border-b border-border px-2">
+      {leading}
       <DropdownMenu>
         <DropdownMenuTrigger
           render={

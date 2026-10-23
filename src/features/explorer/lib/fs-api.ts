@@ -41,3 +41,47 @@ export async function readDirectory(root: string, path: string): Promise<Project
   if (!listing || listing.error) throw new Error(listing?.error ?? `No listing for ${path}`);
   return listing.entries;
 }
+
+// ── Mutations the file tree performs. Paths are absolute. ────────────────
+
+export function createFile(path: string): Promise<void> {
+  return invoke("fs_create_file", { path });
+}
+
+export function createDirectory(path: string): Promise<void> {
+  return invoke("fs_create_dir", { path });
+}
+
+export function renamePath(from: string, to: string): Promise<void> {
+  return invoke("fs_rename", { from, to });
+}
+
+export function deletePath(path: string): Promise<void> {
+  return invoke("fs_delete", { path });
+}
+
+export function copyPath(from: string, to: string): Promise<void> {
+  return invoke("fs_copy", { from, to });
+}
+
+/** Copies beside the original under a free " copy" name; answers the new path. */
+export function duplicatePath(path: string): Promise<string> {
+  return invoke<string>("fs_duplicate", { path });
+}
+
+export function openInTerminal(path: string): Promise<void> {
+  return invoke("fs_open_in_terminal", { path });
+}
+
+export function addToGitignore(projectPath: string, pattern: string): Promise<void> {
+  return invoke("fs_add_to_gitignore", { projectPath, pattern });
+}
+
+/** Re-point the mention picker's recent-files entry after a rename or move. */
+export function renameRecentFile(
+  oldPath: string,
+  newPath: string,
+  workspaceId: string | null,
+): Promise<unknown> {
+  return invoke("recent_files_rename", { oldPath, newPath, workspaceId });
+}

@@ -215,7 +215,15 @@ async function flush(): Promise<void> {
   batch.forEach(([key], index) => {
     resolved[key] = answers[index] ?? null;
   });
-  baseStore.setState((state) => ({ resolved: { ...state.resolved, ...resolved } }));
+  // Written into the existing cache, not spread into a copy. The cache is
+  // keyed by path and only grows: scrolling a 50,000-file tree fills it with
+  // tens of thousands of keys, and copying all of them for every batch (one
+  // per rendered frame while scrolling) made each frame's cost grow with
+  // everything ever shown. Rows select `resolved[key]`, a value, so a fresh
+  // top-level state is all they need to see the new answers; nothing reads
+  // the record's identity. `emptyCaches()` still swaps in a new one on a
+  // theme change.
+  baseStore.setState((state) => ({ resolved: Object.assign(state.resolved, resolved) }));
 
   const state = baseStore.getState();
   const wantedImages = new Set<string>();

@@ -390,6 +390,7 @@ export function FileTree() {
     rootPath,
     onMove: handleMove,
     onAutoExpand: ensureExpanded,
+    scopeRef: scrollRef,
   });
 
   // Copy files dragged in from Finder/Explorer into the hovered folder.
@@ -414,6 +415,7 @@ export function FileTree() {
   const { externalDropPath } = useExternalFileDrop({
     rootPath,
     onDropFiles: handleExternalDrop,
+    scopeRef: scrollRef,
   });
 
   // Unified drop target for highlighting: the internal pointer-drag
