@@ -52,7 +52,7 @@ function turn(...toolCalls: ToolCallDisplay[]): ChatMessage[] {
 
 function markers(messages: ChatMessage[]): MarkerRow[] {
   return projectRows(messages, OPTS).rows.flatMap((row) =>
-    row.kind === RowKind.MarkerGroup ? row.markers : [],
+    row.kind === RowKind.MarkerGroup ? row.markers : row.kind === RowKind.Marker ? [row] : [],
   );
 }
 
@@ -356,88 +356,61 @@ describe("a shell call is classified by its command, not its tool name", () => {
 });
 
 describe("the folded block's one-line summary", () => {
-  const groupOf = (...commands: string[]) => {
-    const rows = projectRows(
-      turn(
-        ...commands.map((command, n) =>
-          toolCall({ id: `c${n}`, kind: "execute", arguments: { command } }),
-        ),
-      ),
-      OPTS,
-    ).rows;
-    return rows.find((r): r is MarkerGroupRow => r.kind === RowKind.MarkerGroup);
-  };
+  const groupOf = (...calls: ToolCallDisplay[]) =>
+    projectRows(turn(...calls), OPTS).rows.find(
+      (r): r is MarkerGroupRow => r.kind === RowKind.MarkerGroup,
+    );
+  const sh = (id: string, command: string) =>
+    toolCall({ id, kind: "execute", arguments: { command } });
 
-  it("names each thing the turn did, in a fixed order", () => {
-    const g = groupOf("cargo build", "make test", "cat a.ts", "cat b.ts");
-    expect(g?.summary).toBe("Read files, ran commands");
+  it("counts each kind of thing the block did, in the order it first happened", () => {
+    const g = groupOf(
+      sh("a", "cargo build"),
+      sh("b", "make test"),
+      sh("c", "cat a.ts"),
+      sh("d", "cat b.ts"),
+    );
+    expect(g?.summary).toBe("Ran 2 commands and read 2 files");
   });
 
-  it("leads with the first bucket in the sentence, not the commonest", () => {
-    // Six commands to two reads, and the sentence still opens with the reads:
-    // the observed Codex summary led with a wrench over six terminal rows.
-    const g = groupOf("cat a.ts", "cat b.ts", "make", "make", "make", "make", "make", "make");
-    expect(g?.summary).toBe("Read files, ran commands");
+  it("names what changed the project before what only looked at it", () => {
+    const g = groupOf(
+      sh("a", "cat a.ts"),
+      sh("b", "rg foo"),
+      toolCall({ id: "c", kind: null, toolName: "acme__load_skill" }),
+      sh("d", "make"),
+    );
+    expect([g?.summary, g?.tool]).toEqual([
+      "Read 1 file, ran 1 command, and performed 2 other actions",
+      "read",
+    ]);
   });
 
-  it("counts a search toward having read files", () => {
-    // The screenshot's turn read exactly one file by glyph yet said "read
-    // files" — only the search alongside it makes that plural add up.
-    const g = groupOf("cat ci.yml", "rg 'bazzite' .");
-    expect(g?.summary).toBe("Read files");
-  });
-
-  it("uses the singular for a bucket with one call in it", () => {
-    expect(groupOf("cargo build")?.summary).toBe("Ran a command");
-    expect(groupOf("cat a.ts")?.summary).toBe("Read a file");
-  });
-
-  it("puts a tool call first and a command last, whatever the order they ran", () => {
-    const rows = projectRows(
-      turn(
-        toolCall({ id: "a", kind: "execute", arguments: { command: "make" } }),
-        toolCall({ id: "b", kind: null, toolName: "acme__load_skill" }),
-        toolCall({
-          id: "c",
-          kind: "edit",
-          toolName: "write",
-          arguments: { file_path: "/a.ts", content: "x" },
-        }),
-      ),
-      OPTS,
-    ).rows;
-    const g = rows.find((r): r is MarkerGroupRow => r.kind === RowKind.MarkerGroup);
-    expect(g?.summary).toBe("Loaded a tool, edited a file, ran a command");
+  it("counts edits by the files they changed, not by calls", () => {
+    const write = (id: string, file_path: string) =>
+      toolCall({ id, kind: "edit", toolName: "write", arguments: { file_path, content: "x" } });
+    const g = groupOf(write("a", "/r/a.ts"), write("b", "/r/a.ts"), write("c", "/r/b.ts"));
+    expect(g?.summary).toBe("Changed 2 files");
   });
 
   it("says an organisation call checked the organization, not that it loaded a tool", () => {
-    const rows = projectRows(
-      turn(
-        toolCall({ id: "a", kind: null, toolName: "atlas_org.org_sessions" }),
-        toolCall({ id: "b", kind: "execute", arguments: { command: "make" } }),
-      ),
-      OPTS,
-    ).rows;
-    const g = rows.find((r): r is MarkerGroupRow => r.kind === RowKind.MarkerGroup);
-    expect(g?.summary).toBe("Checked your organization, ran a command");
-    expect(g?.tool).toBe("org");
+    const g = groupOf(
+      toolCall({ id: "a", kind: null, toolName: "atlas_org.org_sessions" }),
+      sh("b", "make"),
+    );
+    expect([g?.summary, g?.tool]).toEqual(["Checked your organization and ran 1 command", "org"]);
   });
 
   it("says a memory call used Atlas memory, not that it read a file or loaded a tool", () => {
-    const rows = projectRows(
-      turn(
-        toolCall({
-          id: "a",
-          kind: null,
-          toolName: "mcp__atlas_memory__memory_search",
-          arguments: { query: "discount code" },
-        }),
-      ),
-      OPTS,
-    ).rows;
-    const g = rows.find((r): r is MarkerGroupRow => r.kind === RowKind.MarkerGroup);
-    expect(g?.summary).toBe("Used Atlas memory");
-    expect(g?.tool).toBe("memory");
+    const memory = (id: string) =>
+      toolCall({
+        id,
+        kind: null,
+        toolName: "mcp__atlas_memory__memory_search",
+        arguments: { query: "discount code" },
+      });
+    const g = groupOf(memory("a"), memory("b"));
+    expect([g?.summary, g?.tool]).toEqual(["Used Atlas memory 2 times", "memory"]);
   });
 });
 
@@ -468,28 +441,40 @@ describe("tool activity in the transcript", () => {
       ],
       OPTS,
     ).rows;
+    // One finished call is a line of its own, not a block that opens onto it.
     expect(rows.map((row) => row.kind)).toEqual([
       RowKind.WorkHeader,
       RowKind.Prose,
-      RowKind.MarkerGroup,
+      RowKind.Marker,
       RowKind.Prose,
-      RowKind.MarkerGroup,
+      RowKind.Marker,
       RowKind.Prose,
     ]);
-    const groups = rows.filter((row): row is MarkerGroupRow => row.kind === RowKind.MarkerGroup);
-    expect(groups.map((group) => group.markers.map((marker) => marker.toolCallId))).toEqual([
-      ["a"],
-      ["b"],
-    ]);
-    expect(groups.map((group) => group.open)).toEqual([false, false]);
-    expect(groups[0].id).not.toBe(groups[1].id);
+    const lines = rows.filter((row): row is MarkerRow => row.kind === RowKind.Marker);
+    expect(lines.map((line) => line.toolCallId)).toEqual(["a", "b"]);
+  });
+
+  it("keeps a lone call a block while it runs, for its live label", () => {
+    const rows = projectRows(
+      [
+        message("m1", "", [
+          toolCall({ id: "a", status: "running", kind: "execute", arguments: { command: "pwd" } }),
+        ]),
+      ],
+      { ...OPTS, streaming: true },
+    ).rows;
+    expect(rows.some((row) => row.kind === RowKind.MarkerGroup)).toBe(true);
   });
 
   it("opens only the selected sequence", () => {
+    const pair = (a: string, b: string) => [
+      toolCall({ id: a, kind: "execute", arguments: { command: "pwd" } }),
+      toolCall({ id: b, kind: "execute", arguments: { command: "ls" } }),
+    ];
     const messages = [
-      message("m1", "", [toolCall({ id: "a", kind: "execute", arguments: { command: "pwd" } })]),
+      message("m1", "", pair("a", "a2")),
       message("m2", "Some prose"),
-      message("m3", "", [toolCall({ id: "b", kind: "execute", arguments: { command: "ls" } })]),
+      message("m3", "", pair("b", "b2")),
     ];
     const collapsed = projectRows(messages, OPTS).rows.filter(
       (row): row is MarkerGroupRow => row.kind === RowKind.MarkerGroup,
@@ -520,7 +505,7 @@ describe("tool activity in the transcript", () => {
     expect(group?.running).toBe(true);
     expect(group?.open).toBe(false);
     expect(group?.liveLabel).toBe("Reading turn-rows.ts");
-    expect(group?.summary).toBe("Read a file");
+    expect(group?.summary).toBe("Read 1 file");
   });
 
   it("names the file a live edit is writing, and clears the live label when settled", () => {
@@ -539,12 +524,9 @@ describe("tool activity in the transcript", () => {
     const settled = projectRows([message("m1", "", [{ ...call, status: "completed" }])], {
       ...OPTS,
       streaming: false,
-    }).rows.find((row): row is MarkerGroupRow => row.kind === RowKind.MarkerGroup);
-    expect([settled?.running, settled?.liveLabel, settled?.summary]).toEqual([
-      false,
-      null,
-      "Edited a file",
-    ]);
+    }).rows.find((row): row is MarkerRow => row.kind === RowKind.Marker);
+    // Settled, the lone call is a plain line again: no live label to clear.
+    expect([settled?.state, settled?.verb]).toEqual(["done", "Created"]);
   });
 
   // The regression this whole live line exists to prevent: "Running command"
@@ -663,7 +645,7 @@ describe("the icon a folded block leads with", () => {
       toolCall({ id: "b", kind: "execute", arguments: { command: "cargo build" } }),
       toolCall({ id: "c", kind: "read", toolName: "read", arguments: { file_path: "/r/a.ts" } }),
     ]);
-    expect([g?.summary, g?.tool]).toEqual(["Read a file, ran commands", "read"]);
+    expect([g?.summary, g?.tool]).toEqual(["Ran 2 commands and read 1 file", "run"]);
   });
 
   it("is the running call's own icon while the block is live", () => {
@@ -674,9 +656,9 @@ describe("the icon a folded block leads with", () => {
       ],
       true,
     );
-    // The block's own icon is the book — a search counts toward "read files",
-    // which leads "ran commands" — but the live line wears the magnifier.
-    expect([g?.tool, g?.liveTool, g?.liveLabel]).toEqual(["read", "search", "Searching for foo"]);
+    // The block's own icon is the terminal, for "Ran 1 command", which leads;
+    // the live line wears the running search's magnifier.
+    expect([g?.tool, g?.liveTool, g?.liveLabel]).toEqual(["run", "search", "Searching for foo"]);
   });
 });
 
@@ -711,13 +693,39 @@ describe("the work header", () => {
     expect(rows[2]).toMatchObject({ text: "Done — the build passes.", showHeader: true });
   });
 
+  it("keeps a failed call in view when the turn folds", () => {
+    const failing: ChatMessage = {
+      ...turn()[0],
+      id: "a2",
+      toolCalls: [
+        toolCall({ id: "ok", kind: "execute", arguments: { command: "pwd" } }),
+        toolCall({ id: "bad", kind: "execute", status: "failed", arguments: { command: "make" } }),
+      ],
+    };
+    const rows = project([
+      user("u1", "2026-08-23T00:00:00Z"),
+      said("a1", "Looking."),
+      failing,
+      said("a3", "Fixed it another way."),
+    ]);
+    expect(rows.map((r) => r.kind)).toEqual([
+      RowKind.User,
+      RowKind.WorkHeader,
+      RowKind.Marker,
+      RowKind.Prose,
+    ]);
+    expect(rows[2]).toMatchObject({ toolCallId: "bad", state: "failed" });
+    // The answer still carries the model line the folded first prose row had.
+    expect(rows[3]).toMatchObject({ showHeader: true });
+  });
+
   it("puts the work back in the thread when opened", () => {
     const rows = project(thread(), { expandedTurns: new Set(["wk:t:a1"]) });
     expect(rows.map((r) => r.kind)).toEqual([
       RowKind.User,
       RowKind.WorkHeader,
       RowKind.Prose,
-      RowKind.MarkerGroup,
+      RowKind.Marker,
       RowKind.Prose,
     ]);
     expect(rows[1]).toMatchObject({ open: true });
