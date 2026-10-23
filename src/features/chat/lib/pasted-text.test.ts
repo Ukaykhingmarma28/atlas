@@ -20,7 +20,15 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 import { agentHandlers, receivedText, setPromptHandler } from "@/dev/mock-backend/fake-agent";
 import { composePrompt, toShortForm, type MentionData } from "./mentions";
-import { pasteAsText, pastedTextMention, withPastesInline } from "./pasted-text";
+import { collapsePastes, pasteAsText, pastedTextMention, withPastesInline } from "./pasted-text";
+import {
+  REGISTRY_MAX_BYTES,
+  forgetSentPastes,
+  knownMention,
+  rememberMention,
+  resetMentionRegistryForTests,
+} from "./mention-registry";
+import { useChatStore } from "../stores/chat-store";
 
 const big = Array.from({ length: 120 }, (_, i) => `log line ${i}`).join("\n");
 
@@ -108,5 +116,54 @@ describe("the mock agent, which lacks embeddedContext", () => {
     expect(received).toEqual([`summarise @paste:p9\n\n${pasteAsText({ id: "p9", text: big })}`]);
     expect(received[0]).toContain(big);
     expect(receivedText("x", [])).toBe("x");
+  });
+});
+
+describe("the queue", () => {
+  it("every enqueue inlines the pastes its mentions carry", () => {
+    const paste = pastedTextMention(big);
+    useChatStore.setState({ queues: {} });
+    useChatStore.getState().actions.enqueueMessage("tab", `see @paste:${paste.id}`, [paste]);
+    expect(useChatStore.getState().queues.tab).toEqual([
+      withPastesInline(`see @paste:${paste.id}`, [paste]),
+    ]);
+  });
+
+  it("an edited queue item collapses back into its paste", () => {
+    const paste = pastedTextMention(big);
+    const other = pastedTextMention("short\ntext with ```ticks```");
+    const prose = `see @paste:${paste.id} and @paste:${other.id}`;
+    const { text, pastes } = collapsePastes(withPastesInline(prose, [paste, other]));
+    expect(text).toBe(prose);
+    expect(pastes.map((p) => [p.id, p.text, p.lines])).toEqual([
+      [paste.id, paste.text, paste.lines],
+      [other.id, other.text, other.lines],
+    ]);
+  });
+
+  it("leaves text without an intact paste block alone", () => {
+    const text = "Pasted text (@paste:zz, 2 lines):\n```\nonly one fence";
+    expect(collapsePastes(text)).toEqual({ text, pastes: [] });
+  });
+});
+
+describe("the registry's pastes", () => {
+  beforeEach(() => resetMentionRegistryForTests());
+
+  it("are bounded by total bytes, oldest first", () => {
+    const huge = "x".repeat(REGISTRY_MAX_BYTES / 4 + 1);
+    const a = pastedTextMention(huge);
+    const b = pastedTextMention(huge);
+    rememberMention(a, "/p");
+    rememberMention(b, "/p");
+    expect(knownMention(`@paste:${a.id}`, "/p")).toBeNull();
+    expect(knownMention(`@paste:${b.id}`, "/p")).toEqual(b);
+  });
+
+  it("are dropped once sent", () => {
+    const a = pastedTextMention(big);
+    rememberMention(a, "/p");
+    forgetSentPastes([a]);
+    expect(knownMention(`@paste:${a.id}`, "/p")).toBeNull();
   });
 });

@@ -21,7 +21,7 @@ import type { Editor } from "@tiptap/core";
 import { closeHistory } from "@tiptap/pm/history";
 
 import { ChatInput, type ChatInputHandle } from "../components/chat-input";
-import { mentionOf, type SessionChipRecord } from "../components/session-mention-chip";
+import { mentionOf, pickedChip, type SessionChipRecord } from "../components/session-mention-chip";
 import { SESSION_MENTION, tokenizeShortForms } from "./composer-short-forms";
 import { rememberMention, resetMentionRegistryForTests } from "./mention-registry";
 import { toShortForm, type MentionData } from "./mentions";
@@ -244,7 +244,7 @@ describe("text that is not a minted mention", () => {
       displayName: "v(1)",
       absPath: `${PROJECT}/v(1)`,
     };
-    rememberMention(folder);
+    rememberMention(folder, PROJECT);
     const { input, editor } = composer("in @folder:v(1)");
     expect(chips(editor)).toEqual([folder]);
     expect(input.getValue()).toBe("in @folder:v(1)");
@@ -275,6 +275,61 @@ describe("text that is not a minted mention", () => {
       },
       { type: "text", text: "." },
     ]);
+  });
+});
+
+describe("minted mentions belong to a project", () => {
+  /** The records in the document, flag and all. */
+  const raw = (editor: Editor) => {
+    const out: SessionChipRecord[] = [];
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === SESSION_MENTION) out.push(node.attrs.data as SessionChipRecord);
+    });
+    return out;
+  };
+
+  it("a token minted in another project rebuilds under this one", () => {
+    rememberMention(
+      pickedChip({
+        kind: "file",
+        id: "/other/src/main.rs",
+        displayName: "src/main.rs",
+        absPath: "/other/src/main.rs",
+      }),
+      "/other",
+    );
+    const { editor } = composer("@file:src/main.rs");
+    expect(raw(editor)).toEqual([
+      {
+        kind: "file",
+        id: `${PROJECT}/src/main.rs`,
+        displayName: "src/main.rs",
+        absPath: `${PROJECT}/src/main.rs`,
+      },
+    ]);
+  });
+
+  it("a minted path outside the project is not taken as minted", () => {
+    const outside: MentionData = {
+      kind: "file",
+      id: "/elsewhere/x.ts",
+      displayName: "/elsewhere/x.ts",
+      absPath: "/elsewhere/x.ts",
+    };
+    rememberMention(pickedChip(outside), PROJECT);
+    const { editor } = composer("@file:/elsewhere/x.ts");
+    expect(raw(editor)).toEqual([outside]);
+  });
+
+  it("a minted path inside the project is", () => {
+    const inside: MentionData = {
+      kind: "file",
+      id: `${PROJECT}/src/a.ts`,
+      displayName: "src/a.ts",
+      absPath: `${PROJECT}/src/a.ts`,
+    };
+    rememberMention(pickedChip(inside), PROJECT);
+    expect(raw(composer("@file:src/a.ts").editor)).toEqual([{ ...inside, picked: true }]);
   });
 });
 
@@ -321,7 +376,7 @@ describe("chips through editing", () => {
   });
 
   it("comes back from a plain-text paste of the composer's own text", () => {
-    rememberMention(session);
+    rememberMention(session, PROJECT);
     const { input, editor, dom } = composer("before ");
     paste(dom, { "text/plain": `${toShortForm(session)} and ${toShortForm(file)}` });
     expect(chips(editor).map((m) => m.kind)).toEqual(["past_session", "file"]);

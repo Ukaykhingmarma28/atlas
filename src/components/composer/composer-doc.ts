@@ -170,3 +170,37 @@ export function isLargePaste(text: string): boolean {
   }
   return false;
 }
+
+const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})\s*$/;
+
+/**
+ * Code fences the way CommonMark reads them, one line at a time. A fence
+ * opens on three or more backticks or tildes (a backtick fence's info string
+ * may not hold a backtick) and closes only on the same character, at least as
+ * many of it, and nothing after but whitespace. So ```` ```js ```` inside an
+ * open fence is code, and `~~~` fences count too.
+ */
+export class FenceTracker {
+  private marker: { char: string; length: number } | null = null;
+
+  /** Whether the lines fed so far leave a fence open. */
+  get open(): boolean {
+    return this.marker !== null;
+  }
+
+  /** Feed the next line. True when it is fence markup or fenced code. */
+  line(text: string): boolean {
+    if (!this.marker) {
+      const m = FENCE_OPEN.exec(text);
+      if (!m || (m[1][0] === "`" && m[2].includes("`"))) return false;
+      this.marker = { char: m[1][0], length: m[1].length };
+      return true;
+    }
+    const m = FENCE_CLOSE.exec(text);
+    if (m && m[1][0] === this.marker.char && m[1].length >= this.marker.length) {
+      this.marker = null;
+    }
+    return true;
+  }
+}

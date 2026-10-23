@@ -98,7 +98,7 @@ function* attempts(
  *  one serializer serves a project switch. */
 export function sessionSerializer(getProjectPath: () => string | null): ComposerSerializer {
   const resolve: MentionResolver = {
-    known: (token) => knownMention(token.raw),
+    known: (token) => knownMention(token.raw, getProjectPath()),
     rebuilt: (token) => rebuildMention(token, getProjectPath()),
   };
   return {

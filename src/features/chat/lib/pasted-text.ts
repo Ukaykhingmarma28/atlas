@@ -12,13 +12,16 @@
 import type { MentionData, MentionPastedText } from "./mentions";
 
 /** A chip for `text`. */
-export function pastedTextMention(text: string): MentionPastedText {
+export function pastedTextMention(
+  text: string,
+  // Unique within a session's drafts; short because it is visible in the
+  // prompt text (`@paste:<id>`).
+  id: string = Math.random().toString(36).slice(2, 8),
+): MentionPastedText {
   const lines = text.split("\n").length;
   return {
     kind: "pasted_text",
-    // Unique within a session's drafts; short because it is visible in the
-    // prompt text (`@paste:<id>`).
-    id: Math.random().toString(36).slice(2, 8),
+    id,
     displayName: `Pasted text · ${lines} lines`,
     lines,
     text,
@@ -42,4 +45,43 @@ export function withPastesInline(text: string, mentions: readonly MentionData[])
   const pastes = mentions.filter((m): m is MentionPastedText => m.kind === "pasted_text");
   if (pastes.length === 0) return text;
   return [text, ...pastes.map(pasteAsText)].join("\n\n");
+}
+
+const BLOCK_HEADER = /\n\nPasted text \(@paste:([A-Za-z0-9_-]+), \d+ lines?\):\n(`{3,})\n/y;
+
+/** The blocks `withPastesInline` appended, read from `at` to the end of
+ *  `text`; null unless they run exactly to the end. */
+function readBlocks(text: string, at: number): MentionPastedText[] | null {
+  const pastes: MentionPastedText[] = [];
+  let pos = at;
+  while (pos < text.length) {
+    BLOCK_HEADER.lastIndex = pos;
+    const header = BLOCK_HEADER.exec(text);
+    if (!header) return null;
+    const [whole, id, fence] = header;
+    const bodyStart = pos + whole.length;
+    // The fence is longer than any backtick run in the paste, so the first
+    // line holding exactly it closes the block.
+    const close = text.indexOf(`\n${fence}`, bodyStart - 1);
+    if (close < 0 || text[close + 1 + fence.length] === "`") return null;
+    pastes.push(pastedTextMention(text.slice(bodyStart, close), id));
+    pos = close + 1 + fence.length;
+  }
+  return pastes;
+}
+
+/**
+ * The way back from `withPastesInline`: the prose, its `@paste:<id>` tokens
+ * kept, and each inlined paste as a chip again. A queued message being edited
+ * comes back through here, so a paste returns to the composer as its chip
+ * instead of as however many lines of text it holds. Text whose tail is not
+ * exactly such blocks is returned as it is.
+ */
+export function collapsePastes(text: string): { text: string; pastes: MentionPastedText[] } {
+  for (let at = text.indexOf("\n\nPasted text (@paste:"); at >= 0;) {
+    const pastes = readBlocks(text, at);
+    if (pastes) return { text: text.slice(0, at), pastes };
+    at = text.indexOf("\n\nPasted text (@paste:", at + 1);
+  }
+  return { text, pastes: [] };
 }

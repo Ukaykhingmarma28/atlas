@@ -138,7 +138,7 @@ describe("retrying the last turn", () => {
     vi.useRealTimers();
 
     expect(send).not.toHaveBeenCalled();
-    expect(enqueueMessage).toHaveBeenCalledWith("tab", "hello");
+    expect(enqueueMessage).toHaveBeenCalledWith("tab", "hello", []);
   });
 
   it("does not send into a session the tab switched to mid-rewind", async () => {
@@ -154,7 +154,7 @@ describe("retrying the last turn", () => {
     await run;
 
     expect(send).not.toHaveBeenCalled();
-    expect(enqueueMessage).toHaveBeenCalledWith("tab", "hello");
+    expect(enqueueMessage).toHaveBeenCalledWith("tab", "hello", []);
   });
 
   it("sends nothing and enqueues nothing when there was no turn to rewind", async () => {

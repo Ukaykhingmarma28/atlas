@@ -120,7 +120,8 @@ import { useAppStore } from "@/features/app/stores/app-store";
 import { useComposerDraft } from "@/components/composer/use-composer-draft";
 import type { MentionData } from "../lib/mentions";
 import { COMMENT_LINK_EVENT, type CommentLinkDetail } from "../lib/comment-mentions";
-import { pastedTextMention, withPastesInline } from "../lib/pasted-text";
+import { collapsePastes, pastedTextMention } from "../lib/pasted-text";
+import { forgetSentPastes, rememberMention } from "../lib/mention-registry";
 
 // Start the editor chunk download at module-evaluation time. Vite still
 // excludes it from `<link rel="modulepreload">` because the static analysis
@@ -1741,7 +1742,11 @@ export function MessageInput({
     }
     if (trimmed === "/queue" || trimmed.startsWith("/queue ")) {
       const queued = trimmed.slice("/queue".length).trim();
-      if (queued) enqueueMessage(tabId, queued);
+      if (queued) {
+        const mentions = inputRef.current?.getMentions() ?? [];
+        enqueueMessage(tabId, queued, mentions);
+        forgetSentPastes(mentions);
+      }
       writeComposer("");
       return;
     }
@@ -1753,12 +1758,14 @@ export function MessageInput({
       // queue to a structured shape is a follow-up. Staged images likewise
       // stay in the composer strip and ride the next direct send. A paste is
       // the exception: its token alone would lose what the user pasted, so
-      // its text goes into the queued string.
-      enqueueMessage(tabId, withPastesInline(trimmed, mentions));
+      // the queue puts its text into the queued string.
+      enqueueMessage(tabId, trimmed, mentions);
+      forgetSentPastes(mentions);
     } else {
       if (modeUnrestored || heldForTerminal) return;
       const images = stagedImages;
       onSend(trimmed, mentions, images.length ? images : undefined);
+      forgetSentPastes(mentions);
       if (images.length) setStagedImages([]);
     }
     // Through `setValue`, not `clear`, so the send is one undo step away.
@@ -1818,7 +1825,11 @@ export function MessageInput({
                   text={q}
                   onEdit={() => {
                     const cur = inputRef.current?.getValue() ?? "";
-                    const merged = cur.trim() ? `${cur}\n${q}` : q;
+                    // A paste the queue inlined comes back as its chip, not
+                    // as every line it holds.
+                    const { text, pastes } = collapsePastes(q);
+                    for (const p of pastes) rememberMention(p, projectPath);
+                    const merged = cur.trim() ? `${cur}\n${text}` : text;
                     writeComposer(merged);
                     removeQueueItem(tabId, i);
                     requestAnimationFrame(() => inputRef.current?.focus());

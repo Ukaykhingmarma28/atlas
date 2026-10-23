@@ -42,6 +42,8 @@ import { toast } from "sonner";
 import { extractPlanMarkdown, type PlanRecord } from "../lib/plans";
 import { extractNextSteps } from "../lib/next-steps";
 import { turnFileOfToolCall } from "../lib/tool-files";
+import { withPastesInline } from "../lib/pasted-text";
+import type { MentionData } from "../lib/mentions";
 import type { TurnFile, TurnInterruption } from "@/types/agent";
 
 /** `firstUserContent` is a preview field, never the full text — see the note
@@ -548,7 +550,13 @@ interface ChatActions {
     ) => void;
     /** Drop a draft (on submit, or when its tab closes). */
     clearDraft: (tabId: string) => void;
-    enqueueMessage: (sessionId: string, text: string) => void;
+    /**
+     * Queue a message. The queue holds strings, so every queued send passes
+     * the mentions it was sent with and its pastes' text goes into the string
+     * (`withPastesInline`): a bare `@paste:<id>` would reach the agent with
+     * nothing behind it. Required, so no queue path can skip it.
+     */
+    enqueueMessage: (sessionId: string, text: string, mentions: readonly MentionData[]) => void;
     removeQueueItem: (sessionId: string, index: number) => void;
     editQueueItem: (sessionId: string, index: number, text: string) => void;
     shiftQueue: (sessionId: string) => string | null;
@@ -1675,10 +1683,10 @@ export const useChatStore = createSelectors(
               chips: patch.chips ?? msg.suggestions?.chips ?? [],
             };
           }),
-        enqueueMessage: (sessionId, text) =>
+        enqueueMessage: (sessionId, text, mentions) =>
           set((s) => {
             const cur = s.queues[sessionId] ?? [];
-            s.queues[sessionId] = [...cur, text];
+            s.queues[sessionId] = [...cur, withPastesInline(text, mentions)];
           }),
         removeQueueItem: (sessionId, index) =>
           set((s) => {

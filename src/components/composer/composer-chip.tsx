@@ -2,10 +2,10 @@
 //
 // A chip is self-contained. Its node carries the feature's whole record as
 // one attribute (`data`), so undo/redo restores it from history like any
-// other node, an in-editor copy/paste carries it in the HTML
-// (`data-composer-chip`), and the feature reads it straight off the document.
-// Its text form is whatever the feature's `toText` says — the clipboard's
-// plain-text flavour and the composer's serializer both use it.
+// other node, and the feature reads it straight off the document. Its text
+// form is whatever the feature's `toText` says: the clipboard's plain-text
+// flavour and the composer's serializer both use it, and a paste comes back
+// through that text (`composer-editor.tsx`), never through a record in HTML.
 //
 // Performance: ProseMirror only updates a node view when it is handed a NEW
 // node object, which happens when that chip itself changes — typing beside it
@@ -34,11 +34,12 @@ export interface ComposerChipSpec<T> {
   toText: (data: T) => string;
   view: ComponentType<ComposerChipViewProps<T>>;
   /**
-   * The record a chip pasted as HTML may carry, or null to paste it as text.
-   * The HTML can come from anywhere, so this is the feature's chance to check
-   * the shape and drop what only the feature itself may set. It is handed a
-   * plain JSON object, never an array or a primitive. Without it, any object
-   * is taken as is.
+   * The record for a chip span in HTML that reaches ProseMirror's parser (a
+   * drop of HTML from elsewhere; a paste never does), or null to keep the
+   * span as its text. The HTML can come from anywhere, so this is the
+   * feature's chance to check the shape and drop what only the feature itself
+   * may set. It is handed a plain JSON object, never an array or a primitive.
+   * Without it, any object is taken as is.
    */
   fromHTML?: (record: Record<string, unknown>) => T | null;
 }

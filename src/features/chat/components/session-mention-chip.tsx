@@ -36,7 +36,6 @@ import {
   type ComposerChipViewProps,
 } from "@/components/composer/composer-chip";
 import { SESSION_MENTION } from "../lib/composer-short-forms";
-import { knownMention } from "../lib/mention-registry";
 import { toShortForm, type MentionData } from "../lib/mentions";
 
 /**
@@ -57,42 +56,13 @@ export function mentionOf(record: SessionChipRecord): MentionData {
   return mention as MentionData;
 }
 
-/**
- * A chip pasted as HTML, or null to paste the span as its text (the short
- * form). The HTML may come from outside Atlas, so nothing in it is trusted,
- * `picked` least of all. A record naming a mention this run minted (same
- * kind, id and short form) becomes that minted record. Otherwise only a path
- * survives, rebuilt the way its text would be (`rebuildMention`): no flag and
- * no field beyond the four a path chip has. Every other kind pastes as text.
- */
-export function chipFromHTML(record: Record<string, unknown>): SessionChipRecord | null {
-  const { kind, id, displayName, absPath } = record;
-  if (typeof kind !== "string" || typeof id !== "string") return null;
-  let text: unknown;
-  try {
-    text = toShortForm(record as unknown as MentionData);
-  } catch {
-    return null;
-  }
-  if (typeof text !== "string") return null;
-  const minted = knownMention(text) as SessionChipRecord | null;
-  if (minted && minted.kind === kind && minted.id === id) return minted;
-  if (
-    (kind === "file" || kind === "folder") &&
-    typeof displayName === "string" &&
-    typeof absPath === "string" &&
-    absPath === id
-  ) {
-    return { kind, id, displayName, absPath };
-  }
-  return null;
-}
-
 export const SessionMention = createChipNode<SessionChipRecord>({
   name: SESSION_MENTION,
   toText: toShortForm,
   view: SessionMentionChip,
-  fromHTML: chipFromHTML,
+  // A record in HTML is never trusted: its label could name one file and its
+  // data another. The span stays text, as a paste's text would come back.
+  fromHTML: () => null,
 });
 
 function SessionMentionChip({ data: mention, selected }: ComposerChipViewProps<SessionChipRecord>) {

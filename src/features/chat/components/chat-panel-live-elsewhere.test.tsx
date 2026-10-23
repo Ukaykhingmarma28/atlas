@@ -119,7 +119,7 @@ describe("ChatPanel holds every send into a session live elsewhere", () => {
     useLiveElsewhereStore.getState().actions.setLive([SESSION]);
     mount();
     act(() => {
-      useChatStore.getState().actions.enqueueMessage(TAB, "next");
+      useChatStore.getState().actions.enqueueMessage(TAB, "next", []);
     });
 
     // The turn ends: normally the queue's head goes out now.

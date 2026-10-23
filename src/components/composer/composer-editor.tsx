@@ -232,6 +232,12 @@ export const ComposerEditor = memo(
         attributes: {
           role: "textbox",
           "aria-multiline": "true",
+          // No browser corrections in a prompt, as in CodeMirror: a path or
+          // an identifier must arrive as typed.
+          spellcheck: "false",
+          autocorrect: "off",
+          autocapitalize: "off",
+          writingsuggestions: "false",
           ...(ariaLabel ? { "aria-label": ariaLabel } : {}),
         },
         // Copy writes the composer's own text — chips as their tokens, lines
@@ -292,13 +298,13 @@ export const ComposerEditor = memo(
             markInputActivity();
             return true;
           }
-          // HTML from this editor carries its chips whole; ProseMirror's own
-          // HTML paste rebuilds them from it.
-          const html = dt.getData("text/html");
-          if (html && html.includes("data-composer-chip")) return false;
-          // Anything else as text: other HTML (a web page, a code editor)
-          // would arrive with its whitespace collapsed and its blocks
-          // flattened into lines the user did not write.
+          // Always the text flavour. Chips come back from their tokens
+          // through the feature's serializer, which resolves them in the
+          // current context: a chip record carried in HTML could name one
+          // thing in its label and another in its data. And other HTML (a
+          // web page, a code editor) would arrive with its whitespace
+          // collapsed and its blocks flattened into lines the user did not
+          // write.
           event.preventDefault();
           view.dispatch(
             view.state.tr

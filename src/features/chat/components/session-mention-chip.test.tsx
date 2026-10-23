@@ -3,11 +3,10 @@
 // Where a session chip's record may come from. A video `@file` chip's hover
 // preview allow-lists the file's directory for the asset protocol, so only a
 // chip the user picked or dropped may preview: one rebuilt from typed or
-// pasted text shows its icon and name and asks Rust for nothing. HTML pasted
-// into the composer is untrusted, so a chip in it is either a mention this run
-// minted or a plain path chip, never a record carried in from outside, and a
-// payload that is not a JSON object pastes as text instead of breaking the
-// serializer.
+// pasted text shows its icon and name and asks Rust for nothing. HTML is never
+// a source of chip records: a pasted chip comes back through its text, which
+// the tokenizer resolves against the current project like anything typed, so
+// a label cannot disagree with the path it sends.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -27,8 +26,9 @@ import type { Editor } from "@tiptap/core";
 import { resetMentionRegistryForTests, rememberMention } from "../lib/mention-registry";
 import type { MentionData } from "../lib/mentions";
 import { ChatInput, type ChatInputHandle } from "./chat-input";
-import { chipFromHTML, pickedChip } from "./session-mention-chip";
+import { pickedChip } from "./session-mention-chip";
 
+const PROJECT = "/abs";
 const CLIP: MentionData = {
   kind: "file",
   id: "/abs/media/clip.mp4",
@@ -44,9 +44,9 @@ afterEach(cleanup);
 
 function mount(initialValue = "") {
   const ref = createRef<ChatInputHandle>();
-  const view = render(<ChatInput ref={ref} initialValue={initialValue} />);
+  const view = render(<ChatInput ref={ref} initialValue={initialValue} projectPath={PROJECT} />);
   const pm = view.container.querySelector(".ProseMirror") as HTMLElement & { editor: Editor };
-  return { ref, editor: pm.editor, container: view.container };
+  return { ref, editor: pm.editor, dom: pm, container: view.container };
 }
 
 async function hoverChip(container: HTMLElement) {
@@ -59,6 +59,22 @@ async function hoverChip(container: HTMLElement) {
   fireEvent.mouseEnter(chip);
   // The preview loads after a 200 ms hover.
   await act(() => new Promise((r) => setTimeout(r, 300)));
+}
+
+/** A paste event carrying these clipboard flavours. */
+function paste(dom: HTMLElement, flavours: Record<string, string>) {
+  const event = new Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "clipboardData", {
+    value: {
+      getData: (type: string) => flavours[type] ?? "",
+      types: Object.keys(flavours),
+      items: [],
+      files: [],
+    },
+  });
+  act(() => {
+    dom.dispatchEvent(event);
+  });
 }
 
 const allowCalls = () => invoke.mock.calls.filter(([cmd]) => cmd === "asset_allow_dir");
@@ -81,7 +97,7 @@ describe("media preview provenance", () => {
   });
 
   it("a picked chip restored from its text is still picked", async () => {
-    rememberMention(pickedChip(CLIP));
+    rememberMention(pickedChip(CLIP), PROJECT);
     const { container } = mount("again @file:/abs/media/clip.mp4");
     await hoverChip(container);
     expect(allowCalls()).toHaveLength(1);
@@ -89,30 +105,50 @@ describe("media preview provenance", () => {
 });
 
 describe("chips pasted as HTML", () => {
-  const span = (payload: string, text = "x") =>
+  const LIAR = {
+    kind: "file",
+    id: "/Users/u/.ssh/id_rsa",
+    absPath: "/Users/u/.ssh/id_rsa",
+    displayName: "README.md",
+  };
+  const span = (payload: string, text: string) =>
     `<span data-composer-chip="sessionMention" data-chip='${payload}'>${text}</span>`;
 
-  it("drops a forged picked flag: the chip is a plain path chip", async () => {
-    const { ref, editor, container } = mount();
+  it("never takes a path from the record: the label's own text is what resolves", () => {
+    const { ref, editor } = mount();
     act(() => {
-      editor.view.pasteHTML(span(JSON.stringify({ ...CLIP, picked: true, extra: 1 })));
+      editor.view.pasteHTML(span(JSON.stringify(LIAR), "README.md"));
     });
-    expect(ref.current!.getMentions()).toEqual([CLIP]);
+    expect(ref.current!.getMentions()).toEqual([]);
+    expect(ref.current!.getValue()).toBe("README.md");
+  });
+
+  it("a paste with HTML takes the text flavour, rebuilt under the current project", () => {
+    const { ref, dom } = mount();
+    paste(dom, {
+      "text/html": span(JSON.stringify({ ...LIAR, picked: true }), "@file:README.md"),
+      "text/plain": "@file:README.md",
+    });
+    expect(ref.current!.getMentions()).toEqual([
+      {
+        kind: "file",
+        id: "/abs/README.md",
+        displayName: "README.md",
+        absPath: "/abs/README.md",
+      },
+    ]);
+  });
+
+  it("a copied picked chip pasted back is still picked", async () => {
+    const { ref, dom, container } = mount();
+    act(() => ref.current!.insertMention(CLIP));
+    paste(dom, {
+      "text/html": span(JSON.stringify(CLIP), "@file:/abs/media/clip.mp4"),
+      "text/plain": " @file:/abs/media/clip.mp4",
+    });
+    expect(ref.current!.getMentions()).toEqual([CLIP, CLIP]);
     await hoverChip(container);
-    expect(allowCalls()).toEqual([]);
-  });
-
-  it("takes the minted record when the HTML names one", () => {
-    rememberMention(pickedChip(CLIP));
-    expect(chipFromHTML({ ...CLIP })).toEqual({ ...CLIP, picked: true });
-  });
-
-  it("pastes any other kind it did not mint as text", () => {
-    expect(
-      chipFromHTML({ kind: "past_session", id: "s1", displayName: "x", sessionId: "s1" }),
-    ).toBeNull();
-    expect(chipFromHTML({ kind: "nope", id: "1" })).toBeNull();
-    expect(chipFromHTML({ kind: "file", id: "/a", displayName: "/a", absPath: "/b" })).toBeNull();
+    expect(allowCalls()).toHaveLength(1);
   });
 
   it.each(["null", "[1,2]", "3", '"text"', "{not json"])(

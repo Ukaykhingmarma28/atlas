@@ -171,7 +171,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
         // comes back (a draft restore, a paste of the composer's own text).
         // Every insert is the user's pick or drop, so the chip is `picked`.
         const chip = pickedChip(m);
-        rememberMention(chip);
+        rememberMention(chip, projectRef.current);
         inner.current?.insertChip(SESSION_MENTION, chip, opts);
       },
       replaceRange: (from, to, text) => inner.current?.replaceRange(from, to, text),

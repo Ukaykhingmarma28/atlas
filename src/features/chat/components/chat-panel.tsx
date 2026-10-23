@@ -749,7 +749,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
             const actions = useChatStore.getState().actions;
             actions.setPendingSend(tabId, undefined);
             actions.updateSessionStatus(tabId, "idle");
-            actions.enqueueMessage(tabId, held.content);
+            actions.enqueueMessage(tabId, held.content, held.mentions ?? []);
           }
           // A message is sitting in the queue waiting on this bind: the user
           // is watching, so the failure is reported even if an earlier one
@@ -1375,7 +1375,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     // effect sends it once the user has picked a mode. The composer already
     // refuses; this catches every other sender (chips, handoffs).
     if (bound?.unrestoredModeId) {
-      useChatStore.getState().actions.enqueueMessage(tabId, actualContent);
+      useChatStore.getState().actions.enqueueMessage(tabId, actualContent, mentions);
       return;
     }
     // Fail closed on a session another process is still writing (ADR-0001
@@ -1393,7 +1393,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
         // Not "Starting…": nothing is starting until the user says so.
         updateSessionStatus(tabId, "idle");
       } else {
-        cs.actions.enqueueMessage(tabId, actualContent);
+        cs.actions.enqueueMessage(tabId, actualContent, mentions);
       }
       return;
     }
@@ -1404,7 +1404,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     // to the running turn's own question belongs to the turn already admitted,
     // and a message held for the bind (`recorded`) already has its bubble.
     if (grantHold && !opts?.recorded && !isBusyAgentStatus(bound?.status)) {
-      useChatStore.getState().actions.enqueueMessage(tabId, actualContent);
+      useChatStore.getState().actions.enqueueMessage(tabId, actualContent, mentions);
       return;
     }
     // `resumePending` is the resume-path equivalent of "not bound yet": the
@@ -1449,7 +1449,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
         bindControlRef.current?.kick();
         return;
       }
-      cs.actions.enqueueMessage(tabId, actualContent);
+      cs.actions.enqueueMessage(tabId, actualContent, mentions);
       return;
     }
 
