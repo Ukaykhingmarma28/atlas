@@ -52,6 +52,7 @@ const CSS_VAR_ALLOWLIST: Record<string, string> = {
   "--atlas-editor-font-size": "the user's editorFontSize, set at runtime",
   "--atlas-terminal-font-size": "the user's terminalFontSize, set at runtime",
   "--ui-zoom": "the user's uiScale, set at runtime by applyUiScale",
+  "--diffs-grid-number-column-width": "set by the diff viewer inside its shadow root",
 };
 
 describe("CSS custom properties", () => {

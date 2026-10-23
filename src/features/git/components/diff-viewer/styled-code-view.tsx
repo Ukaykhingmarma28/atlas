@@ -1,0 +1,295 @@
+import {
+  CodeView,
+  type CodeViewHandle,
+  type CodeViewProps,
+  type ControlledCodeViewProps,
+  type UncontrolledCodeViewProps,
+} from "@pierre/diffs/react";
+import type { CodeViewItem } from "@pierre/diffs";
+import { useMemo, type ReactNode, type Ref } from "react";
+import { getActiveTheme } from "@/features/theme/apply-theme";
+import { useThemeVersion } from "@/features/theme/theme-values";
+import { DIFF_THEME_NAME } from "../../lib/diff-theme";
+import {
+  DiffWorkerPoolProvider,
+  PREFERRED_HIGHLIGHTER,
+  useDiffPoolFailed,
+} from "./diff-worker-pool";
+
+/**
+ * The one place Atlas renders `@pierre/diffs`. Everything that styles the
+ * viewer lives here, so no caller restyles it and no caller can forget the
+ * worker pool.
+ *
+ * The viewer draws inside a shadow root, which page CSS cannot reach, but
+ * custom properties inherit through it. So this stylesheet, handed to the
+ * viewer as `unsafeCSS`, names only `--atlas-` theme keys (and the
+ * app's font and type-scale variables): a theme switch recolours the diff
+ * exactly as it recolours the page, with no re-render.
+ */
+export const DIFF_VIEW_CSS = `
+/* The viewer derives its line tints on :host, from the overrides it can see
+   there; set only on the rows below, they would arrive too late. */
+:host,
+[data-diffs-header],
+[data-diff],
+[data-file],
+[data-error-wrapper],
+[data-virtualizer-buffer] {
+  --diffs-header-font-family: var(--font-sans) !important;
+  --diffs-font-family: var(--font-mono) !important;
+  --diffs-font-size: var(--atlas-editor-font-size, 13px);
+  --diffs-line-height: calc(var(--atlas-editor-font-size, 13px) * 20 / 13);
+  --diffs-bg: var(--atlas-editor-background) !important;
+  --diffs-light-bg: var(--atlas-editor-background) !important;
+  --diffs-dark-bg: var(--atlas-editor-background) !important;
+  --diffs-token-light-bg: transparent;
+  --diffs-token-dark-bg: transparent;
+  --diffs-fg-number-override: var(--atlas-editor-gutter-foreground);
+
+  --diffs-addition-color-override: var(--atlas-diff-added-text);
+  --diffs-deletion-color-override: var(--atlas-diff-removed-text);
+  --diffs-modified-color-override: var(--atlas-status-warning-foreground);
+
+  --diffs-bg-context-override: var(--atlas-diff-context-background);
+  --diffs-bg-hover-override: var(--atlas-element-hover);
+  --diffs-bg-separator-override: var(--atlas-editor-gutter-background);
+  --diffs-bg-buffer-override: var(--atlas-editor-gutter-background);
+  --diffs-bg-selection-override: var(--atlas-editor-selection-background);
+
+  /* Line tints are left to the viewer: it mixes the editor background with the
+     addition / deletion hue above, and an override here is used as that mix's
+     TARGET, so a translucent theme tint would come out nearly invisible. Word
+     highlights are painted directly, so those take the theme's emphasis. */
+  --diffs-bg-addition-emphasis-override: var(--atlas-diff-added-emphasis);
+  --diffs-bg-deletion-emphasis-override: var(--atlas-diff-removed-emphasis);
+
+  background-color: var(--diffs-bg) !important;
+  color: var(--atlas-editor-foreground) !important;
+}
+
+/* A 1fr track's automatic minimum grows with the mounted lines. In split wrap
+   mode that shifts width between columns, rewraps rows, and sends the
+   virtualizer chasing its scroll position. Pin both columns to one width. */
+[data-diff-type="split"][data-overflow="wrap"] {
+  --diffs-code-grid: var(--diffs-grid-number-column-width) minmax(0, 1fr);
+}
+
+[data-file-info] {
+  background-color: var(--atlas-editor-background) !important;
+  border-block-color: transparent !important;
+  color: var(--atlas-editor-foreground) !important;
+}
+
+[data-diffs-header] {
+  position: sticky !important;
+  top: 0;
+  z-index: 4;
+  background-color: var(--atlas-panel-background) !important;
+  border-bottom: 1px solid var(--atlas-border-subtle) !important;
+  align-items: center !important;
+  font-family: var(--font-sans) !important;
+  font-size: var(--text-xs) !important;
+  line-height: 1 !important;
+  /* A collapsed item is never remeasured, so the painted header must be exactly
+     the virtualizer's diffHeaderHeight. Centre controls in it; no padding. */
+  height: 32px !important;
+  min-height: 32px !important;
+  box-sizing: border-box !important;
+  padding-block: 0 !important;
+  padding-inline: 8px 12px !important;
+}
+
+[data-diffs-header]:hover {
+  background-color: var(--atlas-element-hover) !important;
+}
+
+/* Hunk separators lead to the unchanged lines between hunks: quiet controls
+   one step off the code surface, brought forward on hover. */
+:is([data-separator="line-info"], [data-separator="line-info-basic"]) {
+  /* Exact and margin-free: the virtualizer places rows by hunkSeparatorHeight. */
+  height: 24px !important;
+  margin-block: 0 !important;
+  --diffs-bg-separator: var(--atlas-editor-gutter-background);
+}
+
+:is([data-separator="line-info"], [data-separator="line-info-basic"]) [data-separator-content],
+:is([data-separator="line-info"], [data-separator="line-info-basic"]) [data-expand-button] {
+  color: var(--atlas-editor-gutter-foreground) !important;
+  font-family: var(--font-sans) !important;
+  font-size: var(--text-2xs) !important;
+  text-decoration: none !important;
+}
+
+:is([data-separator="line-info"], [data-separator="line-info-basic"])[data-expand-index]
+  :is([data-separator-content], [data-expand-button]):hover {
+  color: var(--atlas-editor-foreground) !important;
+  background-color: var(--atlas-element-hover) !important;
+}
+
+[data-diffs-header] [data-header-content],
+[data-diffs-header] [data-metadata] {
+  align-items: center !important;
+  line-height: 1 !important;
+}
+
+/* File names clip with overflow: hidden for the start ellipsis; a 1em line box
+   would cut their descenders. */
+[data-diffs-header] :is([data-title], [data-prev-name]) {
+  line-height: 16px !important;
+}
+
+[data-diffs-header] [data-additions-count],
+[data-diffs-header] [data-deletions-count] {
+  font-family: var(--font-mono) !important;
+  font-size: var(--text-2xs) !important;
+  font-variant-numeric: tabular-nums;
+  line-height: 1 !important;
+}
+
+[data-diffs-header] [data-additions-count] {
+  color: var(--atlas-diff-added-text) !important;
+}
+
+[data-diffs-header] [data-deletions-count] {
+  color: var(--atlas-diff-removed-text) !important;
+}
+
+[data-diffs-header] :is([data-change-icon], [data-rename-icon]) {
+  display: block;
+  flex-shrink: 0;
+}
+
+[data-title] {
+  cursor: pointer;
+  font-family: var(--font-sans) !important;
+}
+
+[data-title]:hover {
+  color: var(--atlas-primary-hover) !important;
+}
+
+/* Expanding a file mounts its body at once; fade it in. Appearance only: the
+   viewer owns geometry, so height cannot animate. */
+[data-diff],
+[data-file] {
+  transition: opacity 150ms ease-out;
+}
+
+@starting-style {
+  [data-diff],
+  [data-file] {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-diff],
+  [data-file] {
+    transition: none;
+  }
+}
+`;
+
+/** Header and separator heights the stylesheet above paints, given to the
+ *  virtualizer so it never has to measure a collapsed item. */
+const ITEM_METRICS = {
+  diffHeaderHeight: 32,
+  hunkSeparatorHeight: 24,
+  // The viewer's general spacing is a fallback in some expanded-file paths;
+  // anything but zero puts an 8px gap back above the first header.
+  spacing: 0,
+  paddingTop: 0,
+  // The 8px under a file's last line is painted unconditionally by the
+  // viewer's own stylesheet, so the metric must count it: at zero, each
+  // expanded file's virtual height runs 8px short and the end of the list
+  // sits past the reachable scroll range.
+  paddingBottom: 8,
+} as const;
+
+export type StyledCodeViewOptions<A> = Omit<
+  NonNullable<CodeViewProps<A, undefined>["options"]>,
+  "unsafeCSS" | "itemMetrics" | "layout" | "theme" | "themeType" | "preferredHighlighter"
+>;
+
+type StyledCodeViewProps<A> = (
+  | Omit<ControlledCodeViewProps<A, undefined>, "options">
+  | Omit<UncontrolledCodeViewProps<A, undefined>, "options">
+) & {
+  readonly options?: StyledCodeViewOptions<A>;
+  readonly viewerRef?: Ref<CodeViewHandle<A, undefined>>;
+  /** Appended to {@link DIFF_VIEW_CSS}; same theme-variable rule. */
+  readonly extraCSS?: string;
+  /** Shown while the worker pool starts. */
+  readonly fallback?: ReactNode;
+};
+
+/** The appearance the viewer resolves `light-dark()` with. Re-read on every
+ *  theme apply; the colours themselves are variables and need no re-read. */
+function useDiffAppearance(): "light" | "dark" {
+  useThemeVersion();
+  return getActiveTheme()?.appearance ?? "dark";
+}
+
+export function StyledCodeView<A = undefined>({
+  options,
+  viewerRef,
+  className,
+  extraCSS,
+  fallback,
+  ...props
+}: StyledCodeViewProps<A>) {
+  const appearance = useDiffAppearance();
+  return (
+    <DiffWorkerPoolProvider fallback={fallback}>
+      <PoolAwareCodeView<A>
+        {...props}
+        viewerRef={viewerRef}
+        className={className ? `outline-none ${className}` : "outline-none"}
+        options={{
+          ...options,
+          theme: DIFF_THEME_NAME,
+          themeType: appearance,
+          preferredHighlighter: PREFERRED_HIGHLIGHTER,
+          unsafeCSS: extraCSS ? `${DIFF_VIEW_CSS}\n${extraCSS}` : DIFF_VIEW_CSS,
+          itemMetrics: ITEM_METRICS,
+          layout: { paddingTop: 0, paddingBottom: 0, gap: 0 },
+        }}
+      />
+    </DiffWorkerPoolProvider>
+  );
+}
+
+const plainCache = new WeakMap<object, CodeViewItem<unknown>>();
+
+/** As plain text, for when the workers failed: `text` is the one language that
+ *  costs the UI thread nothing to "highlight". One copy per item object. */
+function asPlainText<A>(item: CodeViewItem<A>): CodeViewItem<A> {
+  let plain = plainCache.get(item) as CodeViewItem<A> | undefined;
+  if (!plain) {
+    plain =
+      item.type === "diff"
+        ? { ...item, fileDiff: { ...item.fileDiff, lang: "text" } }
+        : { ...item, file: { ...item.file, lang: "text" } };
+    plainCache.set(item, plain as CodeViewItem<unknown>);
+  }
+  return plain;
+}
+
+function PoolAwareCodeView<A>({
+  viewerRef,
+  ...props
+}: CodeViewProps<A, undefined> & { viewerRef?: Ref<CodeViewHandle<A, undefined>> }) {
+  const failed = useDiffPoolFailed();
+  const items = props.items;
+  const plainItems = useMemo(
+    () => (failed && items ? items.map(asPlainText) : items),
+    [failed, items],
+  );
+  const ref = viewerRef ? { ref: viewerRef } : {};
+  if (plainItems !== items) {
+    const plain = { ...props, items: plainItems } as ControlledCodeViewProps<A, undefined>;
+    return <CodeView<A> {...plain} {...ref} />;
+  }
+  return <CodeView<A> {...props} {...ref} />;
+}
