@@ -228,8 +228,8 @@ export function UserRowActions({
   pinScopeKey: string;
   /** Is the "Show more" toggle rendered between the bubble and this bar? Then
    *  the gap is already there and this must not add a second one — see the
-   *  padding below. Resolved by the row via `clampable`, so the toggle and
-   *  this answer can never disagree. */
+   *  padding below. The row passes the same measured `overflows` that gates
+   *  the toggle, so the two can never disagree. */
   toggleAbove: boolean;
 }) {
   // The one subscription a row is allowed. It is not the chat store: the pins

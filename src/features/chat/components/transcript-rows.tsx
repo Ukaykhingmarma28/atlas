@@ -84,7 +84,7 @@ export const UserRowView = memo(function UserRowView({
   onToggleExpand: (id: string) => void;
 }) {
   const clampRef = useRef<HTMLDivElement>(null);
-  const clampHeight = useWholeLineClamp(clampRef, !row.expanded);
+  const { height: clampHeight, overflows } = useWholeLineClamp(clampRef, !row.expanded);
   return (
     // Generous space BELOW the prompt: the gap is what separates one exchange
     // from the next, and a tight one made the agent's reply read as a
@@ -161,7 +161,7 @@ export const UserRowView = memo(function UserRowView({
             {row.contextBlocks} attached
           </button>
         )}
-        <ExpandToggle row={row} onToggleExpand={onToggleExpand} />
+        {overflows && <ExpandToggle row={row} onToggleExpand={onToggleExpand} />}
         <UserRowActions
           tabId={tabId}
           text={row.text}
@@ -169,7 +169,7 @@ export const UserRowView = memo(function UserRowView({
           messageId={userRowMessageId(row.id)}
           timestamp={row.timestamp}
           pinScopeKey={pinScopeKey}
-          toggleAbove={clampable(row)}
+          toggleAbove={overflows}
         />
       </div>
     </Column>
@@ -189,16 +189,29 @@ const USER_CLAMP_PX = M.userMaxLines * M.userLineHeight;
  * not predicted: only the block that straddles the cut is read line by line,
  * and a prompt short enough to fit costs one `scrollHeight` read.
  *
+ * Also reports whether the prompt overflows the budget at all, which is what
+ * decides the "Show more" toggle. That used to be a character-count guess, and
+ * a 300-character prompt that wraps to four lines got a toggle that did
+ * nothing. The markdown root's `scrollHeight` is its natural height whether or
+ * not the wrapper is clamping it, so the answer holds while expanded too.
+ *
  * Re-measured on resize of the markdown root, which covers both a width change
  * (the lines rewrap) and the raw-source placeholder swapping to parsed HTML.
  */
-function useWholeLineClamp(ref: React.RefObject<HTMLDivElement | null>, active: boolean): number {
+function useWholeLineClamp(
+  ref: React.RefObject<HTMLDivElement | null>,
+  active: boolean,
+): { height: number; overflows: boolean } {
   const [height, setHeight] = useState(USER_CLAMP_PX);
+  const [overflows, setOverflows] = useState(false);
   useLayoutEffect(() => {
     const root = ref.current?.firstElementChild;
-    if (!active || !(root instanceof HTMLElement)) return;
+    if (!(root instanceof HTMLElement)) return;
     const measure = () => {
-      if (root.scrollHeight <= USER_CLAMP_PX) {
+      const over = root.scrollHeight > USER_CLAMP_PX;
+      setOverflows(over);
+      if (!active) return;
+      if (!over) {
         setHeight(USER_CLAMP_PX);
         return;
       }
@@ -227,12 +240,12 @@ function useWholeLineClamp(ref: React.RefObject<HTMLDivElement | null>, active: 
     ro.observe(root);
     return () => ro.disconnect();
   }, [ref, active]);
-  return height;
+  return { height, overflows };
 }
 
 /**
- * "Show more" / "Show less", rendered only when the bubble is long enough that
- * the height clamp actually bites.
+ * "Show more" / "Show less". The row renders it only when the prompt measurably
+ * overflows the clamp (`useWholeLineClamp`).
  *
  * In flow and always visible, unlike the action bar beneath it. That is
  * deliberate: this one is not an action on the message, it is the only way to
@@ -246,7 +259,6 @@ function ExpandToggle({
   row: UserRow;
   onToggleExpand: (id: string) => void;
 }) {
-  if (!clampable(row)) return null;
   return (
     <button
       type="button"
@@ -256,24 +268,6 @@ function ExpandToggle({
       {row.expanded ? "Show less" : "Show more"}
     </button>
   );
-}
-
-/**
- * Is this bubble long enough that the height clamp bites — i.e. does it get a
- * "Show more" toggle?
- *
- * A cheap approximation rather than a measurement: a short, newline-free
- * prompt is never clamped, so the common case costs a length check and no
- * layout read. Being slightly conservative only means the affordance appears
- * on a prompt that did not strictly need it.
- *
- * Shared, not duplicated: `UserRowActions` needs the same answer to decide its
- * own top padding (the toggle sits between the bubble and the action bar, so
- * the bar must not add a second gap on top of it). The two drifting apart
- * would show up as uneven spacing on exactly the rows that have a toggle.
- */
-function clampable(row: UserRow): boolean {
-  return row.text.length > 220 || row.text.split("\n").length > M.userMaxLines;
 }
 
 // ── Prose ──────────────────────────────────────────────────────────────────
