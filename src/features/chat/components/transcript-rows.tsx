@@ -507,14 +507,16 @@ export const MarkerRowView = memo(function MarkerRowView({
   ) : (
     line
   );
-  return embedded ? body : <Column>{body}</Column>;
+  // `py-1` at top level: the same box as a block's header, so a lone call
+  // reads at the rhythm of the blocks around it.
+  return embedded ? body : <Column className="py-1">{body}</Column>;
 });
 
 /**
  * A folded sequence of consecutive tool calls, kept between the prose around it.
  *
- * One sentence you click — "Read files, ran commands" — matching the Codex
- * desktop app, led by the icon of the sentence's first fragment. While a call
+ * One counted sentence you click — "Ran 3 commands and read 2 files" — led
+ * by the icon of the group it names first. While a call
  * is running the line names that call instead ("Running bun run typecheck")
  * and wears its icon, then returns to the sentence when it finishes.
  *

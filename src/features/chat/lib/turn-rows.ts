@@ -552,15 +552,15 @@ function actionLabel(action: SummaryAction, n: number): string {
     case "read":
       return `Read ${counted(n, "file", "files")}`;
     case "search":
-      return `Searched code ${counted(n, "time", "times")}`;
+      return n === 1 ? "Searched code once" : `Searched code ${n} times`;
     case "fetch":
-      return `Fetched ${counted(n, "page", "pages")}`;
+      return n === 1 ? "Fetched a page" : `Fetched ${n} pages`;
     case "org":
       return n === 1 ? "Checked your organization" : `Checked your organization ${n} times`;
     case "memory":
       return n === 1 ? "Used Atlas memory" : `Used Atlas memory ${n} times`;
     case "tool":
-      return `Used ${counted(n, "tool", "tools")}`;
+      return n === 1 ? "Used a tool" : `Used ${n} tools`;
   }
 }
 
@@ -581,7 +581,10 @@ export function summarizeMarkers(markers: MarkerRow[]): { summary: string; tool:
     index,
     calls: calls.length,
     // Edits count files, not calls: three edits to one file changed one file.
-    n: action === "edit" ? new Set(calls.map((c) => c.path ?? c.detail)).size : calls.length,
+    n:
+      action === "edit"
+        ? new Set(calls.map((c) => c.path ?? (c.detail || c.toolCallId))).size
+        : calls.length,
   }));
   const named = [...all]
     .sort((a, b) => SUMMARY_PRIORITY[a.action] - SUMMARY_PRIORITY[b.action] || a.index - b.index)
@@ -1155,14 +1158,21 @@ function projectSegment(
     maybeGapSeparator(rows, messages, i, turnId);
     const rowStart = rows.length;
 
+    // The turn is still going: running, or paused on a prompt.
+    const inProgress = (opts.turnInProgress ?? opts.streaming) && end === messages.length;
     let markers: MarkerRow[] = [];
     const flushMarkers = () => {
       if (markers.length === 0) return;
       // A lone finished call is its own row: a disclosure that opens onto one
-      // line says less than the line itself. While it runs it stays a block,
-      // which is what carries the live label and its elapsed figure; both are
-      // one line high, so the swap at settle does not move anything.
-      if (markers.length === 1 && (markers[0].state === "done" || markers[0].state === "failed")) {
+      // line says less than the line itself. Only once the turn has settled:
+      // while it runs, the block carries the live label, and a call that just
+      // finished is usually about to be joined by the next one, so swapping
+      // it for a line would flicker between the two.
+      if (
+        !inProgress &&
+        markers.length === 1 &&
+        (markers[0].state === "done" || markers[0].state === "failed")
+      ) {
         const only = markers[0];
         only.firstInTurn = rows.length === rowStart;
         rows.push(only);

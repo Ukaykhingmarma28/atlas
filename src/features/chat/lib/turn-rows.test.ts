@@ -393,6 +393,11 @@ describe("the folded block's one-line summary", () => {
     expect(g?.summary).toBe("Changed 2 files");
   });
 
+  it("counts edits that named no file as one file each", () => {
+    const rm = (id: string) => toolCall({ id, kind: "delete", toolName: "delete", arguments: {} });
+    expect(groupOf(rm("a"), rm("b"), rm("c"))?.summary).toBe("Changed 3 files");
+  });
+
   it("says an organisation call checked the organization, not that it loaded a tool", () => {
     const g = groupOf(
       toolCall({ id: "a", kind: null, toolName: "atlas_org.org_sessions" }),
@@ -452,6 +457,15 @@ describe("tool activity in the transcript", () => {
     ]);
     const lines = rows.filter((row): row is MarkerRow => row.kind === RowKind.Marker);
     expect(lines.map((line) => line.toolCallId)).toEqual(["a", "b"]);
+  });
+
+  it("keeps a finished call a block until the turn settles, so a chain does not flicker", () => {
+    const rows = projectRows(
+      [message("m1", "", [toolCall({ id: "a", kind: "execute", arguments: { command: "pwd" } })])],
+      { ...OPTS, streaming: true },
+    ).rows;
+    expect(rows.map((row) => row.kind)).toContain(RowKind.MarkerGroup);
+    expect(rows.map((row) => row.kind)).not.toContain(RowKind.Marker);
   });
 
   it("keeps a lone call a block while it runs, for its live label", () => {
