@@ -31,7 +31,7 @@ export function seedWindow() {
     activeTabId: "editor:/p/src/App.tsx",
     leftPanel: { visible: true, width: 240, activeSection: "files" },
     sourceControl: { section: "changes" },
-    chatSidebar: { visible: true, width: 240 },
+    chatSidebar: { visible: true, width: 240, settledExpanded: false },
     zen: false,
     destination: null,
     destinationShown: false,

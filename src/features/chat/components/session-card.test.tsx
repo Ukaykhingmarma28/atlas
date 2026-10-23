@@ -58,7 +58,13 @@ function prsAnswer(byBranch: Record<string, unknown>) {
 
 function renderCard(props: Partial<SessionCardProps> = {}) {
   const client = new QueryClient();
-  const handlers = { onOpen: vi.fn(), onArchive: vi.fn(), onDelete: vi.fn() };
+  const handlers = {
+    onOpen: vi.fn(),
+    onSettle: vi.fn(),
+    onUnsettle: vi.fn(),
+    onArchive: vi.fn(),
+    onDelete: vi.fn(),
+  };
   const view = render(
     <QueryClientProvider client={client}>
       <SessionCard
@@ -74,6 +80,7 @@ function renderCard(props: Partial<SessionCardProps> = {}) {
         active={false}
         agent="claude"
         liveElsewhere={false}
+        settledAt={null}
         {...handlers}
         {...props}
       />
@@ -225,7 +232,10 @@ describe("SessionCard", () => {
         active={false}
         agent="claude"
         liveElsewhere={false}
+        settledAt={null}
         onOpen={noop}
+        onSettle={noop}
+        onUnsettle={noop}
         onArchive={noop}
         onDelete={noop}
       />
@@ -326,6 +336,32 @@ describe("SessionCard", () => {
     expect(onArchive).toHaveBeenCalledWith("thread-1");
     expect(onDelete).toHaveBeenCalledWith("thread-1");
     expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("settles an active card and un-settles a settled one, without opening", async () => {
+    const user = userEvent.setup();
+    const { onOpen, onSettle, onUnsettle } = renderCard();
+    await user.click(screen.getByRole("button", { name: "Settle session" }));
+    expect(onSettle).toHaveBeenCalledWith("thread-1");
+    cleanup();
+
+    const settled = renderCard({
+      settledAt: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+    });
+    await user.click(screen.getByRole("button", { name: "Un-settle session" }));
+    expect(settled.onUnsettle).toHaveBeenCalledWith("thread-1");
+    expect(onUnsettle).not.toHaveBeenCalled();
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("says a settled card is settled, and when, instead of done", () => {
+    renderCard({ settledAt: new Date(Date.now() - 2 * 86_400_000).toISOString() });
+    expect(screen.getByText("Settled")).toBeTruthy();
+    expect(screen.getByText("2d Ago")).toBeTruthy();
+    expect(screen.queryByText("Done")).toBeNull();
+    const open = screen.getByRole("button", { name: "Add Model Picker Dropdown" });
+    const description = document.getElementById(open.getAttribute("aria-describedby")!);
+    expect(description?.textContent).toMatch(/^Settled 2d ago, /);
   });
 
   it("nests no control inside the open button", () => {

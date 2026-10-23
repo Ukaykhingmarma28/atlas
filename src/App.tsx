@@ -56,6 +56,7 @@ import {
 import { useRecentChatsStore } from "@/features/projects/stores/recent-chats-store";
 import { stripInjectedContext } from "@/features/chat/lib/atlas-context";
 import { openNewAgentChat } from "@/features/chat/lib/open-agent-session";
+import { settleAndAdvance } from "@/features/chat/lib/settle-and-advance";
 import { requestCloseTab } from "@/features/chat/lib/close-tab";
 import { pruneContextUsageCache } from "@/features/chat/lib/context-usage-cache";
 import { isScrollHot } from "@/lib/scroll-hot";
@@ -1376,6 +1377,14 @@ export function App() {
       const tab = layout.tabs.find((t) => t.id === layout.activeTabId);
       if (!tab || tab.type !== "chat") return;
       cycleChatAgent(tab.id);
+    },
+    // ⌘⌥S — settle the open session (or bring it back), through the chat
+    // tab's own sidebar, which moves on to the next session.
+    "chat.settleSession": () => {
+      const layout = useLayoutStore.getState();
+      const tab = layout.tabs.find((t) => t.id === layout.activeTabId);
+      if (!tab || tab.type !== "chat") return;
+      settleAndAdvance(tab.id);
     },
     // ⌘T — open a surface. A single column grows a pane beside
     // it whose launcher takes a bare letter; a split window opens the focused
