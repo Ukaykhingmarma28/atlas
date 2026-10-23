@@ -111,6 +111,51 @@ describe("incremental projection", () => {
     prev.segments.slice(0, -1).forEach((s, k) => expect(s).toBe(settledSegments[k]));
   });
 
+  it("keeps a settled turn's changed-files row, and its files array, while another streams", () => {
+    const files = [{ path: "/repo/src/a.ts", kind: "edit" as const, added: 2, removed: 1 }];
+    const settled = [
+      user("u1", "edit it"),
+      assistant("a1", {
+        content: "done",
+        workedMs: 1_000,
+        turnSummary: { turnSeq: 1, files, repoAtTurn: false },
+      }),
+    ];
+    let messages = [...settled, user("u2", "go"), assistant("a2", { content: "" })];
+    const o = opts({ streaming: true, turnInProgress: true });
+    let prev = step(messages, o, null);
+    const footer = prev.rows.find((r) => r.kind === RowKind.TurnFooter);
+    expect(footer && "files" in footer && footer.files).toBe(files);
+    for (let k = 0; k < 5; k++) {
+      const tail = messages[messages.length - 1];
+      messages = [...messages.slice(0, -1), { ...tail, content: `${tail.content} more` }];
+      prev = step(messages, o, prev);
+    }
+    // The same row object: its card's memo sees nothing new and does not render.
+    expect(prev.rows.find((r) => r.kind === RowKind.TurnFooter)).toBe(footer);
+  });
+
+  it("keys a turn's footer by its first edit's call id, which a reload keeps", () => {
+    const files = [{ path: "/repo/src/a.ts", kind: "edit" as const, added: 1, removed: 0 }];
+    const edit = { ...call("e1"), toolName: "Edit", kind: "edit" } as ToolCallDisplay;
+    // A reload re-mints every message id; the agent's call ids survive it.
+    const load = (prefix: string) => [
+      user(`${prefix}u`, "edit it"),
+      assistant(`${prefix}a0`, { content: "\n\n" }),
+      assistant(`${prefix}a1`, { toolCalls: [call("r1"), edit], mode: "tool" }),
+      assistant(`${prefix}a2`, {
+        content: "done",
+        turnSummary: { turnSeq: 1, files, repoAtTurn: false },
+      }),
+    ];
+    const keyOf = (messages: ChatMessage[]) => {
+      const footer = step(messages, opts(), null).rows.find((r) => r.kind === RowKind.TurnFooter);
+      return footer && "turnKey" in footer ? footer.turnKey : null;
+    };
+    expect(keyOf(load("x"))).toBe("tc:e1");
+    expect(keyOf(load("y"))).toBe("tc:e1");
+  });
+
   it("follows a tool call through pending, running and done", () => {
     let messages = [...exchange(1), user("u2", "go"), assistant("a2", { mode: "tool" })];
     const o = opts({ streaming: true, turnInProgress: true });

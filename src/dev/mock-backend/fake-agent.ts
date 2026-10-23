@@ -223,6 +223,96 @@ export async function playTranscript(
 }
 
 /**
+ * Play whole turns the way a live session delivers them, so each one ends
+ * with what only a live turn leaves behind: its files summary, frozen at
+ * `turn_finished` from the tool calls the turn upserted.
+ *
+ * `playTranscript` appends messages and nothing else, which is right for a
+ * seed but leaves every turn without its changed-files card. Each turn here
+ * opens with a `running` status carrying its own `turn_seq`, upserts every
+ * tool call it holds, and closes with `turn_finished` for the same seq. A
+ * turn is a user message and the assistant messages that answer it.
+ */
+export async function playTurns(turns: SessionMessage[][], sessionId?: string): Promise<void> {
+  if (!latest(sessionId)) {
+    console.warn("[mock-backend] playTurns: no session bound yet");
+    return;
+  }
+  for (const turn of turns) {
+    const answer = turn.findIndex((m) => m.role === "assistant");
+    const prompt = turn.find((m) => m.role === "user");
+    const last = turn[turn.length - 1];
+    await appendWithTools(answer < 0 ? turn : turn.slice(0, answer), sessionId);
+    const seqOfTurn = await openTurn(sessionId);
+    if (answer >= 0) await appendWithTools(turn.slice(answer), sessionId);
+    const endedAt = Date.parse(last.timestamp);
+    await closeTurn(
+      seqOfTurn,
+      {
+        startedAt: prompt ? Date.parse(prompt.timestamp) : endedAt,
+        endedAt,
+        workedMs: last.worked_ms,
+        stopReason: last.stop_reason,
+      },
+      sessionId,
+    );
+  }
+}
+
+let turnSeq = 0;
+
+/** Open a live turn: `running` with a fresh `turn_seq`, which is what starts
+ *  the store's per-turn files scratch. Returns the seq to close it with. */
+export async function openTurn(sessionId?: string): Promise<number> {
+  const s = latest(sessionId);
+  const seqOfTurn = ++turnSeq;
+  if (s) await sendDelta({ kind: "status", ...at(s), status: "running", turn_seq: seqOfTurn });
+  return seqOfTurn;
+}
+
+/** Close the turn `openTurn` opened, timed from `startedAt` to `endedAt`. */
+export async function closeTurn(
+  seqOfTurn: number,
+  timing: { startedAt: number; endedAt: number; workedMs?: number; stopReason?: string },
+  sessionId?: string,
+): Promise<void> {
+  const s = latest(sessionId);
+  if (!s) return;
+  await sendDelta({
+    kind: "turn_finished",
+    ...at(s),
+    stop_reason: timing.stopReason ?? "end_turn",
+    turn_seq: seqOfTurn,
+    started_at_ms: timing.startedAt,
+    ended_at_ms: timing.endedAt,
+    worked_ms: timing.workedMs ?? Math.max(0, timing.endedAt - timing.startedAt),
+  });
+  await sendDelta({ kind: "status", ...at(s), status: "idle", turn_seq: seqOfTurn });
+}
+
+/** Append messages and upsert every tool call they carry: what a live turn
+ *  sends, and what the store counts a turn's files from. */
+export async function appendWithTools(
+  messages: SessionMessage[],
+  sessionId?: string,
+): Promise<void> {
+  const s = latest(sessionId);
+  if (!s) return;
+  for (const message of messages) {
+    s.messages.push(message);
+    await sendDelta({ kind: "message_appended", ...at(s), message });
+    for (const toolCall of message.tool_calls) {
+      await sendDelta({
+        kind: "tool_call_upserted",
+        ...at(s),
+        message_id: message.id,
+        tool_call: toolCall,
+      });
+    }
+  }
+}
+
+/**
  * Stream one assistant message into a session word by word, the way a real
  * turn arrives: an empty message, then `text_chunk` (or `thinking_chunk`)
  * deltas. The held copy is kept whole so a snapshot re-read agrees.

@@ -15,12 +15,13 @@
 //     arrives as props; actions are fired imperatively via `getState()`.
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Brain, ChevronRight, Code2, FileDiff, Files, Paperclip } from "lucide-react";
+import { Brain, ChevronRight, Files, Paperclip } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CachedMarkdown } from "@/lib/markdown-cache";
 import { StreamingMarkdown } from "./streaming-markdown";
 import { openDetail } from "../stores/detail-panel-store";
 import { openTurnDiff } from "../lib/open-turn-diff";
+import { ChangedFilesCard } from "./changed-files-card";
 import { UserRowActions } from "./user-row-actions";
 import { ImageAttachmentStrip } from "./image-attachments";
 import { FILE_DETAIL, ICON_PX, ICON_STROKE, ToolGlyph } from "./tool-glyph";
@@ -895,115 +896,27 @@ export const SeparatorRowView = memo(function SeparatorRowView({ row }: { row: S
 // ── Turn footer ────────────────────────────────────────────────────────────
 
 export const TurnFooterRowView = memo(function TurnFooterRowView({ row }: { row: TurnFooterRow }) {
-  // A fold, like the memory block and a tool call: one quiet line that says
-  // what the turn touched, and the files only when asked for. It was a lifted
-  // card with a header and a Save pill — the loudest thing under every turn,
-  // for a list most readers never open.
-  const [open, setOpen] = useState(false);
-  const edits = row.allFiles.filter((f) => f.kind === "edit");
-  const added = edits.reduce((s, f) => s + f.added, 0);
-  const removed = edits.reduce((s, f) => s + f.removed, 0);
-  const label =
-    edits.length > 0
-      ? `${edits.length} file${edits.length === 1 ? "" : "s"} changed`
-      : `${row.allFiles.length} file${row.allFiles.length === 1 ? "" : "s"} read`;
-
+  // A turn that changed files ends on its changed-files card. One that only
+  // read keeps a single quiet line: there is no diff to open, and a card for
+  // a list of reads would be the loudest thing under the turn.
+  const edited = row.files.some((f) => f.kind === "edit");
+  if (edited) {
+    return (
+      <Column className="pt-1 pb-4">
+        <ChangedFilesCard turnKey={row.turnKey} files={row.files} />
+      </Column>
+    );
+  }
   return (
     <Column className="pt-1 pb-4">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="atlas-marker group/files w-full cursor-pointer text-left text-base text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)]"
-      >
+      <div className="atlas-marker w-full text-base text-[var(--muted-foreground)]">
         <span className="flex w-4 shrink-0 justify-center">
-          {edits.length > 0 ? (
-            <FileDiff size={ICON_PX} strokeWidth={ICON_STROKE} />
-          ) : (
-            <Files size={ICON_PX} strokeWidth={ICON_STROKE} />
-          )}
+          <Files size={ICON_PX} strokeWidth={ICON_STROKE} />
         </span>
-        <span className="min-w-0 truncate">{label}</span>
-        {(added > 0 || removed > 0) && (
-          <span className="shrink-0 font-mono text-2xs tabular-nums">
-            {added > 0 && <span className="text-[var(--atlas-diff-added-text)]">+{added}</span>}
-            {removed > 0 && (
-              <span className="ml-1 text-[var(--atlas-status-error-foreground)]">−{removed}</span>
-            )}
-          </span>
-        )}
-        <ChevronRight
-          size={ICON_PX}
-          strokeWidth={ICON_STROKE}
-          className={cn(
-            "shrink-0",
-            // The tool fold's reveal: a hint, not chrome, until reached for.
-            open
-              ? "rotate-90 opacity-100"
-              : "opacity-0 group-hover/files:opacity-100 group-focus-visible/files:opacity-100",
-          )}
-        />
-      </button>
-
-      {open && (
-        <ul className="mt-0.5 flex flex-col">
-          {row.allFiles.map((f) => (
-            <li
-              key={f.path}
-              title={f.path}
-              // The memory block's list: a rule under each row, none around.
-              className="flex items-center gap-2.5 border-b border-[var(--border)] py-1.5 text-xs last:border-b-0"
-            >
-              <span
-                className={cn(
-                  "flex w-4 shrink-0 justify-center font-mono text-2xs font-semibold",
-                  f.kind === "edit"
-                    ? f.created
-                      ? "text-[var(--atlas-diff-added-text)]"
-                      : "text-[var(--atlas-status-warning-foreground)]"
-                    : "text-[var(--muted-foreground)]",
-                )}
-              >
-                {f.kind === "edit" ? (f.created ? "A" : "M") : "R"}
-              </span>
-              <span className="min-w-0 flex-1 truncate font-mono text-[var(--secondary-foreground)]">
-                {baseName(f.path)}
-              </span>
-              {f.kind === "edit" && (f.added > 0 || f.removed > 0) && (
-                <span className="shrink-0 font-mono text-2xs tabular-nums">
-                  {f.added > 0 && (
-                    <span className="text-[var(--atlas-diff-added-text)]">+{f.added}</span>
-                  )}
-                  {f.removed > 0 && (
-                    <span className="ml-1 text-[var(--atlas-status-error-foreground)]">
-                      −{f.removed}
-                    </span>
-                  )}
-                </span>
-              )}
-            </li>
-          ))}
-          {edits.length > 0 && (
-            <li className="pt-1.5">
-              <button
-                type="button"
-                // The whole turn: its files fill the tree and the first opens.
-                onClick={() => openTurnDiff(row.turnId)}
-                className="flex cursor-pointer items-center gap-1.5 text-2xs text-[var(--muted-foreground)] transition-colors hover:text-[var(--secondary-foreground)]"
-              >
-                <Code2 size={11} />
-                Show changes
-              </button>
-            </li>
-          )}
-        </ul>
-      )}
+        <span className="min-w-0 truncate">
+          {row.files.length} file{row.files.length === 1 ? "" : "s"} read
+        </span>
+      </div>
     </Column>
   );
 });
-
-/** Last path segment — the directories repeat on every row and cost width. */
-function baseName(p: string): string {
-  const i = p.lastIndexOf("/");
-  return i >= 0 ? p.slice(i + 1) : p;
-}

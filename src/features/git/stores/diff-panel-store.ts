@@ -15,14 +15,22 @@ import { persist } from "zustand/middleware";
 import { createSelectors } from "@/lib/create-selectors";
 
 /** What a diff panel reviews. `session` is the working tree narrowed to the
- *  files one agent session touched, offered only where there is a session. */
-export type DiffScope = "session" | "working-tree" | "branch-range";
+ *  files one agent session touched, and `turn` one turn's own edits; both are
+ *  offered only where there is a session. */
+export type DiffScope = "session" | "turn" | "working-tree" | "branch-range";
+
+/** The turn choice that follows the session's newest turn with changes. */
+export const LATEST_TURN = "latest";
 
 export type DiffLayout = "unified" | "split";
 
 interface DiffPanelState {
   /** Per panel (its tab id). Absent: the panel's own default. */
   scope: Record<string, DiffScope>;
+  /** Per panel: the turn the `turn` scope shows, its stable key
+   *  (`stableTurnKey`, which survives a relaunch) or {@link LATEST_TURN}.
+   *  Absent: the latest. */
+  turn: Record<string, string>;
   /** Per repository: the base branch the branch range compares against.
    *  Absent or `null`: the remote default, as the backend picks it. */
   baseRef: Record<string, string | null>;
@@ -36,6 +44,8 @@ interface DiffPanelState {
   collapsed: Record<string, Record<string, true>>;
   actions: {
     setScope: (panel: string, scope: DiffScope) => void;
+    /** Show one turn (or {@link LATEST_TURN}): the `turn` scope, on it. */
+    setTurn: (panel: string, turn: string) => void;
     setBaseRef: (repo: string, baseRef: string | null) => void;
     setLayout: (layout: DiffLayout) => void;
     setWordWrap: (wrap: boolean) => void;
@@ -76,6 +86,7 @@ export const useDiffPanelStore = createSelectors(
     persist(
       (set) => ({
         scope: {},
+        turn: {},
         baseRef: {},
         layout: "unified",
         wordWrap: false,
@@ -84,6 +95,11 @@ export const useDiffPanelStore = createSelectors(
         collapsed: {},
         actions: {
           setScope: (panel, scope) => set((s) => ({ scope: withRecent(s.scope, panel, scope) })),
+          setTurn: (panel, turn) =>
+            set((s) => ({
+              scope: withRecent(s.scope, panel, "turn"),
+              turn: withRecent(s.turn, panel, turn),
+            })),
           setBaseRef: (repo, baseRef) =>
             set((s) => ({ baseRef: { ...s.baseRef, [repo]: baseRef?.trim() || null } })),
           setLayout: (layout) => set({ layout }),
@@ -105,6 +121,7 @@ export const useDiffPanelStore = createSelectors(
         name: "atlas.git.diff-panel",
         partialize: (s) => ({
           scope: s.scope,
+          turn: s.turn,
           baseRef: s.baseRef,
           layout: s.layout,
           wordWrap: s.wordWrap,

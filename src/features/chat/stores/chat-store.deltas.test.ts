@@ -728,6 +728,30 @@ describe("applyAgentDelta: turn terminals", () => {
     expect(paths).toEqual(["/tmp/project/loc.ts", "/tmp/project/p.ts"]);
   });
 
+  it("the native engine's patch counts every file it names, each by its own hunks", () => {
+    boundTab();
+    const nativeEdit = (patch: string) =>
+      d("tool_call_upserted", {
+        message_id: "t",
+        tool_call: wireTool("tc1", {
+          tool_name: "Edit /tmp/project/a.rs (+1 more)",
+          kind: "edit",
+          status: "completed",
+          arguments: { paths: ["/tmp/project/a.rs", "/tmp/project/b.rs"], patch },
+        }),
+      });
+    apply(d("status", { status: "running", turn_seq: 1 }), nativeEdit(""));
+    const revision = session().toolRevision;
+    apply(nativeEdit("@@ -1 +1,2 @@\n x\n+y\n\nnew file\n"));
+    // Each sighting replaces the call's files rather than adding to them.
+    expect(Object.values(session().turnScratch!.tools)).toEqual([
+      { path: "/tmp/project/a.rs", kind: "edit", added: 1, removed: 0, created: false },
+      { path: "/tmp/project/b.rs", kind: "edit", added: 1, removed: 0, created: true },
+    ]);
+    // Any upsert moves the revision a view of the session's edits listens to.
+    expect(session().toolRevision).toBe((revision ?? 0) + 1);
+  });
+
   it("turn_failed fails live tool calls, says what went wrong, and errors the session", () => {
     boundTab();
     apply(

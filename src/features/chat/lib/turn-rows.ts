@@ -36,6 +36,7 @@ import {
   countEditLines,
   isFileCreated,
 } from "./tool-files";
+import { isEmptyMessage, stableTurnKey } from "./turn-identity";
 import { splitAtlasContext } from "./atlas-context";
 import { stripNextSteps, stripNextStepsDirective } from "./next-steps";
 
@@ -281,13 +282,13 @@ export interface SeparatorRow extends RowBase {
 
 export interface TurnFooterRow extends RowBase {
   kind: typeof RowKind.TurnFooter;
-  /** The first few, shown collapsed. */
+  /** The turn's frozen `turnSummary.files`, by identity: the same array every
+   *  projection, so a settled turn's changed-files card never re-renders. */
   files: TurnFile[];
-  /** Everything — the overflow disclosure renders from this. */
-  allFiles: TurnFile[];
-  /** How many `allFiles` holds beyond `files`. */
-  overflow: number;
   repoAtTurn: boolean;
+  /** The turn's stable key (`stableTurnKey`): what the card opens and
+   *  remembers its folders by, since `turnId` changes when the log reloads. */
+  turnKey: string;
   /** Message id, so the footer can reach usage/suggestions/contextUsage. */
   messageId: string;
   hasSuggestions: boolean;
@@ -829,26 +830,6 @@ function formatGap(ms: number): string {
 }
 
 /**
- * A message renders nothing at all — no prose, no thinking, no tools, no files,
- * no plan. claude-agent-acp routinely emits signature-only `thinking` blocks
- * with empty content as turn markers; projecting them produced phantom rows
- * whose padding read as unexplained gaps. Filtered here rather than in the
- * list, so the row index never contains one.
- */
-function isEmptyMessage(m: ChatMessage): boolean {
-  return (
-    !(m.content && m.content.trim()) &&
-    !(m.thinking && m.thinking.trim()) &&
-    m.toolCalls.length === 0 &&
-    m.fileChanges.length === 0 &&
-    !(m.plan && m.plan.length > 0) &&
-    // A turn cut off before any output keeps an otherwise empty message just
-    // to carry its interruption record (`recordInterruption`).
-    !m.interruption
-  );
-}
-
-/**
  * Per-message derived-text caches, keyed by the message OBJECT. `projectRows`
  * runs once per applied streaming batch, and these strip/split/regex passes
  * over full message bodies made its per-frame cost scale with total transcript
@@ -1386,15 +1367,13 @@ function projectSegment(
     }
 
     if (footerMsg?.turnSummary) {
-      const files = footerMsg.turnSummary.files;
       rows.push({
         kind: RowKind.TurnFooter,
         id: `f:${footerMsg.id}`,
         turnId,
         firstInTurn: false,
-        files: files.slice(0, 3),
-        allFiles: files,
-        overflow: Math.max(0, files.length - 3),
+        files: footerMsg.turnSummary.files,
+        turnKey: stableTurnKey(messages, { start: turnFirstIdx, end: i }) ?? turnId,
         repoAtTurn: footerMsg.turnSummary.repoAtTurn,
         messageId: footerMsg.id,
         hasSuggestions: (footerMsg.suggestions?.chips.length ?? 0) > 0,
@@ -1457,9 +1436,9 @@ function projectSegment(
 
 /**
  * One-level equality for row/turn records. Arrays compare element-by-identity —
- * `TurnFooterRow.files` is re-`slice`d every projection, but its ELEMENTS are
- * the stable `turnSummary.files` objects frozen at turn end, so identity per
- * element is exactly the right test.
+ * an array a projection rebuilds is still equal when its ELEMENTS are the same
+ * stable records. (`TurnFooterRow.files` is the frozen `turnSummary.files`
+ * itself, so it compares equal by identity before that.)
  */
 function sameShallow(a: object, b: object): boolean {
   const ka = Object.keys(a);
