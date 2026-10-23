@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { RotateCcw } from "lucide-react";
+import { ChevronRight, RotateCcw, Settings } from "lucide-react";
 import { ScrollArea } from "@/ui/scroll-area";
 import { Button } from "@/ui/button";
 import { Icon } from "@/ui/icon";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogClose,
@@ -30,8 +31,16 @@ import {
 } from "../stores/settings-nav-store";
 import { useSettingsStore } from "../stores/settings-store";
 import { DEFAULT_SETTINGS, type AppSettings } from "../lib/app-settings";
-import { changedOnPage, sectionLabel, type SearchItem } from "../lib/settings-sections";
+import {
+  changedOnPage,
+  sectionEntry,
+  sectionLabel,
+  type SearchItem,
+} from "../lib/settings-sections";
 import { useAgentRegistryStore } from "@/features/agents/stores/agent-registry-store";
+
+/** The gap between the tab's edge and the card — the chat tab's value. */
+const CARD_INSET = 4;
 
 const NAV_COLLAPSED_KEY = "atlas:settings:navCollapsed";
 
@@ -110,27 +119,65 @@ export function SettingsPanel({ initialSection }: { initialSection?: string } = 
   const page = PAGES[active];
 
   return (
-    <div className="flex h-full">
-      <SettingsSidebar
-        active={active}
-        onSelect={setActive}
-        onSearchPick={onSearchPick}
-        collapsed={collapsed}
-        onToggleCollapsed={toggleCollapsed}
-        badges={{ agents: agentUpdates }}
-      />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-11 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
-          <p className="flex items-center gap-1.5 text-xs">
-            <span className="text-muted-foreground">Settings</span>
-            <span className="text-disabled">/</span>
-            <span className="font-medium text-foreground">{sectionLabel(active)}</span>
-          </p>
-          <RestoreDefaults section={active} />
-        </header>
-        <ScrollArea className="min-h-0 flex-1">{page?.()}</ScrollArea>
+    // The chat, Timeline and terminal tabs' card: an inset on the tab's card
+    // fill, the panel as a rounded card inside it, its edge carried by the
+    // ring and the shadow only lifting it. The sidebar sits inside the card,
+    // as the chat's session sidebar does. `overflow-hidden` is what makes the
+    // corners real — the sidebar and the header hairlines paint to the edge.
+    <div className="h-full min-h-0 bg-card" style={{ padding: CARD_INSET }}>
+      <div className="flex h-full min-h-0 overflow-hidden rounded-lg bg-background shadow-lg ring-1 ring-border">
+        <SettingsSidebar
+          active={active}
+          onSelect={setActive}
+          onSearchPick={onSearchPick}
+          collapsed={collapsed}
+          onToggleCollapsed={toggleCollapsed}
+          badges={{ agents: agentUpdates }}
+        />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="flex h-10 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
+            <Breadcrumbs section={active} onHome={() => setActive("general")} />
+            <RestoreDefaults section={active} />
+          </header>
+          <ScrollArea className="min-h-0 flex-1">{page?.()}</ScrollArea>
+        </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Where you are: Settings, then the page, each with its sidebar icon. The
+ * root is a way back to the first page; the current page is not a link.
+ */
+function Breadcrumbs({ section, onHome }: { section: SettingsSection; onHome: () => void }) {
+  const entry = sectionEntry(section);
+  const crumb = "flex h-6 items-center gap-1.5 rounded-md px-1.5 text-xs leading-none";
+  return (
+    <nav aria-label="Breadcrumb" className="-ml-1.5 min-w-0">
+      <ol className="flex min-w-0 items-center gap-0.5">
+        <li>
+          <button
+            type="button"
+            onClick={onHome}
+            className={cn(
+              crumb,
+              "text-muted-foreground transition-colors duration-fast ease-out-strong hover:bg-element-hover hover:text-foreground",
+            )}
+          >
+            <Icon icon={Settings} size="sm" />
+            Settings
+          </button>
+        </li>
+        <li aria-hidden className="flex text-disabled">
+          <Icon icon={ChevronRight} size="xs" />
+        </li>
+        <li aria-current="page" className={cn(crumb, "min-w-0 font-medium text-foreground")}>
+          {entry && <Icon icon={entry.icon} size="sm" className="shrink-0" />}
+          <span className="truncate">{sectionLabel(section)}</span>
+        </li>
+      </ol>
+    </nav>
   );
 }
 

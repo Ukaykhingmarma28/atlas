@@ -8,14 +8,13 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
 import { Icon } from "@/ui/icon";
 import { IconButton } from "@/ui/icon-button";
 import { Kbd } from "@/ui/kbd";
 import {
-  ABOUT_ENTRY,
   SIDEBAR,
   searchSettings,
   type SearchItem,
@@ -43,6 +42,9 @@ export function SettingsSidebar({
   const inputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const results = useMemo(() => searchSettings(query), [query]);
+  // Groups folded shut, by label. Per visit, like the project rail's
+  // sections are per session: a fold is a glance, not a preference.
+  const [folded, setFolded] = useState<Record<string, boolean>>({});
 
   // `/` focuses search while Settings is on screen, unless something editable
   // has focus already — never steal a keystroke from a field.
@@ -89,14 +91,14 @@ export function SettingsSidebar({
       aria-label="Settings sections"
       className={cn(
         "flex shrink-0 flex-col border-r border-border bg-background",
-        collapsed ? "w-12" : "w-56",
+        collapsed ? "w-12" : "w-64",
       )}
     >
       {/* The same height and hairline as the page header beside it, so the
           search and the breadcrumb read as one bar across the panel. */}
       <div
         className={cn(
-          "flex h-11 shrink-0 items-center border-b border-border",
+          "flex h-10 shrink-0 items-center border-b border-border",
           collapsed ? "justify-center" : "px-2",
         )}
       >
@@ -116,12 +118,12 @@ export function SettingsSidebar({
                 lines up with the section icons below it. */}
             <div
               className={cn(
-                "flex h-control-lg items-center gap-2 rounded-md px-2",
+                "flex h-control-md items-center gap-2.5 rounded-md px-2",
                 "transition-colors duration-fast ease-out-strong",
                 "hover:bg-element-hover focus-within:bg-element-hover",
               )}
             >
-              <Icon icon={Search} size="sm" className="shrink-0 text-muted-foreground" />
+              <Icon icon={Search} size="md" className="shrink-0 text-muted-foreground" />
               <input
                 ref={inputRef}
                 value={query}
@@ -181,56 +183,96 @@ export function SettingsSidebar({
 
       <div
         className={cn(
-          "flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto py-3",
+          "flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto py-2",
           collapsed ? "items-center px-1.5" : "px-2",
         )}
       >
-        {SIDEBAR.map((group) => (
-          <div key={group.label} className="flex flex-col gap-0.5">
-            {!collapsed && <p className="eyebrow px-2 pb-1">{group.label}</p>}
-            {group.entries.map((entry) => (
-              <NavItem
-                key={entry.id}
-                entry={entry}
-                active={active === entry.id}
-                collapsed={collapsed}
-                badge={badges[entry.id] ?? 0}
-                onSelect={onSelect}
-              />
-            ))}
-          </div>
-        ))}
+        {SIDEBAR.map((group) => {
+          // The icon rail has no headings to fold with, so it shows every row.
+          const shut = !collapsed && !!folded[group.label];
+          return (
+            <div key={group.label} className="flex flex-col gap-0.5">
+              {!collapsed && (
+                <GroupHeader
+                  label={group.label}
+                  shut={shut}
+                  onToggle={() => setFolded((f) => ({ ...f, [group.label]: !f[group.label] }))}
+                />
+              )}
+              {!shut &&
+                group.entries.map((entry) => (
+                  <NavItem
+                    key={entry.id}
+                    entry={entry}
+                    active={active === entry.id}
+                    collapsed={collapsed}
+                    badge={badges[entry.id] ?? 0}
+                    onSelect={onSelect}
+                  />
+                ))}
+            </div>
+          );
+        })}
       </div>
 
       <div
         className={cn(
-          "flex flex-col gap-0.5 border-t border-border py-2",
+          "flex flex-col border-t border-border py-2",
           collapsed ? "items-center px-1.5" : "px-2",
         )}
       >
-        <NavItem
-          entry={ABOUT_ENTRY}
-          active={active === ABOUT_ENTRY.id}
-          collapsed={collapsed}
-          badge={0}
-          onSelect={onSelect}
-        />
         <Hint label={collapsed ? "Show sidebar" : "Hide sidebar"} side="right">
           <button
             type="button"
             onClick={onToggleCollapsed}
             className={cn(
-              "flex h-control-lg items-center rounded-md text-xs text-muted-foreground",
+              "flex h-7 items-center rounded-md text-sm text-muted-foreground",
               "transition-colors duration-fast ease-out-strong hover:bg-element-hover hover:text-foreground",
-              collapsed ? "w-full justify-center" : "gap-2 px-2",
+              collapsed ? "w-full justify-center" : "gap-2.5 px-2",
             )}
           >
-            <Icon icon={collapsed ? ChevronRight : ChevronLeft} size="sm" />
+            <Icon icon={collapsed ? ChevronRight : ChevronLeft} size="md" />
             {!collapsed && "Hide"}
           </button>
         </Hint>
       </div>
     </nav>
+  );
+}
+
+/**
+ * A group's heading, drawn as the project rail's section header
+ * (`SectionHeaderRow`): sentence case, semibold, in the secondary colour, with
+ * a small disclosure after the label that folds the group.
+ */
+function GroupHeader({
+  label,
+  shut,
+  onToggle,
+}: {
+  label: string;
+  shut: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={!shut}
+      className="group/s flex h-7 w-full items-center gap-1 rounded-md px-2 hover:bg-element-hover"
+    >
+      <span className="text-xs leading-none font-semibold text-secondary-foreground group-hover/s:text-foreground">
+        {label}
+      </span>
+      {/* Promoted: a rotating unpromoted icon re-rasterises in WebKit, which
+          is the hover wobble the project rail fixed the same way. */}
+      <span className="flex items-center transform-gpu [backface-visibility:hidden]">
+        <ChevronDown
+          size={10}
+          className={cn("text-muted-foreground transition-transform", shut && "-rotate-90")}
+        />
+      </span>
+    </button>
   );
 }
 
@@ -252,17 +294,26 @@ function NavItem({
       type="button"
       aria-current={active ? "page" : undefined}
       onClick={() => onSelect(entry.id)}
+      // The project rail's row (`NavItem` in project-sidebar.tsx): the same
+      // height, type and icon colours, so the two sidebars read as one app.
       className={cn(
-        "flex h-control-lg w-full items-center rounded-md text-xs whitespace-nowrap",
+        "group/nav flex h-7 w-full items-center rounded-md text-sm leading-none whitespace-nowrap",
         "transition-colors duration-fast ease-out-strong",
-        collapsed ? "justify-center" : "gap-2 px-2",
+        collapsed ? "justify-center" : "gap-2.5 px-2",
         active
-          ? "bg-element-selected font-medium text-foreground"
+          ? "bg-element-active text-foreground"
           : "text-secondary-foreground hover:bg-element-hover hover:text-foreground",
       )}
     >
-      <span className="relative flex shrink-0">
-        <Icon icon={entry.icon} size="sm" />
+      <span
+        className={cn(
+          "relative flex shrink-0",
+          active
+            ? "text-foreground"
+            : "text-muted-foreground group-hover/nav:text-secondary-foreground",
+        )}
+      >
+        <Icon icon={entry.icon} size="md" />
         {collapsed && badge > 0 && (
           <span className="pointer-events-none absolute -top-1 -right-1 size-1.5 rounded-full bg-primary" />
         )}

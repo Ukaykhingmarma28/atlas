@@ -71,6 +71,7 @@ export const SIDEBAR: readonly SidebarGroup[] = [
       { id: "keybindings", label: "Keybindings", icon: Keyboard },
       { id: "privacy", label: pageTitle("privacy"), icon: ShieldCheck },
       { id: "updates", label: pageTitle("updates"), icon: DownloadCloud },
+      { id: "about", label: "About", icon: Info },
     ],
   },
   {
@@ -83,12 +84,15 @@ export const SIDEBAR: readonly SidebarGroup[] = [
   },
 ];
 
-export const ABOUT_ENTRY: SidebarEntry = { id: "about", label: "About", icon: Info };
+const ALL_ENTRIES = SIDEBAR.flatMap((group) => group.entries);
 
-const ALL_ENTRIES = [...SIDEBAR.flatMap((group) => group.entries), ABOUT_ENTRY];
+/** A section's sidebar entry — its label and its icon, for the breadcrumb. */
+export function sectionEntry(id: SettingsSection): SidebarEntry | undefined {
+  return ALL_ENTRIES.find((entry) => entry.id === id);
+}
 
 export function sectionLabel(id: SettingsSection): string {
-  return ALL_ENTRIES.find((entry) => entry.id === id)?.label ?? id;
+  return sectionEntry(id)?.label ?? id;
 }
 
 export function sectionDescription(id: SettingsSection): string | undefined {
