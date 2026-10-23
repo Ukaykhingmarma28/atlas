@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { projectRows, type ProjectOptions, type Projection } from "./turn-rows";
+import { projectRows, RowKind, type ProjectOptions, type Projection } from "./turn-rows";
 import type { ChatMessage, ToolCallDisplay } from "@/types/agent";
 
 // `projectRows` re-uses the previous projection's turns when their inputs are
@@ -172,5 +172,23 @@ describe("incremental projection", () => {
     const messages = [...exchange(1), ...exchange(2)];
     const prev = step(messages, opts(), null);
     step(messages.slice(0, 4), opts(), prev);
+  });
+});
+
+describe("a thinking row", () => {
+  const thinking = (expanded: ReadonlySet<string>) =>
+    projectRows(
+      [
+        user("u1", "go"),
+        assistant("t1", { thinking: "**Checking the cache key**\n\nThe key holds ids." }),
+      ],
+      opts({ streaming: true, turnInProgress: true, expanded }),
+    ).rows.find((r) => r.kind === RowKind.Thinking);
+
+  it("carries its headline, and its text only when open", () => {
+    expect(thinking(EXPANDED)).toMatchObject({ headline: "Checking the cache key", text: "" });
+    expect(thinking(new Set(["th:t1"]))).toMatchObject({
+      text: "**Checking the cache key**\n\nThe key holds ids.",
+    });
   });
 });

@@ -26,6 +26,7 @@ import type { ImageAttachment } from "@/types/agents";
 // Shared so a row without images keeps a stable prop for the row's `memo`.
 const NO_ATTACHMENTS: readonly ImageAttachment[] = Object.freeze([]);
 import { isBashToolCall, bashCommandOf } from "./tool-calls";
+import { thoughtHeadline } from "./thought-headline";
 import { orgToolOf, orgToolRow } from "@/features/org-actions/lib/org-tool-rows";
 import { parseShellCommand } from "./parse-shell-command";
 import {
@@ -101,7 +102,12 @@ export interface ProseRow extends RowBase {
 
 export interface ThinkingRow extends RowBase {
   kind: typeof RowKind.Thinking;
+  /** The full reasoning, only while the reader has the row open. Collapsed it
+   *  is empty, so a streaming thought re-renders its row when the headline
+   *  changes rather than on every chunk. */
   text: string;
+  /** What the agent is thinking about, from `thoughtHeadline`. */
+  headline: string | null;
   streaming: boolean;
   expanded: boolean;
 }
@@ -849,6 +855,19 @@ interface UserDerived {
 }
 const userDerivedCache = new WeakMap<ChatMessage, UserDerived>();
 const proseCache = new WeakMap<ChatMessage, string>();
+// A delegating session re-projects every turn, so a settled thought would
+// otherwise be re-read every frame; keyed by message, which immer replaces
+// whenever the thinking changes.
+const headlineCache = new WeakMap<ChatMessage, string | null>();
+
+function headlineOf(m: ChatMessage): string | null {
+  let line = headlineCache.get(m);
+  if (line === undefined) {
+    line = thoughtHeadline(m.thinking ?? "");
+    headlineCache.set(m, line);
+  }
+  return line;
+}
 
 function derivedUser(m: ChatMessage): UserDerived {
   const hit = userDerivedCache.get(m);
@@ -1222,7 +1241,8 @@ function projectSegment(
           id: `th:${msg.id}`,
           turnId,
           firstInTurn: rows.length === rowStart,
-          text: msg.thinking,
+          text: opts.expanded.has(`th:${msg.id}`) ? msg.thinking : "",
+          headline: headlineOf(msg),
           streaming: tail,
           expanded: opts.expanded.has(`th:${msg.id}`),
         });
