@@ -18,6 +18,7 @@
 // `read_directories` answers them.
 
 import type { DirectoryListing, ProjectEntry, ProjectEntryKind } from "./fs-api";
+import type { TreeSearchState } from "./tree-search";
 
 /** One drawn row. Immutable and shared between flattens; see `rowsOf`. */
 export interface TreeRowData {
@@ -29,6 +30,15 @@ export interface TreeRowData {
   ignored: boolean;
   /** Starts with a dot: hidden unless the user shows hidden files. */
   hidden: boolean;
+  /**
+   * A compacted chain of folders, each the only child of the one before:
+   * every folder's path, outermost first, drawn as one row (`vendor /
+   * engine`). The row itself is the innermost folder (its `path`, `name`
+   * and `ignored`) at the outermost one's depth. Absent on a plain row.
+   */
+  chain?: readonly string[];
+  /** A search hit, as opposed to a folder shown because a hit is below it. */
+  match?: boolean;
 }
 
 export interface TreeSnapshot {
@@ -79,9 +89,24 @@ const depthOf = (path: string) => {
 /**
  * A listing's rows, built once per listing object. Weak, so a listing replaced
  * by a refresh is collected with its rows.
+ *
+ * `lift` is how many levels the rows are drawn above their path's depth: the
+ * links a compacted chain above them folded into one row. Nearly always 0;
+ * each other value gets its own cached copy.
  */
 const rowCache = new WeakMap<readonly ProjectEntry[], TreeRowData[]>();
-function rowsOf(entries: readonly ProjectEntry[]): TreeRowData[] {
+const liftedCache = new WeakMap<readonly ProjectEntry[], Map<number, TreeRowData[]>>();
+export function rowsOf(entries: readonly ProjectEntry[], lift = 0): TreeRowData[] {
+  if (lift > 0) {
+    let byLift = liftedCache.get(entries);
+    if (!byLift) liftedCache.set(entries, (byLift = new Map()));
+    let lifted = byLift.get(lift);
+    if (!lifted) {
+      lifted = rowsOf(entries).map((row) => ({ ...row, depth: row.depth - lift }));
+      byLift.set(lift, lifted);
+    }
+    return lifted;
+  }
   let rows = rowCache.get(entries);
   if (!rows) {
     rows = entries.map((entry) => {
@@ -101,10 +126,88 @@ function rowsOf(entries: readonly ProjectEntry[]): TreeRowData[] {
 }
 
 /**
+ * The one visible child of a loaded folder when that child is a folder too:
+ * the next link of a compacted chain. Null when the folder is not loaded,
+ * holds anything else, or holds nothing. Stops counting at the second child,
+ * so a folder of thousands costs two steps.
+ */
+export function onlyChildFolder(
+  entries: readonly ProjectEntry[] | undefined,
+  showHidden: boolean,
+): TreeRowData | null {
+  if (!entries) return null;
+  let only: TreeRowData | null = null;
+  for (const row of rowsOf(entries)) {
+    if (row.hidden && !showHidden) continue;
+    if (only) return null;
+    only = row;
+  }
+  return only?.kind === "directory" ? only : null;
+}
+
+/** Compacted rows, kept per innermost folder's row so a flatten that finds
+ *  the same chain hands back the same object (`ProjectTreeRow` is memoised). */
+const chainCache = new WeakMap<TreeRowData, TreeRowData>();
+
+/** `head`'s row, compacted over the single-folder chain below it if it has
+ *  one; `head` itself if not. */
+function compacted(
+  head: TreeRowData,
+  childrenOf: (dir: string) => TreeRowData | null,
+): TreeRowData {
+  let tail = head;
+  let chain: string[] | null = null;
+  for (let next = childrenOf(tail.path); next; next = childrenOf(tail.path)) {
+    chain ??= [head.path];
+    chain.push(next.path);
+    tail = next;
+  }
+  if (!chain) return head;
+  const cached = chainCache.get(tail);
+  // Same innermost row and the same outermost path means the same chain:
+  // every link between is a prefix of the innermost path.
+  if (cached && cached.chain![0] === head.path && cached.depth === head.depth) return cached;
+  const row: TreeRowData = { ...tail, depth: head.depth, chain };
+  chainCache.set(tail, row);
+  return row;
+}
+
+/** A compacted row is open when every folder in its chain is. */
+/** Index of the row showing `path`: its own, or a compacted row it is a
+ *  link of. -1 when no row shows it. */
+export function rowIndexOf(rows: readonly TreeRowData[], path: string): number {
+  return rows.findIndex((r) => r.path === path || (r.chain?.includes(path) ?? false));
+}
+
+/**
+ * For each compacted row, its outer links → the row's own path. A path that
+ * was a row of its own (focused, selected) and has since been folded into a
+ * chain, because its listing loaded or a refresh left it one child, maps to
+ * the row now drawing it.
+ */
+export function chainOwners(rows: readonly TreeRowData[]): Map<string, string> {
+  const owners = new Map<string, string>();
+  for (const row of rows) {
+    if (!row.chain) continue;
+    for (const link of row.chain) if (link !== row.path) owners.set(link, row.path);
+  }
+  return owners;
+}
+
+export function chainOpen(row: TreeRowData, expanded: ReadonlySet<string>): boolean {
+  if (!row.chain) return expanded.has(row.path);
+  for (const path of row.chain) if (!expanded.has(path)) return false;
+  return true;
+}
+
+/**
  * Depth-first flatten of what is open. A directory that is expanded but not
  * yet loaded contributes its own row only; its children follow once they land.
  * An expanded directory under a collapsed one stays expanded and stays hidden,
  * so reopening the parent restores the subtree as it was.
+ *
+ * A loaded folder whose only child is a folder is compacted with it into one
+ * row (`vendor / engine`), as long as the chain goes; see `TreeRowData.chain`.
  */
 export function flattenTree(
   listings: ReadonlyMap<string, readonly ProjectEntry[]>,
@@ -112,16 +215,23 @@ export function flattenTree(
   showHidden: boolean,
 ): TreeRowData[] {
   const out: TreeRowData[] = [];
-  const walk = (dir: string) => {
+  const childFolder = (dir: string) => onlyChildFolder(listings.get(dir), showHidden);
+  const walk = (dir: string, lift: number) => {
     const entries = listings.get(dir);
     if (!entries) return;
-    for (const row of rowsOf(entries)) {
-      if (row.hidden && !showHidden) continue;
+    for (const entry of rowsOf(entries, lift)) {
+      if (entry.hidden && !showHidden) continue;
+      if (entry.kind !== "directory") {
+        out.push(entry);
+        continue;
+      }
+      const row = compacted(entry, childFolder);
       out.push(row);
-      if (row.kind === "directory" && expanded.has(row.path)) walk(row.path);
+      // The links a chain folds away lift everything below it as many levels.
+      if (chainOpen(row, expanded)) walk(row.path, lift + (row.chain ? row.chain.length - 1 : 0));
     }
   };
-  walk("");
+  walk("", 0);
   return out;
 }
 
@@ -211,6 +321,15 @@ export class ProjectTreeModel {
     if (path === "") return "directory";
     const siblings = this.listings.get(parentOf(path));
     return siblings?.find((e) => e.path === path)?.kind;
+  }
+
+  /** Every loaded listing, for a search over what is already known. */
+  listingMap(): ReadonlyMap<string, readonly ProjectEntry[]> {
+    return this.listings;
+  }
+
+  get hiddenShown(): boolean {
+    return this.showHidden;
   }
 
   /** Every loaded directory: what a refresh re-reads. */
@@ -422,12 +541,29 @@ export class ProjectTreeModel {
     void this.setExpanded([path], false);
   }
 
+  /** Open or close a drawn row: a compacted one opens or closes its whole
+   *  chain. */
+  setRowExpanded(row: TreeRowData, open: boolean): Promise<void> {
+    return this.setExpanded(row.chain ?? [row.path], open);
+  }
+
   toggle(path: string): Promise<void> {
     return this.setExpanded([path], !this.expanded.has(path));
   }
 
-  /** Open or close several directories in one change and one batch. */
-  setExpanded(paths: readonly string[], open: boolean): Promise<void> {
+  /**
+   * Open or close several directories in one change and one batch.
+   *
+   * Opening a folder whose only child is a folder opens that one too, down
+   * the chain: such a folder is drawn compacted with its child
+   * (`flattenTree`), and a compacted row is open only when all of it is.
+   * `cascade: false` skips that (expand-all opens everything anyway).
+   */
+  setExpanded(
+    paths: readonly string[],
+    open: boolean,
+    opts: { cascade?: boolean } = {},
+  ): Promise<void> {
     let next: Set<string> | null = null;
     for (const path of paths) {
       if (path === "" || this.expanded.has(path) === open) continue;
@@ -446,10 +582,21 @@ export class ProjectTreeModel {
     if (this.stale.size > 0) {
       for (const path of opening) this.collectVisibleStale(path, stale);
     }
-    return Promise.all([
+    const loaded = Promise.all([
       this.load(opening.filter((p) => !this.stale.has(p))),
       stale.length > 0 ? this.load(stale, { force: true }) : undefined,
     ]).then(() => undefined);
+    if (opts.cascade === false) return loaded;
+    return loaded.then(() => {
+      if (this.disposed) return;
+      const next: string[] = [];
+      for (const path of opening) {
+        if (!this.expanded.has(path)) continue; // closed again meanwhile
+        const child = onlyChildFolder(this.listings.get(path), this.showHidden);
+        if (child && !this.expanded.has(child.path)) next.push(child.path);
+      }
+      return next.length > 0 ? this.setExpanded(next, true) : undefined;
+    });
   }
 
   /** `dir` and every expanded folder showing below it that is stale. */
@@ -496,7 +643,7 @@ export class ProjectTreeModel {
         }
       }
       if (dirs.length === 0) break;
-      await this.setExpanded(dirs, true);
+      await this.setExpanded(dirs, true, { cascade: false });
       frontier = dirs;
     }
   }
@@ -515,9 +662,18 @@ export class ProjectTreeModel {
     return this.indexOf(path);
   }
 
+  /** The row showing `path`: its own, or the compacted row it is a link of. */
   indexOf(path: string): number {
-    return this.getSnapshot().rows.findIndex((r) => r.path === path);
+    return rowIndexOf(this.getSnapshot().rows, path);
   }
+
+  /** What the tree's search keeps for this root between views of it (the
+   *  Files surface hands off to a file tab's tree mid-search), and the file
+   *  this tree last opened, so that tab's reveal knows it came from here. */
+  view: { search: TreeSearchState | null; openedFromTree: string | null } = {
+    search: null,
+    openedFromTree: null,
+  };
 
   // ── Refresh ───────────────────────────────────────────────────────────
 

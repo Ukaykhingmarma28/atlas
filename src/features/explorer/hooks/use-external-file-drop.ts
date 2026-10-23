@@ -46,11 +46,13 @@ export function useExternalFileDrop(opts: {
       if (!el) return null;
       const scope = scopeRef?.current;
       if (scope && !scope.contains(el)) return null;
-      const rowEl = el.closest<HTMLElement>("[data-tree-path]");
+      // A folder name inside a compacted row is a drop target of its own.
+      const segment = el.closest<HTMLElement>("[data-tree-drop-path]");
+      const rowEl = segment ?? el.closest<HTMLElement>("[data-tree-path]");
       if (rowEl) {
-        const path = rowEl.getAttribute("data-tree-path");
+        const path = rowEl.getAttribute(segment ? "data-tree-drop-path" : "data-tree-path");
         if (!path) return null;
-        const isDir = rowEl.getAttribute("data-tree-is-dir") === "true";
+        const isDir = !!segment || rowEl.getAttribute("data-tree-is-dir") === "true";
         if (isDir) return path;
         const parent = dirOfPath(path);
         return parent === rootPath ? ROOT_DROP : parent;
