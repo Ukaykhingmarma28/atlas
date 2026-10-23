@@ -68,6 +68,7 @@ import { ROOT_DROP, useFileTreeDragDrop } from "../hooks/use-file-tree-drag-drop
 import { useExternalFileDrop } from "../hooks/use-external-file-drop";
 import { ProjectTreeRow, RenameInput } from "./project-tree-row";
 import { FileTreeConfirmDelete } from "./file-tree-confirm-delete";
+import { OpenInEditorContextItems } from "@/features/external-editor/components/open-in-editor-menu";
 
 /**
  * The project's files, as a lazily loaded, virtualized tree: the Files
@@ -764,6 +765,7 @@ export function ProjectFileTree({
             Open in Default App
           </ContextMenuItem>
         )}
+        <OpenInEditorContextItems path={abs} />
         <ContextMenuSeparator />
         <ContextMenuItem
           onClick={() =>
@@ -845,6 +847,7 @@ export function ProjectFileTree({
         Reveal Project in Finder
       </ContextMenuItem>
       <ContextMenuItem onClick={() => terminalAt(root)}>Open in Terminal</ContextMenuItem>
+      <OpenInEditorContextItems path={root} />
       <ContextMenuSeparator />
       <ContextMenuItem onClick={() => model.collapseAll()}>Collapse All</ContextMenuItem>
     </>

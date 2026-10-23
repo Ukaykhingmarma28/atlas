@@ -22,6 +22,15 @@ export interface AppSettings {
   /** Show dotfiles and dot-directories in the explorer file tree. */
   showHiddenFiles: boolean;
   /**
+   * The external editor that "Open in <editor>" uses for a file or the project: an id such as
+   * "vscode", "cursor", "zed", "windsurf", "sublime", "xcode" or a JetBrains IDE ("idea",
+   * "webstorm", "pycharm"…), or "system" for the app your system opens the file with. Empty
+   * uses the first editor Atlas finds installed. An id that isn't installed falls back to that
+   * same choice. Files outside the project open in the system's app unless this names an
+   * editor.
+   */
+  preferredEditor: string;
+  /**
    * Interface zoom, where 1.0 is 100%. Also driven by Cmd +/-/0. Must be a number between 0.5
    * and 2.0.
    */
@@ -324,6 +333,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoAddAtlasGitignore: true,
   enableAtlasLogs: true,
   showHiddenFiles: true,
+  preferredEditor: "",
   uiScale: 1,
   shareTelemetry: true,
   linkTelemetryToAccount: true,
@@ -502,6 +512,15 @@ export const SETTINGS_REGISTRY: readonly SettingMeta[] = [
     section: "Files",
     title: "Show hidden files",
     summary: "Show dotfiles and dot-directories in the explorer file tree.",
+  },
+  {
+    key: "preferredEditor",
+    type: "string",
+    status: "live",
+    page: "general",
+    section: "Files",
+    title: "Preferred editor",
+    summary: "The external editor that Open in Editor uses for files and projects.",
   },
   {
     key: "uiScale",

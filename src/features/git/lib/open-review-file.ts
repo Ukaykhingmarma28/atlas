@@ -2,13 +2,12 @@
 //
 // Inside the open project it becomes a file tab in the right panel, one per
 // path, with the project tree beside it. A file Atlas has nowhere to place
-// (outside the project, or no project open) goes to the app the system opens
-// that file type with, through the opener plugin. Atlas has no "external
-// editor" preference to prefer over that; if one is added, it goes here.
+// (outside the project, or no project open) goes to the editor the user named
+// in `preferredEditor`, else to the app the system opens that file type with.
 
-import { toast } from "sonner";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { openFile } from "@/lib/open-file";
+import { openOutsideFile } from "@/features/external-editor/lib/preferred-editor";
 import { useDiffPanelStore } from "../stores/diff-panel-store";
 import { diffTabId, openGitDiff } from "./git-diff-api";
 
@@ -18,12 +17,7 @@ export async function openReviewFile(path: string): Promise<void> {
     await openFile(path);
     return;
   }
-  try {
-    const { openPath } = await import("@tauri-apps/plugin-opener");
-    await openPath(path);
-  } catch (e) {
-    toast.error("Couldn't open the file in your editor", { description: String(e) });
-  }
+  await openOutsideFile(path);
 }
 
 /**

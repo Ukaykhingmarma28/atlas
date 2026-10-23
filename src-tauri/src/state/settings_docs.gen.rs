@@ -18,6 +18,10 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
         "# Show dotfiles and dot-directories in the explorer file tree. (default: true)",
     ),
     (
+        "preferredEditor",
+        "# The external editor that \"Open in <editor>\" uses for a file or the project:\n# an id such as \"vscode\", \"cursor\", \"zed\", \"windsurf\", \"sublime\", \"xcode\" or a\n# JetBrains IDE (\"idea\", \"webstorm\", \"pycharm\"…), or \"system\" for the app your\n# system opens the file with. Empty uses the first editor Atlas finds\n# installed. An id that isn't installed falls back to that same choice. Files\n# outside the project open in the system's app unless this names an editor.\n# (default: \"\")",
+    ),
+    (
         "uiScale",
         "# Interface zoom, where 1.0 is 100%. Also driven by Cmd +/-/0. Must be a\n# number between 0.5 and 2.0. (default: 1.0)",
     ),

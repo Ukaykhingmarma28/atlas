@@ -622,6 +622,8 @@ pub fn run() {
             commands::fs::fs_copy,
             commands::fs::fs_duplicate,
             commands::fs::fs_open_in_terminal,
+            commands::external_editor::external_editors_detect,
+            commands::external_editor::external_editor_open,
             commands::fs::fs_add_to_gitignore,
             commands::git::git_status_fresh,
             commands::git::git_log,

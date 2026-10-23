@@ -305,6 +305,12 @@ pub struct AppSettings {
     /// users who want a cleaner tree can turn it off.
     #[serde(default = "default_true")]
     pub show_hidden_files: bool,
+    /// The external editor "Open in <editor>" uses: an editor id from
+    /// `commands::external_editor`, `"system"` for the OS's own app, or empty
+    /// for the first editor detected. Files outside the project go to the
+    /// system app unless this names an editor.
+    #[serde(default)]
+    pub preferred_editor: String,
     /// Global interface zoom (1.0 == 100%). Applied via the native WebView zoom
     /// on the frontend (⌘+/⌘-/⌘0); persisted so it survives relaunch.
     #[serde(default = "default_ui_scale")]
@@ -603,6 +609,7 @@ impl Default for AppSettings {
             auto_add_atlas_gitignore: true,
             enable_atlas_logs: true,
             show_hidden_files: true,
+            preferred_editor: String::new(),
             ui_scale: default_ui_scale(),
             share_telemetry: true,
             link_telemetry_to_account: true,
@@ -828,6 +835,19 @@ pub fn validate(settings: &AppSettings) -> Result<(), ValidationIssue> {
         return Err(ValidationIssue {
             key: "defaultAgent",
             message: "must not be empty; use \"atlas-agent\" for Atlas Agent".to_string(),
+        });
+    }
+    // An editor id is matched against the detected list, never run; anything
+    // but a plain id cannot match one, so it is a typo worth reporting.
+    if settings.preferred_editor.len() > 64
+        || !settings
+            .preferred_editor
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
+        return Err(ValidationIssue {
+            key: "preferredEditor",
+            message: "must be an editor id such as \"vscode\", \"system\", or empty".to_string(),
         });
     }
     // Names a file (`icons/app-icons/<id>.icns`); same reasoning as `iconTheme`.
@@ -1066,6 +1086,7 @@ pub struct SettingsPatch {
     pub auto_add_atlas_gitignore: Option<bool>,
     pub enable_atlas_logs: Option<bool>,
     pub show_hidden_files: Option<bool>,
+    pub preferred_editor: Option<String>,
     pub ui_scale: Option<f32>,
     pub share_telemetry: Option<bool>,
     pub link_telemetry_to_account: Option<bool>,
@@ -1138,6 +1159,9 @@ impl SettingsPatch {
         }
         if let Some(v) = self.show_hidden_files {
             settings.show_hidden_files = v;
+        }
+        if let Some(v) = &self.preferred_editor {
+            settings.preferred_editor = v.clone();
         }
         if let Some(v) = self.ui_scale {
             settings.ui_scale = v;
@@ -1350,6 +1374,7 @@ impl SettingsPatch {
                 }
             };
         }
+        set_str!(preferred_editor, "preferredEditor");
         set_str!(default_agent, "defaultAgent");
         set_str!(ui_font_family, "uiFontFamily");
         set_str!(code_font_family, "codeFontFamily");
@@ -2461,6 +2486,7 @@ someFutureKey = \"left alone\"
             auto_add_atlas_gitignore: Some(!defaults.auto_add_atlas_gitignore),
             enable_atlas_logs: Some(!defaults.enable_atlas_logs),
             show_hidden_files: Some(!defaults.show_hidden_files),
+            preferred_editor: Some("zed".to_string()),
             ui_scale: Some(1.5),
             share_telemetry: Some(!defaults.share_telemetry),
             link_telemetry_to_account: Some(!defaults.link_telemetry_to_account),
