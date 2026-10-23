@@ -752,6 +752,8 @@ pub fn run() {
             commands::gitdiff::git_diff_line_status,
             commands::diff_preview::git_diff_preview,
             commands::diff_preview::git_diff_file_contents,
+            commands::diff_preview::git_diff_file_patch,
+            commands::diff_preview::diff_texts_patch,
             commands::code_server::code_grep,
             commands::project_session::save_project_session,
             commands::project_session::load_project_session,

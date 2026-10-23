@@ -27,6 +27,7 @@ import type { RepoAvatars } from "@/features/git/lib/git-avatars-api";
 import type { DiffLineStatus } from "@/features/git/lib/git-diff-api";
 import type {
   DiffFileContents,
+  DiffFilePatch,
   DiffFileStatus,
   DiffPreview,
 } from "@/features/git/lib/git-review-api";
@@ -1076,6 +1077,8 @@ export interface GitResponses {
   git_diff_all: string;
   git_diff_preview: DiffPreview;
   git_diff_file_contents: DiffFileContents;
+  git_diff_file_patch: DiffFilePatch;
+  diff_texts_patch: DiffFilePatch;
   git_blame_file: BlameLine[];
   git_repo_pull_requests: RepoPullRequests;
   git_repo_avatars: RepoAvatars;
@@ -1338,6 +1341,18 @@ export const gitHandlers: TypedHandlers<GitResponses> = {
     const text = fileText(String(filePath));
     return { oldText: text, newText: text, truncated: false, binary: false };
   },
+  // Whitespace is not ignored here; the fake has no `-w`.
+  git_diff_file_patch: ({ filePath }): DiffFilePatch => {
+    const change = changeFor(String(filePath));
+    if (change?.binary) return { patch: "", truncated: false, binary: true };
+    const patch = change ? unifiedDiff(change.before(), change.after(), change.path) : "";
+    return { patch, truncated: false, binary: false };
+  },
+  diff_texts_patch: ({ oldText, newText, file }): DiffFilePatch => ({
+    patch: unifiedDiff(String(oldText ?? ""), String(newText ?? ""), String(file)),
+    truncated: false,
+    binary: false,
+  }),
   git_blame_file: ({ file }): BlameLine[] => blame(String(file)),
   // The default repository has no GitHub remote, so `gh` has nothing to say.
   git_repo_pull_requests: (): RepoPullRequests => ({ kind: "failed" }),

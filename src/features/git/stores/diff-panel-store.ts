@@ -52,6 +52,18 @@ interface DiffPanelState {
 
 const EMPTY: Record<string, true> = {};
 
+/** Panels whose chosen scope is remembered. A tab id outlives its tab in the
+ *  persisted map, so the oldest choices are dropped past this. */
+export const MAX_REMEMBERED_SCOPES = 32;
+
+/** `record` with `key` set last (insertion order is recency), trimmed to the
+ *  {@link MAX_REMEMBERED_SCOPES} most recent. */
+export function withRecent<T>(record: Record<string, T>, key: string, value: T): Record<string, T> {
+  const entries = Object.entries(record).filter(([k]) => k !== key);
+  entries.push([key, value]);
+  return Object.fromEntries(entries.slice(-MAX_REMEMBERED_SCOPES));
+}
+
 export function collapsedSetOf(
   record: Record<string, true> | undefined,
   defaults: ReadonlySet<string>,
@@ -71,7 +83,7 @@ export const useDiffPanelStore = createSelectors(
         fileTreeOpen: true,
         collapsed: {},
         actions: {
-          setScope: (panel, scope) => set((s) => ({ scope: { ...s.scope, [panel]: scope } })),
+          setScope: (panel, scope) => set((s) => ({ scope: withRecent(s.scope, panel, scope) })),
           setBaseRef: (repo, baseRef) =>
             set((s) => ({ baseRef: { ...s.baseRef, [repo]: baseRef?.trim() || null } })),
           setLayout: (layout) => set({ layout }),

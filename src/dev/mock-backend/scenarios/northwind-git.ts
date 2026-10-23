@@ -29,7 +29,11 @@ import type { CodeGrepMatch, CodeGrepResult } from "@/components/code-search-api
 import type { BlameLine } from "@/features/git/lib/git-blame-api";
 import type { BranchPullRequest, RepoPullRequests } from "@/features/git/lib/git-pr-api";
 import type { DiffLineStatus } from "@/features/git/lib/git-diff-api";
-import type { DiffFileContents, DiffPreview } from "@/features/git/lib/git-review-api";
+import type {
+  DiffFileContents,
+  DiffFilePatch,
+  DiffPreview,
+} from "@/features/git/lib/git-review-api";
 import type { DirectoryListing } from "@/features/explorer/lib/fs-api";
 import type { GitErrorPayload } from "@/features/git/lib/git-errors";
 import type { BuiltGraph, CommitRow, LaneSegment } from "@/features/git/lib/git-graph";
@@ -960,6 +964,12 @@ export const northwindGitCommands: Partial<TypedHandlers<MockResponses>> = {
       truncated: false,
       binary: false,
     };
+  },
+  git_diff_file_patch: (args): DiffFilePatch | Promise<DiffFilePatch> => {
+    if (!ours(args.path)) return gitHandlers.git_diff_file_patch(args);
+    const change = changeFor(String(args.filePath));
+    const patch = change ? unifiedDiff(change.before ?? "", change.after, change.path) : "";
+    return { patch, truncated: false, binary: false };
   },
   git_blame_file: (args): BlameLine[] | Promise<BlameLine[]> =>
     ours(args.path) ? blame(String(args.file)) : gitHandlers.git_blame_file(args),

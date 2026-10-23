@@ -1,7 +1,7 @@
-import { useCallback, useMemo, useState } from "react";
-import { useQueries } from "@tanstack/react-query";
-import { parseDiffFromFile, type FileDiffMetadata } from "@pierre/diffs";
-import { getDiffFileContents, type DiffFileStat, type DiffSource } from "./git-review-api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQueries, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import type { FileDiffMetadata } from "@pierre/diffs";
+import { getDiffFilePatch, type DiffFileStat, type DiffSource } from "./git-review-api";
 import { getRenderablePatch, resolveFileDiffPath } from "./diff-rendering";
 
 /**
@@ -10,17 +10,19 @@ import { getRenderablePatch, resolveFileDiffPath } from "./diff-rendering";
  *
  * The source's patch is capped near 120 KB at a file boundary, so on a large
  * change only a prefix of the files is in it. Those render from the patch at
- * once. Each one past the cap is fetched by itself (`getDiffFileContents`) and
- * diffed here — never all at once: a few up front, then each as its row
- * scrolls into the viewer's render window (`requestFile`), or when the reader
- * picks it in the tree.
+ * once. Each one past the cap is diffed by git on its own
+ * (`getDiffFilePatch`): a few up front, then each as its row scrolls into the
+ * viewer's render window (`requestFile`), or when the reader picks it in the
+ * tree. This thread only parses the patch that comes back.
  */
 export interface ReviewFile {
   stat: DiffFileStat;
   /** The file's diff; an empty, partial stand-in until it is `ready`. */
   fileDiff: FileDiffMetadata;
-  state: "ready" | "pending" | "error" | "binary";
-  /** A side was over the backend's size cap and is cut. */
+  /** `too-large`: over the per-file cap with not even one whole hunk.
+   *  `empty`: listed, but git now finds no change (it settled meanwhile). */
+  state: "ready" | "pending" | "error" | "binary" | "too-large" | "empty";
+  /** Over the per-file cap: only the first hunks are shown. */
   truncated: boolean;
 }
 
@@ -28,10 +30,13 @@ const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "bas
 
 /** How many missing files load before any row asks. */
 const INITIAL_BATCH = 4;
+/** Lazily loaded patches kept for files no viewer shows any more. */
+const MAX_IDLE_ENTRIES = 48;
+const QUERY_ROOT = "git-diff-file";
 
 interface Loaded {
   fileDiff: FileDiffMetadata | null;
-  binary: boolean;
+  state: "ready" | "binary" | "too-large" | "empty";
   truncated: boolean;
 }
 
@@ -59,40 +64,67 @@ function placeholderOf(stat: DiffFileStat): FileDiffMetadata {
   };
 }
 
+/** Drop the oldest lazily loaded patches no viewer holds, past a cap: each can
+ *  be up to a megabyte, and a long-running review touches many. */
+function pruneIdle(client: QueryClient, repoPath: string) {
+  const idle = client
+    .getQueryCache()
+    .findAll({ queryKey: [QUERY_ROOT, repoPath] })
+    .filter((q) => q.getObserversCount() === 0)
+    .sort((a, b) => a.state.dataUpdatedAt - b.state.dataUpdatedAt);
+  for (const q of idle.slice(0, Math.max(0, idle.length - MAX_IDLE_ENTRIES))) {
+    client.getQueryCache().remove(q);
+  }
+}
+
 export function useReviewFiles({
   repoPath,
   source,
   only,
+  ignoreWhitespace,
 }: {
   repoPath: string;
   source: DiffSource | null;
   /** Narrow to these paths (a session's files). `null`: every file. */
   only: ReadonlySet<string> | null;
+  ignoreWhitespace: boolean;
 }) {
-  const scope = source ? `${repoPath}\0${source.kind}\0${source.diffHash}` : "";
+  const kind = source?.kind;
+  const base = source?.mergeBase ?? source?.baseRef ?? null;
+  /** What the files are a diff OF. A refresh within it (an edit) keeps it;
+   *  only a change of source, base or whitespace mode starts afresh. */
+  const scope = source ? `${repoPath}\0${kind}\0${base ?? ""}\0${ignoreWhitespace}` : "";
+  const cacheScope = `review:${kind ?? ""}`;
 
-  // Parsed once per patch: a refresh that changes nothing keeps every object,
-  // so the viewer repaints nothing.
+  // Parsed once per patch. A file whose content is unchanged keeps its old
+  // object, so the viewer and every memo below see nothing new for it.
+  const previousParse = useRef(new Map<string, FileDiffMetadata>());
   const fromPatch = useMemo(() => {
     const map = new Map<string, FileDiffMetadata>();
-    const patch = getRenderablePatch(source?.diff, `review:${source?.diffHash ?? ""}`);
-    if (patch?.kind === "files") for (const f of patch.files) map.set(resolveFileDiffPath(f), f);
+    const patch = getRenderablePatch(source?.diff, cacheScope);
+    if (patch?.kind === "files") {
+      for (const f of patch.files) {
+        const path = resolveFileDiffPath(f);
+        const prior = previousParse.current.get(path);
+        map.set(path, prior && prior.cacheKey === f.cacheKey ? prior : f);
+      }
+    }
+    previousParse.current = map;
     return map;
-  }, [source?.diff, source?.diffHash]);
+  }, [source?.diff, cacheScope]);
 
   const stats = useMemo(() => {
     const files = (source?.files ?? []).filter((f) => !only || only.has(f.path));
     return files.sort((a, b) => collator.compare(a.path, b.path));
   }, [source?.files, only]);
 
-  // One stand-in object per file per patch, so an unchanged row keeps its
-  // identity across renders.
+  // One stand-in object per file, so an unchanged row keeps its identity.
   const placeholders = useMemo(
     () => new Map(stats.map((stat) => [stat.path, placeholderOf(stat)])),
     [stats],
   );
 
-  /** Files not in the patch, in list order — the ones to fetch. */
+  /** Files not in the patch, in list order: the ones to fetch. */
   const missing = useMemo(
     () => stats.filter((f) => !f.binary && !fromPatch.has(f.path)).map((f) => f.path),
     [stats, fromPatch],
@@ -105,7 +137,8 @@ export function useReviewFiles({
   const wanted = useMemo(() => {
     const paths = new Set(requested.scope === scope ? requested.paths : []);
     for (const path of missing.slice(0, INITIAL_BATCH)) paths.add(path);
-    return [...paths];
+    const stillMissing = new Set(missing);
+    return [...paths].filter((p) => stillMissing.has(p));
   }, [requested, scope, missing]);
 
   const statByPath = useMemo(() => new Map(stats.map((s) => [s.path, s])), [stats]);
@@ -114,59 +147,93 @@ export function useReviewFiles({
     queries: wanted.map((path) => {
       const stat = statByPath.get(path);
       return {
-        // The hash is in the key, so an entry is never stale: a new patch is a
-        // new key, and an unchanged one is served without asking again.
+        // Keyed by what makes this file's patch what it is: the file on disk
+        // (`sig`: mtime and size), its counts and status, and the base it is
+        // diffed against. A write to it is a new key; an edit elsewhere is
+        // not, and serves this one from cache. A commit moves HEAD without
+        // touching the file, so the panel invalidates on `atlas:git-changed`.
         queryKey: [
-          "git-diff-file",
+          QUERY_ROOT,
           repoPath,
-          source?.kind,
-          source?.mergeBase,
-          source?.diffHash,
+          kind,
+          base,
+          ignoreWhitespace,
           path,
+          stat?.oldPath ?? null,
+          stat?.sig ?? null,
+          stat?.additions ?? null,
+          stat?.deletions ?? null,
+          stat?.status ?? null,
         ],
         enabled: !!source && !!stat,
         staleTime: Infinity,
-        gcTime: 5 * 60_000,
+        gcTime: 60_000,
         queryFn: async (): Promise<Loaded> => {
-          const contents = await getDiffFileContents(repoPath, {
-            sourceKind: source!.kind,
-            baseRef: source!.mergeBase ?? source!.baseRef,
+          const res = await getDiffFilePatch(repoPath, {
+            sourceKind: kind!,
+            baseRef: base,
             filePath: path,
             oldPath: stat?.oldPath ?? null,
+            ignoreWhitespace,
           });
-          if (contents.binary) return { fileDiff: null, binary: true, truncated: false };
-          const key = `review:${source!.diffHash}:${path}`;
-          const fileDiff = parseDiffFromFile(
-            stat && isNewStatus(stat.status)
-              ? null
-              : { name: stat?.oldPath ?? path, contents: contents.oldText, cacheKey: `${key}:old` },
-            stat?.status === "deleted"
-              ? null
-              : { name: path, contents: contents.newText, cacheKey: `${key}:new` },
-          );
-          return { fileDiff, binary: false, truncated: contents.truncated };
+          if (res.binary) return { fileDiff: null, state: "binary", truncated: false };
+          if (!res.patch) {
+            return {
+              fileDiff: null,
+              state: res.truncated ? "too-large" : "empty",
+              truncated: false,
+            };
+          }
+          const parsed = getRenderablePatch(res.patch, cacheScope);
+          if (parsed?.kind !== "files") throw new Error(parsed?.reason ?? "Empty patch.");
+          return { fileDiff: parsed.files[0], state: "ready", truncated: res.truncated };
         },
       };
     }),
   });
 
-  const loadedByPath = new Map<string, (typeof results)[number]>();
-  wanted.forEach((path, i) => loadedByPath.set(path, results[i]));
+  const queryClient = useQueryClient();
+  useEffect(() => pruneIdle(queryClient, repoPath), [queryClient, repoPath, wanted]);
 
-  const files: ReviewFile[] = stats.map((stat) => {
-    const stand = placeholders.get(stat.path)!;
-    if (stat.binary) return { stat, fileDiff: stand, state: "binary", truncated: false };
-    const parsed = fromPatch.get(stat.path);
-    if (parsed) return { stat, fileDiff: parsed, state: "ready", truncated: false };
-    const result = loadedByPath.get(stat.path);
-    if (result?.isError) return { stat, fileDiff: stand, state: "error", truncated: false };
-    const data = result?.data;
-    if (!data) return { stat, fileDiff: stand, state: "pending", truncated: false };
-    if (data.binary || !data.fileDiff) {
-      return { stat, fileDiff: stand, state: "binary", truncated: false };
-    }
-    return { stat, fileDiff: data.fileDiff, state: "ready", truncated: data.truncated };
-  });
+  // What each query last showed. While a file's new key loads after a write,
+  // its row keeps the old diff instead of folding to a placeholder and back.
+  const lastLoaded = useRef(new Map<string, { scope: string; data: Loaded }>());
+
+  // `results` is a new array every render; this changes only when one of
+  // them does, which is what `files` (and everything keyed on it) follows.
+  const resultsKey = results
+    .map((r) => `${r.status}:${r.dataUpdatedAt}:${r.errorUpdatedAt}`)
+    .join("|");
+
+  const files = useMemo<ReviewFile[]>(() => {
+    const byPath = new Map<string, (typeof results)[number]>();
+    wanted.forEach((path, i) => byPath.set(path, results[i]));
+    return stats.map((stat): ReviewFile => {
+      const stand = placeholders.get(stat.path)!;
+      if (stat.binary) return { stat, fileDiff: stand, state: "binary", truncated: false };
+      const parsed = fromPatch.get(stat.path);
+      if (parsed) return { stat, fileDiff: parsed, state: "ready", truncated: false };
+      const result = byPath.get(stat.path);
+      let data = result?.data;
+      if (data) lastLoaded.current.set(stat.path, { scope, data });
+      else {
+        const last = lastLoaded.current.get(stat.path);
+        if (last?.scope === scope && !result?.isError) data = last.data;
+      }
+      if (!data) {
+        const state = result?.isError ? "error" : "pending";
+        return { stat, fileDiff: stand, state, truncated: false };
+      }
+      return {
+        stat,
+        fileDiff: data.fileDiff ?? stand,
+        state: data.state,
+        truncated: data.truncated,
+      };
+    });
+    // `resultsKey` stands for `results`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stats, placeholders, fromPatch, wanted, resultsKey, scope]);
 
   // Stable per scope: every pending row's header holds it.
   const requestFile = useCallback(
@@ -179,17 +246,29 @@ export function useReviewFiles({
     [scope],
   );
 
-  const retry = (path: string) => {
-    const i = wanted.indexOf(path);
-    if (i >= 0) void results[i]?.refetch();
-  };
+  const resultsRef = useRef({ wanted, results });
+  resultsRef.current = { wanted, results };
+  const retry = useCallback((path: string) => {
+    const { wanted: w, results: r } = resultsRef.current;
+    const i = w.indexOf(path);
+    if (i >= 0) void r[i]?.refetch();
+  }, []);
 
   return {
+    /** Stable across refreshes of the same source; see above. */
     scope,
     files,
+    /** Each file's stat, in list order; changes only with the file list. */
+    stats: stats as readonly DiffFileStat[],
     isFetching: results.some((r) => r.isFetching),
     /** Fetch one file now: its row came into view, or the tree asked. */
     requestFile,
     retry,
   };
+}
+
+/** Every lazily loaded patch under `repoPath`: a commit or checkout moved
+ *  HEAD under them without touching the files their keys follow. */
+export function invalidateReviewFiles(client: QueryClient, repoPath: string) {
+  void client.invalidateQueries({ queryKey: [QUERY_ROOT, repoPath] });
 }

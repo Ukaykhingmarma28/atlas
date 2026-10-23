@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
+import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import type { CodeViewDiffItem, FileDiffContentsLoader, FileDiffMetadata } from "@pierre/diffs";
 import type { CodeViewHandle } from "@pierre/diffs/react";
 import {
@@ -9,6 +10,7 @@ import {
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
+  ChevronUp,
   Columns2,
   FolderTree,
   Info,
@@ -34,7 +36,7 @@ import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { useSessionFiles } from "@/features/chat/lib/session-files";
 import { getDiffFileContents, getDiffPreview, type DiffSource } from "../../lib/git-review-api";
 import { buildFileDiffContentVersion, fnv1a32 } from "../../lib/diff-rendering";
-import { useReviewFiles, type ReviewFile } from "../../lib/use-review-files";
+import { invalidateReviewFiles, useReviewFiles, type ReviewFile } from "../../lib/use-review-files";
 import { useDiffJump } from "../../lib/diff-jump";
 import { collapsedSetOf, useDiffPanelStore, type DiffScope } from "../../stores/diff-panel-store";
 import { useGitStore } from "../../stores/git-store";
@@ -65,13 +67,48 @@ const HIDE_VIEWER_COUNTS = "[data-additions-count], [data-deletions-count] { dis
 
 const itemIdOf = (file: ReviewFile) => `${file.stat.oldPath ?? ""}\0${file.stat.path}`;
 
+/** The tree beside the diff: its width is saved under this. */
+const TREE_LAYOUT_ID = "git-review-diff-tree";
+
+interface ChangeTarget {
+  id: string;
+  lineNumber: number;
+  side: "additions" | "deletions";
+}
+
+/** The first line of each run of changed lines in a file: what previous/next
+ *  change steps through. On the new side when the run adds anything. */
+function changeTargetsOf(id: string, fileDiff: FileDiffMetadata): ChangeTarget[] {
+  const out: ChangeTarget[] = [];
+  for (const hunk of fileDiff.hunks) {
+    for (const block of hunk.hunkContent) {
+      if (block.type !== "change") continue;
+      out.push(
+        block.additions > 0
+          ? {
+              id,
+              side: "additions",
+              lineNumber: hunk.additionStart + block.additionLineIndex - hunk.additionLineIndex,
+            }
+          : {
+              id,
+              side: "deletions",
+              lineNumber: hunk.deletionStart + block.deletionLineIndex - hunk.deletionLineIndex,
+            },
+      );
+    }
+  }
+  return out;
+}
+
 /** Per-object memo of the content hash: re-hashing every line of every file on
- *  every render would cost more than the render. */
+ *  every render would cost more than the render. A parsed file's cache key
+ *  already is its content hash (`withContentCacheKey`), so it is reused. */
 const versionCache = new WeakMap<FileDiffMetadata, number>();
 function contentVersion(fileDiff: FileDiffMetadata): number {
   let v = versionCache.get(fileDiff);
   if (v === undefined) {
-    v = buildFileDiffContentVersion(fileDiff);
+    v = fileDiff.cacheKey ? fnv1a32(fileDiff.cacheKey) : buildFileDiffContentVersion(fileDiff);
     versionCache.set(fileDiff, v);
   }
   return v;
@@ -113,7 +150,8 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions }: DiffPa
   const { refetch } = preview;
 
   // Live: the git watcher fires on commit/stage/checkout, the explorer on any
-  // edit Atlas did not make. Coalesced, since an edit is a burst of events.
+  // write under the project. Coalesced, since an edit is a burst of events.
+  const queryClient = useQueryClient();
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const soon = () => {
@@ -121,15 +159,30 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions }: DiffPa
       timer = setTimeout(() => void refetch(), 250);
     };
     const offGit = listen<{ project: string }>("atlas:git-changed", (e) => {
-      if (e.payload?.project === repoPath) soon();
+      if (e.payload?.project !== repoPath) return;
+      // HEAD may have moved under files whose patches are cached by what is
+      // on disk; those keys cannot see it.
+      invalidateReviewFiles(queryClient, repoPath);
+      soon();
     });
-    const offFs = listen("atlas:explorer:changed", soon);
+    const offFs = listen<{ dirs?: string[]; fullRefresh?: boolean }>(
+      "atlas:explorer:changed",
+      (e) => {
+        const dirs = e.payload?.dirs;
+        // An opaque batch (a rename) names no directories: assume it is ours.
+        const ours =
+          e.payload?.fullRefresh ||
+          !dirs?.length ||
+          dirs.some((d) => d === repoPath || d.startsWith(`${repoPath}/`));
+        if (ours) soon();
+      },
+    );
     return () => {
       if (timer) clearTimeout(timer);
       void offGit.then((off) => off());
       void offFs.then((off) => off());
     };
-  }, [repoPath, refetch]);
+  }, [repoPath, refetch, queryClient]);
 
   const sourceKind = scope === "branch-range" ? "branch-range" : "working-tree";
   const source: DiffSource | null =
@@ -147,8 +200,12 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions }: DiffPa
     [scope, sessionFiles],
   );
 
-  const review = useReviewFiles({ repoPath, source, only });
-  const { files, requestFile, retry } = review;
+  const {
+    files,
+    stats: treeFiles,
+    requestFile,
+    retry,
+  } = useReviewFiles({ repoPath, source, only, ignoreWhitespace });
 
   const collapseScopeKey = `${repoPath}\0${scope}\0${baseRef ?? ""}\0${sessionId ?? ""}`;
   const itemIds = useMemo(() => files.map(itemIdOf), [files]);
@@ -212,11 +269,21 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions }: DiffPa
         filePath: path,
         oldPath: fileDiff.prevName ?? null,
       });
-      const key = `review:${current.diffHash}:${path}`;
-      const newFile = { name: path, contents: contents.newText, cacheKey: `${key}:new` };
+      // Keyed by content, so an unchanged side stays cached across refreshes.
+      const keyOf = (name: string, text: string) =>
+        `review-full:${name}:${text.length}:${fnv1a32(text).toString(36)}`;
+      const newFile = {
+        name: path,
+        contents: contents.newText,
+        cacheKey: keyOf(path, contents.newText),
+      };
       if (fileDiff.type === "rename-pure") return { oldFile: null, newFile };
       return {
-        oldFile: { name: oldPath, contents: contents.oldText, cacheKey: `${key}:old` },
+        oldFile: {
+          name: oldPath,
+          contents: contents.oldText,
+          cacheKey: keyOf(oldPath, contents.oldText),
+        },
         newFile,
       };
     },
@@ -263,6 +330,40 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions }: DiffPa
 
   const branches = useGitStore((s) => (s.repoPath === repoPath ? s.branchesFull : null));
 
+  // The tree's width, remembered across sessions.
+  const { defaultLayout, onLayoutChanged } = useDefaultLayout({ id: TREE_LAYOUT_ID });
+
+  // ── Previous / next change, across every open file ──
+  const changes = useMemo(() => {
+    const out: ChangeTarget[] = [];
+    for (const file of files) {
+      const id = itemIdOf(file);
+      if (file.state === "ready" && !collapsed.has(id))
+        out.push(...changeTargetsOf(id, file.fileDiff));
+    }
+    return out;
+  }, [files, collapsed]);
+  const changeCursor = useRef(-1);
+  useEffect(() => {
+    changeCursor.current = -1;
+  }, [changes]);
+  const jumpChange = (dir: 1 | -1) => {
+    if (!viewer || changes.length === 0) return;
+    const next =
+      changeCursor.current < 0 && dir < 0
+        ? changes.length - 1
+        : (changeCursor.current + dir + changes.length) % changes.length;
+    changeCursor.current = next;
+    const target = changes[next];
+    viewer.scrollTo({
+      type: "line",
+      id: target.id,
+      lineNumber: target.lineNumber,
+      side: target.side,
+      align: "center",
+    });
+  };
+
   const header = (
     <div className="flex h-control-lg shrink-0 items-center gap-1 border-b border-border px-2">
       <DropdownMenu>
@@ -302,6 +403,24 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions }: DiffPa
             <span className="text-[var(--atlas-diff-removed-text)]">−{totals.deletions}</span>
           </span>
         )}
+        <Hint label="Previous change">
+          <IconButton
+            size="sm"
+            icon={ChevronUp}
+            label="Previous change"
+            disabled={changes.length === 0}
+            onClick={() => jumpChange(-1)}
+          />
+        </Hint>
+        <Hint label="Next change">
+          <IconButton
+            size="sm"
+            icon={ChevronDown}
+            label="Next change"
+            disabled={changes.length === 0}
+            onClick={() => jumpChange(1)}
+          />
+        </Hint>
         <Hint label="Refresh">
           <IconButton
             size="sm"
@@ -384,84 +503,100 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions }: DiffPa
     );
   } else {
     body = (
-      <div className="flex min-h-0 flex-1">
-        <div
-          className="min-h-0 min-w-0 flex-1"
-          onClickCapture={(event) => {
-            // A click on a file's header row (not on one of its buttons)
-            // folds it; a click on its name opens the file.
-            const path = event.nativeEvent.composedPath();
-            for (const node of path) {
-              if (node instanceof HTMLButtonElement || node instanceof HTMLAnchorElement) return;
-            }
-            const title = path.find(
-              (n): n is HTMLElement => n instanceof HTMLElement && n.hasAttribute("data-title"),
-            );
-            const header = path.find(
-              (n): n is HTMLElement =>
-                n instanceof HTMLElement && n.hasAttribute("data-diffs-header"),
-            );
-            if (!header) return;
-            const name = (title ?? header.querySelector("[data-title]"))?.textContent?.trim();
-            const file = name ? files.find((f) => f.stat.path === name) : undefined;
-            if (!file) return;
-            if (title) void openFile(`${repoPath}/${file.stat.path}`);
-            else if (file.state === "ready") toggleFile(itemIdOf(file));
-          }}
-        >
-          <StyledCodeView
-            key={`${collapseScopeKey}\0${review.scope}`}
-            viewerRef={setViewer}
-            className="h-full min-h-0 overflow-auto"
-            items={items}
-            fallback={<DiffPanelSkeleton />}
-            extraCSS={HIDE_VIEWER_COUNTS}
-            options={{
-              diffStyle: layout,
-              overflow: wordWrap ? "wrap" : "scroll",
-              stickyHeaders: true,
-              loadDiffFiles,
-            }}
-            renderHeaderPrefix={(item) => {
-              const file = fileById.get(item.id);
-              if (!file) return null;
-              return (
-                <CollapseToggle
-                  id={item.id}
-                  path={file.stat.path}
-                  collapsed={item.collapsed === true}
-                  disabled={file.state !== "ready"}
-                  onToggle={toggleFile}
-                />
+      <Group
+        id={TREE_LAYOUT_ID}
+        orientation="horizontal"
+        defaultLayout={defaultLayout}
+        onLayoutChanged={onLayoutChanged}
+        className="min-h-0 flex-1"
+      >
+        <Panel id="review-diff-files" className="min-w-0">
+          <div
+            className="h-full min-h-0 min-w-0"
+            onClickCapture={(event) => {
+              // A click on a file's header row (not on one of its buttons)
+              // folds it; a click on its name opens the file.
+              const path = event.nativeEvent.composedPath();
+              for (const node of path) {
+                if (node instanceof HTMLButtonElement || node instanceof HTMLAnchorElement) return;
+              }
+              const title = path.find(
+                (n): n is HTMLElement => n instanceof HTMLElement && n.hasAttribute("data-title"),
               );
-            }}
-            renderHeaderFilenameSuffix={(item) => {
-              const file = fileById.get(item.id);
-              if (!file) return null;
-              return <FileStatus file={file} onRequest={requestFile} onRetry={retry} />;
-            }}
-            renderHeaderMetadata={(item) => {
-              const stat = fileById.get(item.id)?.stat;
-              if (!stat || stat.additions === null) return null;
-              return (
-                <span className="font-mono text-2xs tabular-nums">
-                  <span className="text-[var(--atlas-diff-added-text)]">+{stat.additions}</span>{" "}
-                  <span className="text-[var(--atlas-diff-removed-text)]">−{stat.deletions}</span>
-                </span>
+              const header = path.find(
+                (n): n is HTMLElement =>
+                  n instanceof HTMLElement && n.hasAttribute("data-diffs-header"),
               );
+              if (!header) return;
+              const name = (title ?? header.querySelector("[data-title]"))?.textContent?.trim();
+              const file = name ? files.find((f) => f.stat.path === name) : undefined;
+              if (!file) return;
+              if (title) void openFile(`${repoPath}/${file.stat.path}`);
+              else if (file.state === "ready") toggleFile(itemIdOf(file));
             }}
-          />
-        </div>
-        {fileTreeOpen && (
-          <aside className="flex w-56 max-w-[40%] min-w-40 shrink-0 flex-col border-l border-border">
-            <DiffFileTree
-              files={files.map((f) => f.stat)}
-              selectedPath={selected}
-              onSelect={reveal}
+          >
+            <StyledCodeView
+              // Remounted only when what it shows is a different diff (another
+              // scope or base). A refresh after an edit updates items in place,
+              // keeping the scroll position and every unchanged file's tokens.
+              key={collapseScopeKey}
+              viewerRef={setViewer}
+              className="h-full min-h-0 overflow-auto"
+              items={items}
+              fallback={<DiffPanelSkeleton />}
+              extraCSS={HIDE_VIEWER_COUNTS}
+              options={{
+                diffStyle: layout,
+                overflow: wordWrap ? "wrap" : "scroll",
+                stickyHeaders: true,
+                loadDiffFiles,
+              }}
+              renderHeaderPrefix={(item) => {
+                const file = fileById.get(item.id);
+                if (!file) return null;
+                return (
+                  <CollapseToggle
+                    id={item.id}
+                    path={file.stat.path}
+                    collapsed={item.collapsed === true}
+                    disabled={file.state !== "ready"}
+                    onToggle={toggleFile}
+                  />
+                );
+              }}
+              renderHeaderFilenameSuffix={(item) => {
+                const file = fileById.get(item.id);
+                if (!file) return null;
+                return <FileStatus file={file} onRequest={requestFile} onRetry={retry} />;
+              }}
+              renderHeaderMetadata={(item) => {
+                const stat = fileById.get(item.id)?.stat;
+                if (!stat || stat.additions === null) return null;
+                return (
+                  <span className="font-mono text-2xs tabular-nums">
+                    <span className="text-[var(--atlas-diff-added-text)]">+{stat.additions}</span>{" "}
+                    <span className="text-[var(--atlas-diff-removed-text)]">−{stat.deletions}</span>
+                  </span>
+                );
+              }}
             />
-          </aside>
+          </div>
+        </Panel>
+        {fileTreeOpen && (
+          <>
+            <Separator className="w-px bg-border transition-colors hover:bg-primary data-[separator=active]:bg-primary cursor-col-resize" />
+            <Panel
+              id="review-diff-tree"
+              defaultSize="26"
+              minSize="12"
+              maxSize="50"
+              className="flex min-w-0 flex-col"
+            >
+              <DiffFileTree files={treeFiles} selectedPath={selected} onSelect={reveal} />
+            </Panel>
+          </>
         )}
-      </div>
+      </Group>
     );
   }
 
@@ -531,6 +666,12 @@ function FileStatus({
       <CopyPathButton path={path} />
       {pending && <span className="text-2xs text-muted-foreground">Loading…</span>}
       {file.state === "binary" && <span className="text-2xs text-muted-foreground">Binary</span>}
+      {file.state === "too-large" && (
+        <span className="text-2xs text-muted-foreground">Too large to show</span>
+      )}
+      {file.state === "empty" && (
+        <span className="text-2xs text-muted-foreground">No changes now</span>
+      )}
       {file.state === "error" && (
         <Hint label="Couldn't load this file. Retry">
           <IconButton
@@ -545,7 +686,7 @@ function FileStatus({
         </Hint>
       )}
       {file.truncated && (
-        <Hint label="Too large to show in full. Counts include every change.">
+        <Hint label="Too large to show in full: only the first hunks are shown. Counts include every change.">
           <span className="inline-flex text-muted-foreground" aria-label="Partial diff">
             <Info size={12} />
           </span>

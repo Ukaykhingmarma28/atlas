@@ -80,6 +80,10 @@ pub struct DiffFileStat {
     pub status: &'static str,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub binary: bool,
+    /// The working-tree file's modification time and size, so a client can
+    /// tell a file changed when its counts did not. `None` when it is absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sig: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -237,6 +241,54 @@ pub async fn git_diff_file_contents(
             base_ref.as_deref(),
             &file_path,
             old_path.as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// One file's unified patch for a review source, diffed by git: what the
+/// review panel shows for a file the capped preview left out. Computed here so
+/// the UI thread only parses a patch, and so `ignore_whitespace` applies to it
+/// as it does to the preview.
+#[tauri::command]
+pub async fn git_diff_file_patch(
+    path: String,
+    source_kind: SourceKind,
+    base_ref: Option<String>,
+    file_path: String,
+    old_path: Option<String>,
+    ignore_whitespace: Option<bool>,
+) -> Result<DiffFilePatch, String> {
+    tokio::task::spawn_blocking(move || {
+        file_patch(
+            Path::new(&path),
+            source_kind,
+            base_ref.as_deref(),
+            &file_path,
+            old_path.as_deref(),
+            ignore_whitespace.unwrap_or(false),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// A unified patch between two texts (see [`texts_patch`]): a session turn's
+/// edit, diffed from the before/after its tool call carried.
+#[tauri::command]
+pub async fn diff_texts_patch(
+    old_text: String,
+    new_text: String,
+    file: String,
+    ignore_whitespace: Option<bool>,
+) -> Result<DiffFilePatch, String> {
+    tokio::task::spawn_blocking(move || {
+        texts_patch(
+            &old_text,
+            &new_text,
+            &file,
+            ignore_whitespace.unwrap_or(false),
         )
     })
     .await
@@ -516,6 +568,7 @@ pub fn parse_raw_numstat(out: &[u8]) -> Vec<DiffFileStat> {
             deletions: Some(num(d)),
             status: "modified",
             binary,
+            sig: None,
         });
     }
     for f in &mut files {
@@ -535,6 +588,7 @@ pub fn parse_raw_numstat(out: &[u8]) -> Vec<DiffFileStat> {
                 deletions: Some(0),
                 status: "conflicted",
                 binary: false,
+                sig: None,
             });
         }
     }
@@ -652,6 +706,7 @@ fn new_file(cwd: &Path, rel: &str, budget: usize, count: bool) -> Option<NewFile
         deletions: Some(0),
         status: "untracked",
         binary: false,
+        sig: None,
     };
     let abs = cwd.join(rel);
     let meta = std::fs::symlink_metadata(&abs).ok()?;
@@ -770,6 +825,7 @@ fn count_streaming(path: &Path) -> Option<(u32, bool)> {
 /// first one that does not fit (keeping the patch a prefix of whole files).
 /// Marks unmerged paths `conflicted`.
 fn assemble(
+    cwd: &Path,
     kind: SourceKind,
     base_ref: Option<String>,
     merge_base: Option<String>,
@@ -803,6 +859,9 @@ fn assemble(
                 full = true;
             }
         }
+    }
+    for f in &mut files {
+        f.sig = worktree_sig(cwd, &f.path);
     }
     let diff = String::from_utf8_lossy(&patch).into_owned();
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -901,6 +960,7 @@ pub fn compute_preview(
     Ok(DiffPreview {
         sources: vec![
             assemble(
+                cwd,
                 SourceKind::WorkingTree,
                 None,
                 None,
@@ -909,6 +969,7 @@ pub fn compute_preview(
                 &conflicted,
             ),
             assemble(
+                cwd,
                 SourceKind::BranchRange,
                 base,
                 mb,
@@ -1045,6 +1106,240 @@ pub fn file_contents(
         truncated: old_cut || new_cut,
         binary: false,
     })
+}
+
+// ── One file's patch ────────────────────────────────────────────────────────
+
+/// Patch bytes for one file. Past this the patch is cut at a hunk boundary:
+/// the reader sees the first hunks whole and is told the rest is missing.
+pub const FILE_PATCH_CAP: usize = 1024 * 1024;
+
+#[derive(Debug, Clone, Serialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DiffFilePatch {
+    /// A unified patch of this one file, or empty when there is nothing to
+    /// show (binary, or too large for even one hunk).
+    pub patch: String,
+    /// Over [`FILE_PATCH_CAP`]: `patch` holds only the hunks that fit.
+    pub truncated: bool,
+    pub binary: bool,
+}
+
+/// The working-tree file's modification time and size: a cheap stand-in for
+/// its content that changes on every write.
+fn worktree_sig(cwd: &Path, rel: &str) -> Option<String> {
+    let meta = std::fs::symlink_metadata(cwd.join(rel)).ok()?;
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_nanos());
+    Some(format!("{mtime:x}-{:x}", meta.len()))
+}
+
+/// Cut a one-file patch at the last hunk that starts within `cap`. `None`
+/// when not even the first hunk fits.
+fn cut_at_hunk_boundary(mut patch: Vec<u8>, cap: usize) -> Option<Vec<u8>> {
+    const HUNK: &[u8] = b"\n@@ ";
+    let window = &patch[..cap.min(patch.len())];
+    let starts: Vec<usize> = window
+        .windows(HUNK.len())
+        .enumerate()
+        .filter(|(_, w)| *w == HUNK)
+        .map(|(i, _)| i + 1)
+        .collect();
+    // The last hunk starting inside the window may run past it; keep only
+    // the hunks before it, which end where it starts.
+    if starts.len() < 2 {
+        return None;
+    }
+    patch.truncate(starts[starts.len() - 1]);
+    Some(patch)
+}
+
+fn is_binary_patch(patch: &[u8]) -> bool {
+    patch.starts_with(b"Binary files ")
+        || patch.windows(14).any(|w| w == b"\nBinary files ")
+        || patch.windows(17).any(|w| w == b"GIT binary patch\n")
+}
+
+/// The patch of one file of a review source, computed by git: what the review
+/// panel renders for a file the capped preview left out. Whitespace-only
+/// changes are dropped with `ignore_ws`, as in the preview.
+pub fn file_patch(
+    cwd: &Path,
+    kind: SourceKind,
+    base_ref: Option<&str>,
+    file_path: &str,
+    old_path: Option<&str>,
+    ignore_ws: bool,
+) -> Result<DiffFilePatch, String> {
+    let new_rel = safe_relative(file_path)?;
+    let old_rel = safe_relative(old_path.unwrap_or(file_path))?;
+    let rev = match kind {
+        SourceKind::WorkingTree => match resolve_head(cwd)? {
+            Head::Commit(sha) => sha,
+            Head::NotARepo => return Err("Not a git repository".to_string()),
+            Head::Unborn => empty_tree(cwd)?,
+        },
+        SourceKind::BranchRange => base_ref
+            .map(str::to_string)
+            .or_else(|| default_base(cwd))
+            .and_then(|b| merge_base(cwd, &b))
+            // No base, or no common history: the range is the working tree,
+            // as `git_diff_preview` reports it.
+            .unwrap_or_else(|| "HEAD".to_string()),
+    };
+    let ws: &[&str] = if ignore_ws {
+        &["--ignore-all-space"]
+    } else {
+        &[]
+    };
+    let mut cmd = git(cwd);
+    cmd.args(DIFF_ARGS).args(ws).args(["--patch", &rev, "--"]);
+    if old_rel != new_rel {
+        cmd.arg(old_rel);
+    }
+    cmd.arg(new_rel);
+    let (mut patch, mut truncated, _) = run_capped(cmd, FILE_PATCH_CAP)?;
+
+    if patch.is_empty() {
+        // Either unchanged now, or not in git's view at all: an untracked
+        // file, which is all added.
+        let mut ls = git(cwd);
+        ls.args(["ls-files", "--others", "--exclude-standard", "--"])
+            .arg(new_rel);
+        if !run(ls).is_ok_and(|o| !o.stdout.is_empty()) {
+            return Ok(DiffFilePatch::default());
+        }
+        match new_file(cwd, file_path, FILE_PATCH_CAP, true) {
+            Some(NewFile {
+                stat,
+                patch: NewPatch::Ready(p),
+            }) => {
+                if stat.binary {
+                    return Ok(DiffFilePatch {
+                        binary: true,
+                        ..Default::default()
+                    });
+                }
+                patch = p;
+            }
+            Some(NewFile { stat, .. }) => {
+                return Ok(DiffFilePatch {
+                    binary: stat.binary,
+                    truncated: !stat.binary,
+                    ..Default::default()
+                });
+            }
+            None => return Ok(DiffFilePatch::default()),
+        }
+    }
+    if is_binary_patch(&patch) {
+        return Ok(DiffFilePatch {
+            binary: true,
+            ..Default::default()
+        });
+    }
+    if truncated {
+        match cut_at_hunk_boundary(patch, FILE_PATCH_CAP) {
+            Some(cut) => patch = cut,
+            None => {
+                return Ok(DiffFilePatch {
+                    truncated: true,
+                    ..Default::default()
+                })
+            }
+        }
+    }
+    // A cut that lands exactly on the end is not a cut.
+    truncated &= !patch.is_empty();
+    Ok(DiffFilePatch {
+        patch: String::from_utf8_lossy(&patch).into_owned(),
+        truncated,
+        binary: false,
+    })
+}
+
+/// A unified patch between two texts, with no repository involved, for a
+/// change known only as the before/after an agent's tool call carried (a
+/// session turn's edit, which the working tree may no longer show).
+///
+/// Git diffs the two through temp files named after the file, so the patch
+/// headers carry its name; the caller re-labels the path.
+pub fn texts_patch(
+    old_text: &str,
+    new_text: &str,
+    file: &str,
+    ignore_ws: bool,
+) -> Result<DiffFilePatch, String> {
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    if old_text.len() > FILE_CAP || new_text.len() > FILE_CAP {
+        return Ok(DiffFilePatch {
+            truncated: true,
+            ..Default::default()
+        });
+    }
+    let name = Path::new(file)
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| "file".to_string());
+    // Unique per call: a turn's files diff concurrently.
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let base =
+        std::env::temp_dir().join(format!("atlas-diff-{}-{stamp:x}-{n}", std::process::id()));
+    let result = (|| {
+        fs::create_dir_all(base.join("a")).map_err(|e| e.to_string())?;
+        fs::create_dir_all(base.join("b")).map_err(|e| e.to_string())?;
+        fs::write(base.join("a").join(&name), old_text).map_err(|e| e.to_string())?;
+        fs::write(base.join("b").join(&name), new_text).map_err(|e| e.to_string())?;
+        if is_binary(old_text.as_bytes()) || is_binary(new_text.as_bytes()) {
+            return Ok(DiffFilePatch {
+                binary: true,
+                ..Default::default()
+            });
+        }
+        let a = format!("a/{name}");
+        let b = format!("b/{name}");
+        // `--no-prefix`: the relative paths already carry `a/` and `b/`.
+        // `--no-index` exits 1 when the texts differ, the normal case, so
+        // the status is ignored.
+        let mut cmd = atlas_process::command("git");
+        cmd.args([
+            "diff",
+            "--no-index",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-prefix",
+        ])
+        .args(if ignore_ws {
+            &["--ignore-all-space"][..]
+        } else {
+            &[]
+        })
+        .args(["--", &a, &b])
+        .env("LC_ALL", "C")
+        .current_dir(&base);
+        let out = run(cmd)?;
+        if out.code.is_some_and(|c| c > 1) {
+            return Err(format!("git diff --no-index: {}", out.stderr.trim()));
+        }
+        Ok(DiffFilePatch {
+            patch: String::from_utf8_lossy(&out.stdout).into_owned(),
+            truncated: false,
+            binary: false,
+        })
+    })();
+    // Best effort: a leftover temp dir is harmless, a failed diff is not.
+    let _ = fs::remove_dir_all(&base);
+    result
 }
 
 #[cfg(test)]
@@ -1329,5 +1624,85 @@ mod tests {
         let c = file_contents(&r.0, SourceKind::WorkingTree, None, "link", None).unwrap();
         assert_eq!(c.old_text, "real.txt");
         assert_eq!(c.new_text, "gone.txt");
+    }
+
+    #[test]
+    fn file_patch_covers_tracked_untracked_whitespace_and_clean_files() {
+        let r = Repo::new("file-patch");
+        r.write("a.ts", "const a = 1;\nconst b = 2;\n");
+        r.write("clean.ts", "x\n");
+        r.commit("init");
+        r.write("a.ts", "const a = 1;\nconst  b = 2;\nconst c = 3;\n");
+        r.write("new.ts", "fresh\n");
+
+        let tracked = file_patch(&r.0, SourceKind::WorkingTree, None, "a.ts", None, false).unwrap();
+        assert!(tracked.patch.contains("+const  b = 2;"));
+        assert!(tracked.patch.contains("+++ b/a.ts"));
+        assert!(!tracked.truncated && !tracked.binary);
+
+        let ws = file_patch(&r.0, SourceKind::WorkingTree, None, "a.ts", None, true).unwrap();
+        assert!(
+            !ws.patch.contains("+const  b"),
+            "whitespace-only lines drop out"
+        );
+        assert!(ws.patch.contains("+const c = 3;"));
+
+        let added = file_patch(&r.0, SourceKind::WorkingTree, None, "new.ts", None, false).unwrap();
+        assert!(added.patch.contains("new file mode"));
+        assert!(added.patch.contains("+fresh"));
+
+        let clean =
+            file_patch(&r.0, SourceKind::WorkingTree, None, "clean.ts", None, false).unwrap();
+        assert_eq!(
+            clean,
+            DiffFilePatch::default(),
+            "a clean file is not all-added"
+        );
+
+        assert!(file_patch(&r.0, SourceKind::WorkingTree, None, "../x", None, false).is_err());
+    }
+
+    #[test]
+    fn an_oversized_file_patch_is_cut_at_a_hunk_boundary() {
+        let hunk = |n: usize| {
+            format!(
+                "@@ -{n},1 +{n},1 @@\n-{}\n+{}\n",
+                "o".repeat(40),
+                "n".repeat(40)
+            )
+        };
+        let mut patch = b"diff --git a/f b/f\n--- a/f\n+++ b/f\n".to_vec();
+        for i in 0..10 {
+            patch.extend_from_slice(hunk(i * 10 + 1).as_bytes());
+        }
+        let cut = cut_at_hunk_boundary(patch.clone(), 300).unwrap();
+        let text = String::from_utf8(cut).unwrap();
+        assert!(text.ends_with('\n'));
+        assert!(text.matches("@@ -").count() >= 1);
+        assert!(text.len() <= 300);
+        assert!(
+            cut_at_hunk_boundary(patch, 60).is_none(),
+            "not even one whole hunk"
+        );
+    }
+
+    #[test]
+    fn texts_patch_diffs_two_strings_under_the_file_name() {
+        let p = texts_patch("a\nb\n", "a\nc\n", "src/x.ts", false).unwrap();
+        assert!(p.patch.contains("--- a/x.ts"), "{}", p.patch);
+        assert!(p.patch.contains("+++ b/x.ts"));
+        assert!(p.patch.contains("-b\n+c\n"));
+        let same = texts_patch("a  b\n", "a b\n", "x.ts", true).unwrap();
+        assert!(same.patch.is_empty(), "whitespace-only change is no change");
+    }
+
+    #[test]
+    fn preview_rows_carry_a_worktree_signature() {
+        let r = Repo::new("sig");
+        r.write("a.txt", "a\n");
+        r.commit("init");
+        r.write("a.txt", "b\n");
+        let w = r.working();
+        assert!(w.files[0].sig.is_some());
     }
 }

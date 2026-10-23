@@ -3,7 +3,6 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
-import { useDiffPanelStore } from "../stores/diff-panel-store";
 import { requestDiffJump } from "./diff-jump";
 import { openCommit } from "./open-commit";
 
@@ -46,7 +45,8 @@ export function openGitDiff(
     return;
   }
   const id = diffTabId(repoPath);
-  useDiffPanelStore.getState().actions.setScope(id, "working-tree");
+  // The scope stays the reader's: a new tab starts on the working tree, and
+  // an open one keeps whatever they chose.
   if (file) requestDiffJump(id, file);
   const { addTab, setActiveTab } = useLayoutStore.getState().actions;
   addTab({

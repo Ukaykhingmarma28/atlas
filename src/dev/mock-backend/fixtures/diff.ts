@@ -5,7 +5,7 @@
 // spans, everything else left as `added` / `removed` / `context`. Hand-writing
 // that row model per fixture is unreadable and drifts the moment a fixture file
 // is edited, so the fakes hand this module two texts instead and get the same
-// shape back — which is also what `diff_structured_text` does for real.
+// shape back.
 //
 // The pairing heuristic is deliberately simpler than delta's `infer_edits`
 // (index-wise, gated on token similarity). It only has to produce a diff that
@@ -354,6 +354,8 @@ function previewSource(
       deletions,
       status: change.status,
       ...(change.binary ? { binary: true } : {}),
+      // Rust sends the file's mtime and size; a hash of its text is the same signal.
+      ...(change.after !== null ? { sig: hashOf(change.after) } : {}),
     });
     if (truncated || diff.length + patch.length > PATCH_CAP) truncated = true;
     else diff += patch;

@@ -99,12 +99,18 @@ export const DiffFileTree = memo(function DiffFileTree({
     overscan: 12,
   });
 
-  // Keep the selected file in view when the diff selects it from outside.
+  // Bring the selected file into view when the selection changes, and only
+  // then: a refreshed file list must not pull the tree back to it while the
+  // reader scrolls elsewhere. `rows` is read through a ref for that reason.
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
   useEffect(() => {
     if (!selectedPath) return;
-    const index = rows.findIndex((r) => r.kind === "file" && r.stat.path === selectedPath);
+    const index = rowsRef.current.findIndex(
+      (r) => r.kind === "file" && r.stat.path === selectedPath,
+    );
     if (index >= 0) virtualizer.scrollToIndex(index, { align: "auto" });
-  }, [selectedPath, rows, virtualizer]);
+  }, [selectedPath, virtualizer]);
 
   const toggleDir = (path: string) =>
     setCollapsed((current) => {

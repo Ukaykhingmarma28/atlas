@@ -13,8 +13,9 @@
 // the edits are committed git reports nothing at all, so every past turn went
 // blank.
 //
-// The viewer itself is still the repository one (`GitDiffPanel`) — it just gets
-// handed text instead of a repo path. See its `textSources` prop.
+// The viewer is the review diff's own (`GitDiffModal`), handed text instead of
+// a repo path: the backend diffs each before/after (`diff_texts_patch`). See
+// its `textSources` prop.
 
 /** Payload of the `atlas:open-turn-diff` event. */
 export interface TurnDiffRequest {
