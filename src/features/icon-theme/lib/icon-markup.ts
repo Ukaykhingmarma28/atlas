@@ -26,6 +26,20 @@ function requestFor(path: string, kind: IconKind): IconRequest {
   return { path, kind, languageId: detected === PLAINTEXT ? undefined : detected };
 }
 
+/**
+ * An SVG icon as an `<img>` source, or null when it must stay inline.
+ *
+ * A transcript can hold hundreds of chips. Inline, each icon is a subtree of
+ * paths for the browser to style and lay out on every window grow; as an image
+ * it is one element, and the browser decodes each distinct icon once. An icon
+ * drawn in `currentColor` stays inline, because inside an image that colour is
+ * always black and would not follow the theme.
+ */
+function svgImageSource(svg: string): string | null {
+  if (/currentcolor/i.test(svg)) return null;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
 /** Markup per cache key, for the theme generation it was built under. */
 const markup = new Map<string, string>();
 let markupGeneration = -1;
@@ -69,13 +83,14 @@ export function fileIconMarkup(path: string, kind: IconKind = "file"): string | 
     const prepared = state.prepared[icon.definition];
     // Resolved, and its asset still in flight.
     if (!prepared) return undefined;
-    if (prepared.svg) html = prepared.svg;
-    else if (prepared.url) {
+    const src = prepared.url ?? (prepared.svg ? svgImageSource(prepared.svg) : null);
+    if (src) {
       const img = document.createElement("img");
-      img.src = prepared.url;
+      img.src = src;
       img.alt = "";
       html = img.outerHTML;
-    } else return null;
+    } else if (prepared.svg) html = prepared.svg;
+    else return null;
   }
   markup.set(key, html);
   return html;

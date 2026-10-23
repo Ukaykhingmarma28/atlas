@@ -350,8 +350,8 @@ const FIXED_LABEL: Record<string, string> = {
  * `CachedMarkdown` opens it (`open-path-link.ts`).
  *
  * The icon is drawn on the main thread, not here: this runs in the worker, and
- * the theme's icons live in the icon-theme store. The slot carries the lucide
- * glyph the composer's own fallback draws, in a box of fixed size, so painting
+ * the theme's icons live in the icon-theme store. The slot is a box of fixed
+ * size showing the lucide glyph the composer's own fallback draws, so painting
  * the theme's icon in (`paintFileIcons`) swaps one box's contents and moves
  * nothing.
  */
@@ -377,11 +377,17 @@ function fileChipNode(opts: {
     properties.role = "link";
     properties.tabIndex = 0;
   }
-  const icon: Hast = iconWrap(kind) ?? { type: "element", tagName: "span", children: [] };
-  icon.properties = {
-    className: ["atlas-mention-chip__icon", "atlas-file-chip__icon"],
-    dataFileIcon: kind,
-    dataFilePath: opts.iconPath,
+  // Empty: the fallback glyph is drawn by CSS (`.atlas-file-chip__icon:empty`),
+  // so a chip costs four elements, not a dozen of inline SVG per chip.
+  const icon: Hast = {
+    type: "element",
+    tagName: "span",
+    properties: {
+      className: ["atlas-mention-chip__icon", "atlas-file-chip__icon"],
+      dataFileIcon: kind,
+      dataFilePath: opts.iconPath,
+    },
+    children: [],
   };
   return {
     type: "element",

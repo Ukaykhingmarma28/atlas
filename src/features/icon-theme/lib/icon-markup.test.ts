@@ -20,7 +20,7 @@ const { useIconThemeStore, cacheKey } = await import("../stores/icon-theme-store
 const { fileIconMarkup, paintFileIcons, resetIconMarkupForTests } = await import("./icon-markup");
 
 const FALLBACK = '<svg data-fallback=""></svg>';
-const TS_SVG = '<svg data-ts=""></svg>';
+const TS_SVG = '<svg fill="currentColor" data-ts=""></svg>';
 const KEY = cacheKey({ path: "/p/a.ts", kind: "file", languageId: "typescript" });
 
 function slot(path = "/p/a.ts"): HTMLElement {
@@ -84,6 +84,25 @@ describe("file icons outside React", () => {
     expect(root.querySelector("[data-file-icon]")!.innerHTML).toBe(FALLBACK);
   });
 
+  it("draws an SVG with its own colours as one image, and keeps a currentColor one inline", () => {
+    resolve('<svg data-own-colours=""></svg>');
+    const html = fileIconMarkup("/p/a.ts")!;
+    expect(html.startsWith('<img src="data:image/svg+xml;charset=utf-8,')).toBe(true);
+    expect(html).toContain(encodeURIComponent('<svg data-own-colours=""></svg>'));
+  });
+
+  it("paints into an empty slot, and empties it again when the theme has nothing", () => {
+    const root = document.createElement("div");
+    root.innerHTML = `<span data-file-icon="file" data-file-path="/p/a.ts"></span>`;
+    document.body.replaceChildren(root);
+    paintFileIcons(root);
+    const el = root.querySelector<HTMLElement>("[data-file-icon]")!;
+    resolve();
+    expect(el.innerHTML).toBe(TS_SVG);
+    useIconThemeStore.setState({ generation: 2, resolved: { [KEY]: null }, prepared: {} });
+    expect(el.innerHTML).toBe("");
+  });
+
   it("repaints a painted slot when the theme changes", () => {
     resolve();
     const root = slot();
@@ -92,7 +111,7 @@ describe("file icons outside React", () => {
     expect(el.innerHTML).toBe(TS_SVG);
     // A new theme: caches dropped, the generation bumped, then its answer.
     useIconThemeStore.setState({ generation: 2, resolved: {}, prepared: {} });
-    resolve('<svg data-other=""></svg>');
-    expect(el.innerHTML).toBe('<svg data-other=""></svg>');
+    resolve('<svg fill="currentColor" data-other=""></svg>');
+    expect(el.innerHTML).toBe('<svg fill="currentColor" data-other=""></svg>');
   });
 });
