@@ -670,7 +670,7 @@ async fn a_cancelled_turn_still_announces_its_own_stop() {
 
     let mut stopped = None;
     while let Ok(event) = events.try_recv() {
-        if let AcpThreadEvent::Stopped(reason) = event {
+        if let AcpThreadEvent::Stopped(reason, _) = event {
             stopped = Some(reason);
         }
     }
@@ -745,7 +745,7 @@ async fn end_turn_still_announces_a_stop_with_no_turn_open() {
 
     let mut stopped = false;
     while let Ok(event) = events.try_recv() {
-        if matches!(event, AcpThreadEvent::Stopped(_)) {
+        if matches!(event, AcpThreadEvent::Stopped(..)) {
             stopped = true;
         }
     }

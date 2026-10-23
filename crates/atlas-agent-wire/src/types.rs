@@ -104,6 +104,9 @@ pub struct ToolCall {
     pub started_at_ms: Option<i64>,
     /// When the call first reached a terminal status (completed, failed,
     /// rejected or cancelled), as epoch milliseconds. Absent while it runs.
+    /// It is `started_at_ms` plus the call's run time on the monotonic
+    /// clock, so the difference is a duration a stepped wall clock cannot
+    /// bend.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended_at_ms: Option<i64>,
 }
@@ -272,8 +275,8 @@ pub struct Message {
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub images: Vec<MessageImage>,
     pub timestamp: DateTime<Utc>,
-    /// Wall time of the turn this message ends, in ms, from the turn's start
-    /// to its stop. Set only on a snapshot's last assistant message of a turn
+    /// How long the turn this message ends ran, in ms, on the monotonic clock
+    /// (see `turn_finished.worked_ms`). Set only on a snapshot's last assistant message of a turn
     /// the thread saw start and stop; the live stream carries the same figure
     /// on `turn_finished` instead. Absent for a replayed turn, which has no
     /// honest start to measure from.

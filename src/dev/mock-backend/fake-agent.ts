@@ -320,10 +320,13 @@ export function finishTurn(sessionId?: string, stopReason = "end_turn"): Promise
   const prompt = [...s.messages].reverse().find((m) => m.role === "user");
   const started = prompt ? Date.parse(prompt.timestamp) : Number.NaN;
   const ended = Date.now();
-  const timing = Number.isFinite(started) ? { started_at_ms: started, ended_at_ms: ended } : {};
+  const worked = Math.max(0, ended - started);
+  const timing = Number.isFinite(started)
+    ? { started_at_ms: started, ended_at_ms: ended, worked_ms: worked }
+    : {};
   const last = s.messages[s.messages.length - 1];
   if (last?.role === "assistant") {
-    if (Number.isFinite(started)) last.worked_ms = Math.max(0, ended - started);
+    if (Number.isFinite(started)) last.worked_ms = worked;
     last.stop_reason = stopReason;
   }
   return sendDelta({

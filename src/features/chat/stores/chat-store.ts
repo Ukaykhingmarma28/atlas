@@ -2105,6 +2105,18 @@ function applyDeltaToDraft(s: ChatDraft, env: AgentDelta): void {
       // Reject a terminal for a turn already superseded by a newer send —
       // don't flip to idle or inject an empty-turn placeholder for stale turns.
       if (isStaleTurn(session, env.turn_seq)) return;
+      // A terminal for no turn Rust saw open, landing on a turn that already
+      // ended: a late duplicate (a cancel answered behind the stop it raced).
+      // Applying it would relabel the finished turn — "Stopped after" on a
+      // reply that completed. Rust swallows these; this is the backstop.
+      const tail = session.messages[session.messages.length - 1];
+      if (
+        env.started_at_ms === undefined &&
+        tail?.role === "assistant" &&
+        tail.stopReason !== undefined
+      ) {
+        return;
+      }
       // Empty-turn detection: if no assistant content arrived
       // between the last user message and turn-end, insert a
       // placeholder so the UI doesn't show a vanishing spinner.
@@ -2236,15 +2248,20 @@ function applyDeltaToDraft(s: ChatDraft, env: AgentDelta): void {
         }
         session.turnScratch = undefined;
       }
-      // "Worked for 7m 37s" / "Stopped after 12s": the turn's wall time as
-      // Rust timed it, and how it ended — the same pair a snapshot puts on the
+      // "Worked for 7m 37s" / "Stopped after 12s": the turn's run time as
+      // Rust measured it (monotonic, so a sleep or a clock step does not
+      // stretch it), and how it ended — the same pair a snapshot puts on the
       // same message, so the header reads the same after a reload.
+      //
+      // Only onto a message this turn produced. After a rewind (`/undo`) the
+      // trailing message can be the PREVIOUS turn's reply, and stamping it
+      // would overwrite that turn's own figure with this one's.
       if (responded) {
         const last = session.messages[session.messages.length - 1];
-        if (last.role === "assistant") {
-          if (env.started_at_ms !== undefined && env.ended_at_ms !== undefined) {
-            last.workedMs = Math.max(0, env.ended_at_ms - env.started_at_ms);
-          }
+        const ours =
+          env.started_at_ms === undefined || Date.parse(last.timestamp) >= env.started_at_ms;
+        if (last.role === "assistant" && ours) {
+          if (env.worked_ms !== undefined) last.workedMs = env.worked_ms;
           last.stopReason = env.stop_reason;
         }
       }

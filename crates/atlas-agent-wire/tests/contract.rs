@@ -82,7 +82,13 @@ fn expected() -> BTreeMap<String, BTreeSet<String>> {
         ("permission_resolved", &["request_id"]),
         (
             "turn_finished",
-            &["stop_reason", "turn_seq", "started_at_ms", "ended_at_ms"],
+            &[
+                "stop_reason",
+                "turn_seq",
+                "started_at_ms",
+                "ended_at_ms",
+                "worked_ms",
+            ],
         ),
         ("turn_failed", &["error", "turn_seq", "error_kind"]),
         ("slept_mid_turn", &["turn_seq", "slept_secs"]),
@@ -295,6 +301,7 @@ fn samples() -> Vec<SessionDelta> {
             turn_seq: 3,
             started_at_ms: Some(1_700_000_000_000),
             ended_at_ms: Some(1_700_000_252_000),
+            worked_ms: Some(251_400),
         },
         SessionDelta::TurnFailed {
             error: "boom".into(),
@@ -561,6 +568,7 @@ fn golden() -> BTreeMap<&'static str, serde_json::Value> {
                 "turn_seq": 3,
                 "started_at_ms": 1_700_000_000_000_i64,
                 "ended_at_ms": 1_700_000_252_000_i64,
+                "worked_ms": 251_400,
             }),
         ),
         (
@@ -723,10 +731,12 @@ fn optional_fields_are_omitted_rather_than_null() {
         turn_seq: 0,
         started_at_ms: None,
         ended_at_ms: None,
+        worked_ms: None,
     })
     .unwrap();
     assert!(value.get("started_at_ms").is_none());
     assert!(value.get("ended_at_ms").is_none());
+    assert!(value.get("worked_ms").is_none());
 
     let mut message = sample_message();
     message.worked_ms = None;

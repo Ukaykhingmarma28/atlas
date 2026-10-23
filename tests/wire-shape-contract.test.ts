@@ -459,10 +459,12 @@ describe("timing: tool-call and turn times ↔ the renderer (#10)", () => {
     expect(rust, "the TurnFinished variant").not.toBeNull();
     const ts = /kind: "turn_finished";([\s\S]*?)\}/.exec(wireTs);
     expect(ts, "the turn_finished member of AgentDelta").not.toBeNull();
-    for (const field of ["started_at_ms", "ended_at_ms"]) {
-      expect(rust![1]).toMatch(new RegExp(`\\b${field}: Option<i64>,`));
+    for (const field of ["started_at_ms", "worked_ms"]) {
+      expect(rust![1]).toMatch(new RegExp(`\\b${field}: Option<(i64|u64)>,`));
       expect(ts![1]).toMatch(new RegExp(`\\b${field}\\?: number;`));
       expect(store).toContain(`env.${field}`);
     }
+    expect(rust![1]).toMatch(/\bended_at_ms: Option<i64>,/);
+    expect(ts![1]).toMatch(/\bended_at_ms\?: number;/);
   });
 });

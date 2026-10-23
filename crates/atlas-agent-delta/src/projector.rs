@@ -755,21 +755,17 @@ impl SessionProjection {
                 deltas
             }
             AcpThreadEvent::StatusChanged => self.status_deltas(),
-            AcpThreadEvent::Stopped(stop_reason) => {
-                // The thread recorded this stop as it announced it, so its
-                // newest record is this turn's timing — the same figure a
-                // snapshot reads back after a reload.
-                let timing = lock_thread(&self.thread).turns().last().map(|turn| {
-                    (
-                        turn.started_at.map(|at| at.timestamp_millis()),
-                        turn.ended_at.timestamp_millis(),
-                    )
-                });
+            AcpThreadEvent::Stopped(stop_reason, turn) => {
+                // The event carries its own turn's record — the same figures a
+                // snapshot reads back after a reload. Read from the thread
+                // here instead, a stop drained behind a newer turn or a rewind
+                // would announce that one's times.
                 let mut deltas = vec![SessionDelta::TurnFinished {
                     stop_reason: project::stop_reason_token(stop_reason),
                     turn_seq: self.turn_seq,
-                    started_at_ms: timing.and_then(|(started, _)| started),
-                    ended_at_ms: timing.map(|(_, ended)| ended),
+                    started_at_ms: turn.started_at.map(|at| at.timestamp_millis()),
+                    ended_at_ms: Some(turn.ended_at.timestamp_millis()),
+                    worked_ms: turn.worked_ms,
                 }];
                 deltas.extend(self.status_deltas());
                 // A child launched to run on its own ends with the turn: no

@@ -1481,8 +1481,9 @@ function foldWork(
     answerStart -= 1;
   }
   const foldable = !o.live && answerStart > rowStart;
-  // A settled prose-only turn with no timing has nothing to say.
-  if (!o.live && !foldable && o.workedMs === null) return;
+  // A settled prose-only turn with no timing has nothing to say — unless the
+  // user stopped it, which the header says even without a figure.
+  if (!o.live && !foldable && o.workedMs === null && !o.stopped) return;
 
   const id = `wk:${o.turnId}`;
   const open = foldable && o.expandedTurns.has(id);

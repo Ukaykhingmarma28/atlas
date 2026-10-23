@@ -344,7 +344,16 @@ fn everything_that_can_change_a_row_writes_one() {
     for event in [
         AcpThreadEvent::NewEntry,
         AcpThreadEvent::TitleUpdated,
-        AcpThreadEvent::Stopped(acp::StopReason::EndTurn),
+        AcpThreadEvent::Stopped(
+            acp::StopReason::EndTurn,
+            atlas_acp_thread::TurnRecord {
+                started_at: None,
+                ended_at: chrono::Utc::now(),
+                stop_reason: acp::StopReason::EndTurn,
+                entries: 0..0,
+                worked_ms: None,
+            },
+        ),
         AcpThreadEvent::Error,
         AcpThreadEvent::Refusal,
         AcpThreadEvent::WorkingDirectoriesUpdated,

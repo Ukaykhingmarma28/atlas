@@ -752,6 +752,14 @@ describe("the work header", () => {
     expect(finished[1]).toMatchObject({ stopped: false });
   });
 
+  it("heads a stopped prose-only turn even with no figure to show", () => {
+    const rows = project([
+      user("u1", "2026-08-23T00:00:00Z"),
+      said("a1", "Partial.", { stopReason: "cancelled" }),
+    ]);
+    expect(rows[1]).toMatchObject({ kind: RowKind.WorkHeader, stopped: true, workedMs: null });
+  });
+
   it("is a plain caption on a prose-only turn, and absent when that turn was not timed", () => {
     const timed = project([
       user("u1", "2026-08-23T00:00:00Z"),

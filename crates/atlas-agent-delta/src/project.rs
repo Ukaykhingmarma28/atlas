@@ -585,18 +585,23 @@ pub fn snapshot_messages(
 /// stamping the one before would credit the previous turn's reply with this
 /// turn's time. This is the snapshot's counterpart of `turn_finished`, which
 /// the live client stamps onto the same message.
+///
+/// `entry_of` is ascending (messages are emitted in entry order), so each
+/// turn's last message is one binary search away rather than a scan.
 fn stamp_turns(out: &mut [Message], entry_of: &[usize], turns: &[atlas_acp_thread::TurnRecord]) {
     for turn in turns {
-        let Some(last) = entry_of.iter().rposition(|ix| turn.entries.contains(ix)) else {
+        let after = entry_of.partition_point(|ix| *ix < turn.entries.end);
+        let Some(last) = after.checked_sub(1) else {
             continue;
         };
+        if entry_of[last] < turn.entries.start {
+            continue;
+        }
         let message = &mut out[last];
         if message.role != MessageRole::Assistant {
             continue;
         }
-        message.worked_ms = turn.started_at.map(|started| {
-            u64::try_from((turn.ended_at - started).num_milliseconds()).unwrap_or(0)
-        });
+        message.worked_ms = turn.worked_ms;
         message.stop_reason = Some(stop_reason_token(turn.stop_reason));
     }
 }
@@ -864,5 +869,60 @@ mod permission_tests {
             wire["content"],
             serde_json::json!(["Sam Lee, on their comment", body])
         );
+    }
+}
+
+#[cfg(test)]
+mod turn_timing_tests {
+    use super::*;
+    use std::ops::Range;
+
+    fn reply(id: &str) -> Message {
+        run_message(
+            id.to_string(),
+            &Run {
+                is_thought: false,
+                text: "done".into(),
+            },
+            None,
+            chrono::Utc::now(),
+        )
+    }
+
+    fn record(entries: Range<usize>, worked_ms: u64) -> atlas_acp_thread::TurnRecord {
+        atlas_acp_thread::TurnRecord {
+            started_at: Some(chrono::Utc::now()),
+            ended_at: chrono::Utc::now(),
+            stop_reason: acp::StopReason::EndTurn,
+            entries,
+            worked_ms: Some(worked_ms),
+        }
+    }
+
+    /// The figure is the turn's monotonic run time, not its wall-clock span:
+    /// a turn the machine slept through for ten minutes worked for seconds.
+    #[test]
+    fn a_turn_is_credited_with_its_monotonic_time_not_its_wall_span() {
+        let mut turn = record(0..1, 5_000);
+        turn.started_at = Some(turn.ended_at - chrono::Duration::minutes(10));
+        let mut out = vec![reply("a")];
+        stamp_turns(&mut out, &[0], std::slice::from_ref(&turn));
+        assert_eq!(out[0].worked_ms, Some(5_000));
+        assert_eq!(out[0].stop_reason.as_deref(), Some("end_turn"));
+    }
+
+    /// Each turn lands on its own last message, found by search over the
+    /// ascending entry index, and an empty turn lands nowhere.
+    #[test]
+    fn each_turn_lands_on_its_own_last_message() {
+        // Entry 1 projects to two runs; entry 3 to one; entry 2 to none.
+        let mut out = vec![reply("a"), reply("b"), reply("c")];
+        stamp_turns(
+            &mut out,
+            &[1, 1, 3],
+            &[record(1..2, 10), record(2..3, 20), record(3..4, 30)],
+        );
+        let worked: Vec<_> = out.iter().map(|m| m.worked_ms).collect();
+        assert_eq!(worked, [None, Some(10), Some(30)]);
     }
 }

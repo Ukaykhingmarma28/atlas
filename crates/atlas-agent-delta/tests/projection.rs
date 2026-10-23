@@ -367,6 +367,7 @@ async fn a_turn_is_a_status_flip_and_a_terminal() {
             turn_seq,
             started_at_ms,
             ended_at_ms,
+            worked_ms,
         } => {
             // The token the frontend matches on, serialized rather than
             // hand-formatted (ATL-6 shipped "endturn").
@@ -376,6 +377,7 @@ async fn a_turn_is_a_status_flip_and_a_terminal() {
             // never has to time it itself.
             let (started, ended) = (started_at_ms.unwrap(), ended_at_ms.unwrap());
             assert!(started <= ended, "{started} > {ended}");
+            assert!(worked_ms.is_some(), "timed on the monotonic clock");
         }
         other => panic!("expected a terminal, got {other:?}"),
     }
@@ -2238,4 +2240,114 @@ fn a_snapshot_carries_each_turns_timing_on_its_last_message() {
     let json = serde_json::to_value(&messages[0]).unwrap();
     assert!(json.get("worked_ms").is_none(), "got: {json}");
     assert!(json.get("stop_reason").is_none(), "got: {json}");
+}
+
+fn chunk(harness: &Harness, text: &str) {
+    harness.update(serde_json::json!({
+        "sessionUpdate": "agent_message_chunk",
+        "content": { "type": "text", "text": text },
+    }));
+}
+
+/// A rewind inside a turn (`/undo`) must not leave the open turn counting
+/// from past the end of the thread: what the turn says after the rewind is
+/// its own, and is the message its timing belongs on.
+#[test]
+fn a_turn_rewound_into_still_times_what_it_says_next() {
+    let harness = Harness::start();
+    let prompt = |text: &str| {
+        lock(&harness.thread).push_user_content_block(
+            None,
+            acp::ContentBlock::Text(acp::TextContent::new(text.to_string())),
+        );
+    };
+
+    prompt("first");
+    lock(&harness.thread).begin_turn();
+    chunk(&harness, "first reply");
+    lock(&harness.thread).end_turn(acp::StopReason::EndTurn);
+
+    prompt("/undo");
+    lock(&harness.thread).begin_turn();
+    // The rewind takes the first exchange and the prompt back …
+    lock(&harness.thread).remove_entries_from(0);
+    // … and the turn then answers.
+    chunk(&harness, "undone");
+    lock(&harness.thread).end_turn(acp::StopReason::EndTurn);
+    harness.pump();
+
+    let messages = atlas_agent_delta::project::snapshot_messages(&lock(&harness.thread), None);
+    assert_eq!(messages.len(), 1, "{messages:?}");
+    assert_eq!(messages[0].content, "undone");
+    assert!(
+        messages[0].worked_ms.is_some(),
+        "the reply after the rewind is timed"
+    );
+    assert_eq!(messages[0].stop_reason.as_deref(), Some("end_turn"));
+}
+
+/// A stop that arrives after its turn already closed — a cancel answered
+/// behind the stop it raced — is swallowed, so it cannot relabel the finished
+/// turn as stopped.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_late_duplicate_stop_does_not_relabel_a_finished_turn() {
+    let harness = Harness::start();
+    lock(&harness.thread).push_user_content_block(
+        None,
+        acp::ContentBlock::Text(acp::TextContent::new("go".to_string())),
+    );
+    lock(&harness.thread).begin_turn();
+    chunk(&harness, "done");
+    lock(&harness.thread).end_turn(acp::StopReason::EndTurn);
+    lock(&harness.thread).end_turn(acp::StopReason::Cancelled);
+    harness.pump();
+
+    let finished: Vec<String> = harness
+        .recorder
+        .deltas()
+        .into_iter()
+        .filter_map(|delta| match delta {
+            SessionDelta::TurnFinished { stop_reason, .. } => Some(stop_reason),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(finished, ["end_turn"], "one terminal, the real one");
+    let messages = atlas_agent_delta::project::snapshot_messages(&lock(&harness.thread), None);
+    assert_eq!(
+        messages.last().unwrap().stop_reason.as_deref(),
+        Some("end_turn")
+    );
+}
+
+/// The terminal carries the turn it closed, not whatever the thread's newest
+/// record is when the projector gets to it: here a whole second turn runs
+/// before the first stop is drained.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_terminal_drained_late_announces_its_own_turn() {
+    let harness = Harness::start();
+    lock(&harness.thread).begin_turn();
+    std::thread::sleep(std::time::Duration::from_millis(30));
+    lock(&harness.thread).end_turn(acp::StopReason::EndTurn);
+    lock(&harness.thread).begin_turn();
+    lock(&harness.thread).end_turn(acp::StopReason::Cancelled);
+    harness.pump();
+
+    let finished: Vec<(String, u64)> = harness
+        .recorder
+        .deltas()
+        .into_iter()
+        .filter_map(|delta| match delta {
+            SessionDelta::TurnFinished {
+                stop_reason,
+                worked_ms,
+                ..
+            } => Some((stop_reason, worked_ms.unwrap())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(finished.len(), 2);
+    assert_eq!(finished[0].0, "end_turn");
+    assert!(finished[0].1 >= 30, "{finished:?}");
+    assert_eq!(finished[1].0, "cancelled");
+    assert!(finished[1].1 < 30, "{finished:?}");
 }

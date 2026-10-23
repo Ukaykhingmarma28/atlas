@@ -489,6 +489,7 @@ describe("applyAgentDelta: turn terminals", () => {
         turn_seq: 1,
         started_at_ms: 1_000,
         ended_at_ms: 458_000,
+        worked_ms: 457_000,
       }),
     );
     expect(messages()[0].role).toBe("user");
@@ -497,6 +498,68 @@ describe("applyAgentDelta: turn terminals", () => {
       workedMs: 457_000,
       stopReason: "cancelled",
     });
+  });
+
+  it("takes the monotonic figure, not the wall-clock span a sleep stretched", () => {
+    boundTab();
+    apply(
+      d("text_chunk", { message_id: "m", delta: "Done." }),
+      d("turn_finished", {
+        stop_reason: "end_turn",
+        turn_seq: 1,
+        started_at_ms: 1_000,
+        // Ten minutes of wall clock, most of it asleep …
+        ended_at_ms: 601_000,
+        // … and five seconds of work.
+        worked_ms: 5_000,
+      }),
+    );
+    expect(last().workedMs).toBe(5_000);
+  });
+
+  it("does not stamp a message from before the turn started (a rewind left it last)", () => {
+    boundTab();
+    apply(
+      d("text_chunk", { message_id: "m", delta: "Earlier reply." }),
+      d("turn_finished", {
+        stop_reason: "end_turn",
+        turn_seq: 1,
+        started_at_ms: 1_000,
+        ended_at_ms: 2_000,
+        worked_ms: 1_000,
+      }),
+    );
+    expect(last().workedMs).toBe(1_000);
+    // The `/undo` turn: it starts after that reply, says nothing of its own,
+    // and the rewind leaves the earlier reply as the trailing message.
+    const later = Date.parse(last().timestamp) + 60_000;
+    apply(
+      d("turn_finished", {
+        stop_reason: "end_turn",
+        turn_seq: 2,
+        started_at_ms: later,
+        ended_at_ms: later + 9_000,
+        worked_ms: 9_000,
+      }),
+    );
+    expect(last()).toMatchObject({ workedMs: 1_000, stopReason: "end_turn" });
+  });
+
+  it("ignores a late duplicate terminal that would relabel a finished turn", () => {
+    boundTab();
+    apply(
+      d("text_chunk", { message_id: "m", delta: "Done." }),
+      d("turn_finished", {
+        stop_reason: "end_turn",
+        turn_seq: 1,
+        started_at_ms: 1_000,
+        ended_at_ms: 2_000,
+        worked_ms: 1_000,
+      }),
+      // No turn behind it: Rust never saw one open.
+      d("turn_finished", { stop_reason: "cancelled", turn_seq: 1 }),
+    );
+    expect(last()).toMatchObject({ workedMs: 1_000, stopReason: "end_turn" });
   });
 
   it("turn_finished without times leaves the turn untimed rather than guessing", () => {

@@ -524,9 +524,14 @@ pub struct ToolCall {
     /// When the thread first saw this call. Set once, at construction; no
     /// update moves it.
     pub started_at: chrono::DateTime<chrono::Utc>,
-    /// When the call first reached a terminal status. Set once, by the thread
-    /// as it announces the change ([`AcpThread::entry_updated`]); a later
-    /// update to a call that has already ended does not move it.
+    /// The same moment on the monotonic clock, which is what the call's span
+    /// is measured on: a wall clock stepped by NTP (or by hand) mid-call would
+    /// otherwise stretch or shrink it.
+    pub started_clock: Instant,
+    /// When the call first reached a terminal status: `started_at` plus the
+    /// monotonic time it ran. Set once, by the thread as it announces the
+    /// change ([`AcpThread::entry_updated`]); a later update to a call that
+    /// has already ended does not move it.
     pub ended_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
@@ -564,6 +569,7 @@ impl ToolCall {
             launched_subagent,
             launched_async,
             started_at: chrono::Utc::now(),
+            started_clock: Instant::now(),
             ended_at: None,
         })
     }
@@ -580,9 +586,10 @@ impl ToolCall {
     }
 
     /// Stamp the end the first time the call is seen settled.
-    fn note_settled(&mut self, now: chrono::DateTime<chrono::Utc>) {
+    fn note_settled(&mut self) {
         if self.ended_at.is_none() && self.is_settled() {
-            self.ended_at = Some(now);
+            let ran = chrono::Duration::from_std(self.started_clock.elapsed()).unwrap_or_default();
+            self.ended_at = Some(self.started_at + ran);
         }
     }
 
@@ -976,7 +983,10 @@ pub enum AcpThreadEvent {
     ElicitationRequested(ElicitationEntryId),
     ElicitationResponded(ElicitationEntryId),
     Retry(RetryStatus),
-    Stopped(acp::StopReason),
+    /// The turn stopped. Carries the turn's own record, so a consumer that
+    /// drains events behind the thread reads THIS turn's timing rather than
+    /// whatever `AcpThread::turns` holds by the time it looks.
+    Stopped(acp::StopReason, TurnRecord),
     Error,
     LoadError(LoadError),
     PromptCapabilitiesUpdated,
@@ -1003,6 +1013,24 @@ pub struct TurnRecord {
     /// The entries the turn produced. The prompt is pushed before the turn
     /// opens, so this is the agent's half only.
     pub entries: Range<usize>,
+    /// How long it ran, on the monotonic clock — the figure "Worked for"
+    /// shows. Not `ended_at - started_at`: the wall clock can be stepped
+    /// mid-turn, and it keeps running while the machine sleeps, where the
+    /// monotonic clock pauses on macOS and Linux. The time a
+    /// `slept_mid_turn` notice reports is exactly that pause (the sleep
+    /// watch measures the wall clock running ahead of this one), so it is
+    /// already left out and must not be subtracted again. `None` with
+    /// `started_at`.
+    pub worked_ms: Option<u64>,
+}
+
+/// The open turn: when it began, on both clocks, and how many entries there
+/// were then.
+#[derive(Debug, Clone, Copy)]
+struct OpenTurn {
+    at: chrono::DateTime<chrono::Utc>,
+    clock: Instant,
+    entries: usize,
 }
 
 /// The turn currently in flight, if any. The send task lives with the caller, so
@@ -1110,7 +1138,7 @@ pub struct AcpThread {
     /// When the open turn began, and how many entries there were then. Kept
     /// apart from `running_turn` because a cancel clears that before the
     /// cancelled turn reports its own stop, and the stop still needs a start.
-    turn_opened: Option<(chrono::DateTime<chrono::Utc>, usize)>,
+    turn_opened: Option<OpenTurn>,
     /// Every turn that stopped, oldest first.
     turns: Vec<TurnRecord>,
     connection: Arc<dyn AgentConnection>,
@@ -1320,7 +1348,7 @@ impl AcpThread {
 
     fn note_settled(&mut self, ix: usize) {
         if let Some(AgentThreadEntry::ToolCall(call)) = self.entries.get_mut(ix) {
-            call.note_settled(chrono::Utc::now());
+            call.note_settled();
         }
     }
 
@@ -1339,6 +1367,11 @@ impl AcpThread {
         self.entry_created_at.truncate(from);
         // A turn whose output was taken back is not one to time any more.
         self.turns.retain(|turn| turn.entries.end <= from);
+        // And a turn still open counts from where the thread now ends: left
+        // past it, the turn's range would miss everything it goes on to say.
+        if let Some(open) = &mut self.turn_opened {
+            open.entries = open.entries.min(from);
+        }
         self.emit(AcpThreadEvent::EntriesRemoved(from..len));
     }
 
@@ -1729,6 +1762,7 @@ impl AcpThread {
                     raw_output: None,
                     tool_name: None,
                     started_at: chrono::Utc::now(),
+                    started_clock: Instant::now(),
                     ended_at: None,
                 };
                 self.push_entry(AgentThreadEntry::ToolCall(failed_tool_call));
@@ -2118,7 +2152,11 @@ impl AcpThread {
         self.cancel_inner(RequestPermissionOutcome::InterruptedByFollowUp);
         self.turn_id += 1;
         self.running_turn = Some(RunningTurn { id: self.turn_id });
-        self.turn_opened = Some((chrono::Utc::now(), self.entries.len()));
+        self.turn_opened = Some(OpenTurn {
+            at: chrono::Utc::now(),
+            clock: Instant::now(),
+            entries: self.entries.len(),
+        });
         self.emit(AcpThreadEvent::StatusChanged);
         self.turn_id
     }
@@ -2134,21 +2172,31 @@ impl AcpThread {
     /// `atlas-agent-delta`'s tests use `end_turn` as "announce Stopped" without
     /// a turn open. Adding the guard would break that use for a case nothing
     /// reaches. Checked while fixing `cancel_inner` below (ATL-218 finding 4).
+    ///
+    /// The one stop it does swallow is a second one for a turn already
+    /// closed: no turn opened since the last stop was recorded. That is a late
+    /// duplicate — a cancel answered after the stop it raced — and announcing
+    /// it would relabel the finished turn with the duplicate's reason. Only
+    /// the very first stop of a thread may arrive with no turn opened.
     pub fn end_turn(&mut self, stop_reason: acp::StopReason) {
+        let opened = self.turn_opened.take();
+        if opened.is_none() && !self.turns.is_empty() {
+            self.running_turn = None;
+            return;
+        }
         self.running_turn = None;
         self.last_stop_reason = Some(stop_reason);
-        let opened = self.turn_opened.take();
-        let start = opened.map_or_else(
-            || self.turns.last().map_or(0, |turn| turn.entries.end),
-            |(_, at)| at,
-        );
-        self.turns.push(TurnRecord {
-            started_at: opened.map(|(at, _)| at),
+        let start = opened.map_or(0, |turn| turn.entries);
+        let record = TurnRecord {
+            started_at: opened.map(|turn| turn.at),
             ended_at: chrono::Utc::now(),
             stop_reason,
             entries: start.min(self.entries.len())..self.entries.len(),
-        });
-        self.emit(AcpThreadEvent::Stopped(stop_reason));
+            worked_ms: opened
+                .map(|turn| u64::try_from(turn.clock.elapsed().as_millis()).unwrap_or(u64::MAX)),
+        };
+        self.turns.push(record.clone());
+        self.emit(AcpThreadEvent::Stopped(stop_reason, record));
         self.emit(AcpThreadEvent::StatusChanged);
     }
 

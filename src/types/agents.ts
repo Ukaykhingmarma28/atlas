@@ -388,6 +388,9 @@ export type AgentDelta =
       started_at_ms?: number;
       /** Epoch ms the turn stopped. */
       ended_at_ms?: number;
+      /** How long the turn ran, in ms, on Rust's monotonic clock — not
+       *  `ended_at_ms - started_at_ms`, which a sleep or a clock step bends. */
+      worked_ms?: number;
     }
   | {
       kind: "turn_failed";
