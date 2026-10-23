@@ -394,7 +394,28 @@ async fn build_project_index(
                         // directories instead of re-walking the whole
                         // project — agent file writes are tiny bursts,
                         // typically one parent dir per debounce.
-                        let (dirs_touched, full_refresh) = summarise_events(&events);
+                        let (dirs_touched, mut full_refresh) = summarise_events(&events);
+
+                        // A `.gitignore` edit changes which entries
+                        // `read_directories` flags as ignored, anywhere below
+                        // it: drop the cached matcher, and have the explorer
+                        // re-read what it has loaded rather than one folder.
+                        let gitignore_changed = events.iter().any(|e| {
+                            e.event
+                                .paths
+                                .iter()
+                                .any(|p| super::fs_entries::is_gitignore(p))
+                        });
+                        if gitignore_changed || full_refresh {
+                            super::fs_entries::invalidate(
+                                &root_for_watch,
+                                events
+                                    .iter()
+                                    .flat_map(|e| e.event.paths.iter().map(PathBuf::as_path)),
+                                full_refresh,
+                            );
+                        }
+                        full_refresh |= gitignore_changed;
 
                         apply_events(&root_for_watch, &files_for_watch, &gen_for_watch, events);
                         // Files just changed — drop the derived folder

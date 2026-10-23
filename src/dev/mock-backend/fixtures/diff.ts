@@ -19,6 +19,12 @@ import type {
   DiffSide,
   FileDiff,
 } from "@/features/git/lib/git-diff-api";
+import type {
+  DiffFileStat,
+  DiffFileStatus,
+  DiffPreview,
+  DiffSource,
+} from "@/features/git/lib/git-review-api";
 
 type LineOp = { kind: "eq" | "del" | "ins"; text: string };
 
@@ -274,4 +280,88 @@ export function lineStatusOf(diff: FileDiff): DiffLineStatus {
     pendingDelete = false;
   }
   return out;
+}
+
+// ── The review diff (`git_diff_preview`) ──────────────────────────────────
+
+/** One changed file as a fixture knows it: `null` on a side that does not exist. */
+export interface PreviewChange {
+  path: string;
+  before: string | null;
+  after: string | null;
+  status: DiffFileStatus;
+  binary?: boolean;
+}
+
+/** Rust caps each source's patch near here, cutting at a file boundary. */
+const PATCH_CAP = 120_000;
+
+/** FNV-1a over the patch and the file list: stable, cheap, and enough to key on. */
+function hashOf(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
+
+function previewSource(
+  kind: DiffSource["kind"],
+  changes: PreviewChange[],
+  baseRef: string | null,
+  mergeBase: string | null,
+): DiffSource {
+  const files: DiffFileStat[] = [];
+  let diff = "";
+  let truncated = false;
+  for (const change of changes) {
+    let patch: string;
+    let additions = 0;
+    let deletions = 0;
+    if (change.binary) {
+      patch = `diff --git a/${change.path} b/${change.path}\nBinary files a/${change.path} and b/${change.path} differ\n`;
+    } else {
+      patch = unifiedDiff(change.before ?? "", change.after ?? "", change.path);
+      for (const line of patch.split("\n")) {
+        if (line.startsWith("+") && !line.startsWith("+++")) additions++;
+        else if (line.startsWith("-") && !line.startsWith("---")) deletions++;
+      }
+    }
+    files.push({
+      path: change.path,
+      additions,
+      deletions,
+      status: change.status,
+      ...(change.binary ? { binary: true } : {}),
+    });
+    if (truncated || diff.length + patch.length > PATCH_CAP) truncated = true;
+    else diff += patch;
+  }
+  return {
+    kind,
+    baseRef,
+    mergeBase,
+    diff,
+    diffHash: hashOf(diff + JSON.stringify(files)),
+    truncated,
+    files,
+  };
+}
+
+/**
+ * What `git_diff_preview` answers for a fake repository: the working tree,
+ * then the branch range — which, with no commits of its own on the branch,
+ * is the same change set against the base.
+ */
+export function diffPreviewOf(
+  working: PreviewChange[],
+  range: { baseRef: string; mergeBase: string; changes?: PreviewChange[] },
+): DiffPreview {
+  return {
+    sources: [
+      previewSource("working-tree", working, null, null),
+      previewSource("branch-range", range.changes ?? working, range.baseRef, range.mergeBase),
+    ],
+  };
 }

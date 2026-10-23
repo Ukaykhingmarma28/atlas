@@ -29,6 +29,8 @@ import type { CodeGrepMatch, CodeGrepResult } from "@/components/code-search-api
 import type { BlameLine } from "@/features/git/lib/git-blame-api";
 import type { BranchPullRequest, RepoPullRequests } from "@/features/git/lib/git-pr-api";
 import type { CommitFile, DiffLineStatus, FileDiff } from "@/features/git/lib/git-diff-api";
+import type { DiffFileContents, DiffPreview } from "@/features/git/lib/git-review-api";
+import type { DirectoryListing } from "@/features/explorer/lib/fs-api";
 import type { GitErrorPayload } from "@/features/git/lib/git-errors";
 import type { BuiltGraph, CommitRow, LaneSegment } from "@/features/git/lib/git-graph";
 import type {
@@ -48,8 +50,8 @@ import type { CommitSession } from "@/features/git/components/commit-view";
 import type { RawGitStatus } from "@/features/terminal/components/block-terminal";
 import type { GitSummary } from "@/features/projects/stores/project-git-store";
 import type { MockArgs, MockHandlers, MockResponses, TypedHandlers } from "../types";
-import { buildFileDiff, lineStatusOf, unifiedDiff } from "../fixtures/diff";
-import { fsHandlers, listDir } from "../fixtures/files";
+import { buildFileDiff, diffPreviewOf, lineStatusOf, unifiedDiff } from "../fixtures/diff";
+import { directoryListings, fsHandlers, listDir } from "../fixtures/files";
 import { gitHandlers } from "../fixtures/git";
 import { NORTHWIND_LANE_COLOR, northwindFilesAt } from "../fixtures/northwind-repo";
 import type { CommitContent } from "./northwind-content-types";
@@ -823,6 +825,10 @@ export const northwindGitCommands: Partial<TypedHandlers<MockResponses>> = {
     return recents;
   },
   code_grep: (args) => (ours(args.path) ? grepWorktree(args) : fsHandlers.code_grep(args)),
+  read_directories: (args): DirectoryListing[] | Promise<DirectoryListing[]> =>
+    args.root === PROJECT.path
+      ? directoryListings(PROJECT.path, (args.paths ?? []) as string[], readDirectory, true)
+      : fsHandlers.read_directories(args),
 
   // ── git: status ─────────────────────────────────────────────────────────
   git_workspace_summary: (args) =>
@@ -948,6 +954,32 @@ export const northwindGitCommands: Partial<TypedHandlers<MockResponses>> = {
           .map((change) => unifiedDiff(change.before ?? "", change.after, change.path))
           .join("")
       : gitHandlers.git_diff_all(args),
+  // The review diff: the take's uncommitted work, and the same change set
+  // against `origin/main` (the branch's commits are already pushed).
+  git_diff_preview: (args): DiffPreview | Promise<DiffPreview> =>
+    ours(args.path)
+      ? diffPreviewOf(
+          changes().map((change) => ({
+            path: change.path,
+            before: change.before,
+            after: change.after,
+            status: change.before === null ? "untracked" : "modified",
+          })),
+          { baseRef: "origin/main", mergeBase: headCommit().sha },
+        )
+      : gitHandlers.git_diff_preview(args),
+  git_diff_file_contents: (args): DiffFileContents | Promise<DiffFileContents> => {
+    if (!ours(args.path)) return gitHandlers.git_diff_file_contents(args);
+    const file = String(args.filePath);
+    const change = changeFor(file);
+    const text = worktreeText(file) ?? "";
+    return {
+      oldText: change ? (change.before ?? "") : text,
+      newText: change ? change.after : text,
+      truncated: false,
+      binary: false,
+    };
+  },
   git_blame_file: (args): BlameLine[] | Promise<BlameLine[]> =>
     ours(args.path) ? blame(String(args.file)) : gitHandlers.git_blame_file(args),
   git_repo_pull_requests: (args): RepoPullRequests | Promise<RepoPullRequests> =>
