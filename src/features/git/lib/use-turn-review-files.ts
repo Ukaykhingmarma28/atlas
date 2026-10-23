@@ -104,7 +104,11 @@ export function useTurnEdits(
       const next = edits.sources[path];
       const prior = previous.current[path];
       sources[path] =
-        prior && prior.old === next.old && prior.new === next.new && prior.patch === next.patch
+        prior &&
+        prior.old === next.old &&
+        prior.new === next.new &&
+        prior.patch === next.patch &&
+        prior.deleted === next.deleted
           ? prior
           : next;
     }
@@ -119,8 +123,10 @@ export function useTurnEdits(
  * What happened to the file. Only a whole-file pair can say it was created or
  * deleted, by an empty side; an excerpt or a diff names part of a file that
  * exists either side, so an emptied fragment is a modification, not a delete.
+ * A delete the turn names outright is one, even of a file that was empty.
  */
 export function statusOfSource(source: TurnEdit, excerpt: boolean): DiffFileStat["status"] {
+  if (source.deleted) return "deleted";
   if (excerpt || source.patch !== undefined) return "modified";
   if (source.old === "" && source.new !== "") return "added";
   if (source.new === "" && source.old !== "") return "deleted";
@@ -193,6 +199,7 @@ function fingerprintOf(source: TurnEdit): string {
   if (fp === undefined) {
     fp = `${textFingerprint(source.old)}|${textFingerprint(source.new)}`;
     if (source.patch !== undefined) fp += `|${textFingerprint(source.patch)}`;
+    if (source.deleted) fp += "|deleted";
     fingerprints.set(source, fp);
   }
   return fp;
@@ -230,6 +237,8 @@ export function useTurnReviewFiles({
         queryFn: async () => {
           // The engine's own diff needs only its file headers to parse.
           // Its whitespace is as the engine diffed it.
+          // A pure rename has no diff: nothing changed under its header.
+          if (source.patch === "") return { fileDiff: null, state: "empty" } satisfies Loaded;
           if (source.patch !== undefined) {
             const patch = `--- a/${path}\n+++ b/${path}\n${source.patch}`;
             return loadedOf(path, { patch, binary: false, truncated: false }, status, prevName);

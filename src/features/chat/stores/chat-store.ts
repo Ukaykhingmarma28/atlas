@@ -75,16 +75,7 @@ function reconstructTurnSummaries(messages: ChatMessage[]): void {
           arguments: (tc.arguments ?? {}) as Record<string, unknown>,
           locations: tc.locations,
         });
-        for (const file of files) {
-          const ex = byPath.get(file.path);
-          if (!ex) byPath.set(file.path, file);
-          else {
-            ex.added += file.added;
-            ex.removed += file.removed;
-            if (file.kind === "edit") ex.kind = "edit";
-            if (file.created === false) ex.created = false;
-          }
-        }
+        for (const file of files) foldTurnFile(byPath, file);
       }
     }
     if (lastAsst >= 0) {
@@ -112,21 +103,40 @@ function reconstructTurnSummaries(messages: ChatMessage[]): void {
   flushTurn(turnStart, messages.length);
 }
 
-/** Collapse the per-turn tool-id map into one entry per file path, summing
- *  edit counts; `edit` wins over `read` when a file was both read and edited. */
+/** Fold one file a tool call touched into a turn's per-path entries, summing
+ *  edit counts; `edit` wins over `read`, and any real modify makes it "M". A
+ *  rename moves the entry of the path it left to the path it went to, so a
+ *  file edited then renamed in one turn is one entry: it keeps the earliest
+ *  origin, and a file the turn created stays created with no origin. */
+function foldTurnFile(byPath: Map<string, TurnFile>, file: TurnFile): void {
+  const left = file.movedFrom !== undefined ? byPath.get(file.movedFrom) : undefined;
+  if (left && file.movedFrom !== file.path) {
+    byPath.delete(left.path);
+    const moved: TurnFile = { ...left, path: file.path };
+    if (left.created) delete moved.movedFrom;
+    else moved.movedFrom = left.movedFrom ?? file.movedFrom;
+    const there = byPath.get(file.path);
+    byPath.delete(file.path);
+    byPath.set(file.path, moved);
+    if (there) foldTurnFile(byPath, { ...there, movedFrom: undefined });
+    foldTurnFile(byPath, { ...file, movedFrom: undefined, created: left.created ?? file.created });
+    return;
+  }
+  const ex = byPath.get(file.path);
+  if (!ex) {
+    byPath.set(file.path, { ...file });
+    return;
+  }
+  ex.added += file.added;
+  ex.removed += file.removed;
+  if (file.kind === "edit") ex.kind = "edit";
+  if (file.created === false) ex.created = false;
+}
+
+/** Collapse the per-turn tool-id map into one entry per file path. */
 function aggregateTurnFiles(tools: Record<string, TurnFile>): TurnFile[] {
   const byPath = new Map<string, TurnFile>();
-  for (const t of Object.values(tools)) {
-    const ex = byPath.get(t.path);
-    if (!ex) {
-      byPath.set(t.path, { ...t });
-      continue;
-    }
-    ex.added += t.added;
-    ex.removed += t.removed;
-    if (t.kind === "edit") ex.kind = "edit";
-    if (t.created === false) ex.created = false; // any real modify → "M"
-  }
+  for (const t of Object.values(tools)) foldTurnFile(byPath, t);
   return Array.from(byPath.values());
 }
 

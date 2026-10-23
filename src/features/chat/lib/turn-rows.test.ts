@@ -120,6 +120,22 @@ describe("a tool call that reports its edit as a diff content block", () => {
     expect(m.path).toBe("/repo/src/known.ts");
   });
 
+  it("opens a file the engine renamed where it went", () => {
+    const moved = toolCall({
+      id: "tc-move",
+      kind: "edit",
+      toolName: "Edit /repo/src/c.rs",
+      arguments: {
+        paths: ["/repo/src/c.rs"],
+        patch: "\n\nMoved to: /repo/src/d.rs",
+        changes: [
+          { path: "/repo/src/c.rs", kind: "rename", lines: [0, 0], movePath: "/repo/src/d.rs" },
+        ],
+      },
+    });
+    expect(markers(turn(moved))[0].path).toBe("/repo/src/d.rs");
+  });
+
   it("leaves a terminal block alone — it is output, not a diff", () => {
     const term = toolCall({
       id: "tc-term",

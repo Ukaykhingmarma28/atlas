@@ -32,9 +32,10 @@ export interface EnginePatchFile {
   /** `hunks`: an update's unified diff. `content`: the file's whole text, as
    *  created (or, from `patch` alone, possibly deleted). `deleted`: the whole
    *  text of a file the edit removed; only `changes` can say so.
+   *  `renamed`: a file moved to `movePath` with its content untouched.
    *  `unknown`: the text could not be split from its neighbour's. */
-  shape: "hunks" | "content" | "deleted" | "unknown";
-  /** The hunks, or the content; empty when `unknown`. */
+  shape: "hunks" | "content" | "deleted" | "renamed" | "unknown";
+  /** The hunks, or the content; empty when `renamed` or `unknown`. */
   text: string;
   added: number;
   removed: number;
@@ -44,6 +45,20 @@ export interface EnginePatchFile {
 
 /** The note the engine appends to a renamed file's diff. */
 const MOVED_TO = "Moved to: ";
+
+/**
+ * Where the file went, when `lines[at]` starts a rename note — else null.
+ *
+ * The engine writes `{diff}\n\nMoved to: <path>`, and a diff ends in its own
+ * newline, so the note is EXACTLY two blank lines, then `Moved to:`. One
+ * blank line is only the join, and what follows it is the next file: an
+ * added file whose first line reads "Moved to: x" is not a rename.
+ */
+function movedToAt(lines: readonly string[], at: number): string | null {
+  if (lines[at] !== "" || lines[at + 1] !== "") return null;
+  const note = lines[at + 2];
+  return note?.startsWith(MOVED_TO) ? note.slice(MOVED_TO.length) : null;
+}
 
 const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 
@@ -138,6 +153,9 @@ function fromChanges(changes: unknown, patch: string): EnginePatchFile[] | null 
       out.push({ path, shape: "content", text, added: lineCount(text), removed: 0 });
     } else if (kind === "delete") {
       out.push({ path, shape: "deleted", text, added: 0, removed: lineCount(text) });
+    } else if (kind === "rename" && "movePath" in moved && text.trim() === "") {
+      // Moved, not edited: nothing to diff, and still a change to show.
+      out.push({ path, shape: "renamed", text: "", added: 0, removed: 0, ...moved });
     } else {
       const run = hunkRunAt(text.split("\n"), 0);
       out.push(
@@ -190,15 +208,18 @@ export function enginePatchFiles(args: Record<string, unknown>): EnginePatchFile
       };
       out.push(file);
       // The diff's own trailing newline, then a rename note or the join's.
-      let next = run.end;
-      let blanks = next;
-      while (lines[blanks] === "" && blanks - next < 2) blanks++;
-      if (lines[blanks]?.startsWith(MOVED_TO)) {
-        const to = lines[blanks].slice(MOVED_TO.length);
+      const to = movedToAt(lines, run.end);
+      if (to !== null) {
         if (to) file.movePath = to;
-        next = blanks + 1;
-      } else if (lines[next] === "") next++;
-      pos = next;
+        pos = run.end + 3;
+      } else pos = lines[run.end] === "" ? run.end + 1 : run.end;
+      continue;
+    }
+    // A file moved and not edited: an empty diff, then its note.
+    const moved = movedToAt(lines, pos);
+    if (moved) {
+      out.push({ path, shape: "renamed", text: "", added: 0, removed: 0, movePath: moved });
+      pos += 3;
       continue;
     }
     if (last) {

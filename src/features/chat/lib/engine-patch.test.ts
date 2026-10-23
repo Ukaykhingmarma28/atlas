@@ -227,4 +227,61 @@ describe("a rename in a patch with no `changes`", () => {
     })!;
     expect(file).toMatchObject({ shape: "hunks", text: update, movePath: "/r/z.rs" });
   });
+
+  it("never reads a created file's first line as a rename note", () => {
+    // One blank line is only the join: what follows is the next file.
+    const content = "Moved to: /r/elsewhere.rs\nsecond\n";
+    const files = enginePatchFiles({
+      paths: ["/r/a.rs", "/r/b.rs"],
+      patch: join(update, content),
+    })!;
+    expect(files[0]).toEqual({
+      path: "/r/a.rs",
+      shape: "hunks",
+      text: update,
+      added: 1,
+      removed: 0,
+    });
+    expect(files[1]).toEqual({
+      path: "/r/b.rs",
+      shape: "content",
+      text: content,
+      added: 2,
+      removed: 0,
+    });
+  });
+
+  it("reads a file moved and not edited as renamed", () => {
+    const files = enginePatchFiles({
+      paths: ["/r/c.rs", "/r/a.rs"],
+      patch: join("\n\nMoved to: /r/z.rs", update),
+    })!;
+    expect(files).toEqual([
+      { path: "/r/c.rs", shape: "renamed", text: "", added: 0, removed: 0, movePath: "/r/z.rs" },
+      { path: "/r/a.rs", shape: "hunks", text: update, added: 1, removed: 0 },
+    ]);
+  });
+});
+
+describe("a rename with no diff in `changes`", () => {
+  it("is renamed, with nothing to show under it", () => {
+    const args = {
+      paths: ["/r/c.rs"],
+      patch: "\n\nMoved to: /r/z.rs",
+      changes: [{ path: "/r/c.rs", kind: "rename", lines: [0, 0], movePath: "/r/z.rs" }],
+    };
+    expect(enginePatchFiles(args)).toEqual([
+      { path: "/r/c.rs", shape: "renamed", text: "", added: 0, removed: 0, movePath: "/r/z.rs" },
+    ]);
+    expect(turnFilesOfToolCall({ toolName: "Edit", kind: "edit", arguments: args })).toEqual([
+      {
+        path: "/r/z.rs",
+        kind: "edit",
+        added: 0,
+        removed: 0,
+        created: false,
+        movedFrom: "/r/c.rs",
+      },
+    ]);
+  });
 });

@@ -393,8 +393,8 @@ describe("edits the native engine reported with per-file `changes`", () => {
   it("keeps created and deleted files apart, each whole", () => {
     expect(edits.files).toEqual(["src/a.rs", "src/b.rs"]);
     expect(edits.sources["src/a.rs"]).toEqual({ old: "", new: "fn a() {}\n" });
-    // Its old text against nothing: the review panel calls it deleted.
-    expect(edits.sources["src/b.rs"]).toEqual({ old: "fn b() {}\n", new: "" });
+    // Its old text against nothing, named a delete outright.
+    expect(edits.sources["src/b.rs"]).toEqual({ old: "fn b() {}\n", new: "", deleted: true });
     expect(edits.excerpts.size).toBe(0);
     expect(edits.renames).toBeUndefined();
   });
@@ -422,6 +422,87 @@ describe("edits the native engine reported with per-file `changes`", () => {
     expect(renamed.files).toEqual(["src/d.rs"]);
     expect(renamed.sources["src/d.rs"].patch).toBe(hunks);
     expect(renamed.renames).toEqual({ "src/d.rs": "src/c.rs" });
+  });
+});
+
+/** An engine edit that moves `from` to `to`, with `hunks` as its diff. */
+const engineRename = (id: string, from: string, to: string, hunks: string) =>
+  toolCall({
+    id,
+    toolName: `Edit /repo/${from}`,
+    kind: "edit",
+    arguments: {
+      paths: [`/repo/${from}`],
+      patch: `${hunks}\n\nMoved to: /repo/${to}`,
+      changes: [
+        {
+          path: `/repo/${from}`,
+          kind: "rename",
+          lines: [0, hunks === "" ? 0 : hunks.split("\n").length],
+          movePath: `/repo/${to}`,
+        },
+      ],
+    },
+  });
+
+describe("a file the engine renamed", () => {
+  const hunks = "@@ -1 +1 @@\n-c\n+d\n";
+
+  it("opens where it went when asked for by where it was", () => {
+    const edits = collectTurnEdits(
+      turn(engineRename("n1", "src/c.rs", "src/d.rs", hunks)),
+      "t:m1",
+      REPO,
+      "/repo/src/c.rs",
+    );
+    expect(edits.initial).toBe("src/d.rs");
+  });
+
+  it("is one file when edited, then renamed, in the same turn", () => {
+    const messages = [
+      message("u0", "user"),
+      ...turn(
+        engineEdit("n1", [["src/c.rs", "@@ -1 +1 @@\n-a\n+c\n"]]),
+        engineRename("n2", "src/c.rs", "src/d.rs", hunks),
+      ),
+    ];
+    const edits = collectTurnEdits(messages, "tc:n1", REPO);
+    expect(edits.files).toEqual(["src/d.rs"]);
+    expect(edits.renames).toEqual({ "src/d.rs": "src/c.rs" });
+    expect(listEditTurns(messages, REPO).map((t) => t.fileCount)).toEqual([1]);
+  });
+
+  it("has an empty diff when it was moved and not edited", () => {
+    const edits = collectTurnEdits(
+      turn(engineRename("n1", "src/c.rs", "src/d.rs", "")),
+      "t:m1",
+      REPO,
+    );
+    expect(edits.files).toEqual(["src/d.rs"]);
+    expect(edits.sources["src/d.rs"]).toEqual({ old: "", new: "", patch: "" });
+    expect(edits.renames).toEqual({ "src/d.rs": "src/c.rs" });
+  });
+});
+
+describe("a file the engine deleted", () => {
+  it("is named deleted even when it was empty", () => {
+    const edits = collectTurnEdits(
+      turn(
+        toolCall({
+          id: "n1",
+          toolName: "Edit /repo/src/empty.rs",
+          kind: "edit",
+          arguments: {
+            paths: ["/repo/src/empty.rs"],
+            patch: "",
+            changes: [{ path: "/repo/src/empty.rs", kind: "delete", lines: [0, 0] }],
+          },
+        }),
+      ),
+      "t:m1",
+      REPO,
+    );
+    expect(edits.sources["src/empty.rs"]).toEqual({ old: "", new: "", deleted: true });
   });
 });
 

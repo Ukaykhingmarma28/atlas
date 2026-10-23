@@ -292,10 +292,34 @@ describe("useTurnReviewFiles", () => {
     });
   });
 
+  it("shows a file moved and not edited as renamed, with nothing under it", async () => {
+    const input: TurnEdits = {
+      files: ["src/d.rs"],
+      initial: "src/d.rs",
+      sources: { "src/d.rs": { old: "", new: "", patch: "" } },
+      excerpts: new Set(),
+      renames: { "src/d.rs": "src/c.rs" },
+    };
+    const { result } = renderHook(
+      () => useTurnReviewFiles({ edits: input, ignoreWhitespace: false }),
+      { wrapper: wrapper() },
+    );
+    await waitFor(() => expect(result.current.files[0].state).toBe("empty"));
+    const [file] = result.current.files;
+    expect(diffTextsPatch).not.toHaveBeenCalled();
+    expect(file.stat).toMatchObject({ status: "renamed", oldPath: "src/c.rs", additions: 0 });
+    expect(file.fileDiff).toMatchObject({ prevName: "src/c.rs", type: "rename-changed" });
+  });
+
   it("calls an emptied fragment a modification, never a deleted file", () => {
     expect(statusOfSource({ old: "block\n", new: "" }, true)).toBe("modified");
     expect(statusOfSource({ old: "file\n", new: "" }, false)).toBe("deleted");
     expect(statusOfSource({ old: "", new: "file\n" }, false)).toBe("added");
+  });
+
+  it("calls a file the turn deleted deleted, even one that was empty", () => {
+    expect(statusOfSource({ old: "", new: "", deleted: true }, false)).toBe("deleted");
+    expect(statusOfSource({ old: "", new: "" }, false)).toBe("modified");
   });
 
   it("reports a failed diff as an error the row can retry", async () => {
