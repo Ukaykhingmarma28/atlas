@@ -492,9 +492,6 @@ pub struct AppSettings {
     /// Chat column width.
     #[serde(default)]
     pub chat_width: ChatWidth,
-    /// Wrap long lines in chat code blocks; off scrolls them sideways.
-    #[serde(default = "default_true")]
-    pub chat_code_wrap: bool,
     /// Wrap long lines in file views and diffs; off scrolls them sideways.
     #[serde(default = "default_true")]
     pub word_wrap: bool,
@@ -651,7 +648,6 @@ impl Default for AppSettings {
             confirm_quit_while_running: true,
             default_agent: default_agent(),
             chat_width: ChatWidth::default(),
-            chat_code_wrap: true,
             word_wrap: true,
             sidebar_sort: SidebarSort::default(),
             auto_settle_after_days: DEFAULT_AUTO_SETTLE_AFTER_DAYS,
@@ -1116,7 +1112,6 @@ pub struct SettingsPatch {
     pub confirm_quit_while_running: Option<bool>,
     pub default_agent: Option<String>,
     pub chat_width: Option<ChatWidth>,
-    pub chat_code_wrap: Option<bool>,
     pub word_wrap: Option<bool>,
     pub sidebar_sort: Option<SidebarSort>,
     pub auto_settle_after_days: Option<u32>,
@@ -1279,7 +1274,6 @@ impl SettingsPatch {
             confirm_quit_while_running,
             default_agent,
             chat_width,
-            chat_code_wrap,
             word_wrap,
             sidebar_sort,
             auto_settle_after_days,
@@ -1346,7 +1340,6 @@ impl SettingsPatch {
         set_bool!(notify_permission_actions, "notifyPermissionActions");
         set_bool!(confirm_delete_chat, "confirmDeleteChat");
         set_bool!(confirm_quit_while_running, "confirmQuitWhileRunning");
-        set_bool!(chat_code_wrap, "chatCodeWrap");
         set_bool!(word_wrap, "wordWrap");
         set_bool!(diff_ignore_whitespace, "diffIgnoreWhitespace");
         set_bool!(diff_files_collapsed, "diffFilesCollapsed");
@@ -2523,7 +2516,6 @@ someFutureKey = \"left alone\"
             confirm_quit_while_running: Some(!defaults.confirm_quit_while_running),
             default_agent: Some("claude-code".to_string()),
             chat_width: Some(ChatWidth::Wide),
-            chat_code_wrap: Some(!defaults.chat_code_wrap),
             word_wrap: Some(!defaults.word_wrap),
             sidebar_sort: Some(SidebarSort::Created),
             auto_settle_after_days: Some(7),

@@ -2070,8 +2070,8 @@
   overflow-wrap: anywhere;
   overflow: hidden;
 }
-/* `chatCodeWrap` off: long lines keep their shape and the block scrolls. */
-html[data-chat-code-wrap="off"] .prose-chat pre {
+/* `wordWrap` off: long lines keep their shape and the block scrolls. */
+html[data-word-wrap="off"] .prose-chat pre {
   white-space: pre;
   word-break: normal;
   overflow-wrap: normal;

@@ -198,12 +198,8 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
         "# How wide the conversation and the composer may grow: \"normal\" (760 pixels),\n# \"wide\" (1080 pixels) or \"full\" (the whole panel). (default: \"normal\")",
     ),
     (
-        "chatCodeWrap",
-        "# Wrap long lines in a session's code blocks. Off: they keep their lines and\n# scroll sideways. (default: true)",
-    ),
-    (
         "wordWrap",
-        "# Wrap long lines in file tabs and diffs. Off: lines keep their shape and\n# scroll sideways. The wrap button in a file's or the review diff's header\n# flips this same setting. A session's code blocks follow chatCodeWrap\n# instead. (default: true)",
+        "# Wrap long lines in file tabs, diffs and a session's code blocks. Off: lines\n# keep their shape and scroll sideways. The wrap button in a file's or the\n# review diff's header flips this same setting. (default: true)",
     ),
     (
         "sidebarSort",

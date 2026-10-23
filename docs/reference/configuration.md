@@ -200,7 +200,6 @@ bookkeeping).
 | `confirmQuitWhileRunning` | boolean | `true` | General › Confirmations › Confirm before quitting while an agent is running | — |
 | `defaultAgent` | string | `"atlas-agent"` | Sessions › New sessions › Default agent (per project too) | a non-empty agent id; one that isn't installed falls back to Atlas Agent |
 | `chatWidth` | `"normal"` \| `"wide"` \| `"full"` | `"normal"` | Appearance › Interface › Session width | exactly one of these three strings |
-| `chatCodeWrap` | boolean | `true` | Sessions › Layout › Wrap code in sessions | — |
 | `wordWrap` | boolean | `true` | Appearance › Interface › Word wrap | — |
 | `sidebarSort` | `"recent"` \| `"created"` | `"recent"` | Sessions › Layout › Sort sessions by | exactly one of these two strings |
 | `autoSettleAfterDays` | integer | `3` | Sessions › Layout › Settle idle sessions after | 0 ≤ n ≤ 90 |
