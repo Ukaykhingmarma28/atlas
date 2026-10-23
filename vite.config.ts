@@ -257,8 +257,36 @@ export default defineConfig(() => ({
                 (id.includes("react-markdown") ||
                   id.includes("remark-") ||
                   id.includes("rehype-") ||
-                  id.includes("shiki") ||
                   id.includes("highlight.js")),
+            },
+            // The diff viewer: `@pierre/diffs` and Shiki's core, reached only
+            // through the lazy diff panel. BELOW vendor-markdown on purpose: the
+            // two share hast utilities (`hast-util-to-html` and its tree), and
+            // a group captures its modules' dependencies, so at a higher
+            // priority this chunk took them and the eagerly-loaded markdown
+            // chunk then imported it, preloading the whole viewer at startup.
+            //
+            // Grammars, themes and the Oniguruma WASM are deliberately NOT in
+            // it. Shiki imports each grammar dynamically, so each keeps its own
+            // chunk and a TypeScript diff loads TypeScript alone; capturing them
+            // here would collapse ~300 lazy boundaries into one multi-MB chunk
+            // fetched on first open. The WASM is loaded by the workers, which
+            // Vite bundles separately (`?worker`), so it never enters this one.
+            {
+              name: "vendor-diffs",
+              priority: 55,
+              test: (id) =>
+                !id.endsWith(".css") &&
+                id.includes("node_modules") &&
+                (id.includes("/@pierre/diffs/") ||
+                  id.includes("/@pierre/theming/") ||
+                  id.includes("/shiki/") ||
+                  id.includes("/@shikijs/")) &&
+                !id.includes("/@shikijs/langs/") &&
+                !id.includes("/@shikijs/themes/") &&
+                !id.includes("/shiki/dist/langs") &&
+                !id.includes("/shiki/dist/themes") &&
+                !/wasm/i.test(id),
             },
             {
               name: "vendor-base-ui",
