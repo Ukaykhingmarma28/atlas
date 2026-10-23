@@ -7,17 +7,17 @@ describe("profile transfer", () => {
       id: "profile-x",
       name: "Mine",
       basedOn: "zed",
-      bindings: { "tabs.close": ["cmd+w"], "panels.left": null },
+      bindings: { "tabs.close": ["cmd+w"], "panels.files": null },
     });
     expect(text).not.toContain("profile-x");
-    expect(text.indexOf("panels.left")).toBeLessThan(text.indexOf("tabs.close"));
+    expect(text.indexOf("panels.files")).toBeLessThan(text.indexOf("tabs.close"));
     const back = importProfile(text);
     expect(back).toEqual({
       ok: true,
       profile: {
         name: "Mine",
         basedOn: "zed",
-        bindings: { "panels.left": null, "tabs.close": ["cmd+w"] },
+        bindings: { "panels.files": null, "tabs.close": ["cmd+w"] },
       },
       unknownActionIds: [],
       unknownPresetId: null,

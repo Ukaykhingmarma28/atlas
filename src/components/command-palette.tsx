@@ -11,7 +11,6 @@ import {
   Globe,
   Terminal,
   Settings,
-  PanelLeft,
   PanelRight,
   MessageSquare,
   Map,
@@ -57,16 +56,8 @@ export function CommandPalette({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const {
-    addTab,
-    toggleLeftPanel,
-    toggleChatSidebar,
-    toggleZenMode,
-    setLeftSection,
-    addGroup,
-    focusAdjacentGroup,
-    closeGroup,
-  } = useLayoutStore.use.actions();
+  const { addTab, toggleChatSidebar, toggleZenMode, addGroup, focusAdjacentGroup, closeGroup } =
+    useLayoutStore.use.actions();
   const { openProject } = useAppStore.use.actions();
 
   const handleOpenFolder = async () => {
@@ -99,12 +90,6 @@ export function CommandPalette({
       dirty: false,
       data: {},
     });
-
-  // Reveal the sidebar (toggle it on if hidden) then switch its active section.
-  const showLeft = (section: "files" | "knowledge") => {
-    if (!useLayoutStore.getState().leftPanel.visible) toggleLeftPanel();
-    setLeftSection(section);
-  };
 
   const commands = useMemo<Command[]>(
     () => [
@@ -195,14 +180,6 @@ export function CommandPalette({
 
       // ── Layout toggles ──
       {
-        id: "toggle-left",
-        label: "Toggle Left Panel",
-        actionId: "panels.left",
-        icon: PanelLeft,
-        category: "Layout",
-        action: toggleLeftPanel,
-      },
-      {
         id: "toggle-right",
         label: "Toggle Source Control",
         actionId: "panels.right",
@@ -269,27 +246,14 @@ export function CommandPalette({
         action: () => closeGroup(useLayoutStore.getState().focusedGroupId),
       },
 
-      // ── Views (reveal the panel, then switch its section) ──
-      {
-        id: "view-files",
-        label: "Show File Explorer",
-        icon: PanelLeft,
-        category: "View",
-        action: () => showLeft("files"),
-      },
+      // ── Views (reveal the surface, opening it if needed) ──
       {
         id: "view-project-files",
         label: "Show Files",
+        actionId: "panels.files",
         icon: FolderTree,
         category: "View",
-        action: revealFiles,
-      },
-      {
-        id: "view-knowledge",
-        label: "Show Knowledge Sidebar",
-        icon: Brain,
-        category: "View",
-        action: () => showLeft("knowledge"),
+        action: () => revealFiles(),
       },
       {
         id: "view-changes",
@@ -324,16 +288,7 @@ export function CommandPalette({
         action: () => window.dispatchEvent(new CustomEvent("atlas:open-capture")),
       },
     ],
-    [
-      addTab,
-      toggleLeftPanel,
-      toggleChatSidebar,
-      toggleZenMode,
-      setLeftSection,
-      addGroup,
-      focusAdjacentGroup,
-      closeGroup,
-    ],
+    [addTab, toggleChatSidebar, toggleZenMode, addGroup, focusAdjacentGroup, closeGroup],
   );
 
   const filtered = useMemo(() => {

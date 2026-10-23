@@ -1,5 +1,6 @@
+import { useFilesRevealStore } from "@/features/explorer/stores/files-reveal-store";
 import type { Tab } from "../stores/layout-store";
-import { revealSingleton } from "./singleton-surface";
+import { revealSingleton, toggleSingleton } from "./singleton-surface";
 
 /**
  * Files is a surface: the project's tree, in a tab beside the session. One per
@@ -19,7 +20,18 @@ export const FILES_TAB: Tab = {
   data: {},
 };
 
-/** Bring the project's Files tab on screen, opening it when there is none. */
-export function revealFiles(): void {
+/**
+ * Bring the project's Files tab on screen, opening it when there is none. With
+ * `path` (absolute), the tree opens every folder above it and highlights it;
+ * without, it follows the file being read.
+ */
+export function revealFiles(path?: string): void {
+  useFilesRevealStore.getState().actions.reveal(path ?? null);
   revealSingleton(FILES_TAB);
+}
+
+/** Close the Files tab when it is on screen, else reveal it. */
+export function toggleFiles(): void {
+  useFilesRevealStore.getState().actions.reveal(null);
+  toggleSingleton(FILES_TAB);
 }

@@ -18,7 +18,7 @@ export interface ReviewPanelProps {
 export function ReviewPanel({ tabId, repoPath, sessionId = null }: ReviewPanelProps) {
   const files = (
     <Hint label="Files">
-      <IconButton size="sm" icon={FolderTree} label="Show files" onClick={revealFiles} />
+      <IconButton size="sm" icon={FolderTree} label="Show files" onClick={() => revealFiles()} />
     </Hint>
   );
   return <DiffPanel tabId={tabId} repoPath={repoPath} sessionId={sessionId} leading={files} />;

@@ -105,7 +105,7 @@ export const PRESETS: readonly Preset[] = [
     bindings: {
       "nav.commandPalette": ["cmd+shift+a"],
       "nav.filePicker": ["cmd+shift+o"],
-      "panels.left": ["cmd+1"],
+      "panels.files": ["cmd+1"],
       "panels.terminal": ["alt+f12"],
       // ⌘0 Commit, ⌘9 Git — both open Source Control in Atlas.
       "panels.right": ["cmd+0", "cmd+9"],

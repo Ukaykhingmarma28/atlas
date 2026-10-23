@@ -72,4 +72,23 @@ describe("Files surface", () => {
     act(() => (treeProps.current!.onFileOpened as (p: string) => void)("/p/src/a.ts"));
     expect(layout().tabs.some((t) => t.type === "files")).toBe(false);
   });
+
+  it("reveals a path asked for, again on a second ask, and follows the reader without one", async () => {
+    revealFiles("/p/src/deep/a.ts");
+    const id = layout().tabs.find((t) => t.type === "files")!.id;
+    render(<FilesPanel tabId={id} projectId="w-1" />);
+    await waitFor(() => expect(treeProps.current?.activeFile).toBe("/p/src/deep/a.ts"));
+    const first = treeProps.current!.revealNonce;
+
+    act(() => revealFiles("/p/src/deep/a.ts"));
+    expect(treeProps.current!.activeFile).toBe("/p/src/deep/a.ts");
+    expect(treeProps.current!.revealNonce).not.toBe(first);
+
+    // Another project's path is not this tree's to show.
+    act(() => revealFiles("/elsewhere/b.ts"));
+    expect(treeProps.current!.activeFile).toBeUndefined();
+
+    act(() => revealFiles());
+    expect(treeProps.current!.activeFile).toBeUndefined();
+  });
 });

@@ -29,7 +29,6 @@ export function seedWindow() {
     activeByGroup: { main: "editor:/p/src/App.tsx", g2: "terminal-1" },
     focusedGroupId: "main",
     activeTabId: "editor:/p/src/App.tsx",
-    leftPanel: { visible: true, width: 240, activeSection: "files" },
     sourceControl: { section: "changes" },
     chatSidebar: { visible: true, width: 240, settledExpanded: false },
     zen: false,

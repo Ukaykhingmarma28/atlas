@@ -492,7 +492,7 @@ mod tests {
         file.profiles.push(profile(
             "mine",
             &[
-                ("panels.left", Some(&["cmd+shift+l"])),
+                ("panels.files", Some(&["cmd+shift+l"])),
                 ("panels.right", None),
             ],
         ));
@@ -522,7 +522,7 @@ mod tests {
         let mut file = KeybindingsFile::default();
         file.profiles[0]
             .bindings
-            .insert("panels.left".into(), Some(vec!["cmd+x".into()]));
+            .insert("panels.files".into(), Some(vec!["cmd+x".into()]));
         let warnings = normalize(&mut file);
         assert!(file.profiles[0].bindings.is_empty());
         assert_eq!(warnings.len(), 1);

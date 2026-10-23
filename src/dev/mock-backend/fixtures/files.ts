@@ -12,10 +12,9 @@
 // mtime, so save → reload → diff behaves like a real round trip for the rest of
 // the session. The explorer's context menu writes through the same map — create,
 // rename, delete, copy, duplicate — so a file created in the tree is a file
-// `read_directory`, Cmd+P and the editor all agree exists.
+// `read_directories`, Cmd+P and the editor all agree exists.
 
 import { emit } from "@tauri-apps/api/event";
-import type { FileEntry } from "@/features/explorer/stores/explorer-store";
 import type { DirectoryListing, ProjectEntry } from "@/features/explorer/lib/fs-api";
 import type {
   FileIndexStatus,
@@ -757,8 +756,19 @@ function byteLength(file: MockFile): number {
   return Math.floor(((file.base64?.length ?? 0) * 3) / 4);
 }
 
+/** One entry of a fake directory listing: what `listDir` and the tree builders
+ *  answer, before `directoryListings` makes it root-relative. */
+export interface FileEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  is_symlink: boolean;
+  size: number;
+  extension: string | null;
+}
+
 /**
- * `read_directory` over the fake tree: one level of the seeded file map, with
+ * One level of the fake tree, as `fs::read_dir` would list it, with
  * the directories that contain those files synthesised. Paths outside the
  * project root list as empty rather than throwing — the sidebar asks about
  * every project it knows, and only this one has files.
@@ -766,8 +776,8 @@ function byteLength(file: MockFile): number {
 export function listDir(absPath: string): FileEntry[] {
   const root = MOCK_PROJECT.path;
   if (absPath !== root && !absPath.startsWith(`${root}/`)) return [];
-  // Rust refuses a path that is not a directory outright, and the explorer's
-  // collision probe leans on that failing rather than returning nothing.
+  // Rust refuses a path that is not a directory outright, and the tree's
+  // listing reports that as the folder's error rather than an empty one.
   if (files.has(absPath)) throw new Error(`Not a directory: ${absPath}`);
   const rel = absPath === root ? "" : `${absPath.slice(root.length + 1).replace(/\/$/, "")}/`;
 
@@ -844,7 +854,7 @@ const isDirEntry = (entry: ProjectEntry) => entry.kind === "directory";
 const nameOf = (entry: ProjectEntry) => entry.path.slice(entry.path.lastIndexOf("/") + 1);
 
 /**
- * `read_directories` over any fake tree that already answers `read_directory`:
+ * `read_directories` over any fake tree that one-level `list` answers:
  * the same listing, made root-relative, with the ignored overlay merged in
  * when `withIgnored`. Directories first, then case-insensitive by name.
  */
@@ -1161,7 +1171,7 @@ export const fsHandlers: TypedHandlers<FsResponses> = {
   },
 
   // ── explorer context menu ───────────────────────────────────────────────
-  // Every one of these mutates the same map `read_directory` and the editor
+  // Every one of these mutates the same map `read_directories` and the editor
   // read from, so the tree, Cmd+P and any open tab stay in agreement. The
   // failure cases matter more than the happy path here: each one is a toast the
   // explorer renders and nothing else in the app can produce.

@@ -161,8 +161,8 @@ export const ACTIONS = [
   },
   // ── Panels ──
   {
-    id: "panels.left",
-    title: "Toggle left panel",
+    id: "panels.files",
+    title: "Show Files",
     category: "Panels",
     when: "global",
     defaults: ["cmd+b"],

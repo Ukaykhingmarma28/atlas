@@ -2,7 +2,7 @@
 // helpers that turn a relative path into the absolute one Rust would see.
 //
 // The tree itself lives in `fixtures/files.ts` (with the files' real content),
-// so `read_directory` and `read_file_content` can never disagree about which
+// so `read_directories` and `read_file_content` can never disagree about which
 // files exist.
 
 import type { AppStateWire } from "@/features/app/stores/app-store";

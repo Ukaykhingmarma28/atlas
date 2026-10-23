@@ -18,7 +18,6 @@
 // names those sessions, and the files' HEAD text and blame move to match.
 
 import { emit } from "@tauri-apps/api/event";
-import type { FileEntry } from "@/features/explorer/stores/explorer-store";
 import type {
   FileIndexStatus,
   FileMatch,
@@ -53,7 +52,7 @@ import type { ConflictState } from "@/features/git/components/git-manager/confli
 import type { CommitSession } from "@/features/git/components/commit-view";
 import type { RawGitStatus } from "@/features/terminal/components/block-terminal";
 import type { GitSummary } from "@/features/projects/stores/project-git-store";
-import type { MockArgs, MockHandlers, MockResponses, TypedHandlers } from "../types";
+import type { MockArgs, MockResponses, TypedHandlers } from "../types";
 import {
   buildFileDiff,
   diffPreviewOf,
@@ -61,7 +60,7 @@ import {
   unifiedDiff,
   type FileDiff,
 } from "../fixtures/diff";
-import { directoryListings, fsHandlers, listDir } from "../fixtures/files";
+import { directoryListings, fsHandlers, type FileEntry } from "../fixtures/files";
 import { gitHandlers } from "../fixtures/git";
 import { NORTHWIND_LANE_COLOR, northwindFilesAt } from "../fixtures/northwind-repo";
 import type { CommitContent } from "./northwind-content-types";
@@ -593,7 +592,7 @@ function commitStaged(summary: string, description: string, coAuthors: string[])
 
 const byteLength = (text: string): number => new TextEncoder().encode(text).length;
 
-/** `read_directory` for the northwind tree: directories first, then files, case-insensitively. */
+/** One level of the northwind tree: directories first, then files, case-insensitively. */
 function readDirectory(path: string): FileEntry[] {
   const at = rel(path) ?? "";
   if (head.has(at) || edits.has(at)) throw new Error(`Not a directory: ${path}`);
@@ -1106,15 +1105,6 @@ function discard(files: string[]): void {
     notifyChanged();
   }
 }
-
-/**
- * Commands no fixture declares a response type for: `read_directory` is an
- * inline handler in `base.ts`, so it is overridden here, untyped.
- */
-export const northwindGitRawCommands: MockHandlers = {
-  read_directory: ({ path }): FileEntry[] =>
-    ours(path) ? readDirectory(String(path)) : listDir(String(path)),
-};
 
 /** The file on disk right now, for the scripted run that builds `pending` from it. */
 export function northwindFileText(path: string): string | undefined {

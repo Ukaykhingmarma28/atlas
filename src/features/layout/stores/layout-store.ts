@@ -44,15 +44,9 @@ interface ZenSnapshot {
   activeByGroup: Record<string, string | null>;
   focusedGroupId: string;
   tabGroups: Record<string, string>;
-  leftVisible: boolean;
 }
 
 interface LayoutState {
-  leftPanel: {
-    visible: boolean;
-    width: number;
-    activeSection: "files" | "knowledge";
-  };
   /** The source-control surface's last section, kept across reopening it. */
   sourceControl: {
     section: SourceControlSection;
@@ -140,7 +134,6 @@ interface LayoutActions {
   actions: {
     /** Show, hide or expand the surfaces pane (see `surfaces`). */
     setSurfaces: (mode: SurfacesMode) => void;
-    toggleLeftPanel: () => void;
     toggleChatSidebar: () => void;
     toggleKnowledgeSidebar: () => void;
     toggleKnowledgeInspector: () => void;
@@ -152,7 +145,6 @@ interface LayoutActions {
     setPlansPanelWidth: (width: number) => void;
     toggleTimelineSidebar: () => void;
     setTimelineSidebarWidth: (width: number) => void;
-    setLeftSection: (section: LayoutState["leftPanel"]["activeSection"]) => void;
     setSourceControlSection: (section: SourceControlSection) => void;
     addTab: (tab: Tab, groupId?: string) => void;
     closeTab: (id: string) => void;
@@ -197,11 +189,6 @@ interface LayoutActions {
 }
 
 const initialState: LayoutState = {
-  leftPanel: {
-    visible: true,
-    width: 240,
-    activeSection: "files",
-  },
   sourceControl: {
     section: "changes",
   },
@@ -542,10 +529,6 @@ export const useLayoutStore = createSelectors(
       immer((set) => ({
         ...initialState,
         actions: {
-          toggleLeftPanel: () =>
-            set((s) => {
-              s.leftPanel.visible = !s.leftPanel.visible;
-            }),
           toggleChatSidebar: () =>
             set((s) => {
               s.chatSidebar.visible = !s.chatSidebar.visible;
@@ -589,10 +572,6 @@ export const useLayoutStore = createSelectors(
           setPlansPanelWidth: (width) =>
             set((s) => {
               s.plansPanel.width = Math.max(300, Math.min(width, 640));
-            }),
-          setLeftSection: (section) =>
-            set((s) => {
-              s.leftPanel.activeSection = section;
             }),
           setSourceControlSection: (section) =>
             set((s) => {
@@ -881,7 +860,6 @@ export const useLayoutStore = createSelectors(
               // Exit: restore the snapshot.
               if (s.zen && s.zenPrev) {
                 const p = s.zenPrev;
-                s.leftPanel.visible = p.leftVisible;
                 s.groupOrder = p.groupOrder.length ? [...p.groupOrder] : [DEFAULT_GROUP];
                 s.activeByGroup = { ...p.activeByGroup };
                 s.focusedGroupId = p.focusedGroupId;
@@ -892,8 +870,7 @@ export const useLayoutStore = createSelectors(
                 keepMainForSessions(s);
                 return;
               }
-              // Enter: snapshot the current layout, then build Session │ Browser
-              // with the side panels hidden.
+              // Enter: snapshot the current layout, then build Session │ Browser.
               const tabGroups: Record<string, string> = {};
               for (const t of s.tabs) tabGroups[t.id] = groupOf(t);
               s.zenPrev = {
@@ -901,7 +878,6 @@ export const useLayoutStore = createSelectors(
                 activeByGroup: { ...s.activeByGroup },
                 focusedGroupId: s.focusedGroupId,
                 tabGroups,
-                leftVisible: s.leftPanel.visible,
               };
               const G_CHAT = "zen-chat";
               const G_BROWSER = "zen-browser";
@@ -947,7 +923,6 @@ export const useLayoutStore = createSelectors(
               s.focusedGroupId = G_CHAT;
               // Team chat, like every tab outside the three, stays where it
               // was and comes back on exit.
-              s.leftPanel.visible = false;
               s.zen = true;
               syncActiveMirror(s);
             }),
@@ -1001,10 +976,6 @@ export const useLayoutStore = createSelectors(
               // A one-column template means the session alone: tools parked
               // beside it stay open but out of sight.
               if (template.columns.length === 1 && s.groupOrder.length > 1) s.surfaces = "hidden";
-
-              // The left panel is the template's to set.
-              s.leftPanel.visible = !!template.panels.left;
-              if (template.leftSection) s.leftPanel.activeSection = template.leftSection;
             }),
           setTabDirty: (id, dirty) =>
             set((s) => {
@@ -1152,7 +1123,6 @@ export const useLayoutStore = createSelectors(
         name: "atlas-layout-prefs",
         version: 2,
         partialize: (s) => ({
-          leftPanel: s.leftPanel,
           // Derived, not a field: the tab is the truth while the app runs.
           teamChat: { open: s.tabs.some((t) => t.type === "team-chat") },
           sourceControl: s.sourceControl,
@@ -1167,7 +1137,6 @@ export const useLayoutStore = createSelectors(
         // default shallow merge would replace whole slices).
         merge: (persisted, current) => {
           const p = (persisted ?? {}) as Partial<LayoutState>;
-          const leftPanel = { ...current.leftPanel, ...p.leftPanel };
           // Team chat open at quit reopens. A save from before it was a tab
           // says so as the right slot showing chat (`rightPanel`, which source
           // control shared before that, with `mode`).
@@ -1181,11 +1150,9 @@ export const useLayoutStore = createSelectors(
             (!!legacyRight?.visible &&
               (legacyRight.mode === undefined || legacyRight.mode === "chat"));
           const sourceControl = { ...current.sourceControl, ...p.sourceControl };
-          // Coerce section ids that no longer belong to this panel (e.g. a
-          // pre-move `state.json` with "git-graph" on the left or "analysis"
-          // on the right) back to a valid default so the panel isn't blank.
-          const LEFT = ["files", "knowledge"];
-          if (!LEFT.includes(leftPanel.activeSection)) leftPanel.activeSection = "files";
+          // Coerce a section id that no longer belongs to this panel (e.g. a
+          // pre-move `state.json` with "analysis") back to a valid default so
+          // the panel isn't blank.
           if (!(SOURCE_CONTROL_SECTIONS as readonly string[]).includes(sourceControl.section)) {
             sourceControl.section = "changes";
           }
@@ -1229,7 +1196,6 @@ export const useLayoutStore = createSelectors(
             ...rest,
             tabs,
             activeTabId,
-            leftPanel,
             sourceControl,
             knowledgePanel: { ...current.knowledgePanel, ...p.knowledgePanel },
             chatSidebar: { ...current.chatSidebar, ...p.chatSidebar },

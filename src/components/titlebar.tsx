@@ -109,16 +109,15 @@ export function useWindowDrag() {
 /**
  * One column's slice of the bar.
  *
- * Atlas has no full-width titlebar. Each column — the file tree, every split
- * column, the project rail — draws its own header at `h-titlebar` with no
- * bottom rule, so side by side they read as one strip, broken only by the
- * full-height column borders running through it. The window's own controls
- * then have to live in whichever column is at the window's edge: `leading`
- * (traffic-light inset, the project and left-panel toggles, the
- * `org / project` label) goes in the leftmost header and `trailing` (update,
- * notifications, account, and the Windows/Linux window buttons) in the
- * rightmost. See
- * `useShellEdges` for which column that is.
+ * Atlas has no full-width titlebar. Each column — every split column, the
+ * project rail — draws its own header at `h-titlebar` with no bottom rule, so
+ * side by side they read as one strip, broken only by the full-height column
+ * borders running through it. The window's own controls then have to live in
+ * whichever column is at the window's edge: `leading` (traffic-light inset,
+ * the project rail toggle, the `org / project` label) goes in the leftmost
+ * header and `trailing` (update, notifications, account, and the
+ * Windows/Linux window buttons) in the rightmost. See `columnChrome` for which
+ * column that is.
  *
  * Every stretch of it drags the window.
  */
@@ -165,8 +164,8 @@ export function PaneHeader({
 }
 
 /**
- * The window's top bar: the leading cluster (traffic-light inset, project and
- * left-panel toggles, `org / project`), and the
+ * The window's top bar: the leading cluster (traffic-light inset, the project
+ * rail toggle, `org / project`), and the
  * trailing dock (update, notifications, account, and the
  * Windows/Linux window buttons). Every stretch of it drags the window.
  */
@@ -214,9 +213,8 @@ function TopbarLeading({ breadcrumb = true }: { breadcrumb?: boolean }) {
       {!(sidebarPinned && sidebarOpen) && <DevBadge className="mr-1" />}
       {/* Windows and Linux: the menus macOS shows in the system menu bar. */}
       {!isMac && <MenuBar className="mr-1" />}
-      {/* One sidebar toggle. The file tree has ⌘B, the View
-          menu and its own header; a second look-alike toggle beside this one
-          only made you stop and work out which was which. */}
+      {/* One sidebar toggle: the project rail's. The project tree is the
+          Files surface (⌘B, the View menu, the palette). */}
       <HintGroup>
         <SidebarToggle />
       </HintGroup>
@@ -226,10 +224,8 @@ function TopbarLeading({ breadcrumb = true }: { breadcrumb?: boolean }) {
 }
 
 /**
- * `org / project`, named from the stores. Part of the leading cluster, except
- * with the file tree open: the tree's slice is too
- * narrow to hold it, so it heads the first split column instead — where T3
- * Code puts its `project / thread`.
+ * `org / project`, named from the stores. Part of the leading cluster, at the
+ * head of the first split column.
  */
 export function ProjectBreadcrumb() {
   const currentProject = useAppStore.use.currentProject();

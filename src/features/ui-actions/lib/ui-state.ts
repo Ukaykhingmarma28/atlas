@@ -15,6 +15,7 @@ import {
 import type { UiActionRequest } from "./types";
 import { sourceControlShown } from "@/features/layout/lib/source-control";
 import { teamChatShown } from "@/features/layout/lib/team-chat";
+import { singletonShown } from "@/features/layout/lib/singleton-surface";
 
 export interface UiTabState {
   id: string;
@@ -41,7 +42,8 @@ export interface UiState {
   /** Set when the active tab is an editor; the cursor once its view exists. */
   activeFile: ({ path: string } & Partial<EditorPosition>) | null;
   panels: {
-    left: { visible: boolean; section: string };
+    /** The Files surface tab (the project tree): on screen. */
+    files: { visible: boolean };
     /** The team-chat surface tab: on screen. */
     teamChat: { visible: boolean };
     /** The source-control surface tab: on screen, and its section. */
@@ -102,7 +104,7 @@ export function buildUiState(request: UiActionRequest): UiState {
         ? { path: filePath, ...(view ? editorPosition(view.state) : {}) }
         : null,
     panels: {
-      left: { visible: layout.leftPanel.visible, section: layout.leftPanel.activeSection },
+      files: { visible: singletonShown(layout, "files") },
       teamChat: { visible: teamChatShown(layout) },
       sourceControl: {
         visible: sourceControlShown(layout),
