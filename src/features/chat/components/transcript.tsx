@@ -48,6 +48,7 @@ import { useChatStore } from "../stores/chat-store";
 import { sessionCanRetry } from "../lib/retry-gate";
 import { latestResponseRowId } from "../lib/message-footer";
 import { pinScope } from "../stores/chat-pins-store";
+import { projectPathForTab } from "../lib/tab-project";
 import { cn } from "@/lib/utils";
 import { CONTENT_COLUMN } from "../lib/row-metrics";
 import { isScrollHot } from "@/lib/scroll-hot";
@@ -301,6 +302,11 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
   const contentRef = useRef<HTMLDivElement>(null);
   const cacheKey = `${tabId}:${acpSessionId}`;
   const pinScopeKey = pinScope(tabId, acpSessionId);
+  // The project root paths in this session resolve against: the one the
+  // session was created with, else its tab's project. A primitive, read once
+  // here, so rows render file chips without reading a store themselves.
+  const workingDirectory = useChatStore((s) => s.sessions[tabId]?.workingDirectory);
+  const fileRoot = workingDirectory || projectPathForTab(tabId) || undefined;
   const agent = switchable(agentType);
   // Is this tab the one showing in its column? Boolean selector: flips only
   // for the two tabs involved in a switch. Gates the idle window fill below.
@@ -966,6 +972,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
             canBranchRowId={canBranchRowId}
             canContinue={canContinue}
             pinScopeKey={pinScopeKey}
+            fileRoot={fileRoot}
           />
         </div>
       )),
@@ -979,6 +986,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
       canBranchRowId,
       canContinue,
       pinScopeKey,
+      fileRoot,
       toggleTurn,
       toggleExpand,
     ],
@@ -1080,6 +1088,7 @@ function RowView({
   canBranchRowId,
   canContinue,
   pinScopeKey,
+  fileRoot,
 }: {
   row: Row;
   justSentMessageId?: string;
@@ -1100,6 +1109,9 @@ function RowView({
   /** Pin scope for this thread — resolved once here rather than per row, so a
    *  row never reads the chat store. */
   pinScopeKey: string;
+  /** The session's project root, for file chips. Resolved once, like
+   *  `pinScopeKey`. */
+  fileRoot?: string;
 }) {
   switch (row.kind) {
     case RowKind.User:
@@ -1114,6 +1126,7 @@ function RowView({
           tabId={tabId}
           canRetry={row.id === canRetryRowId}
           pinScopeKey={pinScopeKey}
+          fileRoot={fileRoot}
           onToggleExpand={onToggleExpand}
         />
       );
@@ -1126,6 +1139,7 @@ function RowView({
           priority={priority}
           pinScopeKey={pinScopeKey}
           canBranch={row.id === canBranchRowId}
+          fileRoot={fileRoot}
         />
       );
     case RowKind.Thinking:

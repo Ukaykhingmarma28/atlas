@@ -63,6 +63,7 @@ export const UserRowView = memo(function UserRowView({
   justSent = false,
   canRetry = false,
   pinScopeKey,
+  fileRoot,
   onToggleExpand,
 }: {
   row: UserRow;
@@ -83,6 +84,8 @@ export const UserRowView = memo(function UserRowView({
   canRetry?: boolean;
   /** Pin scope for this thread — resolved once by the transcript. */
   pinScopeKey: string;
+  /** The session's project root: `@file` chips open what they name. */
+  fileRoot?: string;
   onToggleExpand: (id: string) => void;
 }) {
   const clampRef = useRef<HTMLDivElement>(null);
@@ -149,6 +152,7 @@ export const UserRowView = memo(function UserRowView({
               source={row.text}
               unstyled
               priority={priority}
+              fileRoot={fileRoot}
               className="atlas-prose atlas-prose--user"
             />
           </div>
@@ -281,6 +285,7 @@ export const ProseRowView = memo(function ProseRowView({
   priority,
   pinScopeKey,
   canBranch = false,
+  fileRoot,
 }: {
   row: ProseRow;
   tabId: string;
@@ -291,6 +296,8 @@ export const ProseRowView = memo(function ProseRowView({
   /** True only for the session's latest settled response on an agent that can
    *  fork, with no turn running. Resolved by the transcript, like `canRetry`. */
   canBranch?: boolean;
+  /** The session's project root: paths in the reply become file chips. */
+  fileRoot?: string;
 }) {
   return (
     // A settled response reserves the gap its action bar sits in (see
@@ -335,11 +342,18 @@ export const ProseRowView = memo(function ProseRowView({
           streaming
           unstyled
           priority={priority}
+          fileRoot={fileRoot}
           className="atlas-prose"
         />
       ) : (
         <div data-agent-response={row.id.slice(2)}>
-          <CachedMarkdown source={row.text} unstyled priority={priority} className="atlas-prose" />
+          <CachedMarkdown
+            source={row.text}
+            unstyled
+            priority={priority}
+            fileRoot={fileRoot}
+            className="atlas-prose"
+          />
         </div>
       )}
       {!row.streaming && (

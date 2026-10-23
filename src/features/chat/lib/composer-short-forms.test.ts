@@ -384,6 +384,31 @@ describe("chips through editing", () => {
     expect(chips(editor)).toEqual([]);
   });
 
+  it("brings a picked file chip back from undo with its record and its icon", async () => {
+    const { input, editor, dom } = composer();
+    const picked = pickedChip(file);
+    act(() => {
+      editor.commands.insertContent({ type: SESSION_MENTION, attrs: { data: picked } });
+    });
+    act(() => {
+      editor.view.dispatch(closeHistory(editor.state.tr));
+      editor.commands.selectAll();
+      editor.commands.deleteSelection();
+    });
+    expect(input.getValue()).toBe("");
+    act(() => {
+      editor.commands.undo();
+    });
+    const records: SessionChipRecord[] = [];
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === SESSION_MENTION) records.push(node.attrs.data as SessionChipRecord);
+    });
+    expect(records).toEqual([picked]);
+    await waitFor(() =>
+      expect(dom.querySelector('.atlas-mention-chip[data-mention-kind="file"]')).not.toBeNull(),
+    );
+  });
+
   it("comes back from a plain-text paste of the composer's own text", () => {
     rememberMention(session, PROJECT);
     const { input, editor, dom } = composer("before ");

@@ -21,6 +21,14 @@ import remarkRehype from "remark-rehype";
 import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import rehypeStringify from "rehype-stringify";
+import {
+  fileChipLabel,
+  fileChipTitle,
+  inlineCodeFileTarget,
+  linkFileTarget,
+  resolveInProject,
+  type FileLinkTarget,
+} from "./file-links";
 
 const SANITIZE_SCHEMA = {
   ...defaultSchema,
@@ -30,8 +38,20 @@ const SANITIZE_SCHEMA = {
     ...defaultSchema.attributes,
     code: [...(defaultSchema.attributes?.code ?? []), ["className"]],
     pre: [...(defaultSchema.attributes?.pre ?? []), ["className"]],
-    // `span` also carries our mention-chip pills (class + kind + title).
-    span: [...(defaultSchema.attributes?.span ?? []), ["className"], "dataMentionKind", "title"],
+    // `span` also carries our mention-chip pills (class + kind + title), and a
+    // file chip's target and icon slot (`fileChipNode`).
+    span: [
+      ...(defaultSchema.attributes?.span ?? []),
+      ["className"],
+      "dataMentionKind",
+      "title",
+      "dataFilePath",
+      "dataFileLine",
+      "dataFileColumn",
+      "dataFileIcon",
+      "role",
+      "tabIndex",
+    ],
     svg: [
       "className",
       "viewBox",
@@ -324,10 +344,77 @@ const FIXED_LABEL: Record<string, string> = {
   cited_text: "Cited passage",
 };
 
-function chipNode(prefix: string, value: string): Hast {
+/**
+ * A chip for a file or folder: the icon theme's icon for the path, its base
+ * name, and the full path in the tooltip. Clickable when it has a target —
+ * `CachedMarkdown` opens it (`open-path-link.ts`).
+ *
+ * The icon is drawn on the main thread, not here: this runs in the worker, and
+ * the theme's icons live in the icon-theme store. The slot carries the lucide
+ * glyph the composer's own fallback draws, in a box of fixed size, so painting
+ * the theme's icon in (`paintFileIcons`) swaps one box's contents and moves
+ * nothing.
+ */
+function fileChipNode(opts: {
+  /** Where a click goes; none for a mention that cannot be resolved. */
+  target: FileLinkTarget | null;
+  /** The path the icon is chosen by. */
+  iconPath: string;
+  folder: boolean;
+  label: string;
+  title: string;
+}): Hast {
+  const kind = opts.folder ? "folder" : "file";
+  const properties: Record<string, unknown> = {
+    className: ["atlas-mention-chip", "atlas-mention-chip--msg", "atlas-file-chip"],
+    dataMentionKind: kind,
+    title: opts.title,
+  };
+  if (opts.target) {
+    properties.dataFilePath = opts.target.path;
+    if (opts.target.line !== undefined) properties.dataFileLine = String(opts.target.line);
+    if (opts.target.column !== undefined) properties.dataFileColumn = String(opts.target.column);
+    properties.role = "link";
+    properties.tabIndex = 0;
+  }
+  const icon: Hast = iconWrap(kind) ?? { type: "element", tagName: "span", children: [] };
+  icon.properties = {
+    className: ["atlas-mention-chip__icon", "atlas-file-chip__icon"],
+    dataFileIcon: kind,
+    dataFilePath: opts.iconPath,
+  };
+  return {
+    type: "element",
+    tagName: "span",
+    properties,
+    children: [
+      icon,
+      {
+        type: "element",
+        tagName: "span",
+        properties: { className: ["atlas-mention-chip__label"] },
+        children: [{ type: "text", value: opts.label }],
+      },
+    ],
+  };
+}
+
+function chipNode(prefix: string, value: string, fileRoot: string | undefined): Hast {
   const kind = MENTION_PREFIX_KIND[prefix] ?? "file";
-  const isPath = kind === "file" || kind === "folder";
-  const label = isPath ? baseName(value) : (FIXED_LABEL[kind] ?? value);
+  if (kind === "file" || kind === "folder") {
+    // A mention's path is project-relative (`toShortForm`), or absolute when
+    // the file is outside the project.
+    const resolved = fileRoot ? resolveInProject(value, fileRoot) : null;
+    const absolute = resolved ?? (value.startsWith("/") ? value : null);
+    return fileChipNode({
+      target: absolute ? { path: absolute, folder: kind === "folder" } : null,
+      iconPath: absolute ?? value,
+      folder: kind === "folder",
+      label: baseName(value),
+      title: absolute ?? value,
+    });
+  }
+  const label = FIXED_LABEL[kind] ?? value;
   const icon = iconWrap(kind);
   const children: Hast[] = [];
   if (icon) children.push(icon);
@@ -351,7 +438,12 @@ function chipNode(prefix: string, value: string): Hast {
 
 /** Split one text value into [text, chip, text, …]; null when it holds no
  *  placeholder. Inside code the token goes back in as literal text instead. */
-function splitMentionText(value: string, tokens: MentionToken[], literal: boolean): Hast[] | null {
+function splitMentionText(
+  value: string,
+  tokens: MentionToken[],
+  literal: boolean,
+  fileRoot: string | undefined,
+): Hast[] | null {
   PLACEHOLDER_RE.lastIndex = 0;
   const out: Hast[] = [];
   let last = 0;
@@ -363,7 +455,7 @@ function splitMentionText(value: string, tokens: MentionToken[], literal: boolea
     if (m.index > last) out.push({ type: "text", value: value.slice(last, m.index) });
     if (!token) out.push({ type: "text", value: m[0] });
     else if (literal) out.push({ type: "text", value: token.raw });
-    else out.push(chipNode(token.prefix, token.value));
+    else out.push(chipNode(token.prefix, token.value, fileRoot));
     last = m.index + m[0].length;
   }
   if (!found) return null;
@@ -378,15 +470,16 @@ function splitMentionText(value: string, tokens: MentionToken[], literal: boolea
 const MENTION_SKIP_TAGS = new Set(["code", "pre"]);
 
 function rehypeMentionChips() {
-  return (tree: Hast, file: { data: { mentionTokens?: MentionToken[] } }) => {
+  return (tree: Hast, file: { data: RenderData }) => {
     const tokens = file.data.mentionTokens;
+    const fileRoot = file.data.fileRoot;
     if (!tokens || tokens.length === 0) return;
     const walk = (node: Hast, literal: boolean) => {
       if (!node.children) return;
       const next: Hast[] = [];
       for (const child of node.children) {
         if (child.type === "text" && typeof child.value === "string") {
-          const split = splitMentionText(child.value, tokens, literal);
+          const split = splitMentionText(child.value, tokens, literal, fileRoot);
           next.push(...(split ?? [child]));
           continue;
         }
@@ -402,6 +495,105 @@ function rehypeMentionChips() {
   };
 }
 
+/** What one parse is handed besides the source. */
+type RenderData = {
+  mentionTokens?: MentionToken[];
+  /** The session's project root. Unset, no path becomes a chip. */
+  fileRoot?: string;
+};
+
+// ── File paths in prose ───────────────────────────────────────────────────────
+// Inline code and link destinations that name a file in the session's project
+// become the same chips a mention draws (`file-links.ts` decides which). Runs
+// once per rendered string, and the result is cached with the HTML. Fenced
+// code is never touched.
+
+/** The text of an element whose children are all text (or inline code), or
+ *  null when it holds anything else. */
+function plainText(node: Hast): string | null {
+  let text = "";
+  for (const child of node.children ?? []) {
+    if (child.type === "text" && typeof child.value === "string") text += child.value;
+    else if (child.type === "element" && child.tagName === "code") {
+      const inner = plainText(child);
+      if (inner === null) return null;
+      text += inner;
+    } else return null;
+  }
+  return text;
+}
+
+/** Whether a link's text just restates where it goes (`[src/a.ts](src/a.ts)`,
+ *  `[a.ts](src/a.ts)`), so the chip can stand in for the whole link. */
+function labelRestatesTarget(label: string, href: string): boolean {
+  const clean = (s: string) =>
+    s
+      .trim()
+      .replace(/^\.\//, "")
+      .replace(/(?::\d+){1,2}$|#L\d+(?:C\d+)?$/i, "")
+      .replace(/\/+$/, "");
+  const l = clean(label);
+  const h = clean(href);
+  return l.length > 0 && (h === l || h.endsWith(`/${l}`));
+}
+
+function fileTargetChip(target: FileLinkTarget): Hast {
+  return fileChipNode({
+    target,
+    iconPath: target.path,
+    folder: target.folder,
+    label: fileChipLabel(target),
+    title: fileChipTitle(target),
+  });
+}
+
+function rehypeFileChips() {
+  return (tree: Hast, file: { data: RenderData }) => {
+    const root = file.data.fileRoot;
+    if (!root) return;
+    const walk = (node: Hast) => {
+      if (!node.children) return;
+      const next: Hast[] = [];
+      for (const child of node.children) {
+        if (child.type !== "element" || child.tagName === "pre") {
+          next.push(child);
+          continue;
+        }
+        if (child.tagName === "code") {
+          const text = plainText(child);
+          const target = text === null ? null : inlineCodeFileTarget(text, root);
+          next.push(target ? fileTargetChip(target) : child);
+          continue;
+        }
+        const href = child.tagName === "a" ? child.properties?.href : undefined;
+        const target = typeof href === "string" ? linkFileTarget(href, root) : null;
+        if (target && typeof href === "string") {
+          const label = plainText(child);
+          if (label !== null && labelRestatesTarget(label, href)) {
+            next.push(fileTargetChip(target));
+          } else {
+            // The link's own words stay, as text: an anchor with a relative
+            // href would navigate the webview away. The chip follows them.
+            walk(child);
+            next.push(
+              ...(child.children ?? []),
+              { type: "text", value: " " },
+              fileTargetChip(target),
+            );
+          }
+          continue;
+        }
+        // A mention chip is already a chip.
+        const cls = child.properties?.className;
+        if (!(Array.isArray(cls) && cls.includes("atlas-mention-chip"))) walk(child);
+        next.push(child);
+      }
+      node.children = next;
+    };
+    walk(tree);
+  };
+}
+
 let processor: Processor | null = null;
 function getProcessor(): Processor {
   if (!processor) {
@@ -411,6 +603,8 @@ function getProcessor(): Processor {
       .use(remarkRehype, { allowDangerousHtml: false })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .use(rehypeMentionChips as any)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .use(rehypeFileChips as any)
       // `detect: false`: only highlight fenced blocks with an explicit language
       // tag. Auto-detection ran highlight.js across ~37 languages for EVERY
       // un-tagged code block — the dominant per-parse cost. Agents almost always
@@ -434,11 +628,16 @@ function escapeHtml(s: string): string {
 
 /** Parse one markdown source string to sanitized HTML. Synchronous and
  *  uncached — callers own caching. Never throws: falls back to an escaped
- *  paragraph on parser error. */
-export function parseMarkdown(src: string): string {
+ *  paragraph on parser error.
+ *
+ *  `fileRoot` is the session's project root: given one, file paths in inline
+ *  code and links become chips, and mention chips resolve against it. The
+ *  output depends on it, so a cache must key on it too. */
+export function parseMarkdown(src: string, fileRoot?: string): string {
   try {
     const { text, tokens } = protectMentions(src);
-    return String(getProcessor().processSync({ value: text, data: { mentionTokens: tokens } }));
+    const data: RenderData = { mentionTokens: tokens, fileRoot: fileRoot || undefined };
+    return String(getProcessor().processSync({ value: text, data }));
   } catch {
     return `<p>${escapeHtml(src)}</p>`;
   }

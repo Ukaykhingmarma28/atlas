@@ -1,5 +1,5 @@
 import { activeProjectId } from "@/features/projects/lib/active-project";
-import { fileKindOf, openFileAs } from "@/lib/open-file";
+import { fileKindOf, openFileAs, type OpenFileOptions } from "@/lib/open-file";
 
 /**
  * Open `abs` as a tab of the project that is active now, then call
@@ -13,11 +13,19 @@ import { fileKindOf, openFileAs } from "@/lib/open-file";
  * surface's `"files"`, the same id in every project) would close that
  * project's tab instead. A click in one project acts in that project or not
  * at all.
+ *
+ * `opts.reveal` puts the cursor on a line once the file is open (a session's
+ * `path:line` chip).
  */
-export async function openInProject(abs: string, onOpened?: (abs: string) => void): Promise<void> {
+export async function openInProject(
+  abs: string,
+  onOpened?: (abs: string) => void,
+  opts?: OpenFileOptions,
+): Promise<void> {
   const project = activeProjectId();
   const kind = await fileKindOf(abs);
   if (activeProjectId() !== project) return;
-  openFileAs(abs, kind);
+  if (opts) openFileAs(abs, kind, opts);
+  else openFileAs(abs, kind);
   onOpened?.(abs);
 }

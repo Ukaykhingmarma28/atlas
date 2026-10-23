@@ -939,6 +939,41 @@
   font-size: 11px;
 }
 
+/* A file or folder chip in a sent message or an agent's reply
+   (`markdown-render.ts`): clickable, and wearing the icon theme's icon. The
+   icon slot is a fixed box, so the theme's icon painting in over the fallback
+   glyph (`icon-markup.ts`) never moves the line. */
+.atlas-file-chip[data-file-path] {
+  cursor: pointer;
+}
+.atlas-file-chip[data-file-path]:hover {
+  border-color: var(--atlas-border-strong);
+  background: var(--accent);
+}
+.atlas-file-chip:focus-visible {
+  outline: 1px solid var(--primary);
+  outline-offset: 1px;
+}
+.atlas-file-chip__icon {
+  width: 11px;
+  height: 11px;
+  opacity: 1;
+}
+.atlas-file-chip__icon > svg,
+.atlas-file-chip__icon > img {
+  display: block;
+  width: 11px;
+  height: 11px;
+}
+.atlas-file-icon-glyph {
+  display: block;
+  width: 11px;
+  height: 11px;
+  font-size: 11px;
+  line-height: 11px;
+  text-align: center;
+}
+
 @layer base {
   *,
   ::after,
