@@ -380,8 +380,8 @@ describe("edits the native engine reported with per-file `changes`", () => {
           // Two whole contents side by side: unsplittable from `patch`.
           patch: "fn a() {}\n\nfn b() {}\n",
           changes: [
-            { path: "/repo/src/a.rs", kind: "add", diff: "fn a() {}\n" },
-            { path: "/repo/src/b.rs", kind: "delete", diff: "fn b() {}\n" },
+            { path: "/repo/src/a.rs", kind: "add", lines: [0, 2] },
+            { path: "/repo/src/b.rs", kind: "delete", lines: [2, 4] },
           ],
         },
       }),
@@ -396,6 +396,32 @@ describe("edits the native engine reported with per-file `changes`", () => {
     // Its old text against nothing: the review panel calls it deleted.
     expect(edits.sources["src/b.rs"]).toEqual({ old: "fn b() {}\n", new: "" });
     expect(edits.excerpts.size).toBe(0);
+    expect(edits.renames).toBeUndefined();
+  });
+
+  it("files a renamed file under where it went, and remembers where it was", () => {
+    const hunks = "@@ -1 +1 @@\n-c\n+d\n";
+    const renamed = collectTurnEdits(
+      turn(
+        toolCall({
+          id: "n2",
+          toolName: "Edit /repo/src/c.rs",
+          kind: "edit",
+          arguments: {
+            paths: ["/repo/src/c.rs"],
+            patch: `${hunks}\n\nMoved to: /repo/src/d.rs`,
+            changes: [
+              { path: "/repo/src/c.rs", kind: "rename", lines: [0, 4], movePath: "/repo/src/d.rs" },
+            ],
+          },
+        }),
+      ),
+      "t:m1",
+      REPO,
+    );
+    expect(renamed.files).toEqual(["src/d.rs"]);
+    expect(renamed.sources["src/d.rs"].patch).toBe(hunks);
+    expect(renamed.renames).toEqual({ "src/d.rs": "src/c.rs" });
   });
 });
 

@@ -823,12 +823,13 @@ pub(crate) fn tool_call_of(item: &ThreadItem) -> Option<acp::ToolCall> {
                     // wants full old/new text, which a unified diff cannot
                     // reconstruct.
                     "patch": diffs,
-                    // The same edit file by file, for the renderer's per-turn
+                    // What each file of `patch` is, for the renderer's per-turn
                     // view: `patch` alone cannot say a whole-content entry was
-                    // an add or a delete, nor where two of them meet.
-                    // Additive: capture reads `patch` first and stores the
-                    // arguments whole.
-                    "changes": changes.iter().map(file_change_json).collect::<Vec<_>>(),
+                    // an add or a delete, nor where two of them meet. Ranges
+                    // into `patch`, not copies of it — every edit is stored,
+                    // streamed and held in the store. Additive: capture reads
+                    // `patch` first and stores the arguments whole.
+                    "changes": file_changes_json(changes),
                 }));
             if !diffs.trim().is_empty() {
                 call = call.content(vec![acp::ToolCallContent::Content(acp::Content::new(
@@ -881,39 +882,57 @@ pub(crate) fn tool_call_of(item: &ThreadItem) -> Option<acp::ToolCall> {
     }
 }
 
-/// One file of a `FileChange`, as the edit's `changes` argument carries it:
-/// `{ path, kind, diff }`, plus `movePath` for a rename.
+/// The edit's `changes` argument: one `{ path, kind, lines, movePath? }` per
+/// file, in `patch` order.
 ///
-/// `kind` is `add` or `delete`, whose `diff` is the file's whole content, or
-/// `update` / `rename`, whose `diff` is the headerless unified diff. A rename's
-/// diff is the hunks alone: the engine appends a `Moved to:` note to it for
-/// display, which `movePath` states as data instead.
-fn file_change_json(
-    change: &atlas_engine_app_server_protocol::FileUpdateChange,
+/// `lines` is the half-open range `[start, end)` of `patch`'s lines (split on
+/// `\n`) that holds this file's text, so `lines[start..end].join("\n")` is
+/// its diff exactly. Line indices, not byte offsets: they count the same in
+/// Rust's UTF-8 and the renderer's UTF-16. `patch` joins the per-file texts
+/// with `\n`, so a text of `n` newlines spans `n + 1` lines and the next one
+/// starts right after.
+///
+/// `kind` is `add` or `delete`, whose text is the file's whole content, or
+/// `update` / `rename`, whose text is the headerless unified diff. A rename's
+/// range stops before the `Moved to:` note the engine appends for display;
+/// `movePath` states it as data instead.
+fn file_changes_json(
+    changes: &[atlas_engine_app_server_protocol::FileUpdateChange],
 ) -> serde_json::Value {
     use atlas_engine_app_server_protocol::PatchChangeKind as K;
-    match &change.kind {
-        K::Add => serde_json::json!({ "path": change.path, "kind": "add", "diff": change.diff }),
-        K::Delete => {
-            serde_json::json!({ "path": change.path, "kind": "delete", "diff": change.diff })
-        }
-        K::Update { move_path: None } => {
-            serde_json::json!({ "path": change.path, "kind": "update", "diff": change.diff })
-        }
-        K::Update {
-            move_path: Some(to),
-        } => {
-            let to = to.to_string_lossy();
-            let note = format!("\n\nMoved to: {to}");
-            let diff = change.diff.strip_suffix(&note).unwrap_or(&change.diff);
-            serde_json::json!({
-                "path": change.path,
-                "kind": "rename",
-                "diff": diff,
-                "movePath": to,
-            })
-        }
+    let line_count = |text: &str| text.split('\n').count();
+    let mut start = 0;
+    let mut out = Vec::with_capacity(changes.len());
+    for change in changes {
+        let path = change.path.as_str();
+        let entry = match &change.kind {
+            K::Add => serde_json::json!({
+                "path": path, "kind": "add", "lines": [start, start + line_count(&change.diff)],
+            }),
+            K::Delete => serde_json::json!({
+                "path": path, "kind": "delete", "lines": [start, start + line_count(&change.diff)],
+            }),
+            K::Update { move_path: None } => serde_json::json!({
+                "path": path, "kind": "update", "lines": [start, start + line_count(&change.diff)],
+            }),
+            K::Update {
+                move_path: Some(to),
+            } => {
+                let to = to.to_string_lossy();
+                let note = format!("\n\nMoved to: {to}");
+                let hunks = change.diff.strip_suffix(&note).unwrap_or(&change.diff);
+                serde_json::json!({
+                    "path": path,
+                    "kind": "rename",
+                    "lines": [start, start + line_count(hunks)],
+                    "movePath": to,
+                })
+            }
+        };
+        out.push(entry);
+        start += line_count(&change.diff);
     }
+    serde_json::Value::Array(out)
 }
 
 /// Flattens a prompt into the single string the engine's text input takes.
@@ -1696,16 +1715,42 @@ mod tests {
         assert_eq!(
             args["changes"],
             serde_json::json!([
-                { "path": "/r/a.rs", "kind": "add", "diff": "fn a() {}\n" },
-                { "path": "/r/b.rs", "kind": "delete", "diff": "fn b() {}\n" },
+                { "path": "/r/a.rs", "kind": "add", "lines": [0, 2] },
+                { "path": "/r/b.rs", "kind": "delete", "lines": [2, 4] },
                 {
                     "path": "/r/c.rs",
                     "kind": "rename",
-                    "diff": "@@ -1 +1 @@\n-c\n+d\n",
+                    "lines": [4, 8],
                     "movePath": "/r/d.rs",
                 },
-                { "path": "/r/e.rs", "kind": "update", "diff": "@@ -1 +1 @@\n-e\n+E\n" },
+                { "path": "/r/e.rs", "kind": "update", "lines": [10, 14] },
             ]),
+        );
+        // Each range, sliced out of `patch` by lines, is that file's text
+        // exactly — the rename's without its `Moved to:` note.
+        let patch = args["patch"].as_str().expect("the patch is text");
+        let lines: Vec<&str> = patch.split('\n').collect();
+        let texts: Vec<String> = args["changes"]
+            .as_array()
+            .expect("changes is a list")
+            .iter()
+            .map(|entry| {
+                let range = &entry["lines"];
+                let (start, end) = (
+                    range[0].as_u64().expect("a start") as usize,
+                    range[1].as_u64().expect("an end") as usize,
+                );
+                lines[start..end].join("\n")
+            })
+            .collect();
+        assert_eq!(
+            texts,
+            [
+                "fn a() {}\n",
+                "fn b() {}\n",
+                "@@ -1 +1 @@\n-c\n+d\n",
+                "@@ -1 +1 @@\n-e\n+E\n",
+            ],
         );
         assert_eq!(
             args["paths"],

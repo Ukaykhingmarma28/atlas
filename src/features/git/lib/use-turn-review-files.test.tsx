@@ -269,6 +269,29 @@ describe("useTurnReviewFiles", () => {
     expect(file.fileDiff.hunks[0].additionStart).toBe(10);
   });
 
+  it("shows a renamed file under its new path, with the old one beside it", async () => {
+    const input: TurnEdits = {
+      files: ["src/d.rs"],
+      initial: "src/d.rs",
+      sources: { "src/d.rs": { old: "c\n", new: "d\n", patch: "@@ -1 +1 @@\n-c\n+d\n" } },
+      excerpts: new Set(),
+      renames: { "src/d.rs": "src/c.rs" },
+    };
+    const { result } = renderHook(
+      () => useTurnReviewFiles({ edits: input, ignoreWhitespace: false }),
+      { wrapper: wrapper() },
+    );
+    expect(result.current.files[0].fileDiff.prevName).toBe("src/c.rs");
+    await waitFor(() => expect(result.current.files[0].state).toBe("ready"));
+    const [file] = result.current.files;
+    expect(file.stat).toMatchObject({ path: "src/d.rs", oldPath: "src/c.rs", status: "renamed" });
+    expect(file.fileDiff).toMatchObject({
+      name: "src/d.rs",
+      prevName: "src/c.rs",
+      type: "rename-changed",
+    });
+  });
+
   it("calls an emptied fragment a modification, never a deleted file", () => {
     expect(statusOfSource({ old: "block\n", new: "" }, true)).toBe("modified");
     expect(statusOfSource({ old: "file\n", new: "" }, false)).toBe("deleted");

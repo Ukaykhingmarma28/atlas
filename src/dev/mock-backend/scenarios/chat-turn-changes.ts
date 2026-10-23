@@ -222,11 +222,23 @@ export const chatTurnChangesLong: Scenario = {
 // headerless hunks, a created file's whole content, and for a rename a
 // `Moved to:` note after the hunks (`crates/atlas-native-agent/src/engine/
 // sink.rs`, the `FileChange` arm). Newer sessions also carry `changes`, each
-// file's `{ path, kind, diff }`; the second turn has it and the others do
-// not, so both readings stay covered. `chat-turn-changes-native` plays only
+// file's `{ path, kind, lines }`, its range of the patch's lines; the second
+// turn has it and the others do not, so both readings stay covered. `chat-turn-changes-native` plays only
 // that.
 
 type EngineKind = "add" | "delete" | "update";
+
+/** `changes` as the engine sink writes it: each file's half-open range of
+ *  the joined patch's lines. These mock files are never renames. */
+function changesOf(files: { path: string; text: string; kind?: EngineKind }[]) {
+  let start = 0;
+  return files.map((f) => {
+    const end = start + f.text.split("\n").length;
+    const entry = { path: abs(f.path), kind: f.kind ?? "update", lines: [start, end] };
+    start = end;
+    return entry;
+  });
+}
 
 /** The engine's edit: one call naming every file of the patch. With
  *  `withChanges`, the per-file `changes` too; each file's `kind` matters
@@ -250,15 +262,7 @@ function engineEdit(
     arguments: {
       paths: sorted.map((f) => abs(f.path)),
       patch: sorted.map((f) => f.text).join("\n"),
-      ...(withChanges
-        ? {
-            changes: sorted.map((f) => ({
-              path: abs(f.path),
-              kind: f.kind ?? "update",
-              diff: f.text,
-            })),
-          }
-        : {}),
+      ...(withChanges ? { changes: changesOf(sorted) } : {}),
     },
   };
 }

@@ -30,6 +30,9 @@ export interface TurnEdits {
    * numbers count from the fragment, and the viewer says so.
    */
   excerpts: ReadonlySet<string>;
+  /** A renamed file's previous path, by the path it went to (the one in
+   *  `files`). Absent when nothing was renamed. */
+  renames?: Readonly<Record<string, string>>;
 }
 
 /** How one path's edits fold, as the turn's calls arrive in order. */
@@ -138,6 +141,7 @@ export function collectTurnEdits(
   const whole: Record<string, TurnEdit> = {};
   const folds: Record<string, Fold> = {};
   const order: string[] = [];
+  const renames: Record<string, string> = {};
 
   const see = (path: string) => {
     if (!order.includes(path)) order.push(path);
@@ -174,7 +178,9 @@ export function collectTurnEdits(
       }
       for (const file of enginePatchFiles(args) ?? []) {
         if (file.shape === "unknown") continue;
-        const path = toRepoRelative(file.path, repoPath);
+        // A renamed file is shown where it went.
+        const path = toRepoRelative(file.movePath ?? file.path, repoPath);
+        if (file.movePath) renames[path] = toRepoRelative(file.path, repoPath);
         see(path);
         if (file.shape === "content") foldWrite(foldOf(path), file.text);
         else if (file.shape === "deleted") foldDelete(foldOf(path), file.text);
@@ -203,6 +209,7 @@ export function collectTurnEdits(
     initial: wanted && sources[wanted] ? wanted : (order[0] ?? ""),
     sources,
     excerpts,
+    ...(Object.keys(renames).length > 0 ? { renames } : {}),
   };
 }
 
@@ -246,7 +253,9 @@ function editedPathsOf(tc: ChatMessage["toolCalls"][number], repoPath: string): 
     if (abs) paths.push(toRepoRelative(abs, repoPath));
   } else {
     for (const file of enginePatchFiles(args) ?? []) {
-      if (file.shape !== "unknown") paths.push(toRepoRelative(file.path, repoPath));
+      if (file.shape !== "unknown") {
+        paths.push(toRepoRelative(file.movePath ?? file.path, repoPath));
+      }
     }
   }
   return paths;

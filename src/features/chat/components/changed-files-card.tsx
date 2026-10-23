@@ -307,7 +307,7 @@ function TreeRow({
     <button
       type="button"
       role="treeitem"
-      title={file.path}
+      title={file.movedFrom ? `${file.path}\nRenamed from ${file.movedFrom}` : file.path}
       data-changed-file={file.path}
       onClick={() => onOpen(file)}
       className={ROW}

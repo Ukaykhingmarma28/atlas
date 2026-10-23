@@ -17,6 +17,8 @@ export interface ChangedFile extends DiffStat {
   /** The path as the turn reported it (absolute, usually), for opening. */
   source: string;
   created: boolean;
+  /** A renamed file's previous path, repo-relative. */
+  movedFrom?: string;
 }
 
 export interface ChangedDirNode {
@@ -57,6 +59,7 @@ export function changedFilesOf(files: readonly TurnFile[], repoPath: string): Ch
       added: f.added,
       removed: f.removed,
       created: f.created === true,
+      ...(f.movedFrom ? { movedFrom: toRepoRelative(f.movedFrom, repoPath) } : {}),
     });
   }
   return out;

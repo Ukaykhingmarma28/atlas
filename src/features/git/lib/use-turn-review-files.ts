@@ -127,11 +127,24 @@ export function statusOfSource(source: TurnEdit, excerpt: boolean): DiffFileStat
   return "modified";
 }
 
+/** The diff type a turn's file shows as. */
+function typeOf(status: DiffFileStat["status"], parsed: FileDiffMetadata["type"]) {
+  if (status === "added") return "new" as const;
+  if (status === "deleted") return "deleted" as const;
+  if (status === "renamed") return "rename-changed" as const;
+  return parsed;
+}
+
 /** What a file shows until its patch is parsed: its header, nothing under it. */
-function placeholderOf(path: string, status: DiffFileStat["status"]): FileDiffMetadata {
+function placeholderOf(
+  path: string,
+  status: DiffFileStat["status"],
+  prevName?: string,
+): FileDiffMetadata {
   return {
     name: path,
-    type: status === "added" ? "new" : status === "deleted" ? "deleted" : "change",
+    ...(prevName ? { prevName } : {}),
+    type: typeOf(status, "change"),
     hunks: [],
     additionLines: [],
     deletionLines: [],
@@ -147,15 +160,29 @@ interface Loaded {
 }
 
 /** The parsed patch, named by the repo path (a text diff's headers carry only
- *  the file's name) and typed by what the pair says it is. */
-export function loadedOf(path: string, res: DiffFilePatch, status: DiffFileStat["status"]): Loaded {
+ *  the file's name) and typed by what the pair says it is. A renamed file
+ *  carries its old path as `prevName`, which the viewer's header shows. */
+export function loadedOf(
+  path: string,
+  res: DiffFilePatch,
+  status: DiffFileStat["status"],
+  prevName?: string,
+): Loaded {
   if (res.binary) return { fileDiff: null, state: "binary" };
   if (!res.patch) return { fileDiff: null, state: res.truncated ? "too-large" : "empty" };
   const parsed = getRenderablePatch(res.patch, "turn-diff");
   if (parsed?.kind !== "files") throw new Error(parsed?.reason ?? "Empty patch.");
   const f = parsed.files[0];
-  const type = status === "added" ? "new" : status === "deleted" ? "deleted" : f.type;
-  return { fileDiff: { ...f, name: path, prevName: undefined, type }, state: "ready" };
+  return {
+    fileDiff: { ...f, name: path, prevName, type: typeOf(status, f.type) },
+    state: "ready",
+  };
+}
+
+/** What happened to a turn's file, a rename included. */
+function statusIn(edits: TurnEdits, path: string): DiffFileStat["status"] {
+  const status = statusOfSource(edits.sources[path], edits.excerpts.has(path));
+  return status === "modified" && edits.renames?.[path] ? "renamed" : status;
 }
 
 /** Each pair's fingerprint, hashed once per pair object: a key holding the
@@ -187,20 +214,28 @@ export function useTurnReviewFiles({
   const results = useQueries({
     queries: paths.map((path) => {
       const source = edits!.sources[path];
+      const status = statusIn(edits!, path);
+      const prevName = edits!.renames?.[path];
       return {
-        queryKey: ["turn-diff-text", path, fingerprintOf(source), ignoreWhitespace],
+        queryKey: [
+          "turn-diff-text",
+          path,
+          prevName ?? "",
+          status,
+          fingerprintOf(source),
+          ignoreWhitespace,
+        ],
         staleTime: Infinity,
         gcTime: 60_000,
         queryFn: async () => {
-          const status = statusOfSource(source, edits!.excerpts.has(path));
           // The engine's own diff needs only its file headers to parse.
           // Its whitespace is as the engine diffed it.
           if (source.patch !== undefined) {
             const patch = `--- a/${path}\n+++ b/${path}\n${source.patch}`;
-            return loadedOf(path, { patch, binary: false, truncated: false }, status);
+            return loadedOf(path, { patch, binary: false, truncated: false }, status, prevName);
           }
           const res = await diffTextsPatch(source.old, source.new, path, ignoreWhitespace);
-          return loadedOf(path, res, status);
+          return loadedOf(path, res, status, prevName);
         },
       };
     }),
@@ -214,11 +249,9 @@ export function useTurnReviewFiles({
   // One stand-in per file and pair, so an unchanged row keeps its identity.
   const placeholders = useMemo(() => {
     const map = new Map<string, FileDiffMetadata>();
-    for (const path of paths)
-      map.set(
-        path,
-        placeholderOf(path, statusOfSource(edits!.sources[path], edits!.excerpts.has(path))),
-      );
+    for (const path of paths) {
+      map.set(path, placeholderOf(path, statusIn(edits!, path), edits!.renames?.[path]));
+    }
     return map;
   }, [paths, edits]);
 
@@ -228,7 +261,8 @@ export function useTurnReviewFiles({
         const source = edits!.sources[path];
         const result = results[i];
         const data = result?.data;
-        const status = statusOfSource(source, edits!.excerpts.has(path));
+        const status = statusIn(edits!, path);
+        const oldPath = edits!.renames?.[path];
         const ready = data?.state === "ready" && data.fileDiff;
         // The patch's own counts once it is parsed; until then, the pair's.
         const counts = ready ? getDiffLineStat([data.fileDiff!]) : null;
@@ -236,6 +270,7 @@ export function useTurnReviewFiles({
         return {
           stat: {
             path,
+            ...(oldPath ? { oldPath } : {}),
             status,
             additions: counts ? counts.additions : guess!.added,
             deletions: counts ? counts.deletions : guess!.removed,
