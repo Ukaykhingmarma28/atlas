@@ -49,10 +49,26 @@ describe("thoughtHeadline on awkward reasoning", () => {
     );
   });
 
+  it("strips a long link in a heading instead of cutting it mid-URL", () => {
+    const url = `https://example.com/${"a".repeat(500)}`;
+    expect(thoughtHeadline(`**Reading [the store](${url})**`)).toBe("Reading the store");
+  });
+
+  it("caps a long heading", () => {
+    expect(thoughtHeadline(`**${"word ".repeat(200)}**`)!.length).toBeLessThanOrEqual(400);
+  });
+
   it("stays fast on bracket-heavy text", () => {
     const nasty = "[".repeat(20_000) + "[a](".repeat(5_000);
     const t0 = performance.now();
     thoughtHeadline(nasty);
     expect(performance.now() - t0).toBeLessThan(20);
+  });
+});
+
+describe("thoughtHeadline before there is anything to show", () => {
+  it("is null rather than empty for a bare `**` or an empty heading", () => {
+    expect(thoughtHeadline("**")).toBeNull();
+    expect(thoughtHeadline("** **\n")).toBeNull();
   });
 });

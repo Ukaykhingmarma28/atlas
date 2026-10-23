@@ -131,11 +131,12 @@ export const LoadingState = memo(function LoadingState({
   showElapsedAfterMs?: number;
 }) {
   const { ref: elapsed, stalled } = useElapsed(stallAfterMs, showElapsedAfterMs);
-  const shimmer = useVisibleAnimation<HTMLSpanElement>();
+  const shimmer = useVisibleAnimation<HTMLElement>();
   const { delays, dur, round } = PATTERNS[variant] ?? PATTERNS.dots;
 
   const indicator = (
     <div
+      ref={shimmer}
       role="status"
       aria-live="polite"
       aria-label={label}
@@ -162,9 +163,7 @@ export const LoadingState = memo(function LoadingState({
           />
         ))}
       </span>
-      <span ref={shimmer} className="atlas-thinking-shimmer text-xs leading-[16px] font-medium">
-        {label}
-      </span>
+      <span className="atlas-thinking-shimmer text-xs leading-[16px] font-medium">{label}</span>
       <span
         ref={elapsed}
         className="font-mono text-2xs tabular-nums text-[var(--muted-foreground)]"

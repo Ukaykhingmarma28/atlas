@@ -47,8 +47,9 @@ function sharedObserver(): IntersectionObserver | null {
 }
 
 /**
- * A ref callback that pauses the element's animation while it is scrolled out
- * of view. Attach it to the animated element itself.
+ * A ref callback that pauses the animations inside an element while it is
+ * scrolled out of view. Attach it to the row that holds them, so its glyph,
+ * label and loader cells pause together.
  */
 export function useVisibleAnimation<T extends Element>(): (el: T | null) => void {
   const current = useRef<T | null>(null);
