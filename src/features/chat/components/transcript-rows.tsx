@@ -365,6 +365,7 @@ export const ThinkingRowView = memo(function ThinkingRowView({
   // only then, so an undiscussed row's DOM is exactly what it was.
   const messageId = row.id.slice(3);
   const discussed = useRowHasComments(tabId, messageId);
+  const shimmer = useVisibleAnimation<HTMLSpanElement>();
   const toggle = (
     <button
       type="button"
@@ -382,11 +383,19 @@ export const ThinkingRowView = memo(function ThinkingRowView({
           className={cn(row.streaming && "atlas-marker-running")}
         />
       </span>
-      <span>{row.streaming ? "Thinking…" : "Thought process"}</span>
+      {/* The thought itself when it has one: "Checking the cache key" says
+          more than "Thinking…", and it is the live line while the agent
+          reasons. One truncated line, so the row stays 26px as it changes. */}
+      <span
+        ref={row.streaming ? shimmer : undefined}
+        className={cn("min-w-0 truncate", row.streaming && "atlas-thinking-shimmer")}
+      >
+        {row.headline ?? (row.streaming ? "Thinking…" : "Thought process")}
+      </span>
       <ChevronRight
         size={ICON_PX}
         strokeWidth={ICON_STROKE}
-        className={cn("transition-transform", row.expanded && "rotate-90")}
+        className={cn("shrink-0 transition-transform", row.expanded && "rotate-90")}
       />
     </button>
   );

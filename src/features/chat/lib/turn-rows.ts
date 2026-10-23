@@ -26,6 +26,7 @@ import type { ImageAttachment } from "@/types/agents";
 // Shared so a row without images keeps a stable prop for the row's `memo`.
 const NO_ATTACHMENTS: readonly ImageAttachment[] = Object.freeze([]);
 import { isBashToolCall, bashCommandOf } from "./tool-calls";
+import { thoughtHeadline } from "./thought-headline";
 import { orgToolOf, orgToolRow } from "@/features/org-actions/lib/org-tool-rows";
 import { parseShellCommand } from "./parse-shell-command";
 import {
@@ -101,7 +102,12 @@ export interface ProseRow extends RowBase {
 
 export interface ThinkingRow extends RowBase {
   kind: typeof RowKind.Thinking;
+  /** The full reasoning, only while the reader has the row open. Collapsed it
+   *  is empty, so a streaming thought re-renders its row when the headline
+   *  changes rather than on every chunk. */
   text: string;
+  /** What the agent is thinking about, from `thoughtHeadline`. */
+  headline: string | null;
   streaming: boolean;
   expanded: boolean;
 }
@@ -1222,7 +1228,8 @@ function projectSegment(
           id: `th:${msg.id}`,
           turnId,
           firstInTurn: rows.length === rowStart,
-          text: msg.thinking,
+          text: opts.expanded.has(`th:${msg.id}`) ? msg.thinking : "",
+          headline: thoughtHeadline(msg.thinking),
           streaming: tail,
           expanded: opts.expanded.has(`th:${msg.id}`),
         });
