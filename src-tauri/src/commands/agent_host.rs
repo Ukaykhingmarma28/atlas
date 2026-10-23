@@ -2425,6 +2425,105 @@ impl AgentHost {
         Ok(())
     }
 
+    /// Move a session to the sidebar's Settled shelf.
+    ///
+    /// Refused while a turn is running there — in Atlas, or in another
+    /// process (`modified` is the session watcher's file times, the input the
+    /// sidebar's "Working" reads) — or the agent is waiting on the user: a
+    /// session that is mid-work is not done, and settling it would hide the
+    /// very thing about to need attention.
+    pub fn settle_thread(
+        &self,
+        thread_id: ThreadId,
+        modified: &HashMap<String, DateTime<Utc>>,
+    ) -> Result<()> {
+        let history = self.history_or_err()?;
+        let Some(thread) = history.store().thread(thread_id) else {
+            return Ok(());
+        };
+        if let Some(session_id) = thread.session_id.as_ref() {
+            let id = session_id.0.as_ref();
+            let activity = self.atlas_activity();
+            if self.session_is_busy(id, &activity)
+                || live_elsewhere(modified.get(id).copied(), activity.get(id), Utc::now())
+            {
+                return Err(HostError::new(
+                    "This session is still running; settle it once the turn ends.",
+                    ErrorClass::Fatal,
+                ));
+            }
+        }
+        history.store().settle(thread_id);
+        Ok(())
+    }
+
+    /// Take a session back off the Settled shelf.
+    pub fn unsettle_thread(&self, thread_id: ThreadId) -> Result<()> {
+        self.history_or_err()?.store().unsettle(thread_id);
+        Ok(())
+    }
+
+    /// Whether Atlas has work in flight in this session: a turn it sent that
+    /// has not come back, a turn the thread reports running, or a permission
+    /// or elicitation the user has not answered.
+    fn session_is_busy(&self, session_id: &str, activity: &HashMap<String, AtlasActivity>) -> bool {
+        if activity.get(session_id).is_some_and(|a| a.in_flight > 0) {
+            return true;
+        }
+        let Ok(handle) = self.thread(session_id) else {
+            return false;
+        };
+        let thread = lock_thread(&handle);
+        thread.is_generating()
+            || thread.elicitations().elicitations().iter().any(|e| {
+                matches!(
+                    e.status,
+                    atlas_acp_thread::ElicitationStatus::Pending { .. }
+                )
+            })
+            || thread.entries().iter().any(|entry| {
+                matches!(
+                    entry,
+                    atlas_acp_thread::AgentThreadEntry::ToolCall(call)
+                        if matches!(
+                            call.status,
+                            atlas_acp_thread::ToolCallStatus::WaitingForConfirmation { .. }
+                        )
+                )
+            })
+    }
+
+    /// Settle every session idle for longer than `idle`, skipping any that is
+    /// busy in Atlas ([`Self::session_is_busy`]) or live in another process.
+    /// The store applies the rest of the rule (archived, already settled,
+    /// un-settled since its last activity) under its own lock. Answers how
+    /// many were settled.
+    ///
+    /// `modified` is the session watcher's file times — the same input the
+    /// sidebar's "Working" reads for live-elsewhere.
+    pub fn auto_settle_idle(
+        &self,
+        idle: chrono::Duration,
+        modified: &HashMap<String, DateTime<Utc>>,
+    ) -> Result<usize> {
+        let history = self.history_or_err()?;
+        let now = Utc::now();
+        let activity = self.atlas_activity();
+        let busy: std::collections::HashSet<acp::SessionId> = history
+            .store()
+            .threads()
+            .into_iter()
+            .filter(|t| !t.archived && !t.is_settled())
+            .filter_map(|t| t.session_id)
+            .filter(|session_id| {
+                let id = session_id.0.as_ref();
+                self.session_is_busy(id, &activity)
+                    || live_elsewhere(modified.get(id).copied(), activity.get(id), now)
+            })
+            .collect();
+        Ok(history.store().auto_settle_idle(now - idle, &busy))
+    }
+
     /// Which installed agents can be imported from, and how much they have.
     ///
     /// Connecting to every installed agent is the price of the answer: whether an agent has listable
@@ -2961,6 +3060,9 @@ pub struct ThreadRow {
     pub updated_at: String,
     pub created_at: Option<String>,
     pub archived: bool,
+    /// When the session was settled — on the sidebar's Settled shelf — as
+    /// RFC 3339; `None` while it is active.
+    pub settled_at: Option<String>,
     /// The project this thread belongs to, for a history row that is shown
     /// outside its project's group.
     pub project_name: String,
@@ -3127,6 +3229,7 @@ fn thread_row(thread: &ThreadMetadata, live: &LiveContext<'_>) -> ThreadRow {
         updated_at: thread.updated_at.to_rfc3339(),
         created_at: thread.created_at.map(|at| at.to_rfc3339()),
         archived: thread.archived,
+        settled_at: thread.settled_at.map(|at| at.to_rfc3339()),
         project_name: project_name(thread.main_worktree_paths()),
         folder_paths: paths_of(thread.folder_paths()),
         live_elsewhere,
@@ -4479,6 +4582,63 @@ mod tests {
                 .is_session_deleted(&acp::SessionId::new("ses-live")),
             "and stays deleted against the next sync"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Settling refuses a session with a turn in flight, and the idle sweep
+    /// passes over it and over one live in another process; once quiet, both
+    /// settle it and the row says so on the wire.
+    #[tokio::test]
+    async fn a_running_session_is_not_settled_by_hand_or_by_the_sweep() {
+        let (host, dir) = fresh_host();
+        let history = host.history().expect("a fresh host has history");
+        let row = |session: &str| {
+            let mut thread = atlas_thread_metadata::ThreadMetadata {
+                session_id: Some(acp::SessionId::new(session)),
+                ..atlas_thread_metadata::ThreadMetadata::new(
+                    atlas_thread_metadata::ThreadId::new(),
+                    "an-uninstalled-agent".into(),
+                    atlas_thread_metadata::PathList::new(&[PathBuf::from("/tmp/atlas")]),
+                )
+            };
+            thread.updated_at = Utc::now() - chrono::Duration::days(5);
+            thread.interacted_at = Some(thread.updated_at);
+            thread
+        };
+        let (running, elsewhere) = (row("ses-running"), row("ses-elsewhere"));
+        let (running_id, elsewhere_id) = (running.thread_id, elsewhere.thread_id);
+        history.store().save_all(vec![running, elsewhere]);
+
+        host.begin_atlas_turn("ses-running");
+        let err = host
+            .settle_thread(running_id, &HashMap::new())
+            .expect_err("a session mid-turn is not settled");
+        assert!(err.message.contains("still running"));
+
+        let written_just_now = HashMap::from([("ses-elsewhere".to_owned(), Utc::now())]);
+        host.settle_thread(elsewhere_id, &written_just_now)
+            .expect_err("nor is one running in another process");
+        let settled = host
+            .auto_settle_idle(chrono::Duration::days(3), &written_just_now)
+            .unwrap();
+        assert_eq!(settled, 0, "busy here, live elsewhere: neither is settled");
+
+        host.end_atlas_turn("ses-running");
+        host.settle_thread(running_id, &HashMap::new())
+            .expect("a quiet session settles");
+        let settled = host
+            .auto_settle_idle(chrono::Duration::days(3), &HashMap::new())
+            .unwrap();
+        assert_eq!(settled, 1, "the sweep settles the other once it is quiet");
+
+        let rows = host.thread_history(false, &HashMap::new()).unwrap();
+        for id in [running_id, elsewhere_id] {
+            let row = rows
+                .iter()
+                .find(|r| r.thread_id == id.to_key_string())
+                .unwrap();
+            assert!(row.settled_at.is_some(), "settledAt on the wire");
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 

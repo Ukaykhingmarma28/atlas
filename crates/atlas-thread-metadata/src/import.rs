@@ -138,6 +138,9 @@ pub fn importable_threads(
                 // Atlas was not there to see which branch it ran on.
                 branch: None,
                 archived: unarchive_since.is_none_or(|cutoff| updated_at < cutoff),
+                // Active on arrival; an old one is the idle sweep's to settle.
+                settled_at: None,
+                unsettled_at: None,
             })
         })
         .collect()

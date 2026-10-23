@@ -258,6 +258,10 @@ describe("thread history ↔ agent_host wire shapes (#7)", () => {
     expect(tsInterfaceProps(ts, "ThreadRow")).toContain("liveElsewhere");
   });
 
+  it("ThreadRow carries settledAt, the Settled shelf's only input", () => {
+    expect(tsInterfaceProps(ts, "ThreadRow")).toContain("settledAt");
+  });
+
   it("the threads_* history commands are returned as those structs", () => {
     expect(commands).toMatch(/fn threads_history\([\s\S]*?\) -> Result<Vec<[\w:]*ThreadRow>/);
     expect(commands).toMatch(
@@ -270,7 +274,13 @@ describe("thread history ↔ agent_host wire shapes (#7)", () => {
 
   it("covers the thread commands, including threads_sync_project", () => {
     expect(invoked).toEqual(
-      expect.arrayContaining(["threads_sync_project", "threads_projects", "threads_history"]),
+      expect.arrayContaining([
+        "threads_sync_project",
+        "threads_projects",
+        "threads_history",
+        "threads_settle",
+        "threads_unsettle",
+      ]),
     );
   });
 

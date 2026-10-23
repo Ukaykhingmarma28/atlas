@@ -616,6 +616,11 @@ impl ThreadMetadataStore {
             // the host and written through `update_branch`.
             branch: existing.as_ref().and_then(|t| t.branch.clone()),
             archived,
+            // Settling is the user's call (or the idle sweep's), never the
+            // conversation's: agent activity does not move a row off the
+            // shelf. A user send does, through `update_interacted_at`.
+            settled_at: existing.as_ref().and_then(|t| t.settled_at),
+            unsettled_at: existing.as_ref().and_then(|t| t.unsettled_at),
         };
         if let Some(session_id) = row.session_id.as_ref() {
             if cache.deleted.remove(session_id) {
@@ -662,12 +667,17 @@ impl ThreadMetadataStore {
     }
 
     /// The user sent or queued a message (`:843-856`).
+    ///
+    /// Sending to a settled session un-settles it: the user is working in it
+    /// again. Nothing else that moves a row does — agent output and activity
+    /// seen outside Atlas leave a settled row on the shelf.
     pub fn update_interacted_at(&self, thread_id: ThreadId, time: DateTime<Utc>) {
         self.update(thread_id, |thread| {
-            if thread.interacted_at == Some(time) {
+            if thread.interacted_at == Some(time) && thread.settled_at.is_none() {
                 return false;
             }
             thread.interacted_at = Some(time);
+            thread.settled_at = None;
             true
         });
     }
@@ -813,6 +823,82 @@ impl ThreadMetadataStore {
             thread.archived = archived;
             true
         })
+    }
+
+    /// Move the session to the Settled shelf: done for now, still listed,
+    /// still resumable. Answers whether anything changed — settling a row that
+    /// is already settled, or that does not exist, is a no-op with no event.
+    ///
+    /// Whether the session may be settled right now (not mid-turn) is the
+    /// host's to decide; the store only records it.
+    pub fn settle(&self, thread_id: ThreadId) -> bool {
+        self.update(thread_id, |thread| {
+            if thread.settled_at.is_some() {
+                return false;
+            }
+            thread.settled_at = Some(Utc::now());
+            true
+        })
+    }
+
+    /// Back off the shelf. Recorded as `unsettled_at`, which keeps the idle
+    /// sweep from settling it straight back ([`Self::auto_settle_idle`]).
+    pub fn unsettle(&self, thread_id: ThreadId) -> bool {
+        self.update(thread_id, |thread| {
+            if thread.settled_at.is_none() {
+                return false;
+            }
+            thread.settled_at = None;
+            thread.unsettled_at = Some(Utc::now());
+            true
+        })
+    }
+
+    /// Settle every session idle since before `cutoff`. Answers how many were
+    /// settled; one change event if any were.
+    ///
+    /// A row is left alone when it is archived (off the sidebar already), a
+    /// draft, already settled, active at or after `cutoff`, or un-settled by
+    /// the user after its last activity — they said it is not done, and
+    /// nothing has happened since. `busy` names the sessions the host knows
+    /// are running, waiting on the user, or live in another process; those
+    /// are skipped too. It is passed in rather than asked for because it is
+    /// read from the host, which reads this store, and this runs under the
+    /// store's write lock.
+    ///
+    /// The settled time is the row's last activity, not now: the session
+    /// was done then, and that is the order the shelf lists it in.
+    pub fn auto_settle_idle(&self, cutoff: DateTime<Utc>, busy: &HashSet<acp::SessionId>) -> usize {
+        let mut settled = 0;
+        {
+            let mut cache = write(&self.inner.cache);
+            let due: Vec<ThreadMetadata> = cache
+                .threads
+                .values()
+                .filter(|t| {
+                    let Some(session_id) = t.session_id.as_ref() else {
+                        return false;
+                    };
+                    let last = t.last_activity();
+                    !t.archived
+                        && t.settled_at.is_none()
+                        && last < cutoff
+                        && t.unsettled_at.is_none_or(|at| at <= last)
+                        && !busy.contains(session_id)
+                })
+                .cloned()
+                .collect();
+            for mut thread in due {
+                thread.settled_at = Some(thread.last_activity());
+                cache.insert(thread.clone());
+                self.enqueue(DbOperation::Upsert(Box::new(thread)));
+                settled += 1;
+            }
+        }
+        if settled > 0 {
+            self.notify(ThreadStoreEvent::Changed);
+        }
+        settled
     }
 
     /// Remove the row. Local only — asking the agent to forget its session is

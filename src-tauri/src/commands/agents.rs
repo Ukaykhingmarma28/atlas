@@ -592,6 +592,11 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
     }
 }
 
+/// How often the idle sweep looks for sessions to settle. The threshold is in
+/// days, so a minute is far finer than it needs to be; it is what keeps a
+/// change to the setting visible without a restart.
+const AUTO_SETTLE_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
+
 /// Emitted whenever Atlas's session history changes. Carries no payload: a
 /// listener re-reads the store, which is the correct response to any change.
 pub const THREADS_CHANGED_EVENT: &str = "atlas:threads-changed";
@@ -1151,6 +1156,37 @@ pub fn install_manager(app: &AppHandle) {
         });
     }
 
+    // Auto-settle: once a minute, sessions idle for `autoSettleAfterDays`
+    // move to the sidebar's Settled shelf. The host skips the busy and the
+    // live-elsewhere ones, the store the archived and the ones the user
+    // un-settled since their last activity; a settle announces itself through
+    // the forwarder above. The setting is read every pass, so a change takes
+    // effect within the minute.
+    if host.history().is_some() {
+        let app = app.clone();
+        let host = host.clone();
+        tauri::async_runtime::spawn(async move {
+            loop {
+                tokio::time::sleep(AUTO_SETTLE_EVERY).await;
+                let Some(days) = app
+                    .try_state::<crate::state::AtlasConfigHandle>()
+                    .map(|config| config.lock().effective().auto_settle_after_days)
+                else {
+                    continue;
+                };
+                let modified = app
+                    .try_state::<Arc<super::session_watcher::SessionWatcher>>()
+                    .map(|watcher| watcher.last_modified())
+                    .unwrap_or_default();
+                match host.auto_settle_idle(chrono::Duration::days(i64::from(days)), &modified) {
+                    Ok(0) => {}
+                    Ok(settled) => tracing::debug!(settled, days, "auto-settled idle sessions"),
+                    Err(e) => tracing::warn!(error = %e, "auto-settle sweep failed"),
+                }
+            }
+        });
+    }
+
     // Elicitations a connection raises outside any session — the sign-in ones.
     // Without this the agent asks, nobody is shown the question, and the
     // sign-in hangs on an answer that can never come.
@@ -1674,6 +1710,28 @@ pub fn threads_history(
 #[tauri::command]
 pub fn threads_archive(thread_id: String, host: State<'_, Arc<AgentHost>>) -> Result<(), CmdError> {
     host.archive_thread(parse_thread_id(&thread_id)?)
+        .map_err(CmdError::from)
+}
+
+/// Move a session to the sidebar's Settled shelf. Refused while a turn is
+/// running there, in Atlas or in another process.
+#[tauri::command]
+pub fn threads_settle(
+    thread_id: String,
+    host: State<'_, Arc<AgentHost>>,
+    watcher: State<'_, Arc<super::session_watcher::SessionWatcher>>,
+) -> Result<(), CmdError> {
+    host.settle_thread(parse_thread_id(&thread_id)?, &watcher.last_modified())
+        .map_err(CmdError::from)
+}
+
+/// Take a session back off the Settled shelf.
+#[tauri::command]
+pub fn threads_unsettle(
+    thread_id: String,
+    host: State<'_, Arc<AgentHost>>,
+) -> Result<(), CmdError> {
+    host.unsettle_thread(parse_thread_id(&thread_id)?)
         .map_err(CmdError::from)
 }
 

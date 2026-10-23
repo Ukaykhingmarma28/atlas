@@ -206,6 +206,10 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
         "# The order of sessions in the sidebar: \"recent\" puts the session with the\n# latest activity first, \"created\" the one started most recently. (default:\n# \"recent\")",
     ),
     (
+        "autoSettleAfterDays",
+        "# Days a session may sit idle before Atlas settles it: moves it to the Settled\n# shelf at the bottom of the session sidebar, where it stays listed and\n# resumable. A session that is running, waiting for you, archived, or that you\n# un-settled since its last activity is left alone, and sending to a settled\n# session brings it back. Must be between 1 and 90. (default: 3)",
+    ),
+    (
         "timeFormat",
         "# The clock for every time of day Atlas shows: \"12h\", \"24h\", or \"system\" to\n# follow your system's region settings. (default: \"system\")",
     ),

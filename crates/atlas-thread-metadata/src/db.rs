@@ -19,15 +19,15 @@ use crate::schema;
 const LIST_QUERY: &str = "SELECT thread_id, session_id, agent_id, title, title_override, \
      updated_at, created_at, interacted_at, folder_paths, folder_paths_order, \
      main_worktree_paths, main_worktree_paths_order, remote_connection, archived, \
-     branch \
+     branch, settled_at, unsettled_at \
      FROM threads \
      ORDER BY updated_at DESC";
 
 const UPSERT: &str = "INSERT INTO threads(thread_id, session_id, agent_id, title, \
          title_override, updated_at, created_at, interacted_at, folder_paths, \
          folder_paths_order, main_worktree_paths, main_worktree_paths_order, \
-         remote_connection, archived, branch) \
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15) \
+         remote_connection, archived, branch, settled_at, unsettled_at) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17) \
      ON CONFLICT(thread_id) DO UPDATE SET \
          session_id = excluded.session_id, \
          agent_id = excluded.agent_id, \
@@ -42,7 +42,9 @@ const UPSERT: &str = "INSERT INTO threads(thread_id, session_id, agent_id, title
          main_worktree_paths_order = excluded.main_worktree_paths_order, \
          remote_connection = excluded.remote_connection, \
          archived = excluded.archived, \
-         branch = excluded.branch";
+         branch = excluded.branch, \
+         settled_at = excluded.settled_at, \
+         unsettled_at = excluded.unsettled_at";
 
 /// The durable half of the store.
 pub(crate) struct Db {
@@ -111,6 +113,8 @@ impl Db {
                 remote,
                 row.archived,
                 row.branch.as_deref(),
+                row.settled_at.map(|dt| dt.to_rfc3339()),
+                row.unsettled_at.map(|dt| dt.to_rfc3339()),
             ],
         )?;
         Ok(())
@@ -283,6 +287,8 @@ fn decode(row: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMetadata> {
     let remote_connection: Option<String> = row.get(12)?;
     let archived: bool = row.get(13)?;
     let branch: Option<String> = row.get(14)?;
+    let settled_at: Option<String> = row.get(15)?;
+    let unsettled_at: Option<String> = row.get(16)?;
 
     let folder_paths = path_list(serialized(folder_paths, folder_paths_order));
     let main_paths = path_list(serialized(main_paths, main_paths_order));
@@ -313,6 +319,8 @@ fn decode(row: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMetadata> {
             .filter(|b| !b.trim().is_empty())
             .map(|b| Arc::from(b.as_str())),
         archived,
+        settled_at: timestamp(settled_at),
+        unsettled_at: timestamp(unsettled_at),
     })
 }
 

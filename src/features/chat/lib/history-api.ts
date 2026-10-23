@@ -43,6 +43,12 @@ export interface ThreadRow {
   updatedAt: string;
   createdAt: string | null;
   archived: boolean;
+  /**
+   * When the session was settled — moved to the sidebar's Settled shelf, still
+   * listed and resumable — as RFC 3339. `null` while it is active. Set by the
+   * user or by the idle sweep (`autoSettleAfterDays`); a send clears it.
+   */
+  settledAt: string | null;
   projectName: string;
   folderPaths: string[];
   /** Another process (typically `claude` in a terminal) wrote this session
@@ -127,6 +133,19 @@ export function deleteThread(threadId: string): Promise<void> {
 /** Take a thread out of the active list, keeping it in history. */
 export function archiveThread(threadId: string): Promise<void> {
   return invoke<void>("threads_archive", { threadId });
+}
+
+/**
+ * Move a session to the Settled shelf: done for now, still in the sidebar.
+ * Rejects while a turn is running in it.
+ */
+export function settleThread(threadId: string): Promise<void> {
+  return invoke<void>("threads_settle", { threadId });
+}
+
+/** Take a session back off the Settled shelf. */
+export function unsettleThread(threadId: string): Promise<void> {
+  return invoke<void>("threads_unsettle", { threadId });
 }
 
 /** Whether an agent can be imported from, and why not when it cannot. */
