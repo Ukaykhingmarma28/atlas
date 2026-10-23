@@ -1,6 +1,15 @@
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
-import { Fragment, memo, useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { ArrowUp, History, Search } from "lucide-react";
+import {
+  Fragment,
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
+import { ArrowUp, ChevronRight, History, Search } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
@@ -10,7 +19,16 @@ import { pluginIdForAgent } from "@/types/agent";
 import { repoPullRequestsKey } from "@/features/git/lib/git-pr-api";
 import { ThreadHistoryView } from "./thread-history-view";
 import { SessionCard } from "./session-card";
-import { placeProjectNames, sortThreads } from "../lib/sidebar-grouping";
+import {
+  nextAfterSettling,
+  placeProjectNames,
+  SETTLED_SHELF_FIRST_PAGE,
+  SETTLED_SHELF_PAGE,
+  sortThreads,
+  splitSettled,
+} from "../lib/sidebar-grouping";
+import { registerSettleAndAdvance } from "../lib/settle-and-advance";
+import { openNewAgentChat } from "../lib/open-agent-session";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { confirmDeleteChat } from "../lib/confirm-delete-chat";
 import { useAppStore } from "@/features/app/stores/app-store";
@@ -25,8 +43,10 @@ import {
   archiveThread,
   deleteThread,
   onThreadsChanged,
+  settleThread,
   syncProjectThreads,
   threadProjects,
+  unsettleThread,
   type ThreadRow,
 } from "../lib/history-api";
 import { getAgentSync } from "../lib/agents-api";
@@ -74,6 +94,20 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** The reason a rejected `invoke` gives. It carries the backend's `CmdError`
+ *  — a plain `{ message, kind }` object, not an `Error` — and its message is
+ *  the reason (the session is still running, or active in another process). */
+function invokeErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object" && err !== null && "message" in err) {
+    return String((err as { message: unknown }).message);
+  }
+  return String(err);
+}
+
+/** How long the Undo on a settle stays up. */
+const SETTLE_UNDO_MS = 5_000;
+
 /** One key for the whole sidebar: history is one store, so there is one query. */
 const THREAD_PROJECTS_KEY = ["thread-projects"] as const;
 
@@ -96,6 +130,7 @@ function itemFromThread(thread: ThreadRow, projectName: string, elsewhere = fals
     cwd: thread.folderPaths[0] ?? "",
     liveElsewhere: thread.liveElsewhere,
     branch: thread.branch ?? null,
+    settledAt: thread.settledAt ?? null,
   };
 }
 
@@ -127,6 +162,9 @@ interface SidebarItem {
   liveElsewhere: boolean;
   /** The branch the thread ran on, as it recorded it. */
   branch: string | null;
+  /** When the session was settled — it is on the Settled shelf; `null` while
+   *  it is active. */
+  settledAt: string | null;
 }
 
 interface SessionSidebarProps {
@@ -304,7 +342,8 @@ export const SessionSidebar = memo(function SessionSidebar({
   } = useChatStore.use.actions();
 
   const chatSidebar = useLayoutStore.use.chatSidebar();
-  const { setChatSidebarWidth, addTab, setActiveTab } = useLayoutStore.use.actions();
+  const { setChatSidebarWidth, setChatSidebarSettledExpanded, addTab, setActiveTab } =
+    useLayoutStore.use.actions();
 
   const [search, setSearch] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -440,23 +479,49 @@ export const SessionSidebar = memo(function SessionSidebar({
     busyDirsRef.current = busyNow;
   }, [tabSummaries, queryClient]);
 
+  // Two sections: the active list, and the Settled shelf under it — sessions
+  // put away by hand or by the idle sweep, newest settled first.
+  const { active: activeItems, settled: settledItems } = useMemo(
+    () => splitSettled(items),
+    [items],
+  );
+
   // Rows keep their order while the pointer is over the list or focus is in
   // it: a session another process keeps writing moves to the top on every
   // write, and used to jump under the pointer just as it was clicked. Content
   // still updates live; leaving applies the real order (`use-frozen-order.ts`).
-  const { ordered, listProps: frozenListProps } = useFrozenOrder(items, rowKey);
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return q ? ordered.filter((it) => it.title.toLowerCase().includes(q)) : ordered;
-  }, [ordered, search]);
-
-  // Where each row's project is named (`placeProjectNames`): on the card for a
-  // row from another project, as headings when no project is open — Rust then
-  // marks nothing current and returns every project.
-  const placements = useMemo(
-    () => placeProjectNames(filtered, !projects.some((project) => project.isCurrent)),
-    [filtered, projects],
+  // Each section holds its own order: a row settling out of one section is
+  // not a reason to reshuffle the other.
+  const { ordered, listProps: frozenListProps } = useFrozenOrder(activeItems, rowKey);
+  const { ordered: settledOrdered, listProps: settledListProps } = useFrozenOrder(
+    settledItems,
+    rowKey,
   );
+  const query = search.trim().toLowerCase();
+  const filtered = useMemo(
+    () => (query ? ordered.filter((it) => it.title.toLowerCase().includes(query)) : ordered),
+    [ordered, query],
+  );
+  const settledFiltered = useMemo(
+    () =>
+      query
+        ? settledOrdered.filter((it) => it.title.toLowerCase().includes(query))
+        : settledOrdered,
+    [settledOrdered, query],
+  );
+
+  // No project open: Rust marks nothing current and returns every project.
+  const grouped = !projects.some((project) => project.isCurrent);
+  // Where each row's project is named (`placeProjectNames`): on the card for a
+  // row from another project, as headings when no project is open.
+  const placements = useMemo(() => placeProjectNames(filtered, grouped), [filtered, grouped]);
+
+  // The shelf starts collapsed, and remembers being opened (per viewer, with
+  // the rest of the layout prefs). Open, it shows a page at a time; the page
+  // count restarts with the project.
+  const settledExpanded = chatSidebar.settledExpanded;
+  const [settledPage, setSettledPage] = useState({ cwd, limit: SETTLED_SHELF_FIRST_PAGE });
+  const settledLimit = settledPage.cwd === cwd ? settledPage.limit : SETTLED_SHELF_FIRST_PAGE;
 
   // The list is newest-first (Rust sorts by recency), so "latest" is the TOP
   // of it and the way back is up — which is why the pill shows while there is
@@ -469,6 +534,9 @@ export const SessionSidebar = memo(function SessionSidebar({
   const listRef = useRef<HTMLDivElement>(null);
   const edges = useScrollEdges(listRef, [
     filtered.length,
+    settledFiltered.length,
+    settledExpanded,
+    settledLimit,
     search,
     isLoading,
     asDropdown || chatSidebar.visible,
@@ -618,6 +686,82 @@ export const SessionSidebar = memo(function SessionSidebar({
     })();
   };
 
+  /** Whether a tab other than this one already holds the row's session. */
+  const isOpenInAnotherTab = (item: SidebarItem) => {
+    if (item.kind !== "agent") return false;
+    const openTabIds = new Set(useLayoutStore.getState().tabs.map((t) => t.id));
+    return Object.entries(useChatStore.getState().sessions).some(
+      ([tid, s]) => tid !== tabId && openTabIds.has(tid) && s.acpSessionId === item.id,
+    );
+  };
+
+  const isActiveItem = (item: SidebarItem) => {
+    if (item.kind === "agent") {
+      // Match the active tab by the SAME id formula `items` uses for live
+      // rows: bound acpSessionId, else the synthetic `live-<tabId>`. Without
+      // the fallback a focused live-only session (e.g. Codex, or any chat
+      // before it binds) never highlights.
+      const activeId = activeAcpId ?? `live-${tabId}`;
+      return item.id === activeId;
+    }
+    return item.id === tabId;
+  };
+
+  // Settle: onto the shelf, with a few seconds to take it back. Settling the
+  // open session moves this tab on to the next active one (or a fresh session
+  // when there is none) — the open session is what the user just finished
+  // with, and leaving it on screen would make the shelf pointless. A row
+  // already open in another tab is skipped: opening it would focus that tab
+  // and leave this one showing the settled session. The target is chosen
+  // BEFORE the list changes under it. Undo takes the session back off the
+  // shelf and, if it was the open one, back into view.
+  const handleSettleAgent = async (item: SidebarItem) => {
+    const wasOpen = isActiveItem(item);
+    const next = wasOpen
+      ? nextAfterSettling(
+          filtered.filter((row) => row.threadId === item.threadId || !isOpenInAnotherTab(row)),
+          item.threadId,
+        )
+      : null;
+    let settled: boolean;
+    try {
+      settled = await settleThread(item.threadId);
+    } catch (err) {
+      toast.error(`Couldn't settle: ${invokeErrorMessage(err)}`);
+      return;
+    }
+    // Nothing changed (already settled, gone, or just sent to): no move, no
+    // toast, nothing to undo.
+    if (!settled) return;
+    if (wasOpen) {
+      if (next && next.threadId !== item.threadId) handleOpenAgent(next);
+      else openNewAgentChat();
+    }
+    toast("Session settled", {
+      duration: SETTLE_UNDO_MS,
+      action: {
+        label: "Undo",
+        onClick: () => {
+          void unsettleThread(item.threadId)
+            .then(() => {
+              if (wasOpen) handleOpenAgent(item);
+            })
+            .catch((err: unknown) => {
+              toast.error(`Couldn't undo: ${invokeErrorMessage(err)}`);
+            });
+        },
+      },
+    });
+  };
+
+  const handleUnsettleAgent = async (item: SidebarItem) => {
+    try {
+      await unsettleThread(item.threadId);
+    } catch (err) {
+      toast.error(`Couldn't un-settle: ${invokeErrorMessage(err)}`);
+    }
+  };
+
   const handleArchiveAgent = async (item: SidebarItem) => {
     try {
       // Out of the way, not gone. The thread stays in History and comes back
@@ -642,16 +786,7 @@ export const SessionSidebar = memo(function SessionSidebar({
       useRecentChatsStore.getState().actions.removeBySession(item.id);
     } catch (err) {
       console.error("Failed to delete session:", err);
-      // A rejected `invoke` carries the backend's `CmdError` — a plain
-      // `{ message, kind }` object, not an `Error` — and its message is the
-      // reason (e.g. the session is still active in another process).
-      const message =
-        err instanceof Error
-          ? err.message
-          : typeof err === "object" && err !== null && "message" in err
-            ? String((err as { message: unknown }).message)
-            : String(err);
-      toast.error(`Couldn't delete session: ${message}`);
+      toast.error(`Couldn't delete session: ${invokeErrorMessage(err)}`);
     }
   };
 
@@ -662,16 +797,28 @@ export const SessionSidebar = memo(function SessionSidebar({
   itemsByThreadRef.current = new Map(items.map((it) => [it.threadId, it]));
   const handlersRef = useRef({
     open: handleOpenAgent,
+    settle: handleSettleAgent,
+    unsettle: handleUnsettleAgent,
     archive: handleArchiveAgent,
     remove: handleDeleteAgent,
     onOpened,
   });
   handlersRef.current = {
     open: handleOpenAgent,
+    settle: handleSettleAgent,
+    unsettle: handleUnsettleAgent,
     archive: handleArchiveAgent,
     remove: handleDeleteAgent,
     onOpened,
   };
+  // What the settle chord acts on. Written after commit, not during render:
+  // a concurrent render React throws away would otherwise leave the chord
+  // pointing at a session this tab never showed.
+  const openItem = items.find(isActiveItem);
+  const openItemRef = useRef<SidebarItem | undefined>(undefined);
+  useLayoutEffect(() => {
+    openItemRef.current = openItem;
+  }, [openItem]);
   const onOpenCard = useCallback((threadId: string) => {
     const item = itemsByThreadRef.current.get(threadId);
     if (!item) return;
@@ -679,6 +826,31 @@ export const SessionSidebar = memo(function SessionSidebar({
     // Dismiss the picker; the sidebar variant stays put.
     handlersRef.current.onOpened?.();
   }, []);
+  const onSettleCard = useCallback((threadId: string) => {
+    const item = itemsByThreadRef.current.get(threadId);
+    if (item) void handlersRef.current.settle(item);
+  }, []);
+  const onUnsettleCard = useCallback((threadId: string) => {
+    const item = itemsByThreadRef.current.get(threadId);
+    if (item) void handlersRef.current.unsettle(item);
+  }, []);
+
+  // The settle chord (`chat.settleSession`) acts on this tab's open session:
+  // settles it and moves on, or brings it back off the shelf. Registered by
+  // the sidebar proper — hidden, it is still mounted — and not by the
+  // picker, which is the same list for a moment.
+  useEffect(() => {
+    if (asDropdown) return;
+    return registerSettleAndAdvance(tabId, () => {
+      const item = openItemRef.current;
+      if (!item) {
+        toast.info("Nothing to settle: this session has no messages yet.");
+        return;
+      }
+      void (item.settledAt ? handlersRef.current.unsettle(item) : handlersRef.current.settle(item));
+    });
+  }, [asDropdown, tabId]);
+
   const onArchiveCard = useCallback((threadId: string) => {
     const item = itemsByThreadRef.current.get(threadId);
     if (item) void handlersRef.current.archive(item);
@@ -722,21 +894,55 @@ export const SessionSidebar = memo(function SessionSidebar({
     return null;
   }
 
-  const isActiveItem = (item: SidebarItem) => {
-    if (item.kind === "agent") {
-      // Match the active tab by the SAME id formula `items` uses for live
-      // rows: bound acpSessionId, else the synthetic `live-<tabId>`. Without
-      // the fallback a focused live-only session (e.g. Codex, or any chat
-      // before it binds) never highlights.
-      const activeId = activeAcpId ?? `live-${tabId}`;
-      return item.id === activeId;
-    }
-    return item.id === tabId;
-  };
-
   // An error is not an empty list: a history store that failed to open says so.
   const showError = historyFailed && projects.length === 0;
-  const showEmpty = !isLoading && !showError && filtered.length === 0;
+  const showEmpty =
+    !isLoading && !showError && filtered.length === 0 && settledFiltered.length === 0;
+
+  // What the shelf shows. A search looks through all of it, open or not. Open,
+  // a page at a time. Collapsed, only the rows that need to be seen: the open
+  // session, and any that came alive again — running, waiting on the user, or
+  // live in another process. Outside activity does not un-settle a session,
+  // but it must not be buried behind a shut shelf either.
+  const needsSight = (item: SidebarItem) => {
+    if (isActiveItem(item) || item.liveElsewhere) return true;
+    const status = liveByKey.get(`${item.kind}:${item.id}`)?.status;
+    return status === "running" || status === "waiting";
+  };
+  const shelfRows = query
+    ? settledFiltered
+    : settledExpanded
+      ? settledFiltered.slice(0, settledLimit)
+      : settledFiltered.filter(needsSight);
+  const shelfHidden = query ? 0 : settledFiltered.length - shelfRows.length;
+  const shelfOpen = settledExpanded || !!query;
+
+  const renderCard = (item: SidebarItem, showProject: boolean) => {
+    const live = liveByKey.get(`${item.kind}:${item.id}`);
+    return (
+      <SessionCard
+        key={item.threadId}
+        threadId={item.threadId}
+        title={item.title}
+        projectName={item.projectName}
+        showProject={showProject}
+        branch={item.branch}
+        cwd={item.cwd}
+        lastUpdated={item.lastUpdated}
+        status={live?.status ?? null}
+        liveTabId={live?.tabId ?? null}
+        active={isActiveItem(item)}
+        agent={item.agent}
+        liveElsewhere={item.liveElsewhere}
+        settledAt={item.settledAt}
+        onOpen={onOpenCard}
+        onSettle={onSettleCard}
+        onUnsettle={onUnsettleCard}
+        onArchive={onArchiveCard}
+        onDelete={onDeleteCard}
+      />
+    );
+  };
 
   return (
     <div
@@ -804,6 +1010,9 @@ export const SessionSidebar = memo(function SessionSidebar({
             // finished when it is not.
             asDropdown && "atlas-scroll-mask-b",
           )}
+          // The active rows hold their order while the pointer is anywhere
+          // over the list; the shelf's rows hold theirs while it is over the
+          // shelf.
           {...frozenListProps}
         >
           {isLoading && <div className="px-1 py-1 text-xs text-muted-foreground">Loading…</div>}
@@ -820,49 +1029,70 @@ export const SessionSidebar = memo(function SessionSidebar({
               {search.trim() ? "No sessions match your search." : "No chats in this project yet."}
             </div>
           )}
-          {filtered.map((item, index) => {
-            const live = liveByKey.get(`${item.kind}:${item.id}`);
-            const { heading, showProject } = placements[index]!;
-            const card = (
-              <SessionCard
-                key={item.threadId}
-                threadId={item.threadId}
-                title={item.title}
-                projectName={item.projectName}
-                showProject={showProject}
-                branch={item.branch}
-                cwd={item.cwd}
-                lastUpdated={item.lastUpdated}
-                status={live?.status ?? null}
-                liveTabId={live?.tabId ?? null}
-                active={isActiveItem(item)}
-                agent={item.agent}
-                liveElsewhere={item.liveElsewhere}
-                onOpen={onOpenCard}
-                onArchive={onArchiveCard}
-                onDelete={onDeleteCard}
-              />
-            );
-            if (!heading) return card;
-            return (
-              <Fragment key={item.threadId}>
-                <div
-                  role="heading"
-                  aria-level={3}
-                  className={cn(
-                    "-mx-2 truncate px-3 pt-1.5 pb-0.5 text-3xs font-medium uppercase tracking-wider text-muted-foreground",
-                    // Sticky in the sidebar, where the list sits on the opaque
-                    // sidebar fill; the dropdown's panel is translucent and
-                    // blurred, and a sticky fill there would punch through it.
-                    !asDropdown && "sticky top-0 z-panel bg-[var(--sidebar)]",
-                  )}
+          <div className="flex flex-col gap-1.5">
+            {filtered.map((item, index) => {
+              const { heading, showProject } = placements[index]!;
+              const card = renderCard(item, showProject);
+              if (!heading) return card;
+              return (
+                <Fragment key={item.threadId}>
+                  <div
+                    role="heading"
+                    aria-level={3}
+                    className={cn(
+                      "-mx-2 truncate px-3 pt-1.5 pb-0.5 text-3xs font-medium uppercase tracking-wider text-muted-foreground",
+                      // Sticky in the sidebar, where the list sits on the opaque
+                      // sidebar fill; the dropdown's panel is translucent and
+                      // blurred, and a sticky fill there would punch through it.
+                      !asDropdown && "sticky top-0 z-panel bg-[var(--sidebar)]",
+                    )}
+                  >
+                    {heading}
+                  </div>
+                  {card}
+                </Fragment>
+              );
+            })}
+          </div>
+
+          {/* The Settled shelf, under everything active. Collapsed by default;
+              a search reaches into it either way. */}
+          {settledFiltered.length > 0 && (
+            <div
+              data-testid="settled-shelf"
+              className="mt-1 flex flex-col gap-1.5"
+              {...settledListProps}
+            >
+              <button
+                type="button"
+                onClick={() => setChatSidebarSettledExpanded(!settledExpanded)}
+                aria-expanded={shelfOpen}
+                disabled={!!query}
+                className="flex cursor-pointer items-center gap-1 rounded-sm px-1 py-0.5 text-left text-3xs font-medium uppercase tracking-wider text-muted-foreground hover:text-foreground disabled:cursor-default disabled:hover:text-muted-foreground"
+              >
+                <ChevronRight
+                  size={10}
+                  aria-hidden
+                  className={cn("transition-transform duration-fast", shelfOpen && "rotate-90")}
+                />
+                Settled
+                <span className="tabular-nums">{settledFiltered.length}</span>
+              </button>
+              {/* A settled row from another project is named on its card, and
+                  so is every one when no project is open: the shelf has no
+                  headings of its own. */}
+              {shelfRows.map((item) => renderCard(item, grouped || item.elsewhere))}
+              {settledExpanded && shelfHidden > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSettledPage({ cwd, limit: settledLimit + SETTLED_SHELF_PAGE })}
+                  className="cursor-pointer self-start rounded-sm px-1 py-0.5 text-2xs text-muted-foreground hover:text-foreground"
                 >
-                  {heading}
-                </div>
-                {card}
-              </Fragment>
-            );
-          })}
+                  Show {Math.min(shelfHidden, SETTLED_SHELF_PAGE)} more
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Edge fades, and the way back to the top. Sidebar only: the

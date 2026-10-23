@@ -305,6 +305,15 @@ export const ACTIONS = [
     defaults: ["alt+/"],
   },
   {
+    // ⌘⌥S: ⌘⇧S is the model picker's pin, and while the picker is open it
+    // would shadow this one.
+    id: "chat.settleSession",
+    title: "Settle or un-settle the open session",
+    category: "Session",
+    when: "global",
+    defaults: ["cmd+alt+s"],
+  },
+  {
     id: "chat.cyclePermissionMode",
     title: "Cycle permission mode",
     category: "Session",

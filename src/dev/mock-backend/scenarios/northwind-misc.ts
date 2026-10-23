@@ -473,6 +473,9 @@ const THREAD_AGENT: Record<AgentKey, string> = {
   "atlas-agent": "atlas-agent",
 };
 
+/** `autoSettleAfterDays`' default, in milliseconds. */
+const SETTLE_AFTER_MS = 3 * 86_400_000;
+
 /**
  * Uzayer's agent chats in Atlas: his recorded Sessions run from the composer.
  * Imported ones ran in a terminal before capture and never were Atlas chats;
@@ -489,6 +492,9 @@ function seedThreads(): ThreadRow[] {
       updatedAt: iso(s.lastMs),
       createdAt: iso(s.startMs),
       archived: false,
+      // Idle past the default three days: on the Settled shelf, settled at
+      // its last activity, as the idle sweep records it.
+      settledAt: Date.now() - s.lastMs > SETTLE_AFTER_MS ? iso(s.lastMs) : null,
       projectName: PROJECT.name,
       folderPaths: [PROJECT.path],
       // The branch the Session itself records: `main`, except the run that
@@ -1686,6 +1692,26 @@ export const northwindMiscRawCommands: MockHandlers = {
     threads = threads.filter((thread) => thread.threadId !== String(threadId));
     threadsChanged();
     return null;
+  },
+  threads_settle: ({ threadId }): boolean => {
+    const due = threads.some((t) => t.threadId === String(threadId) && t.settledAt === null);
+    if (!due) return false;
+    threads = threads.map((thread) =>
+      thread.threadId === String(threadId)
+        ? { ...thread, settledAt: new Date().toISOString() }
+        : thread,
+    );
+    threadsChanged();
+    return true;
+  },
+  threads_unsettle: ({ threadId }): boolean => {
+    const due = threads.some((t) => t.threadId === String(threadId) && t.settledAt !== null);
+    if (!due) return false;
+    threads = threads.map((thread) =>
+      thread.threadId === String(threadId) ? { ...thread, settledAt: null } : thread,
+    );
+    threadsChanged();
+    return true;
   },
   threads_archive: ({ threadId }): null => {
     threads = threads.map((thread) =>

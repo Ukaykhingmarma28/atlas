@@ -106,6 +106,15 @@ pub struct ThreadMetadata {
     /// repository, or a row older than the column. Never guessed.
     pub branch: Option<Arc<str>>,
     pub archived: bool,
+    /// When the session was settled: done for now, moved to the sidebar's
+    /// Settled shelf, still listed and still resumable. `None` is active.
+    /// Settling is not archiving — an archived row leaves the sidebar, a
+    /// settled one only sinks to the bottom of it.
+    pub settled_at: Option<DateTime<Utc>>,
+    /// When the user last un-settled the session. Auto-settle leaves a row
+    /// alone while this is after its last activity: the user said "not done",
+    /// and nothing has happened since that could change their mind.
+    pub unsettled_at: Option<DateTime<Utc>>,
 }
 
 impl ThreadMetadata {
@@ -128,6 +137,8 @@ impl ThreadMetadata {
             remote_connection: None,
             branch: None,
             archived: false,
+            settled_at: None,
+            unsettled_at: None,
         }
     }
 
@@ -142,6 +153,19 @@ impl ThreadMetadata {
     pub fn display_title(&self) -> Arc<str> {
         self.title()
             .unwrap_or_else(|| Arc::from(DEFAULT_THREAD_TITLE))
+    }
+
+    /// Whether the session sits on the Settled shelf.
+    pub fn is_settled(&self) -> bool {
+        self.settled_at.is_some()
+    }
+
+    /// The last thing that happened in the session: agent or outside activity
+    /// (`updated_at`) or the user sending (`interacted_at`), whichever is
+    /// later. What "idle" is measured from.
+    pub fn last_activity(&self) -> DateTime<Utc> {
+        self.interacted_at
+            .map_or(self.updated_at, |at| at.max(self.updated_at))
     }
 
     pub fn title(&self) -> Option<Arc<str>> {

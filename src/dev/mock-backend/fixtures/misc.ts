@@ -55,7 +55,8 @@ const ago = (ms: number) => new Date(T0 - ms).toISOString();
  * The sidebar and the history view read the same rows, so one list feeds both.
  * The spread is deliberate: a draft with no session id yet, a very long
  * agent-written title, an archived row that only the history view may show,
- * and two projects so the sidebar's grouping has more than one group.
+ * two settled rows for the sidebar's Settled shelf, and two projects so the
+ * sidebar's grouping has more than one group.
  */
 const THREADS: ThreadRow[] = [
   {
@@ -66,6 +67,7 @@ const THREADS: ThreadRow[] = [
     updatedAt: ago(5 * 60_000),
     createdAt: ago(3 * 3_600_000),
     archived: false,
+    settledAt: null,
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     // Another process is writing this one: the live dot, and the composer's
@@ -83,6 +85,7 @@ const THREADS: ThreadRow[] = [
     updatedAt: ago(40 * 60_000),
     createdAt: ago(40 * 60_000),
     archived: false,
+    settledAt: null,
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
@@ -97,6 +100,7 @@ const THREADS: ThreadRow[] = [
     updatedAt: ago(26 * 3_600_000),
     createdAt: ago(28 * 3_600_000),
     archived: false,
+    settledAt: null,
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path, abs("src/styles")],
     liveElsewhere: false,
@@ -110,6 +114,7 @@ const THREADS: ThreadRow[] = [
     updatedAt: ago(3 * 86_400_000),
     createdAt: ago(3 * 86_400_000),
     archived: false,
+    settledAt: null,
     projectName: OTHER_PROJECTS[0].name,
     folderPaths: [OTHER_PROJECTS[0].path],
     liveElsewhere: false,
@@ -124,6 +129,7 @@ const THREADS: ThreadRow[] = [
     createdAt: ago(9 * 86_400_000),
     // The only archived row — the history view's filter has something to do.
     archived: true,
+    settledAt: null,
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
@@ -138,6 +144,7 @@ const THREADS: ThreadRow[] = [
     updatedAt: ago(2 * 3_600_000),
     createdAt: ago(2 * 3_600_000),
     archived: false,
+    settledAt: null,
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
@@ -154,6 +161,7 @@ const THREADS: ThreadRow[] = [
     updatedAt: ago(7 * 3_600_000),
     createdAt: ago(8 * 3_600_000),
     archived: false,
+    settledAt: null,
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
@@ -167,6 +175,7 @@ const THREADS: ThreadRow[] = [
     updatedAt: ago(19 * 3_600_000),
     createdAt: ago(19 * 3_600_000),
     archived: false,
+    settledAt: null,
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
@@ -180,6 +189,7 @@ const THREADS: ThreadRow[] = [
     updatedAt: ago(2 * 86_400_000),
     createdAt: ago(2 * 86_400_000),
     archived: false,
+    settledAt: null,
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
@@ -193,6 +203,9 @@ const THREADS: ThreadRow[] = [
     updatedAt: ago(5 * 86_400_000),
     createdAt: ago(5 * 86_400_000),
     archived: false,
+    // Idle past the auto-settle window: on the Settled shelf, settled at its
+    // last activity, as the idle sweep records it.
+    settledAt: ago(5 * 86_400_000),
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
@@ -207,6 +220,7 @@ const THREADS: ThreadRow[] = [
     updatedAt: ago(12 * 86_400_000),
     createdAt: ago(12 * 86_400_000),
     archived: false,
+    settledAt: ago(12 * 86_400_000),
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
@@ -415,6 +429,27 @@ export const miscHandlers: MockHandlers = {
     threads = threads.filter((thread) => thread.threadId !== String(threadId));
     threadsChanged();
     return null;
+  },
+  // As in Rust: settling sinks the row to the Settled shelf; it stays listed.
+  threads_settle: ({ threadId }): boolean => {
+    const due = threads.some((t) => t.threadId === String(threadId) && t.settledAt === null);
+    if (!due) return false;
+    threads = threads.map((thread) =>
+      thread.threadId === String(threadId)
+        ? { ...thread, settledAt: new Date().toISOString() }
+        : thread,
+    );
+    threadsChanged();
+    return true;
+  },
+  threads_unsettle: ({ threadId }): boolean => {
+    const due = threads.some((t) => t.threadId === String(threadId) && t.settledAt !== null);
+    if (!due) return false;
+    threads = threads.map((thread) =>
+      thread.threadId === String(threadId) ? { ...thread, settledAt: null } : thread,
+    );
+    threadsChanged();
+    return true;
   },
   threads_archive: ({ threadId }): null => {
     threads = threads.map((thread) =>

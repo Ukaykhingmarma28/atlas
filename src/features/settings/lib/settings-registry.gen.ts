@@ -248,6 +248,14 @@ export interface AppSettings {
    */
   sidebarSort: "recent" | "created";
   /**
+   * Days a session may sit idle before Atlas settles it: moves it to the Settled shelf at the
+   * bottom of the session sidebar, where it stays listed and resumable. A session that is
+   * running, waiting for you, archived, or that you un-settled since its last activity is left
+   * alone, and sending to a settled session brings it back. 0 turns auto-settling off; settling
+   * by hand still works. Must be between 0 and 90.
+   */
+  autoSettleAfterDays: number;
+  /**
    * The clock for every time of day Atlas shows: "12h", "24h", or "system" to follow your
    * system's region settings.
    */
@@ -359,6 +367,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   chatWidth: "normal",
   chatCodeWrap: true,
   sidebarSort: "recent",
+  autoSettleAfterDays: 3,
   timeFormat: "system",
   uiFontFamily: "",
   codeFontFamily: "",
@@ -948,6 +957,18 @@ export const SETTINGS_REGISTRY: readonly SettingMeta[] = [
     title: "Sort sessions by",
     summary: "Order the sidebar's sessions by their latest activity or by when they started.",
     values: ["recent", "created"],
+  },
+  {
+    key: "autoSettleAfterDays",
+    type: "integer",
+    status: "live",
+    page: "chat",
+    section: "Layout",
+    title: "Settle idle sessions after",
+    summary:
+      "A session with no activity for this many days moves to the sidebar's Settled shelf. 0 turns this off.",
+    min: 0,
+    max: 90,
   },
   {
     key: "timeFormat",

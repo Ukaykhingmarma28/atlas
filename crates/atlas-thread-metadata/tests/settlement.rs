@@ -1,0 +1,226 @@
+//! Settling: a session the user (or the idle sweep) is done with moves to the
+//! sidebar's Settled shelf. It stays listed and resumable; a user send brings
+//! it back, and nothing else does — not agent output, not a terminal writing
+//! the transcript. An un-settle holds off the sweep until something new
+//! happens in the session.
+
+use std::collections::HashSet;
+use std::path::PathBuf;
+
+use agent_client_protocol::schema::v1 as acp;
+use atlas_thread_metadata::{
+    LiveThreadUpdate, PathList, ThreadId, ThreadMetadata, ThreadMetadataStore, ThreadStoreEvent,
+    WorktreePaths,
+};
+use chrono::{Duration, Utc};
+
+fn open(dir: &tempfile::TempDir) -> ThreadMetadataStore {
+    ThreadMetadataStore::open(dir.path().join("threads.db")).expect("store opens")
+}
+
+/// A sent session, last active `idle` ago.
+fn thread(idle: Duration) -> ThreadMetadata {
+    let mut thread = ThreadMetadata::new(
+        ThreadId::new(),
+        "some-agent".into(),
+        PathList::new(&[PathBuf::from("/tmp/atlas")]),
+    );
+    thread.session_id = Some(acp::SessionId::new(thread.thread_id.to_key_string()));
+    let at = Utc::now() - idle;
+    thread.updated_at = at;
+    thread.interacted_at = Some(at);
+    thread
+}
+
+fn drain(changes: &mut tokio::sync::broadcast::Receiver<ThreadStoreEvent>) {
+    while changes.try_recv().is_ok() {}
+}
+
+#[test]
+fn settling_marks_the_row_announces_once_and_survives_a_reopen() {
+    let dir = tempfile::tempdir().unwrap();
+    let row = thread(Duration::hours(1));
+    let id = row.thread_id;
+    {
+        let store = open(&dir);
+        store.save_all(vec![row]);
+        let mut changes = store.subscribe();
+
+        assert!(store.settle(id));
+        assert_eq!(changes.try_recv().unwrap(), ThreadStoreEvent::Changed);
+        assert!(store.thread(id).unwrap().is_settled());
+
+        assert!(!store.settle(id), "settling twice is a no-op");
+        assert!(changes.try_recv().is_err(), "and announces nothing");
+        store.flush().unwrap();
+    }
+    let store = open(&dir);
+    assert!(store.thread(id).unwrap().is_settled(), "settled is durable");
+}
+
+#[test]
+fn a_settled_session_is_still_in_the_sidebar_list() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(&dir);
+    let row = thread(Duration::hours(1));
+    let id = row.thread_id;
+    store.save_all(vec![row]);
+    store.settle(id);
+
+    let listed: Vec<_> = store
+        .projects()
+        .into_iter()
+        .flat_map(|p| p.threads)
+        .collect();
+    assert_eq!(listed.len(), 1);
+    assert!(listed[0].is_settled());
+}
+
+#[test]
+fn unsettling_clears_it_and_records_when() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(&dir);
+    let row = thread(Duration::hours(1));
+    let id = row.thread_id;
+    store.save_all(vec![row]);
+    assert!(
+        !store.unsettle(id),
+        "an active row has nothing to un-settle"
+    );
+
+    store.settle(id);
+    let mut changes = store.subscribe();
+    assert!(store.unsettle(id));
+    assert_eq!(changes.try_recv().unwrap(), ThreadStoreEvent::Changed);
+    let row = store.thread(id).unwrap();
+    assert!(!row.is_settled());
+    assert!(row.unsettled_at.is_some());
+}
+
+#[test]
+fn a_user_send_unsettles_but_agent_and_outside_activity_do_not() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(&dir);
+    let row = thread(Duration::hours(1));
+    let (id, session) = (row.thread_id, row.session_id.clone().unwrap());
+    store.save_all(vec![row.clone()]);
+    store.settle(id);
+
+    // The agent produces output: the live feed rewrites the row.
+    store.record_live_update(LiveThreadUpdate {
+        thread_id: id,
+        is_draft: false,
+        session_id: Some(session.clone()),
+        agent_id: row.agent_id.clone(),
+        title: Some("A title".into()),
+        worktree_paths: WorktreePaths::from_folder_paths(row.folder_paths()),
+        remote_connection: None,
+    });
+    assert!(store.thread(id).unwrap().is_settled(), "agent output");
+
+    // A terminal writes the transcript.
+    store.touch_sessions(&[(session, Utc::now() + Duration::minutes(1))], None);
+    assert!(store.thread(id).unwrap().is_settled(), "outside activity");
+
+    // The user sends.
+    store.update_interacted_at(id, Utc::now());
+    assert!(!store.thread(id).unwrap().is_settled(), "a send un-settles");
+}
+
+#[test]
+fn the_idle_sweep_settles_old_sessions_at_their_last_activity() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(&dir);
+    let old = thread(Duration::days(5));
+    let fresh = thread(Duration::hours(2));
+    let (old_id, fresh_id) = (old.thread_id, fresh.thread_id);
+    let old_activity = old.last_activity();
+    store.save_all(vec![old, fresh]);
+    let mut changes = store.subscribe();
+    drain(&mut changes);
+
+    let cutoff = Utc::now() - Duration::days(3);
+    assert_eq!(store.auto_settle_idle(cutoff, &HashSet::new()), 1);
+    assert_eq!(changes.try_recv().unwrap(), ThreadStoreEvent::Changed);
+    assert!(changes.try_recv().is_err(), "one event for the sweep");
+
+    assert_eq!(store.thread(old_id).unwrap().settled_at, Some(old_activity));
+    assert!(!store.thread(fresh_id).unwrap().is_settled());
+
+    assert_eq!(
+        store.auto_settle_idle(cutoff, &HashSet::new()),
+        0,
+        "a second sweep finds nothing"
+    );
+    assert!(changes.try_recv().is_err());
+}
+
+#[test]
+fn the_idle_sweep_skips_archived_busy_and_unsettled_sessions() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(&dir);
+
+    let mut archived = thread(Duration::days(5));
+    archived.archived = true;
+    let busy = thread(Duration::days(5));
+    let mut unsettled = thread(Duration::days(5));
+    unsettled.unsettled_at = Some(Utc::now() - Duration::days(4));
+    // Un-settled, and then something happened: the hold is spent.
+    let mut stale_hold = thread(Duration::days(5));
+    stale_hold.unsettled_at = Some(Utc::now() - Duration::days(6));
+    let mut draft = thread(Duration::days(5));
+    draft.session_id = None;
+
+    let busy_ids = HashSet::from([busy.session_id.clone().unwrap()]);
+    let ids = [
+        archived.thread_id,
+        busy.thread_id,
+        unsettled.thread_id,
+        stale_hold.thread_id,
+    ];
+    store.save_all(vec![archived, busy, unsettled, stale_hold, draft]);
+
+    let cutoff = Utc::now() - Duration::days(3);
+    assert_eq!(store.auto_settle_idle(cutoff, &busy_ids), 1);
+    let settled: Vec<bool> = ids
+        .iter()
+        .map(|id| store.thread(*id).unwrap().is_settled())
+        .collect();
+    assert_eq!(settled, [false, false, false, true]);
+}
+
+#[test]
+fn a_session_sent_to_a_moment_ago_is_not_settled() {
+    // The send records the interaction before the host counts the turn in;
+    // the store refuses a settle in that gap, under its own lock.
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(&dir);
+    let row = thread(Duration::hours(1));
+    let id = row.thread_id;
+    store.save_all(vec![row]);
+    store.update_interacted_at(id, Utc::now());
+
+    assert!(store.sent_to_recently(id));
+    assert!(!store.settle(id));
+    assert!(!store.thread(id).unwrap().is_settled());
+}
+
+#[test]
+fn idle_sessions_lists_only_what_the_sweep_could_settle() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(&dir);
+    let old = thread(Duration::days(5));
+    let fresh = thread(Duration::hours(2));
+    let old_session = old.session_id.clone().unwrap();
+    store.save_all(vec![old, fresh]);
+
+    let cutoff = Utc::now() - Duration::days(3);
+    let idle = store.idle_sessions(cutoff);
+    assert_eq!(idle.len(), 1);
+    assert_eq!(idle[0].0, old_session);
+    assert_eq!(
+        idle[0].1.paths(),
+        [PathBuf::from("/tmp/atlas")],
+        "with the folders it ran in"
+    );
+}

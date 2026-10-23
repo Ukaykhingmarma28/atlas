@@ -9,7 +9,7 @@ import {
 import { Select } from "@/ui/select";
 import { NATIVE_AGENT_ID } from "@/types/agent";
 import { useAgentRegistryStore } from "@/features/agents/stores/agent-registry-store";
-import { SettingSelect, SettingSwitch } from "../layout/setting-controls";
+import { SettingSelect, SettingStepper, SettingSwitch } from "../layout/setting-controls";
 import { useScopedSetting } from "../../lib/use-scoped-setting";
 
 const SIDEBAR_SORTS = [
@@ -61,6 +61,10 @@ export function ChatPage() {
           <SettingsRow
             setting="sidebarSort"
             control={<SettingSelect setting="sidebarSort" options={SIDEBAR_SORTS} />}
+          />
+          <SettingsRow
+            setting="autoSettleAfterDays"
+            control={<SettingStepper setting="autoSettleAfterDays" unit="d" zeroLabel="Off" />}
           />
         </SettingsGroup>
       </SettingsSection>

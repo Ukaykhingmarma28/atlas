@@ -70,6 +70,11 @@
 //! confirmation is never persisted. Before the ledger these were that
 //! branch's linear V4 and V5.
 //!
+//! `threads_settlement` adds `settled_at` and `unsettled_at`, both nullable:
+//! a session can be settled (moved to the sidebar's Settled shelf) and
+//! un-settled again. Every existing row reads `NULL` for both — active, and
+//! never un-settled — which is what it was.
+//!
 //! Every migration first leaves a copy behind (`Db::open`, via
 //! [`needs_migration`]), so no build is ever the only holder of a history.
 
@@ -123,6 +128,10 @@ const MIGRATIONS: &[Migration] = &[
     Migration {
         name: "session_aliases",
         apply: |conn| Ok(conn.execute_batch(SESSION_ALIASES)?),
+    },
+    Migration {
+        name: "threads_settlement",
+        apply: add_settlement_columns,
     },
 ];
 
@@ -246,6 +255,28 @@ fn add_branch_column(conn: &Connection) -> Result<()> {
         conn.execute_batch(V4)?;
     }
     Ok(())
+}
+
+/// `settled_at` and `unsettled_at`, each added only when absent — the same
+/// guard as [`add_branch_column`], for the same reason.
+fn add_settlement_columns(conn: &Connection) -> Result<()> {
+    for column in ["settled_at", "unsettled_at"] {
+        if !has_column(conn, "threads", column)? {
+            conn.execute_batch(&format!("ALTER TABLE threads ADD COLUMN {column} TEXT;"))?;
+        }
+    }
+    Ok(())
+}
+
+fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    Ok(conn
+        .query_row(
+            "SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2",
+            [table, column],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
 }
 
 /// The whole store.
@@ -649,6 +680,46 @@ mod tests {
             .query_row("SELECT COUNT(branch) FROM threads", [], |r| r.get(0))
             .unwrap();
         assert_eq!(with_branch, 3, "the branches already recorded survive");
+    }
+
+    /// A database from before settling gains both columns, every row reading
+    /// `NULL` — active, never un-settled — and the store decodes them so.
+    #[test]
+    fn a_database_before_settlement_gains_two_null_columns() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("threads.db");
+        seed_v1(&path);
+        {
+            let conn = Connection::open(&path).unwrap();
+            migrate(&conn).unwrap();
+            conn.execute_batch(
+                "ALTER TABLE threads DROP COLUMN settled_at;
+                 ALTER TABLE threads DROP COLUMN unsettled_at;
+                 DELETE FROM schema_migrations WHERE name = 'threads_settlement';",
+            )
+            .unwrap();
+        }
+        {
+            let conn = Connection::open(&path).unwrap();
+            assert!(needs_migration(&conn).unwrap());
+            migrate(&conn).unwrap();
+            assert_eq!(ledger(&conn), known_names());
+            let (rows, settled, unsettled): (i64, i64, i64) = conn
+                .query_row(
+                    "SELECT COUNT(*), COUNT(settled_at), COUNT(unsettled_at) FROM threads",
+                    [],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )
+                .unwrap();
+            assert_eq!((rows, settled, unsettled), (3, 0, 0));
+            // Re-running the step on a database that has the columns is a no-op.
+            add_settlement_columns(&conn).unwrap();
+        }
+        let store = ThreadMetadataStore::open(&path).unwrap();
+        assert!(store
+            .threads()
+            .iter()
+            .all(|t| t.settled_at.is_none() && t.unsettled_at.is_none()));
     }
 
     /// A newer build at the same epoch recorded a migration this one has never

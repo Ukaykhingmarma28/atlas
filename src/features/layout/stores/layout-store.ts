@@ -68,6 +68,8 @@ interface LayoutState {
   chatSidebar: {
     visible: boolean;
     width: number;
+    /** The session list's Settled shelf is open. Collapsed by default. */
+    settledExpanded: boolean;
   };
   bashPanel: {
     width: number;
@@ -145,6 +147,7 @@ interface LayoutActions {
     setKnowledgeSidebarWidth: (width: number) => void;
     setKnowledgeInspectorWidth: (width: number) => void;
     setChatSidebarWidth: (width: number) => void;
+    setChatSidebarSettledExpanded: (expanded: boolean) => void;
     setBashPanelWidth: (width: number) => void;
     setPlansPanelWidth: (width: number) => void;
     toggleTimelineSidebar: () => void;
@@ -211,6 +214,7 @@ const initialState: LayoutState = {
   chatSidebar: {
     visible: true,
     width: 220,
+    settledExpanded: false,
   },
   bashPanel: {
     width: 260,
@@ -573,6 +577,10 @@ export const useLayoutStore = createSelectors(
           setChatSidebarWidth: (width) =>
             set((s) => {
               s.chatSidebar.width = Math.max(160, Math.min(width, 420));
+            }),
+          setChatSidebarSettledExpanded: (expanded) =>
+            set((s) => {
+              s.chatSidebar.settledExpanded = expanded;
             }),
           setBashPanelWidth: (width) =>
             set((s) => {

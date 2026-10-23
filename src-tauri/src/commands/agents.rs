@@ -592,6 +592,75 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
     }
 }
 
+/// How often the idle sweep looks for sessions to settle. The threshold is in
+/// days, so a minute is far finer than it needs to be; it is what keeps a
+/// change to the setting visible without a restart.
+const AUTO_SETTLE_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// A sweep that settles more than this many sessions at once tells the user,
+/// the first time only ([`SESSIONS_AUTO_SETTLED_EVENT`]).
+const AUTO_SETTLE_NOTICE_OVER: usize = 5;
+
+/// Fired once, ever: the first idle sweep that settled more than
+/// [`AUTO_SETTLE_NOTICE_OVER`] sessions. Payload `{ count }`.
+pub const SESSIONS_AUTO_SETTLED_EVENT: &str = "atlas:sessions-auto-settled";
+
+/// The flag that the notice has been shown, a marker file in the app data
+/// directory. Its presence is the whole of it.
+const AUTO_SETTLE_NOTICE_MARKER: &str = "auto-settle-notice-shown";
+
+#[derive(Clone, serde::Serialize)]
+struct AutoSettledNotice {
+    count: usize,
+}
+
+/// One pass of the idle sweep. Blocking: run it under `spawn_blocking`.
+fn auto_settle_tick(app: &AppHandle, host: &Arc<AgentHost>) {
+    let Some(days) = app
+        .try_state::<crate::state::AtlasConfigHandle>()
+        .map(|config| config.lock().effective().auto_settle_after_days)
+    else {
+        return;
+    };
+    if days == 0 {
+        return;
+    }
+    // Each candidate is judged by its own project's transcripts, read now:
+    // the session watcher only covers the project the sidebar has open.
+    match host.auto_settle_idle(
+        chrono::Duration::days(i64::from(days)),
+        &super::session_watcher::activity_in,
+    ) {
+        Ok(0) => {}
+        Ok(settled) => {
+            tracing::debug!(settled, days, "auto-settled idle sessions");
+            if settled > AUTO_SETTLE_NOTICE_OVER {
+                notice_auto_settled_once(app, settled);
+            }
+        }
+        Err(e) => tracing::warn!(error = %e, "auto-settle sweep failed"),
+    }
+}
+
+/// Tell the user about a big sweep, unless they have been told before. The
+/// marker is written first: a notice that fails to send is not retried, and
+/// one that is shown twice would be worse than one that is never shown.
+fn notice_auto_settled_once(app: &AppHandle, count: usize) {
+    let Ok(dir) = app.path().app_data_dir() else {
+        return;
+    };
+    let marker = dir.join(AUTO_SETTLE_NOTICE_MARKER);
+    if marker.exists() {
+        return;
+    }
+    let _ = std::fs::create_dir_all(&dir);
+    if let Err(e) = std::fs::write(&marker, b"") {
+        tracing::warn!(error = %e, "could not record the auto-settle notice");
+        return;
+    }
+    let _ = app.emit(SESSIONS_AUTO_SETTLED_EVENT, AutoSettledNotice { count });
+}
+
 /// Emitted whenever Atlas's session history changes. Carries no payload: a
 /// listener re-reads the store, which is the correct response to any change.
 pub const THREADS_CHANGED_EVENT: &str = "atlas:threads-changed";
@@ -1151,6 +1220,29 @@ pub fn install_manager(app: &AppHandle) {
         });
     }
 
+    // Auto-settle: once a minute, sessions idle for `autoSettleAfterDays`
+    // move to the sidebar's Settled shelf (0 turns it off). The host skips the
+    // busy and the live-elsewhere ones, the store the archived and the ones
+    // the user un-settled since their last activity; a settle announces
+    // itself through the forwarder above. The setting is read every pass, so
+    // a change takes effect within the minute. Each tick's work reads the
+    // store, the watcher and possibly a file, so it runs off the async
+    // runtime the IPC channel shares.
+    if host.history().is_some() {
+        let app = app.clone();
+        let host = host.clone();
+        tauri::async_runtime::spawn(async move {
+            loop {
+                tokio::time::sleep(AUTO_SETTLE_EVERY).await;
+                let (app, host) = (app.clone(), host.clone());
+                let tick = tokio::task::spawn_blocking(move || auto_settle_tick(&app, &host));
+                if let Err(e) = tick.await {
+                    tracing::warn!(error = %e, "auto-settle tick panicked");
+                }
+            }
+        });
+    }
+
     // Elicitations a connection raises outside any session — the sign-in ones.
     // Without this the agent asks, nobody is shown the question, and the
     // sign-in hangs on an answer that can never come.
@@ -1674,6 +1766,37 @@ pub fn threads_history(
 #[tauri::command]
 pub fn threads_archive(thread_id: String, host: State<'_, Arc<AgentHost>>) -> Result<(), CmdError> {
     host.archive_thread(parse_thread_id(&thread_id)?)
+        .map_err(CmdError::from)
+}
+
+/// Move a session to the sidebar's Settled shelf. Refused while a turn is
+/// running there, in Atlas or in another process, or just after a send.
+/// Answers whether it moved: `false` for one already settled or gone.
+///
+/// Liveness elsewhere is read from the row's own project's transcripts, which
+/// is file I/O, so the check runs off the async workers.
+#[tauri::command]
+pub async fn threads_settle(
+    thread_id: String,
+    host: State<'_, Arc<AgentHost>>,
+) -> Result<bool, CmdError> {
+    let thread_id = parse_thread_id(&thread_id)?;
+    let host = host.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        host.settle_thread(thread_id, &super::session_watcher::activity_in)
+    })
+    .await
+    .map_err(|e| CmdError::new(e.to_string(), ErrorClass::Fatal))?
+    .map_err(CmdError::from)
+}
+
+/// Take a session back off the Settled shelf. Answers whether it was on it.
+#[tauri::command]
+pub fn threads_unsettle(
+    thread_id: String,
+    host: State<'_, Arc<AgentHost>>,
+) -> Result<bool, CmdError> {
+    host.unsettle_thread(parse_thread_id(&thread_id)?)
         .map_err(CmdError::from)
 }
 

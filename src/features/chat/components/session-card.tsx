@@ -20,21 +20,37 @@
 // no PR lookup until the card has been on screen.
 //
 // Structure: the card's open target is a real <button> stretched over the
-// card; the PR link and the archive/delete actions are its siblings, painted
-// above it, so no control is nested inside another.
+// card; the PR link and the settle/archive/delete actions are its siblings,
+// painted above it, so no control is nested inside another. The same actions
+// are on the card's context menu.
+//
+// A settled card (on the sidebar's Settled shelf) is dimmed and says
+// "Settled" where an active one says "Done"; its settle action becomes
+// "Un-settle".
 
 import { memo, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import {
   Archive,
+  CircleCheck,
   GitMerge,
   GitPullRequest,
   GitPullRequestClosed,
   GitPullRequestDraft,
+  Undo2,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/time-ago";
 import { Hint } from "@/ui/tooltip";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+  ContextMenuTrigger,
+} from "@/ui/context-menu";
+import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import {
   AgentMonogram,
   ClaudeIcon,
@@ -275,11 +291,14 @@ function StatusLabel({
   status,
   tabId,
   lastUpdated,
+  settledAt,
   liveElsewhere,
 }: {
   status: SessionLiveStatus;
   tabId: string | null;
   lastUpdated: string | null;
+  /** When the session was settled; `null` while it is active. */
+  settledAt: string | null;
   /** Another process is writing this thread. It IS running, Atlas is just not
    *  the one running it. */
   liveElsewhere: boolean;
@@ -314,6 +333,25 @@ function StatusLabel({
       </span>
     );
   }
+  if (settledAt) {
+    // Put away rather than finished: the same closed ring, without the
+    // success colour — nothing here is asking to be looked at.
+    const since = timeAgo(settledAt, { suffix: true });
+    return (
+      <span className="flex items-center gap-1 text-3xs font-medium text-muted-foreground">
+        <CircleDashedCheck size={11} />
+        Settled
+        {since && (
+          <>
+            <span aria-hidden className="text-muted-foreground/50">
+              ·
+            </span>
+            <span className="tabular-nums">{titleCase(since)}</span>
+          </>
+        )}
+      </span>
+    );
+  }
   const ago = timeAgo(lastUpdated, { suffix: true });
   return (
     <span className="flex items-center gap-1 text-3xs font-medium text-success">
@@ -334,10 +372,15 @@ function StatusLabel({
 function statusDescription(
   status: SessionLiveStatus,
   lastUpdated: string | null,
+  settledAt: string | null,
   liveElsewhere: boolean,
 ): string {
   if (status === "running" || liveElsewhere) return "Working";
   if (status === "waiting") return "Needs input";
+  if (settledAt) {
+    const since = timeAgo(settledAt, { suffix: true });
+    return since ? `Settled ${since}` : "Settled";
+  }
   const ago = timeAgo(lastUpdated, { suffix: true });
   return ago ? `Done ${ago}` : "Done";
 }
@@ -426,8 +469,13 @@ export interface SessionCardProps {
   /** Another process (typically a terminal) is writing this session — the
    *  live dot, and the composer's "Send anyway" hold once it is opened. */
   liveElsewhere: boolean;
+  /** When the session was settled (it is on the Settled shelf); `null` while
+   *  it is active. */
+  settledAt: string | null;
   /** Stable across renders (the card is memoised); called with `threadId`. */
   onOpen: (threadId: string) => void;
+  onSettle: (threadId: string) => void;
+  onUnsettle: (threadId: string) => void;
   onArchive: (threadId: string) => void;
   onDelete: (threadId: string) => void;
 }
@@ -445,7 +493,10 @@ export const SessionCard = memo(function SessionCard({
   active,
   agent,
   liveElsewhere,
+  settledAt,
   onOpen,
+  onSettle,
+  onUnsettle,
   onArchive,
   onDelete,
 }: SessionCardProps) {
@@ -456,7 +507,7 @@ export const SessionCard = memo(function SessionCard({
   const description = [
     showProject ? projectName : null,
     liveElsewhere ? "Active in another process" : null,
-    statusDescription(status, lastUpdated, liveElsewhere),
+    statusDescription(status, lastUpdated, settledAt, liveElsewhere),
     branch,
     agentLabel,
   ]
@@ -471,64 +522,85 @@ export const SessionCard = memo(function SessionCard({
         status={status}
         tabId={liveTabId}
         lastUpdated={lastUpdated}
+        settledAt={settledAt}
         liveElsewhere={liveElsewhere}
       />
     </span>
   );
+  const settled = settledAt !== null;
+  // The chord settles the OPEN session, so only the open card names it.
+  const settleShortcut = useActionShortcut("chat.settleSession");
+  const settleKeys = active ? settleShortcut?.label : undefined;
+  // One place for both the hover pill and the context menu, so the two never
+  // disagree about what the action is called.
+  const settleAction = settled
+    ? { label: "Un-settle", hint: "Un-settle — back to the active list", run: onUnsettle }
+    : { label: "Settle", hint: "Settle — done for now, kept on the shelf", run: onSettle };
 
   return (
-    <div
-      ref={ref}
-      className={cn(
-        // `rounded-md` is the scale's card step; `rounded-xl` is the dialog
-        // step, and at this size it read as a pill rather than a card.
-        "group relative flex select-none flex-col gap-1.5 rounded-md px-2.5 py-2 text-left transition-colors duration-fast",
-        active
-          ? "bg-element-selected ring-1 ring-foreground/10"
-          : "bg-card ring-1 ring-foreground/5 hover:bg-element-hover",
-      )}
-    >
-      {/* The open target: stretched over the whole card, under the PR link
+    <ContextMenu>
+      {/* The trigger stays layout-only; the card's look is on its child. */}
+      <ContextMenuTrigger render={<div ref={ref} className="select-none" />}>
+        <div
+          data-settled={settled || undefined}
+          className={cn(
+            // `rounded-md` is the scale's card step; `rounded-xl` is the dialog
+            // step, and at this size it read as a pill rather than a card.
+            "group relative flex flex-col gap-1.5 rounded-md px-2.5 py-2 text-left transition-colors duration-fast",
+            active
+              ? "bg-element-selected ring-1 ring-foreground/10"
+              : settled
+                ? // Dimmed: off the card fill, onto the sidebar's own, so the
+                  // shelf reads as put away. Hover still lifts it.
+                  "ring-1 ring-foreground/5 hover:bg-element-hover"
+                : "bg-card ring-1 ring-foreground/5 hover:bg-element-hover",
+          )}
+        >
+          {/* The open target: stretched over the whole card, under the PR link
           and the actions, which are its siblings rather than its children. */}
-      <button
-        type="button"
-        onClick={() => onOpen(threadId)}
-        aria-current={active || undefined}
-        aria-label={title}
-        aria-describedby={descriptionId}
-        className="absolute inset-0 cursor-pointer rounded-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
-      />
-      <span id={descriptionId} className="sr-only">
-        {description}
-      </span>
-
-      {showProject && (
-        <div aria-hidden className="pointer-events-none flex min-w-0 items-center gap-1.5">
-          <span className="grid h-4 min-w-4 shrink-0 place-items-center rounded-sm bg-element-selected px-0.5 text-3xs font-semibold leading-none text-secondary-foreground">
-            {projectMonogram(projectName)}
+          <button
+            type="button"
+            onClick={() => onOpen(threadId)}
+            aria-current={active || undefined}
+            aria-label={title}
+            aria-describedby={descriptionId}
+            className="absolute inset-0 cursor-pointer rounded-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+          />
+          <span id={descriptionId} className="sr-only">
+            {description}
           </span>
-          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-            {projectName}
-          </span>
-        </div>
-      )}
 
-      {/* Title, alone on its row. The actions float over its right end on
+          {showProject && (
+            <div aria-hidden className="pointer-events-none flex min-w-0 items-center gap-1.5">
+              <span className="grid h-4 min-w-4 shrink-0 place-items-center rounded-sm bg-element-selected px-0.5 text-3xs font-semibold leading-none text-secondary-foreground">
+                {projectMonogram(projectName)}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                {projectName}
+              </span>
+            </div>
+          )}
+
+          {/* Title, alone on its row. The actions float over its right end on
           hover, so it reserves nothing for them — a permanent gutter cost
           two words of every title to buy a strip that is empty most of the
           time, and the pill below is opaque enough to sit on text. */}
-      <div aria-hidden className="pointer-events-none flex min-w-0 items-start">
-        <span
-          className={cn(
-            "line-clamp-2 min-w-0 flex-1 text-sm leading-snug",
-            active ? "text-foreground" : "text-secondary-foreground group-hover:text-foreground",
-          )}
-        >
-          {title}
-        </span>
-      </div>
+          <div aria-hidden className="pointer-events-none flex min-w-0 items-start">
+            <span
+              className={cn(
+                "line-clamp-2 min-w-0 flex-1 text-sm leading-snug",
+                active
+                  ? "text-foreground"
+                  : settled
+                    ? "text-muted-foreground group-hover:text-secondary-foreground"
+                    : "text-secondary-foreground group-hover:text-foreground",
+              )}
+            >
+              {title}
+            </span>
+          </div>
 
-      {/* Status on the left, where the thread's state is; who ran it on the
+          {/* Status on the left, where the thread's state is; who ran it on the
           right.
           The branch NAME is deliberately not here. The sidebar is scoped to one
           project, so in practice every row named the same branch — a column of
@@ -537,51 +609,78 @@ export const SessionCard = memo(function SessionCard({
           that actually varies per row, so that stays. The separator went with
           the name: it existed to part the branch from the agent, and there is
           nothing left to part. */}
-      <div className="pointer-events-none flex min-w-0 items-center gap-2">
-        {statusSlot}
-        <span className="ml-auto flex shrink-0 items-center gap-1.5">
-          {branch && cwd && (
-            <span className="pointer-events-auto flex shrink-0">
-              <PullRequestChip cwd={cwd} branch={branch} enabled={seen} />
+          <div className="pointer-events-none flex min-w-0 items-center gap-2">
+            {statusSlot}
+            <span className="ml-auto flex shrink-0 items-center gap-1.5">
+              {branch && cwd && (
+                <span className="pointer-events-auto flex shrink-0">
+                  <PullRequestChip cwd={cwd} branch={branch} enabled={seen} />
+                </span>
+              )}
+              <span
+                aria-hidden
+                className={cn(
+                  "flex shrink-0 items-center",
+                  settled ? "text-muted-foreground" : "text-secondary-foreground",
+                )}
+                title={agentLabel}
+              >
+                <SidebarAgentIcon agent={agent} />
+              </span>
             </span>
-          )}
-          <span
-            aria-hidden
-            className="flex shrink-0 items-center text-secondary-foreground"
-            title={agentLabel}
-          >
-            <SidebarAgentIcon agent={agent} />
-          </span>
-        </span>
-      </div>
+          </div>
 
-      {/* Hover actions (archive, delete), as a floating pill over the title's
-          right end — the same 24px dock the titlebar and the GitHub panel's
-          rows use. Opaque, so the title tail it covers does not show through.
-          Both work for every agent: the row is Atlas's, so neither depends on
-          reaching the agent that produced it. */}
-      <div className="absolute top-1.5 right-1.5 flex items-center gap-px rounded-full border border-border-subtle bg-card p-0.5 opacity-0 transition-opacity duration-fast group-hover:opacity-100 group-focus-within:opacity-100">
-        <Hint label="Archive — keeps it in History">
-          <button
-            type="button"
-            onClick={() => onArchive(threadId)}
-            aria-label="Archive session"
-            className="flex size-control-xs items-center justify-center rounded-full text-muted-foreground hover:bg-element-active hover:text-foreground"
-          >
-            <Archive size={11} />
-          </button>
-        </Hint>
-        <Hint label="Delete session">
-          <button
-            type="button"
-            onClick={() => onDelete(threadId)}
-            aria-label="Delete session"
-            className="flex size-control-xs items-center justify-center rounded-full text-muted-foreground hover:bg-element-active hover:text-error"
-          >
-            <X size={11} />
-          </button>
-        </Hint>
-      </div>
-    </div>
+          {/* Hover actions (settle, archive, delete), as a floating pill over the
+          title's right end — the same 24px dock the titlebar and the GitHub
+          panel's rows use. Opaque, so the title tail it covers does not show
+          through. All work for every agent: the row is Atlas's, so none
+          depends on reaching the agent that produced it. */}
+          <div className="absolute top-1.5 right-1.5 flex items-center gap-px rounded-full border border-border-subtle bg-card p-0.5 opacity-0 transition-opacity duration-fast group-hover:opacity-100 group-focus-within:opacity-100">
+            <Hint label={settleAction.hint} shortcut={settleKeys}>
+              <button
+                type="button"
+                onClick={() => settleAction.run(threadId)}
+                aria-label={`${settleAction.label} session`}
+                className="flex size-control-xs items-center justify-center rounded-full text-muted-foreground hover:bg-element-active hover:text-foreground"
+              >
+                {settled ? <Undo2 size={11} /> : <CircleCheck size={11} />}
+              </button>
+            </Hint>
+            <Hint label="Archive — keeps it in History">
+              <button
+                type="button"
+                onClick={() => onArchive(threadId)}
+                aria-label="Archive session"
+                className="flex size-control-xs items-center justify-center rounded-full text-muted-foreground hover:bg-element-active hover:text-foreground"
+              >
+                <Archive size={11} />
+              </button>
+            </Hint>
+            <Hint label="Delete session">
+              <button
+                type="button"
+                onClick={() => onDelete(threadId)}
+                aria-label="Delete session"
+                className="flex size-control-xs items-center justify-center rounded-full text-muted-foreground hover:bg-element-active hover:text-error"
+              >
+                <X size={11} />
+              </button>
+            </Hint>
+          </div>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onClick={() => onOpen(threadId)}>Open</ContextMenuItem>
+        <ContextMenuItem onClick={() => settleAction.run(threadId)}>
+          {settleAction.label}
+          {settleKeys && <ContextMenuShortcut>{settleKeys}</ContextMenuShortcut>}
+        </ContextMenuItem>
+        <ContextMenuItem onClick={() => onArchive(threadId)}>Archive</ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem variant="destructive" onClick={() => onDelete(threadId)}>
+          Delete…
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 });

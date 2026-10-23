@@ -70,14 +70,14 @@ iconTheme = "material-icon-theme"
 # know shows the default. (default: "dark")
 appIcon = "dark"
 
-# Next-step suggestion chips in the agent chat's per-turn card. Exactly
-# "agent" or "off", nothing else. (default: "agent")
+# Next-step suggestion chips in the session's per-turn card. Exactly "agent"
+# or "off", nothing else. (default: "agent")
 adaptiveSuggestions = "agent"
 
-# What picking another agent does to a chat that has a conversation: "new-tab"
-# keeps it and opens the new agent in a new tab, "handoff" switches in place
-# and attaches it to the next message, "reset" switches in place and starts
-# over. (default: "reset")
+# What picking another agent does to a session that has a conversation:
+# "new-tab" keeps it and opens the new agent in a new tab, "handoff" switches
+# in place and attaches it to the next message, "reset" switches in place and
+# starts over. (default: "reset")
 agentSwitchBehavior = "reset"
 
 # Before switching agents on a chat with a conversation, send the agent being
@@ -220,9 +220,9 @@ notifyAgentMinDurationMs = 0
 # Unknown entries are ignored. (default: [])
 favoriteModels = []
 
-# Ask before deleting a chat from the sidebar or the history. A deleted chat's
-# transcript stays with its agent, but Atlas forgets the chat. Archiving never
-# asks, because it can be undone. (default: true)
+# Ask before deleting a session from the sidebar or the history. A deleted
+# session's transcript stays with its agent, but Atlas forgets the session.
+# Archiving never asks, because it can be undone. (default: true)
 confirmDeleteChat = true
 
 # Ask before quitting while an agent is in the middle of a turn, since
@@ -230,8 +230,8 @@ confirmDeleteChat = true
 # (default: true)
 confirmQuitWhileRunning = true
 
-# The agent a new chat starts with: "atlas-agent" for Atlas Agent, or the id
-# of an installed ACP agent, such as "claude-code". An agent that isn't
+# The agent a new session starts with: "atlas-agent" for Atlas Agent, or the
+# id of an installed ACP agent, such as "claude-code". An agent that isn't
 # installed falls back to Atlas Agent. (default: "atlas-agent") A project can
 # override it in its own .atlas/config.toml.
 defaultAgent = "atlas-agent"
@@ -240,13 +240,22 @@ defaultAgent = "atlas-agent"
 # "wide" (1080 pixels) or "full" (the whole panel). (default: "normal")
 chatWidth = "normal"
 
-# Wrap long lines in a chat's code blocks. Off: they keep their lines and
+# Wrap long lines in a session's code blocks. Off: they keep their lines and
 # scroll sideways. (default: true)
 chatCodeWrap = true
 
-# The order of chats in the sidebar: "recent" puts the chat with the latest
-# activity first, "created" the one started most recently. (default: "recent")
+# The order of sessions in the sidebar: "recent" puts the session with the
+# latest activity first, "created" the one started most recently. (default:
+# "recent")
 sidebarSort = "recent"
+
+# Days a session may sit idle before Atlas settles it: moves it to the Settled
+# shelf at the bottom of the session sidebar, where it stays listed and
+# resumable. A session that is running, waiting for you, archived, or that you
+# un-settled since its last activity is left alone, and sending to a settled
+# session brings it back. 0 turns auto-settling off; settling by hand still
+# works. Must be between 0 and 90. (default: 3)
+autoSettleAfterDays = 3
 
 # The clock for every time of day Atlas shows: "12h", "24h", or "system" to
 # follow your system's region settings. (default: "system")

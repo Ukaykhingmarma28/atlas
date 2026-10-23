@@ -498,6 +498,10 @@ pub struct AppSettings {
     /// Session sidebar order.
     #[serde(default)]
     pub sidebar_sort: SidebarSort,
+    /// Days a session may sit idle before it is settled on its own; 0 turns
+    /// auto-settling off.
+    #[serde(default = "default_auto_settle_after_days")]
+    pub auto_settle_after_days: u32,
     /// 12- or 24-hour clock, or the system's.
     #[serde(default)]
     pub time_format: TimeFormat,
@@ -580,6 +584,15 @@ pub fn default_ui_scale() -> f32 {
     1.0
 }
 
+pub const DEFAULT_AUTO_SETTLE_AFTER_DAYS: u32 = 3;
+/// 0 is "off": the idle sweep skips its pass.
+pub const MIN_AUTO_SETTLE_AFTER_DAYS: u32 = 0;
+pub const MAX_AUTO_SETTLE_AFTER_DAYS: u32 = 90;
+
+pub fn default_auto_settle_after_days() -> u32 {
+    DEFAULT_AUTO_SETTLE_AFTER_DAYS
+}
+
 pub fn default_terminal_notify_min_duration_ms() -> u32 {
     10_000
 }
@@ -637,6 +650,7 @@ impl Default for AppSettings {
             chat_width: ChatWidth::default(),
             chat_code_wrap: true,
             sidebar_sort: SidebarSort::default(),
+            auto_settle_after_days: DEFAULT_AUTO_SETTLE_AFTER_DAYS,
             time_format: TimeFormat::default(),
             ui_font_family: String::new(),
             code_font_family: String::new(),
@@ -773,6 +787,17 @@ pub fn validate(settings: &AppSettings) -> Result<(), ValidationIssue> {
                 message: format!("must be between {MIN_FONT_SIZE} and {MAX_FONT_SIZE}, got {size}"),
             });
         }
+    }
+    if !(MIN_AUTO_SETTLE_AFTER_DAYS..=MAX_AUTO_SETTLE_AFTER_DAYS)
+        .contains(&settings.auto_settle_after_days)
+    {
+        return Err(ValidationIssue {
+            key: "autoSettleAfterDays",
+            message: format!(
+                "must be between {MIN_AUTO_SETTLE_AFTER_DAYS} and {MAX_AUTO_SETTLE_AFTER_DAYS}, got {}",
+                settings.auto_settle_after_days
+            ),
+        });
     }
     if !(MIN_INTERFACE_CONTRAST..=MAX_INTERFACE_CONTRAST).contains(&settings.interface_contrast) {
         return Err(ValidationIssue {
@@ -1089,6 +1114,7 @@ pub struct SettingsPatch {
     pub chat_width: Option<ChatWidth>,
     pub chat_code_wrap: Option<bool>,
     pub sidebar_sort: Option<SidebarSort>,
+    pub auto_settle_after_days: Option<u32>,
     pub time_format: Option<TimeFormat>,
     pub ui_font_family: Option<String>,
     pub code_font_family: Option<String>,
@@ -1250,6 +1276,7 @@ impl SettingsPatch {
             chat_width,
             chat_code_wrap,
             sidebar_sort,
+            auto_settle_after_days,
             time_format,
             ui_font_family,
             code_font_family,
@@ -1345,6 +1372,9 @@ impl SettingsPatch {
         }
         if let Some(v) = self.editor_font_size {
             table["editorFontSize"] = toml_edit::value(i64::from(v));
+        }
+        if let Some(v) = self.auto_settle_after_days {
+            table["autoSettleAfterDays"] = toml_edit::value(i64::from(v));
         }
         if let Some(v) = self.terminal_font_size {
             table["terminalFontSize"] = toml_edit::value(i64::from(v));
@@ -2102,6 +2132,21 @@ mod tests {
         assert!(validate(&AppSettings::default()).is_ok());
     }
 
+    /// 0 is "off", not out of range; past 90 is.
+    #[test]
+    fn auto_settle_after_days_takes_zero_for_off() {
+        let off = AppSettings {
+            auto_settle_after_days: 0,
+            ..AppSettings::default()
+        };
+        assert!(validate(&off).is_ok());
+        let too_long = AppSettings {
+            auto_settle_after_days: MAX_AUTO_SETTLE_AFTER_DAYS + 1,
+            ..AppSettings::default()
+        };
+        assert_eq!(validate(&too_long).unwrap_err().key, "autoSettleAfterDays");
+    }
+
     /// ADR-0012: on unless the user switched it off, and a file that predates
     /// the key reads as on.
     #[test]
@@ -2445,6 +2490,7 @@ someFutureKey = \"left alone\"
             chat_width: Some(ChatWidth::Wide),
             chat_code_wrap: Some(!defaults.chat_code_wrap),
             sidebar_sort: Some(SidebarSort::Created),
+            auto_settle_after_days: Some(7),
             time_format: Some(TimeFormat::TwentyFourHour),
             ui_font_family: Some("Inter, sans-serif".to_string()),
             code_font_family: Some("JetBrains Mono".to_string()),

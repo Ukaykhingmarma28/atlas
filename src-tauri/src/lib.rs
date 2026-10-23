@@ -860,6 +860,8 @@ pub fn run() {
             commands::agents::threads_projects,
             commands::agents::threads_history,
             commands::agents::threads_archive,
+            commands::agents::threads_settle,
+            commands::agents::threads_unsettle,
             commands::agents::agents_snapshot,
             commands::agents::agents_snapshot_meta,
             commands::agents::agents_send,

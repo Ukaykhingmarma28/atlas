@@ -89,14 +89,17 @@ type TextKey = {
     : never;
 }[keyof AppSettings];
 
-/** A − n + stepper over an integer key, bounded by its registry `min`/`max`. */
+/** A − n + stepper over an integer key, bounded by its registry `min`/`max`.
+ *  `zeroLabel` names a 0 that means something other than a count ("Off"). */
 export function SettingStepper({
   setting,
   unit = "",
+  zeroLabel,
   disabled,
 }: {
   setting: NumberKey;
   unit?: string;
+  zeroLabel?: string;
   disabled?: boolean;
 }) {
   const scoped = useScopedSetting(setting);
@@ -117,8 +120,14 @@ export function SettingStepper({
         onClick={() => step(-1)}
       />
       <span className="min-w-12 text-center text-xs tabular-nums" aria-live="polite">
-        {value}
-        {unit}
+        {value === 0 && zeroLabel ? (
+          zeroLabel
+        ) : (
+          <>
+            {value}
+            {unit}
+          </>
+        )}
       </span>
       <IconButton
         icon={Plus}

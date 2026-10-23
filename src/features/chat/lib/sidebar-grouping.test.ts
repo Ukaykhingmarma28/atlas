@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { placeProjectNames, sortThreads } from "./sidebar-grouping";
+import {
+  nextAfterSettling,
+  placeProjectNames,
+  sortThreads,
+  splitSettled,
+} from "./sidebar-grouping";
 
 const row = (projectName: string, elsewhere = false) => ({ projectName, elsewhere });
 
@@ -53,5 +58,37 @@ describe("sortThreads", () => {
 
   it("puts the most recently started first for created, counting an unknown start from its activity", () => {
     expect(sortThreads(rows, "created").map((r) => r.threadId)).toEqual(["b", "a", "c"]);
+  });
+});
+
+describe("splitSettled", () => {
+  const settleable = (threadId: string, settledAt: string | null) => ({ threadId, settledAt });
+
+  it("keeps the active rows in order and puts the newest settled first", () => {
+    const { active, settled } = splitSettled([
+      settleable("a", null),
+      settleable("old", "2026-10-01T00:00:00Z"),
+      settleable("b", null),
+      settleable("new", "2026-10-05T00:00:00Z"),
+    ]);
+    expect(active.map((r) => r.threadId)).toEqual(["a", "b"]);
+    expect(settled.map((r) => r.threadId)).toEqual(["new", "old"]);
+  });
+});
+
+describe("nextAfterSettling", () => {
+  const rows = ["a", "b", "c"].map((threadId) => ({ threadId }));
+
+  it("moves to the row below, or above from the bottom", () => {
+    expect(nextAfterSettling(rows, "a")?.threadId).toBe("b");
+    expect(nextAfterSettling(rows, "c")?.threadId).toBe("b");
+  });
+
+  it("has nowhere to go from the only row", () => {
+    expect(nextAfterSettling([{ threadId: "a" }], "a")).toBeNull();
+  });
+
+  it("starts at the top when the settled row was not in the list", () => {
+    expect(nextAfterSettling(rows, "gone")?.threadId).toBe("a");
   });
 });
