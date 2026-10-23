@@ -1,5 +1,7 @@
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
+import { destinationShown, toggleDestination } from "@/features/layout/lib/destinations";
 import { AtlasIcon } from "@/components/atlas-icon";
+import { cn } from "@/lib/utils";
 
 /**
  * The Timeline entry point: one row in the Project switcher panel.
@@ -23,7 +25,7 @@ import { AtlasIcon } from "@/components/atlas-icon";
  */
 
 export function CaptureControl() {
-  const { addTab } = useLayoutStore.use.actions();
+  const shown = useLayoutStore((s) => destinationShown(s, "artifacts"));
 
   return (
     // Styled as one row of the rail's fixed navigation (see `NavItem` in
@@ -31,17 +33,12 @@ export function CaptureControl() {
     // rows read as one list.
     <button
       type="button"
-      onClick={() =>
-        addTab({
-          id: "artifacts",
-          type: "artifacts",
-          title: "Timeline",
-          closable: true,
-          dirty: false,
-          data: {},
-        })
-      }
-      className="group/nav flex h-7 w-full cursor-pointer items-center gap-2.5 rounded-md px-2 text-left text-sm leading-none text-[var(--secondary-foreground)] outline-none transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] focus-visible:ring-1 focus-visible:ring-[var(--atlas-border-strong)]"
+      onClick={() => toggleDestination("artifacts")}
+      aria-current={shown ? "page" : undefined}
+      className={cn(
+        "group/nav flex h-7 w-full cursor-pointer items-center gap-2.5 rounded-md px-2 text-left text-sm leading-none text-[var(--secondary-foreground)] outline-none transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] focus-visible:ring-1 focus-visible:ring-[var(--atlas-border-strong)]",
+        shown && "bg-[var(--atlas-element-active)] text-[var(--foreground)]",
+      )}
       title="Sessions recorded across this Organization"
     >
       <AtlasIcon size={14} className="shrink-0 rounded-sm opacity-70 group-hover/nav:opacity-100" />

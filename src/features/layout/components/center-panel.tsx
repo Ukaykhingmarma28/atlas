@@ -52,9 +52,6 @@ const CommsDraftTab = lazy(() =>
     default: m.CommsDraftTab,
   })),
 );
-const SpacesTab = lazy(() =>
-  import("@/features/spaces/components/spaces-tab").then((m) => ({ default: m.SpacesTab })),
-);
 const PdfViewer = lazy(() =>
   import("@/features/pdf/components/pdf-viewer").then((m) => ({ default: m.PdfViewer })),
 );
@@ -74,37 +71,17 @@ const SessionChangesView = lazy(() =>
 const GitDiffPanel = lazy(() =>
   import("@/features/git/components/git-diff-panel").then((m) => ({ default: m.GitDiffPanel })),
 );
-const KnowledgePanel = lazy(() =>
-  import("@/features/knowledge/components/knowledge-panel").then((m) => ({
-    default: m.KnowledgePanel,
-  })),
-);
-const KnowledgeGraph = lazy(() =>
-  import("@/features/knowledge/components/knowledge-graph").then((m) => ({
-    default: m.KnowledgeGraph,
-  })),
-);
 const SourceControlPanel = lazy(() =>
   import("@/features/git/components/source-control-panel").then((m) => ({
     default: m.SourceControlPanel,
   })),
 );
+// Team chat is a surface tab (ADR-0024); it used to be the right slot.
+const CommsPanel = lazy(() =>
+  import("@/features/comms/components/comms-panel").then((m) => ({ default: m.CommsPanel })),
+);
 const LogPanel = lazy(() =>
   import("@/features/log/components/log-panel").then((m) => ({ default: m.LogPanel })),
-);
-const UsagePanel = lazy(() =>
-  import("@/features/usage/components/usage-panel").then((m) => ({ default: m.UsagePanel })),
-);
-const ArtifactsPanel = lazy(() =>
-  import("@/features/artifacts/components/artifacts-panel").then((m) => ({
-    default: m.ArtifactsPanel,
-  })),
-);
-const CanvasPanel = lazy(() =>
-  import("@/features/canvas/components/canvas-panel").then((m) => ({ default: m.CanvasPanel })),
-);
-const MemoryPanel = lazy(() =>
-  import("@/features/memory/components/memory-panel").then((m) => ({ default: m.MemoryPanel })),
 );
 import { useAppStore } from "@/features/app/stores/app-store";
 import { PanelSkeleton } from "@/components/panel-skeleton";
@@ -140,7 +117,8 @@ import {
   Minimize2,
   MessagesSquare,
 } from "lucide-react";
-import { PROJECTLESS_TYPES, type TabType } from "@/lib/constants";
+import { PROJECTLESS_TYPES, surfaceMinWidth, type TabType } from "@/lib/constants";
+import { teamChatShown, toggleTeamChat } from "../lib/team-chat";
 import { SessionContextButton } from "@/features/session-context/components/session-context-button";
 import { unlockHint, useTeamAccess } from "@/features/comms/lib/team-chat-access";
 import { useSettingsNav } from "@/features/settings/stores/settings-nav-store";
@@ -172,6 +150,7 @@ const tabIcons: Record<TabType, FallbackIcon> = {
   artifacts: Layers,
   "comms-draft": FileText,
   spaces: Frame,
+  "team-chat": MessagesSquare,
 };
 
 const GROUP_OF = (t: Tab) => t.groupId ?? "main";
@@ -189,17 +168,15 @@ export const PERSISTENT_TYPES_LIST = [
   "editor",
   "terminal",
   "browser",
-  "knowledge-graph",
   "pdf",
-  // Keep chat + knowledge mounted across tab switches too: chat keeps its
-  // mounted transcript window + scroll position (remounting re-ran the
-  // "loading transcript" path and rebuilt scroll), and knowledge avoids
-  // re-walking its tree/graph on every revisit.
+  // Keep chat mounted across tab switches too: it keeps its mounted
+  // transcript window + scroll position (remounting re-ran the "loading
+  // transcript" path and rebuilt scroll). Team chat, for the same reason: an
+  // open conversation keeps its scroll and its half-typed message.
   "chat",
-  "knowledge",
-  // A Space is a live socket + a Y.Doc: remounting re-dials, replays the page
-  // and lands re-fitted. Kept mounted so a tab switch is a tab switch.
-  "spaces",
+  "team-chat",
+  // Knowledge, the knowledge graph and Spaces were here too; they are
+  // destinations now (ADR-0024), kept mounted by the destination screen.
 ] as const satisfies readonly TabType[];
 
 type PersistentTabType = (typeof PERSISTENT_TYPES_LIST)[number];
@@ -217,9 +194,7 @@ const PERSISTENT_TYPES: ReadonlySet<TabType> = new Set(PERSISTENT_TYPES_LIST);
 export const IDLE_EXPENSIVE_TYPES_LIST = [
   "terminal",
   "browser",
-  "knowledge-graph",
   "pdf",
-  "spaces",
 ] as const satisfies readonly PersistentTabType[];
 
 const IDLE_EXPENSIVE_TYPES: ReadonlySet<TabType> = new Set(IDLE_EXPENSIVE_TYPES_LIST);
@@ -371,7 +346,12 @@ const ProjectColumns = memo(function ProjectColumns({
               )}
             />
           )}
-          <ColumnPanel id={gid} shown={shown[i]} defaultSize={pairSizes?.[i]}>
+          <ColumnPanel
+            id={gid}
+            shown={shown[i]}
+            defaultSize={pairSizes?.[i]}
+            minSize={i === 0 ? undefined : columnMinSize(view, gid)}
+          >
             <TabColumn
               groupId={gid}
               role={i === 0 ? "main" : "surface"}
@@ -391,6 +371,19 @@ const ProjectColumns = memo(function ProjectColumns({
 });
 
 /**
+ * A surfaces column's floor: the pixel minimum its active surface declares
+ * (`TAB_PLACEMENT`, ADR-0024), so a column cannot be dragged narrower than
+ * its tool's layout works at. A percentage floor alone let team chat's
+ * composer wrap on a narrow window.
+ */
+function columnMinSize(view: ProjectView, groupId: string): string {
+  const activeId = view.activeByGroup[groupId];
+  const tab = view.tabs.find((t) => t.id === activeId);
+  const px = tab ? surfaceMinWidth(tab.type) : null;
+  return px === null ? "20" : `${px}px`;
+}
+
+/**
  * One split column's panel, collapsed to zero width instead of unmounted when
  * the surfaces mode hides it. Sizes are percentages: v4 reads bare numbers as
  * PIXELS and unit-less strings as percentages. `order` is gone — panels are
@@ -400,11 +393,14 @@ function ColumnPanel({
   id,
   shown,
   defaultSize,
+  minSize = "20",
   children,
 }: {
   id: string;
   shown: boolean;
   defaultSize?: string;
+  /** A percentage, or a pixel floor ("320px") from the surface it shows. */
+  minSize?: string;
   children: React.ReactNode;
 }) {
   const panelRef = usePanelRef();
@@ -433,7 +429,7 @@ function ColumnPanel({
       panelRef={panelRef}
       collapsible
       collapsedSize="0"
-      minSize="20"
+      minSize={minSize}
       defaultSize={defaultSize}
       className="min-w-0"
     >
@@ -600,12 +596,11 @@ function SurfacesToggle({ groupOrder }: { groupOrder: string[] }) {
   );
 }
 
-/** Team chat (⌘⇧C), the right slot's occupant. Here as well as in the rail so
- *  it is in sight, not only behind the rail. Locked (signed out, or a local
+/** Team chat (⌘⇧C), a surface tab. Here as well as in the rail so it is in
+ *  sight, not only behind the rail. Locked (signed out, or a local
  *  organization) it stays, greyed, saying what unlocks it. */
 function TeamChatToggle() {
-  const open = useLayoutStore((s) => s.rightPanel.visible);
-  const { toggleTeamChat } = useLayoutStore.use.actions();
+  const open = useLayoutStore(teamChatShown);
   const access = useTeamAccess();
   const shortcut = useActionShortcut("panels.teamChat")?.label;
   const locked = unlockHint(access, "team chat");
@@ -878,8 +873,6 @@ function PersistentPanel({
           containerHeight={height}
         />
       );
-    case "knowledge":
-      return <KnowledgePanel tabId={tab.id} />;
     case "browser":
       return (
         <BrowserPanel
@@ -888,12 +881,10 @@ function PersistentPanel({
           initialUrl={tab.data.url as string | undefined}
         />
       );
-    case "knowledge-graph":
-      return <KnowledgeGraph />;
     case "pdf":
       return <PdfViewer filePath={tab.data.filePath as string} tabId={tab.id} />;
-    case "spaces":
-      return <SpacesTab convId={tab.data.convId as string} />;
+    case "team-chat":
+      return <CommsPanel />;
     // Chat is normally handled by the caller, which needs its own
     // `visibility:hidden` wrapper rather than `display:none`. Listed anyway so
     // the exhaustiveness check below is real and not a hole.
@@ -924,7 +915,7 @@ function ProjectlessCenter() {
   const focusedGroupId = useLayoutStore.use.focusedGroupId();
   const { setActiveTab } = useLayoutStore.use.actions();
   // No project means no left panel, so this is always the leftmost column,
-  // and the rightmost unless team chat is open beside it.
+  // and the rightmost.
   const chrome = useColumnChrome(true, true);
   // Home is LOCAL state, not a store id: `setActiveTab` validates ids and
   // falls back to `tabs[0]` on a miss, so a sentinel id would re-activate
@@ -1006,24 +997,12 @@ function TabContent({ tab }: { tab: Tab }) {
   switch (tab.type) {
     case "chat":
       return <ChatPanel tabId={tab.id} />;
-    case "canvas":
-      return <CanvasPanel />;
-    case "knowledge":
-      return <KnowledgePanel tabId={tab.id} />;
-    case "knowledge-graph":
-      return <KnowledgeGraph />;
-    case "memory":
-      return <MemoryPanel />;
     case "browser":
       return <BrowserPanel initialUrl={tab.data.url as string | undefined} />;
     case "log":
       return <LogPanel />;
     case "source-control":
       return <SourceControlPanel />;
-    case "usage":
-      return <UsagePanel />;
-    case "artifacts":
-      return <ArtifactsPanel />;
     case "media":
       return <MediaViewer filePath={tab.data.filePath as string} />;
     case "svg":
@@ -1055,8 +1034,6 @@ function TabContent({ tab }: { tab: Tab }) {
       return (
         <CommsDraftTab convId={tab.data.convId as string} draftId={tab.data.draftId as string} />
       );
-    case "spaces":
-      return <SpacesTab convId={tab.data.convId as string} />;
     case "unsupported":
       return <UnsupportedView filePath={tab.data.filePath as string} />;
     default:

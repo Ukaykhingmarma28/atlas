@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { teamChatShown } from "@/features/layout/lib/team-chat";
 
 // The settings store subscribes to config events when it loads.
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}), emit: vi.fn() }));
@@ -193,7 +194,8 @@ describe("ui_open", () => {
 
   it("opens the Timeline at a session", async () => {
     result(await act("ui_open", { target: "timeline", sessionId: "cap-1" }));
-    expect(layout().tabs.find((t) => t.type === "artifacts")).toBeDefined();
+    expect(layout().destination?.type).toBe("artifacts");
+    expect(layout().destinationShown).toBe(true);
     expect(useArtifactsStore.getState().open).toMatchObject({
       sessionId: "cap-1",
       projectPath: "/p",
@@ -202,7 +204,7 @@ describe("ui_open", () => {
 
   it("opens a knowledge note", async () => {
     result(await act("ui_open", { target: "knowledge", noteId: "note-3" }));
-    expect(layout().tabs.find((t) => t.type === "knowledge")).toBeDefined();
+    expect(layout().destination?.type).toBe("knowledge");
     expect(useKnowledgeStore.getState().pendingOpenId).toBe("note-3");
   });
 
@@ -249,20 +251,25 @@ describe("ui_open", () => {
       pageId: "p-arch",
       page: "Architecture",
     });
-    const tab = layout().tabs.find((t) => t.id === "spaces-c-design");
-    expect(tab).toMatchObject({
+    // A Space is a destination (ADR-0024), never a column tab.
+    expect(layout().destination).toMatchObject({
+      id: "spaces-c-design",
       type: "spaces",
       title: "design — Space",
       data: { convId: "c-design" },
     });
-    expect(layout().activeTabId).toBe("spaces-c-design");
+    expect(layout().destinationShown).toBe(true);
+    expect(layout().tabs.some((t) => t.type === "spaces")).toBe(false);
     expect(useSpacesStore.getState().requestedPages["c-design"]).toBe("p-arch");
 
-    // Asked again, the same tab is refocused, not a second one opened.
+    // Asked again, the same Space stays: nothing is opened as a tab.
+    layout().actions.hideDestination();
     result(
       await act("ui_open", { target: "space_page", conversationId: "c-design", pageId: "p-arch" }),
     );
-    expect(layout().tabs.filter((t) => t.type === "spaces")).toHaveLength(1);
+    expect(layout().destination?.id).toBe("spaces-c-design");
+    expect(layout().destinationShown).toBe(true);
+    expect(layout().tabs.some((t) => t.type === "spaces")).toBe(false);
   });
 
   it("refuses a Space page that is not there, naming what is missing", async () => {
@@ -308,10 +315,10 @@ describe("ui_focus", () => {
   });
 
   it("shows, hides or toggles a panel", async () => {
-    result(await act("ui_focus", { target: "panel", name: "right", visible: true }));
-    expect(layout().rightPanel.visible).toBe(true);
-    result(await act("ui_focus", { target: "panel", name: "right", visible: true }));
-    expect(layout().rightPanel.visible).toBe(true);
+    result(await act("ui_focus", { target: "panel", name: "team_chat", visible: true }));
+    expect(teamChatShown(layout())).toBe(true);
+    result(await act("ui_focus", { target: "panel", name: "team_chat", visible: true }));
+    expect(teamChatShown(layout())).toBe(true);
     result(await act("ui_focus", { target: "panel", name: "left" }));
     expect(layout().leftPanel.visible).toBe(false);
     result(await act("ui_focus", { target: "panel", name: "chat_sidebar", visible: false }));

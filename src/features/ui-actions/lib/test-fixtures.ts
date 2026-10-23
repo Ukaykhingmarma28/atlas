@@ -30,10 +30,11 @@ export function seedWindow() {
     focusedGroupId: "main",
     activeTabId: "editor:/p/src/App.tsx",
     leftPanel: { visible: true, width: 240, activeSection: "files" },
-    rightPanel: { visible: false, width: 300 },
     sourceControl: { section: "changes" },
     chatSidebar: { visible: true, width: 240 },
     zen: false,
+    destination: null,
+    destinationShown: false,
   });
   useChatStore.setState({
     sessions: { "chat-1": { acpSessionId: "sess-1" } } as never,

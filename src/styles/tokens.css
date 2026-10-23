@@ -115,7 +115,7 @@
   --control-lg: 32px;
   /* Named layout constants — not controls, so they are not on the scale. */
   /* The one bar: every column's header (file tree, each split column, the
-     right panel, the project rail's top band) is this tall, so together they
+     destination screen, the project rail's top band) is this tall, so together they
      read as one strip broken only by the column borders. The macOS traffic
      lights are centred in it via `trafficLightPosition` in
      `src-tauri/tauri.conf.json`, whose `y` is NOT the buttons' top: the

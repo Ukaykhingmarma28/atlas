@@ -1117,6 +1117,9 @@ function closeOrgScopedTabs(): void {
   for (const tab of layout.tabs) {
     if (ORG_SCOPED_TYPES.has(tab.type)) layout.actions.closeTab(tab.id);
   }
+  if (layout.destination && ORG_SCOPED_TYPES.has(layout.destination.type)) {
+    layout.actions.closeTab(layout.destination.id);
+  }
   // The spaces metadata cache is org-scoped too — page trees and authors
   // for the outgoing org's conversations must not survive into the next.
   useSpacesStore.getState().actions.clearAll();

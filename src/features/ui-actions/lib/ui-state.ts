@@ -14,6 +14,7 @@ import {
 } from "@/features/editor/lib/editor-views";
 import type { UiActionRequest } from "./types";
 import { sourceControlShown } from "@/features/layout/lib/source-control";
+import { teamChatShown } from "@/features/layout/lib/team-chat";
 
 export interface UiTabState {
   id: string;
@@ -41,8 +42,8 @@ export interface UiState {
   activeFile: ({ path: string } & Partial<EditorPosition>) | null;
   panels: {
     left: { visible: boolean; section: string };
-    /** Team chat, the right slot's only occupant. */
-    right: { visible: boolean };
+    /** The team-chat surface tab: on screen. */
+    teamChat: { visible: boolean };
     /** The source-control surface tab: on screen, and its section. */
     sourceControl: { visible: boolean; section: string };
     chatSidebar: boolean;
@@ -50,6 +51,8 @@ export interface UiState {
     terminalVisible: boolean;
     zen: boolean;
   };
+  /** The destination over the columns (ADR-0024), when one is up. */
+  destination: { id: string; type: string } | null;
   focusedGroup: string;
   groups: string[];
 }
@@ -100,7 +103,7 @@ export function buildUiState(request: UiActionRequest): UiState {
         : null,
     panels: {
       left: { visible: layout.leftPanel.visible, section: layout.leftPanel.activeSection },
-      right: { visible: layout.rightPanel.visible },
+      teamChat: { visible: teamChatShown(layout) },
       sourceControl: {
         visible: sourceControlShown(layout),
         section: layout.sourceControl.section,
@@ -109,6 +112,11 @@ export function buildUiState(request: UiActionRequest): UiState {
       terminalVisible: tabs.some((t) => t.active && t.type === "terminal"),
       zen: layout.zen,
     },
+    // The full-page view over the columns, if one is up (ADR-0024).
+    destination:
+      layout.destination && layout.destinationShown
+        ? { id: layout.destination.id, type: layout.destination.type }
+        : null,
     focusedGroup: layout.focusedGroupId,
     groups: [...layout.groupOrder],
   };

@@ -8,8 +8,8 @@ import { useSettingsNav } from "@/features/settings/stores/settings-nav-store";
 import { useShellEdges } from "../lib/shell-edges";
 import { cn } from "@/lib/utils";
 import { LeftPanel } from "./left-panel";
-import { RightPanel } from "./right-panel";
 import { CenterPanel } from "./center-panel";
+import { DestinationScreen } from "./destination-screen";
 
 // Stable across the v3 -> v4 upgrade on purpose: `useDefaultLayout` reads
 // `react-resizable-panels:<id>` out of localStorage and understands the v3
@@ -25,7 +25,7 @@ const SettingsScreen = lazy(() =>
 );
 
 export function AppLayout() {
-  const { leftPanelShown: showLeft, rightPanelShown: showRight } = useShellEdges();
+  const { leftPanelShown: showLeft } = useShellEdges();
   // Settings covers the window once opened, and stays mounted (hidden) after,
   // so its open page and drafts survive a trip back to the workspace.
   const settingsOpen = useSettingsNav((s) => s.open);
@@ -132,7 +132,9 @@ export function AppLayout() {
             `useShellEdges`), and only the dev badge floats over it. */}
         <DevModePill />
 
-        <div className="flex-1 min-h-0">
+        {/* `relative` for the destination, which covers the file tree and the
+            columns while the session runs underneath (ADR-0024). */}
+        <div className="relative flex-1 min-h-0">
           <Group
             id={MAIN_LAYOUT_ID}
             orientation="horizontal"
@@ -177,18 +179,8 @@ export function AppLayout() {
             <Panel id="atlas-center" defaultSize="64" minSize="30">
               <CenterPanel />
             </Panel>
-
-            {showRight && (
-              <>
-                <Separator className="w-px bg-border hover:bg-primary data-[separator=active]:bg-primary transition-colors cursor-col-resize" />
-                {/* A pixel floor, not a percentage: 12% of a narrow window
-                    squeezed the composer's toolbar into wrapping. */}
-                <Panel id="atlas-right" defaultSize="18" minSize="320px" maxSize="50">
-                  <RightPanel />
-                </Panel>
-              </>
-            )}
           </Group>
+          <DestinationScreen />
         </div>
       </div>
 

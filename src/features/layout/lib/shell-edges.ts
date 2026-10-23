@@ -9,18 +9,17 @@ import { useLayoutStore } from "../stores/layout-store";
  * the window-level controls go in the outermost ones — the leading cluster
  * (traffic lights, project and left-panel toggles, `org / project`) in the
  * leftmost header, the trailing dock in the rightmost. The left panel is
- * leftmost whenever it shows; otherwise the first split column is. The right
- * panel is rightmost whenever it shows; otherwise the last split column is.
+ * leftmost whenever it shows; otherwise the first split column is. The last
+ * split column on screen is always rightmost: nothing sits right of the
+ * columns since team chat became a surface (ADR-0024).
  *
- * `AppLayout` reads the same two booleans to decide what to mount, so a header
- * can never claim an edge that a panel it cannot see is occupying.
+ * `AppLayout` reads the same boolean to decide what to mount, so a header can
+ * never claim an edge that a panel it cannot see is occupying.
  */
-export function useShellEdges(): { leftPanelShown: boolean; rightPanelShown: boolean } {
+export function useShellEdges(): { leftPanelShown: boolean } {
   const hasProject = useAppStore((s) => !!s.currentProject);
   const leftVisible = useLayoutStore((s) => s.leftPanel.visible);
-  // Team chat is org-scoped, so the slot shows with no project open too.
-  const rightShown = useLayoutStore((s) => s.rightPanel.visible);
-  return { leftPanelShown: leftVisible && hasProject, rightPanelShown: rightShown };
+  return { leftPanelShown: leftVisible && hasProject };
 }
 
 /**
@@ -31,12 +30,12 @@ export function useColumnChrome(
   atLeft: boolean,
   atRight: boolean,
 ): { leading: boolean; breadcrumb: boolean; trailing: boolean } {
-  const { leftPanelShown, rightPanelShown } = useShellEdges();
+  const { leftPanelShown } = useShellEdges();
   return {
     leading: atLeft && !leftPanelShown,
     // The first column always heads with `org / project` — inside the leading
     // cluster when it has one, alone when the file tree has it.
     breadcrumb: atLeft,
-    trailing: atRight && !rightPanelShown,
+    trailing: atRight,
   };
 }
