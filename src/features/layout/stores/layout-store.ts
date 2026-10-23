@@ -7,7 +7,6 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   LEGACY_TAB_TYPES,
   ORG_SCOPED_TYPES,
-  PROJECTLESS_TYPES,
   TAB_TYPES,
   migrateTabType,
   type TabType,
@@ -311,11 +310,12 @@ function reconcileGroups(s: LayoutState): void {
 /**
  * Whether `type` may live in the main column. The main column is the session:
  * it never shows a tab strip, so it holds the agent and nothing else, and
- * files, editors and tools open in the surfaces pane beside it. Projectless types are the exception — the projectless shell has no
- * surfaces pane to send them to.
+ * files, editors and tools open in the surfaces pane beside it. That includes
+ * the projectless types: the projectless shell shows its tabs from whichever
+ * column has focus, so they need no exception.
  */
 function belongsInMain(type: TabType): boolean {
-  return type === "chat" || PROJECTLESS_TYPES.has(type);
+  return type === "chat";
 }
 
 /** The surfaces column a tool should open in: the focused one when it is not
@@ -734,18 +734,33 @@ export const useLayoutStore = createSelectors(
               if (s.groupOrder.length <= 1) return;
               const gi = s.groupOrder.indexOf(groupId);
               if (gi === -1) return;
-              const leftId = s.groupOrder[gi - 1] ?? s.groupOrder[gi + 1];
-              // Move the column's tabs to the neighbour (they remount there).
-              for (const t of s.tabs) {
-                if (groupOf(t) === groupId) t.groupId = leftId;
+              const remaining = s.groupOrder.filter((g) => g !== groupId);
+              const main = remaining[0];
+              // The column's tabs move (and remount): sessions to the main
+              // column, tools to the nearest surfaces column left standing.
+              const toolHome =
+                [s.groupOrder[gi - 1], s.groupOrder[gi + 1]].find((g) => g && g !== main) ??
+                remaining.find((g) => g !== main);
+              const here = s.tabs.filter((t) => groupOf(t) === groupId);
+              if (!toolHome && here.some((t) => !belongsInMain(t.type))) {
+                // The only surfaces column, with tools in it: they have nowhere
+                // to go but the main column, which shows no tabs. Hide the
+                // pane instead; its tools keep running and come back with it.
+                s.surfaces = "hidden";
+                s.focusedGroupId = main;
+                syncActiveMirror(s);
+                return;
               }
               const moved = s.activeByGroup[groupId];
-              s.groupOrder.splice(gi, 1);
+              for (const t of here) t.groupId = belongsInMain(t.type) ? main : toolHome!;
+              s.groupOrder = remaining;
               delete s.activeByGroup[groupId];
-              if (moved) s.activeByGroup[leftId] = moved;
-              s.focusedGroupId = leftId;
+              const movedTab = here.find((t) => t.id === moved);
+              if (movedTab) s.activeByGroup[groupOf(movedTab)] = movedTab.id;
+              s.focusedGroupId = movedTab ? groupOf(movedTab) : main;
               if (s.groupOrder.length === 1) s.surfaces = "shown";
-              syncActiveMirror(s);
+              reconcileGroups(s);
+              keepMainForSessions(s);
             }),
           toggleZenMode: () =>
             set((s) => {
@@ -761,6 +776,7 @@ export const useLayoutStore = createSelectors(
                 s.zen = false;
                 s.zenPrev = null;
                 reconcileGroups(s);
+                keepMainForSessions(s);
                 return;
               }
               // Enter: snapshot the current layout, then build Session │ Knowledge │
@@ -867,8 +883,13 @@ export const useLayoutStore = createSelectors(
                 order[Math.min(template.focus ?? order.length - 1, order.length - 1)];
 
               // Park any OTHER open tabs in the first column (kept, not lost) and
-              // validate actives/focus.
+              // validate actives/focus — then move the tools among them out of
+              // it, since the main column shows no tabs.
               reconcileGroups(s);
+              keepMainForSessions(s);
+              // A one-column template means the session alone: tools parked
+              // beside it stay open but out of sight.
+              if (template.columns.length === 1 && s.groupOrder.length > 1) s.surfaces = "hidden";
 
               // The left panel is the template's to set; team chat in the right
               // slot is the user's and stays as it was.

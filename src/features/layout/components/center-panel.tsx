@@ -143,6 +143,7 @@ import {
 import { PROJECTLESS_TYPES, type TabType } from "@/lib/constants";
 import { SessionContextButton } from "@/features/session-context/components/session-context-button";
 import { unlockHint, useTeamAccess } from "@/features/comms/lib/team-chat-access";
+import { useSettingsNav } from "@/features/settings/stores/settings-nav-store";
 
 // Typed as the icon-theme fallback rather than `React.ElementType`: these are
 // what a tab falls back to when the icon theme has nothing for it, and
@@ -1261,8 +1262,10 @@ function SurfaceLauncher({
     if (!focused) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || isTypingTarget(document.activeElement)) return;
-      // A dialog or menu owns the keyboard while it is up.
+      // A dialog or menu owns the keyboard while it is up, and so does the
+      // Settings screen, which covers the workspace without being a dialog.
       if (document.querySelector("[role='dialog'], [role='menu']")) return;
+      if (useSettingsNav.getState().open) return;
       if (e.key === "Escape" && closable) {
         e.preventDefault();
         useLayoutStore.getState().actions.closeGroup(groupId);
