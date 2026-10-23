@@ -102,7 +102,7 @@ export function sessionSerializer(getProjectPath: () => string | null): Composer
     rebuilt: (token) => rebuildMention(token, getProjectPath()),
   };
   return {
-    tokenize: (line) => tokenizeShortForms(line, resolve),
+    tokenize: (lines) => lines.map((line) => (line ? tokenizeShortForms(line, resolve) : [])),
     chipText: (node: PMNode) => toShortForm(node.attrs.data as MentionData),
   };
 }

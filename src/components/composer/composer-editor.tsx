@@ -36,7 +36,7 @@ import type { AnyExtension, Editor, JSONContent } from "@tiptap/core";
 import { EditorContent, useEditor, type UseEditorOptions } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Fragment, Slice } from "@tiptap/pm/model";
-import { Selection, TextSelection } from "@tiptap/pm/state";
+import { Selection, TextSelection, type Transaction } from "@tiptap/pm/state";
 import { invoke } from "@tauri-apps/api/core";
 
 import { cn } from "@/lib/utils";
@@ -48,6 +48,7 @@ import {
   isDocBlank,
   isDocEmpty,
   isLargePaste,
+  textOffsetToPos,
   textToDoc,
   textToParagraphs,
   type ComposerSerializer,
@@ -58,6 +59,11 @@ import {
   type ComposerKeyInterceptor,
   type ComposerTriggerSpec,
 } from "./composer-triggers";
+
+/** Transaction meta on a change the composer made through its handle rather
+ *  than the user typing — `setValue`. A feature that only reacts to typing (a
+ *  picker opening on `@`) skips these. */
+export const PROGRAMMATIC = "atlasComposerProgrammatic";
 
 export interface InsertChipOptions {
   /** Replace this range (a picker's `@query`); defaults to the selection. */
@@ -74,8 +80,9 @@ export interface ComposerEditorHandle {
   blur(): void;
   /** The document as text. O(document) — call it when you need it. */
   getValue(): string;
-  /** Replace the document, caret to the end. Chips are rebuilt from tokens. */
-  setValue(text: string): void;
+  /** Replace the document, caret to the end — or to `selection`, as text
+   *  offsets. Chips are rebuilt from tokens. One undo step. */
+  setValue(text: string, selection?: { start: number; end: number }): void;
   clear(): void;
   /** Replace a range with plain text and put the caret after it. */
   replaceRange(from: number, to: number, text: string): void;
@@ -106,8 +113,15 @@ export interface ComposerEditorProps {
   onEscape?: () => boolean;
   /** Edge-triggered: whether the document would trim to nothing. */
   onEmptyChange?: (blank: boolean) => void;
-  /** Every document change, no payload. */
-  onDocChange?: () => void;
+  /** Every document change. The transaction says whether it was typing
+   *  (`PROGRAMMATIC`); a draft mirror ignores it. */
+  onDocChange?: (transaction: Transaction) => void;
+  /** Every keydown, before any binding of the composer's own. Return true to
+   *  consume it. For a feature that keeps its key handling in one block. */
+  onKeyDown?: (event: KeyboardEvent) => boolean;
+  /** Every paste, before the composer's own handling. Return true if it was
+   *  taken (a file the feature attaches its own way). */
+  onPaste?: (event: ClipboardEvent) => boolean;
   triggers?: readonly ComposerTriggerSpec[];
   /** Offered picker keys first while a trigger is open. */
   keyInterceptor?: ComposerKeyInterceptor | null;
@@ -248,6 +262,8 @@ export const ComposerEditor = memo(
         // through the same tokenizer as a paste.
         clipboardTextParser: (text, _$context, _plain, view) =>
           textSlice(view.state.schema, text, serializer),
+        handleKeyDown: (view, event) =>
+          !view.composing && (live.current.onKeyDown?.(event) ?? false),
         handleDOMEvents: {
           // Stamp typing activity at the very start of key handling, so the
           // transcript's deferred markdown parse cannot slip a long task in
@@ -258,9 +274,10 @@ export const ComposerEditor = memo(
           },
         },
         handlePaste: (view, event) => {
+          const p = live.current;
+          if (p.onPaste?.(event)) return true;
           const dt = event.clipboardData;
           if (!dt) return false;
-          const p = live.current;
           // Clipboard images (screenshots) first. `filesFromClipboard` skips
           // Finder's zero-byte stubs — a copied `.png` file has an image mime
           // but no bytes, and must take the path route below instead.
@@ -315,7 +332,7 @@ export const ComposerEditor = memo(
           return true;
         },
       },
-      onUpdate: ({ editor: e }) => {
+      onUpdate: ({ editor: e, transaction }) => {
         // Stamp activity so a deferred markdown parse waits out the burst.
         markInputActivity();
         const doc = e.state.doc;
@@ -325,7 +342,7 @@ export const ComposerEditor = memo(
           blankRef.current = blank;
           live.current.onEmptyChange?.(blank);
         }
-        live.current.onDocChange?.();
+        live.current.onDocChange?.(transaction);
       },
     }));
     const editor = useEditor(options, []);
@@ -348,15 +365,20 @@ export const ComposerEditor = memo(
         focus: () => editor.view.focus(),
         blur: () => (editor.view.dom as HTMLElement).blur(),
         getValue: () => docToText(editor.state.doc, serializer),
-        setValue: (text) => {
-          editor
-            .chain()
-            .setContent(textToDoc(text, serializer))
-            .command(({ tr }) => {
-              tr.setSelection(Selection.atEnd(tr.doc));
-              return true;
-            })
-            .run();
+        setValue: (text, selection) => {
+          const { state } = editor;
+          const doc = state.schema.nodeFromJSON(textToDoc(text, serializer));
+          const tr = state.tr.replaceWith(0, state.doc.content.size, doc.content);
+          tr.setSelection(
+            selection
+              ? TextSelection.create(
+                  tr.doc,
+                  textOffsetToPos(tr.doc, selection.start, serializer),
+                  textOffsetToPos(tr.doc, selection.end, serializer),
+                )
+              : Selection.atEnd(tr.doc),
+          );
+          editor.view.dispatch(tr.setMeta(PROGRAMMATIC, true).scrollIntoView());
         },
         clear: () => {
           editor.commands.clearContent(true);

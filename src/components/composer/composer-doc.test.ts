@@ -38,19 +38,21 @@ const Tag = createChipNode<string>({
 });
 
 const serializer: ComposerSerializer = {
-  tokenize(line) {
-    const out: JSONContent[] = [];
-    let cursor = 0;
-    for (const m of line.matchAll(/\{\{(\w+)\}\}/g)) {
-      if (m.index > cursor) out.push({ type: "text", text: line.slice(cursor, m.index) });
-      out.push({ type: "tag", attrs: { data: m[1] } });
-      cursor = m.index + m[0].length;
-    }
-    if (cursor < line.length) out.push({ type: "text", text: line.slice(cursor) });
-    return out;
-  },
+  tokenize: (lines) => lines.map(tokenizeLine),
   chipText: (node) => `{{${node.attrs.data as string}}}`,
 };
+
+function tokenizeLine(line: string): JSONContent[] {
+  const out: JSONContent[] = [];
+  let cursor = 0;
+  for (const m of line.matchAll(/\{\{(\w+)\}\}/g)) {
+    if (m.index > cursor) out.push({ type: "text", text: line.slice(cursor, m.index) });
+    out.push({ type: "tag", attrs: { data: m[1] } });
+    cursor = m.index + m[0].length;
+  }
+  if (cursor < line.length) out.push({ type: "text", text: line.slice(cursor) });
+  return out;
+}
 
 const editors: Editor[] = [];
 afterEach(() => {

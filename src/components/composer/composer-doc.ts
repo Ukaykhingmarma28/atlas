@@ -11,10 +11,12 @@
 //     short form, team chat a `<@user_id>` — through a `ComposerSerializer`.
 //
 // The reverse trip (`textToDoc`) is for a draft restored on remount, a prefill
-// and a plain-text paste. A feature's `tokenize` turns one line into text runs
-// and chips; the rule every tokenizer keeps is that a chip only replaces text
-// it writes back byte for byte, so text → doc → text is the identity. Each
-// feature's round-trip test holds it to that.
+// and a plain-text paste. A feature's `tokenize` turns lines into text runs
+// and chips — all the lines at once, because whether a token is a chip can
+// depend on the lines around it (team chat leaves a mention inside a code
+// fence as text). The rule every tokenizer keeps is that a chip only replaces
+// text it writes back byte for byte, so text → doc → text is the identity.
+// Each feature's round-trip test holds it to that.
 //
 // Nothing here touches the DOM or React.
 
@@ -23,18 +25,19 @@ import type { Fragment, Node as PMNode } from "@tiptap/pm/model";
 
 /** How a feature's text and the composer's document map onto each other. */
 export interface ComposerSerializer {
-  /** One line of text → inline content (text runs and chips). */
-  tokenize(line: string): JSONContent[];
+  /** Lines of text → each line's inline content (text runs and chips). */
+  tokenize(lines: readonly string[]): JSONContent[][];
   /** A chip node → the text it stands for. */
   chipText(node: PMNode): string;
 }
 
 /** Text → the composer's paragraphs. */
 export function textToParagraphs(text: string, serializer: ComposerSerializer): JSONContent[] {
-  return text.split("\n").map((line) => {
-    const content = line ? serializer.tokenize(line) : [];
-    return content.length > 0 ? { type: "paragraph", content } : { type: "paragraph" };
-  });
+  return serializer
+    .tokenize(text.split("\n"))
+    .map((content) =>
+      content.length > 0 ? { type: "paragraph", content } : { type: "paragraph" },
+    );
 }
 
 /** Text → a whole composer document. */
