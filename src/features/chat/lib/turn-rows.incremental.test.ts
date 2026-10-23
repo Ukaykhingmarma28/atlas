@@ -64,8 +64,13 @@ function exchange(n: number): ChatMessage[] {
   ];
 }
 
+// Shared, as the transcript holds them: a new set is a real change of input
+// and would re-project every turn, hiding exactly what these tests check.
+const EXPANDED = new Set<string>();
+const EXPANDED_TURNS = new Set<string>();
+
 function opts(patch: Partial<ProjectOptions> = {}): ProjectOptions {
-  return { expanded: new Set(), expandedTurns: new Set(), streaming: false, ...patch };
+  return { expanded: EXPANDED, expandedTurns: EXPANDED_TURNS, streaming: false, ...patch };
 }
 
 /** What a reader can observe: rows and turns, not the reuse bookkeeping. */
