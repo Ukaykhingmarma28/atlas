@@ -30,18 +30,36 @@ export const CITE_MAX_CHARS = 2000;
 /** How much of the passage the chip's label shows. */
 const LABEL_CHARS = 32;
 
+/**
+ * `text` cut to at most `max` UTF-16 units, never through the middle of a
+ * surrogate pair. Half an emoji is a lone surrogate, which serde rejects:
+ * `compose_prompt` would fail to deserialize and the cite would be lost.
+ */
+export function cutText(text: string, max: number): string {
+  if (text.length <= max) return text;
+  let end = max;
+  const last = text.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return text.slice(0, end);
+}
+
+/** `text` cut to `max` units including a trailing ellipsis. */
+function cutWithEllipsis(text: string, max: number): string {
+  return `${cutText(text, max - 1).trimEnd()}…`;
+}
+
 /** The passage as a cite keeps it: newlines normalised, blank edges trimmed,
  *  and cut to `CITE_MAX_CHARS` with an ellipsis. */
 export function capCitation(text: string): { text: string; truncated: boolean } {
   const normalised = text.replace(/\r\n?/g, "\n").replace(/^\s*\n|\n\s*$/g, "");
   if (normalised.length <= CITE_MAX_CHARS) return { text: normalised, truncated: false };
-  return { text: `${normalised.slice(0, CITE_MAX_CHARS - 1).trimEnd()}…`, truncated: true };
+  return { text: cutWithEllipsis(normalised, CITE_MAX_CHARS), truncated: true };
 }
 
 /** The chip's label: the start of the passage on one line, in quotes. */
 export function citeLabel(text: string): string {
   const flat = text.replace(/\s+/g, " ").trim();
-  const cut = flat.length > LABEL_CHARS ? `${flat.slice(0, LABEL_CHARS - 1).trimEnd()}…` : flat;
+  const cut = flat.length > LABEL_CHARS ? cutWithEllipsis(flat, LABEL_CHARS) : flat;
   return `“${cut}”`;
 }
 
@@ -61,7 +79,9 @@ export function citedTextMention(
     messageId: source.messageId,
     rowId: source.rowId ?? null,
     text,
-    note: (source.note ?? "").trim(),
+    // Capped like the passage: a note is a sentence or two, and the whole
+    // cite rides in one prompt block.
+    note: cutText((source.note ?? "").trim(), CITE_MAX_CHARS).trim(),
   };
 }
 

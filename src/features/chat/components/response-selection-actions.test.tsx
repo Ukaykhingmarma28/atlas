@@ -73,7 +73,11 @@ async function passageComment() {
 /** Every chip the cite popover links into a composer, by detail. */
 function linked() {
   const details: CommentLinkDetail[] = [];
-  const listener = (e: Event) => details.push((e as CustomEvent<CommentLinkDetail>).detail);
+  // A composer marks the event handled; the popover closes only on that.
+  const listener = (e: Event) => {
+    details.push((e as CustomEvent<CommentLinkDetail>).detail);
+    e.preventDefault();
+  };
   window.addEventListener(COMMENT_LINK_EVENT, listener);
   return { details, stop: () => window.removeEventListener(COMMENT_LINK_EVENT, listener) };
 }
@@ -232,6 +236,58 @@ describe("selected response actions", () => {
     );
     view.rerender(<Harness enabled={false} />);
     expect(screen.queryByRole("group")).toBeNull();
+  });
+});
+
+describe("when no composer takes the cite", () => {
+  it("stays open with the note and says so", async () => {
+    const note = await openCite();
+    fireEvent.change(note, { target: { value: "keep me" } });
+    fireEvent.keyDown(note, { key: "Enter" });
+    await screen.findByText(/composer could not take the cite/);
+    expect(note.value).toBe("keep me");
+    expect(screen.getByRole("group", { name: "Selected response actions" })).toBeTruthy();
+  });
+
+  it("does not post twice when the comment went out but the cite did not", async () => {
+    const note = await openCite();
+    fireEvent.click(screen.getByRole("switch", { name: "Share with team" }));
+    fireEvent.change(note, { target: { value: "Ask the team" } });
+    fireEvent.keyDown(note, { key: "Enter" });
+    await screen.findByText(/Shared with the team, but/);
+    expect(state.post).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole("switch", { name: "Share with team" }).getAttribute("aria-checked"),
+    ).toBe("false");
+  });
+});
+
+describe("the note field", () => {
+  it("ignores Enter while an IME is composing", async () => {
+    const links = linked();
+    try {
+      const note = await openCite();
+      fireEvent.change(note, { target: { value: "にほん" } });
+      fireEvent.keyDown(note, { key: "Enter", isComposing: true });
+      fireEvent.keyDown(note, { key: "Enter", keyCode: 229 });
+      expect(links.details).toHaveLength(0);
+      fireEvent.keyDown(note, { key: "Enter" });
+      await waitFor(() => expect(links.details).toHaveLength(1));
+    } finally {
+      links.stop();
+    }
+  });
+});
+
+describe("a layout change while the popover is open", () => {
+  it("keeps the popover and its note on scroll, resize and window blur", async () => {
+    const note = await openCite();
+    fireEvent.change(note, { target: { value: "draft" } });
+    fireEvent.scroll(screen.getByTestId("viewport"));
+    fireEvent(window, new Event("resize"));
+    fireEvent(window, new Event("blur"));
+    expect(screen.getByRole("textbox", { name: "Note for the agent" })).toBe(note);
+    expect(note.value).toBe("draft");
   });
 });
 

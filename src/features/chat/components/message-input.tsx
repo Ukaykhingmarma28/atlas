@@ -1695,6 +1695,8 @@ export function MessageInput({
         .getMentions()
         .some((m) => m.kind === detail.mention.kind && m.id === detail.mention.id);
       if (!linked) input.insertMention(detail.mention, { padBefore: true });
+      // Handled: the cite popover closes only on this (`linkCiteToComposer`).
+      e.preventDefault();
       requestAnimationFrame(() => inputRef.current?.focus());
     };
     window.addEventListener(COMMENT_LINK_EVENT, handler);

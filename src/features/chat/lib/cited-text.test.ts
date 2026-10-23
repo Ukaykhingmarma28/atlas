@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   CITE_MAX_CHARS,
   capCitation,
+  cutText,
   citeAsText,
   citeLabel,
   citedTextMention,
@@ -51,6 +52,39 @@ describe("a cite", () => {
     expect(c.text).toBe("  one\ntwo  ");
     expect(c.note).toBe("hi");
     expect(cite({ rowId: undefined, note: undefined })).toMatchObject({ rowId: null, note: "" });
+  });
+});
+
+/** Whether `s` holds a lone UTF-16 surrogate (half an emoji). */
+const hasLoneSurrogate = (s: string) =>
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(s);
+
+describe("cutting never splits an emoji", () => {
+  it("drops a pair the cut would split", () => {
+    expect(cutText("ab🙂", 3)).toBe("ab");
+    expect(cutText("ab🙂", 4)).toBe("ab🙂");
+  });
+
+  it("at the passage cap", () => {
+    // The emoji's first half lands exactly on the last unit before the `…`.
+    const text = `${"x".repeat(CITE_MAX_CHARS - 2)}🙂${"y".repeat(10)}`;
+    const capped = capCitation(text).text;
+    expect(hasLoneSurrogate(capped)).toBe(false);
+    expect(capped.length).toBeLessThanOrEqual(CITE_MAX_CHARS);
+    expect(capped.endsWith("…")).toBe(true);
+  });
+
+  it("at the label cut", () => {
+    const label = citeLabel(`${"x".repeat(30)}🙂 and more`);
+    expect(hasLoneSurrogate(label)).toBe(false);
+    expect(label).toBe(`“${"x".repeat(30)}…”`);
+  });
+
+  it("in the note, which is capped too", () => {
+    const note = `${"n".repeat(CITE_MAX_CHARS - 1)}🙂 tail`;
+    const c = cite({ note });
+    expect(hasLoneSurrogate(c.note)).toBe(false);
+    expect(c.note.length).toBeLessThanOrEqual(CITE_MAX_CHARS);
   });
 });
 

@@ -778,8 +778,11 @@ fn clip_body(body: &str) -> String {
     if body.len() <= MENTION_BODY_BUDGET_BYTES {
         return body.to_string();
     }
-    let head = &body[..MENTION_BODY_BUDGET_BYTES];
-    let elided = body.len() - MENTION_BODY_BUDGET_BYTES;
+    // On a character boundary: slicing inside a multi-byte character panics,
+    // and a body is whatever the user or a file put in it.
+    let cut = body.floor_char_boundary(MENTION_BODY_BUDGET_BYTES);
+    let head = &body[..cut];
+    let elided = body.len() - cut;
     format!("{head}\n\n… (truncated, {elided} bytes elided)")
 }
 
@@ -1165,6 +1168,21 @@ mod cite_tests {
         assert!(!block.contains("note"), "{block}");
         let blank = render_block(&cite(Some("  "), Some(""))).unwrap();
         assert_eq!(blank, block, "a blank note or row is no note or row");
+    }
+
+    /// A multi-byte character straddling the budget is kept whole or left
+    /// out, never split: slicing inside it would panic the send.
+    #[test]
+    fn clip_body_cuts_on_a_character_boundary() {
+        // "é" is two bytes; one byte short of the budget puts it across it.
+        let body = format!("{}é tail", "a".repeat(MENTION_BODY_BUDGET_BYTES - 1));
+        let clipped = clip_body(&body);
+        let head = clipped.split("\n\n…").next().unwrap();
+        assert_eq!(head, "a".repeat(MENTION_BODY_BUDGET_BYTES - 1));
+        assert!(clipped.ends_with(&format!(" {} bytes elided)", body.len() - head.len())));
+        // An emoji (four bytes) one byte into the budget's end.
+        let emoji = format!("{}🙂", "a".repeat(MENTION_BODY_BUDGET_BYTES - 1));
+        assert!(clip_body(&emoji).starts_with(&"a".repeat(MENTION_BODY_BUDGET_BYTES - 1)));
     }
 
     /// The token is the id alone, and a send dedupes on it.

@@ -20,7 +20,7 @@ import { COMMENT_BODY_MAX, type AnchorKind } from "@/features/artifacts/lib/comm
 import { selectionCommentBody } from "@/features/artifacts/lib/selection-comment";
 import type { OrgDirectory } from "@/features/organisations/lib/use-org-directory";
 
-import { capCitation, citedTextMention } from "../lib/cited-text";
+import { CITE_MAX_CHARS, capCitation, citedTextMention } from "../lib/cited-text";
 import { linkCiteToComposer } from "../lib/comment-mentions";
 import type { AnchorHit } from "../lib/comment-anchors";
 
@@ -95,7 +95,19 @@ export function CiteForm({
         return;
       }
     }
-    linkCiteToComposer(tabId, citedTextMention({ text, note: trimmed, messageId, rowId }));
+    if (!linkCiteToComposer(tabId, citedTextMention({ text, note: trimmed, messageId, rowId }))) {
+      // No composer took it (disabled, or not mounted): stay open with the
+      // note rather than close as if the cite had landed. A comment already
+      // posted is not posted again — the switch goes off for the retry.
+      setError(
+        sharing
+          ? "Shared with the team, but the composer could not take the cite. Try again once it is available."
+          : "The composer could not take the cite. Try again once it is available.",
+      );
+      if (sharing) setShared(false);
+      setBusy(false);
+      return;
+    }
     window.getSelection()?.removeAllRanges();
     onDone();
   }, [ready, sharing, share, text, trimmed, tabId, messageId, rowId, onDone]);
@@ -113,10 +125,13 @@ export function CiteForm({
         value={note}
         rows={2}
         aria-label="Note for the agent"
+        maxLength={CITE_MAX_CHARS}
         placeholder={sharing ? "Add a note for the agent and the team…" : "Add a note (optional)…"}
         onChange={(e) => setNote(e.target.value)}
         onKeyDown={(e) => {
           // Enter cites, Shift+Enter breaks the line — the composers' rule.
+          // Not while an IME is composing: that Enter commits the candidate.
+          if (e.nativeEvent.isComposing || e.keyCode === 229) return;
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             void submit();

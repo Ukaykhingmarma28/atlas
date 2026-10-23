@@ -41,7 +41,7 @@ import { fileURLToPath } from "node:url";
  *    variant it deserializes as (`MentionSpec::CitedText`): a renamed field
  *    there arrives as `None`, and the agent silently loses the note or row.
  *
-
+ * Unlike `tests/state-payload-contract.test.ts` (which is specifically the
  * `save_app_state` / `bootstrap_app_state` payload and generalises over many
  * struct pairs), these four are one-off, unrelated commands — plain regression
  * pins on source text rather than a shared parsing framework, so each failure

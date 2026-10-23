@@ -149,8 +149,16 @@ export function linkCommentToComposer(tabId: string, mention: MentionComment): v
 }
 
 /** Put a cited reply passage's chip in the composer of the session it is from. */
-export function linkCiteToComposer(tabId: string, mention: MentionCitedText): void {
-  window.dispatchEvent(
-    new CustomEvent<CommentLinkDetail>(COMMENT_LINK_EVENT, { detail: { tabId, mention } }),
-  );
+/**
+ * Put a cited reply passage's chip in the composer of the session it is from.
+ * True when a composer took it: the composer marks the event handled
+ * (`preventDefault`), and one that is disabled or not mounted does not, so
+ * the caller can keep the cite rather than close as if it landed.
+ */
+export function linkCiteToComposer(tabId: string, mention: MentionCitedText): boolean {
+  const event = new CustomEvent<CommentLinkDetail>(COMMENT_LINK_EVENT, {
+    detail: { tabId, mention },
+    cancelable: true,
+  });
+  return !window.dispatchEvent(event);
 }

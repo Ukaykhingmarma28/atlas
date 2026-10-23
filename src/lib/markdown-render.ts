@@ -80,6 +80,10 @@ const MENTION_PREFIX_KIND: Record<string, string> = {
   "@conversation": "conversation",
   "@recorded-session": "recorded_session",
   "@comment": "comment",
+  // A large paste and a cited passage write their ids (`@paste:k3x9q2`),
+  // which mean nothing to a reader: they draw as a fixed label instead.
+  "@paste": "pasted_text",
+  "@cite": "cited_text",
   "#skill": "skill",
   "#command": "command",
   "#agent": "agent",
@@ -92,7 +96,7 @@ const MENTION_PREFIX_KIND: Record<string, string> = {
 // to the next whitespace, and its trailing punctuation is peeled back off into
 // plain text.
 const MENTION_TOKEN_RE =
-  /(?<![\w/])([@#](?:file|folder|symbol|note|repo|branch|msg|session|member|conversation|recorded-session|comment|skill|command|agent|rule)):(?:"([^"\n]+)"|(?!")(\S+))/g;
+  /(?<![\w/])([@#](?:file|folder|symbol|note|repo|branch|msg|session|member|conversation|recorded-session|comment|paste|cite|skill|command|agent|rule)):(?:"([^"\n]+)"|(?!")(\S+))/g;
 
 // Tokens are lifted out of the source BEFORE remark parses it, and parked
 // behind private-use placeholders. Left in, GFM gets to them first: a Retina
@@ -143,6 +147,27 @@ function baseName(s: string): string {
 // Lucide icon node data (v0.468.0) per mention kind — identical to the glyphs
 // the `#`/`@` picker renders, so a sent message matches what you typed.
 const MENTION_GLYPH: Record<string, [string, Record<string, string | number>][]> = {
+  pasted_text: [
+    ["path", { d: "M11 14h10" }],
+    ["path", { d: "M16 4h2a2 2 0 0 1 2 2v1.344" }],
+    ["path", { d: "m17 18 4-4-4-4" }],
+    ["path", { d: "M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113" }],
+    ["rect", { x: "8", y: "2", width: "8", height: "4", rx: "1" }],
+  ],
+  cited_text: [
+    [
+      "path",
+      {
+        d: "M16 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z",
+      },
+    ],
+    [
+      "path",
+      {
+        d: "M5 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z",
+      },
+    ],
+  ],
   skill: [
     [
       "path",
@@ -293,10 +318,16 @@ function iconWrap(kind: string): Hast | null {
   };
 }
 
+/** Kinds whose token value is an opaque id: the chip says what it is. */
+const FIXED_LABEL: Record<string, string> = {
+  pasted_text: "Pasted text",
+  cited_text: "Cited passage",
+};
+
 function chipNode(prefix: string, value: string): Hast {
   const kind = MENTION_PREFIX_KIND[prefix] ?? "file";
   const isPath = kind === "file" || kind === "folder";
-  const label = isPath ? baseName(value) : value;
+  const label = isPath ? baseName(value) : (FIXED_LABEL[kind] ?? value);
   const icon = iconWrap(kind);
   const children: Hast[] = [];
   if (icon) children.push(icon);

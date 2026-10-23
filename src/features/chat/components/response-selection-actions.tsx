@@ -59,6 +59,12 @@ export function ResponseSelectionActions({
       dismissed = true;
       setTarget(null);
     };
+    // Layout moved under the pill (a scroll, a resize, the window losing
+    // focus). With a popover open, its draft matters more than the pill's
+    // position: the popover stays, anchored to the pill, and owns its close.
+    const layoutDismiss = () => {
+      if (!openRef.current) dismiss();
+    };
     const readSelection = () => {
       if (
         dismissed ||
@@ -181,7 +187,7 @@ export function ResponseSelectionActions({
       if (viewport.clientWidth !== width || viewport.clientHeight !== height) {
         width = viewport.clientWidth;
         height = viewport.clientHeight;
-        dismiss();
+        layoutDismiss();
       }
     });
     resizeObserver.observe(viewport);
@@ -193,9 +199,9 @@ export function ResponseSelectionActions({
     document.addEventListener("keydown", key);
     viewport.addEventListener("pointermove", move);
     viewport.addEventListener("pointerleave", leave);
-    viewport.addEventListener("scroll", dismiss, true);
-    window.addEventListener("resize", dismiss);
-    window.addEventListener("blur", dismiss);
+    viewport.addEventListener("scroll", layoutDismiss, true);
+    window.addEventListener("resize", layoutDismiss);
+    window.addEventListener("blur", layoutDismiss);
     return () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
@@ -208,9 +214,9 @@ export function ResponseSelectionActions({
       document.removeEventListener("keydown", key);
       viewport.removeEventListener("pointermove", move);
       viewport.removeEventListener("pointerleave", leave);
-      viewport.removeEventListener("scroll", dismiss, true);
-      window.removeEventListener("resize", dismiss);
-      window.removeEventListener("blur", dismiss);
+      viewport.removeEventListener("scroll", layoutDismiss, true);
+      window.removeEventListener("resize", layoutDismiss);
+      window.removeEventListener("blur", layoutDismiss);
       openRef.current = false;
     };
   }, [enabled, viewportRef]);
