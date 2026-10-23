@@ -63,7 +63,7 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
     ),
     (
         "agentSwitchBehavior",
-        "# What picking another agent does to a chat that has a conversation: \"new-tab\"\n# keeps it and opens the new agent in a new tab, \"handoff\" switches in place\n# and attaches it to the next message, \"reset\" switches in place and starts\n# over. (default: \"reset\")",
+        "# What picking another agent does to a session that has a conversation:\n# \"new-tab\" keeps it and opens the new agent in a new tab, \"handoff\" switches\n# in place and attaches it to the next message, \"reset\" switches in place and\n# starts over. (default: \"reset\")",
     ),
     (
         "rememberBeforeSwitch",

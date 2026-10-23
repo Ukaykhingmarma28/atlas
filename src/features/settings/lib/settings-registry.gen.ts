@@ -78,9 +78,9 @@ export interface AppSettings {
    */
   adaptiveSuggestions: "agent" | "off";
   /**
-   * What picking another agent does to a chat that has a conversation: "new-tab" keeps it and
-   * opens the new agent in a new tab, "handoff" switches in place and attaches it to the next
-   * message, "reset" switches in place and starts over.
+   * What picking another agent does to a session that has a conversation: "new-tab" keeps it
+   * and opens the new agent in a new tab, "handoff" switches in place and attaches it to the
+   * next message, "reset" switches in place and starts over.
    */
   agentSwitchBehavior: "reset" | "new-tab" | "handoff";
   /**
@@ -604,8 +604,8 @@ export const SETTINGS_REGISTRY: readonly SettingMeta[] = [
     status: "live",
     page: "chat",
     section: "Switching agents",
-    title: "Switching agents in a chat",
-    summary: "What picking another agent does once a chat has a conversation.",
+    title: "Switching agents in a session",
+    summary: "What picking another agent does once a session has a conversation.",
     values: ["reset", "new-tab", "handoff"],
   },
   {

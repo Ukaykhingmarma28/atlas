@@ -337,10 +337,10 @@ default = "reset"
 status = "live"
 page = "chat"
 section = "Switching agents"
-title = "Switching agents in a chat"
-summary = "What picking another agent does once a chat has a conversation."
+title = "Switching agents in a session"
+summary = "What picking another agent does once a session has a conversation."
 doc = """
-What picking another agent does to a chat that has a conversation: "new-tab"
+What picking another agent does to a session that has a conversation: "new-tab"
 keeps it and opens the new agent in a new tab, "handoff" switches in place and
 attaches it to the next message, "reset" switches in place and starts over.
 """
