@@ -23,7 +23,7 @@ import { composePrompt, toShortForm, type MentionData } from "./mentions";
 import { collapsePastes, pasteAsText, pastedTextMention, withPastesInline } from "./pasted-text";
 import {
   REGISTRY_MAX_BYTES,
-  forgetSentPastes,
+  forgetSentTexts,
   knownMention,
   rememberMention,
   resetMentionRegistryForTests,
@@ -163,7 +163,7 @@ describe("the registry's pastes", () => {
   it("are dropped once sent", () => {
     const a = pastedTextMention(big);
     rememberMention(a, "/p");
-    forgetSentPastes([a]);
+    forgetSentTexts([a]);
     expect(knownMention(`@paste:${a.id}`, "/p")).toBeNull();
   });
 });

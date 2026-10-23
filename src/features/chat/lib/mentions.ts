@@ -87,7 +87,11 @@ export type MentionKind =
   // Text too large to sit in the composer (`isLargePaste`), kept as a chip.
   // Never reaches `compose_prompt`: it rides `agents_send`'s `pastedTexts`,
   // and Rust picks its form by the agent's `embeddedContext` capability.
-  | "pasted_text";
+  | "pasted_text"
+  // A passage of one of this session's own agent replies, cited back to the
+  // agent with an optional note (`cited-text.ts`). Never in the picker: only
+  // the transcript's selection pill makes one.
+  | "cited_text";
 
 export interface MentionFile {
   kind: "file";
@@ -213,6 +217,24 @@ export interface MentionPastedText {
   text: string;
 }
 
+/** A passage of an earlier reply in this session, cited back to the agent. */
+export interface MentionCitedText {
+  kind: "cited_text";
+  /** Short and unique — the `@cite:<id>` token. */
+  id: string;
+  /** The chip's label: the start of the passage, quoted. */
+  displayName: string;
+  /** The transcript message the passage was selected in. */
+  messageId: string;
+  /** The captured row that message is, on a session shared with the team;
+   *  null when the session is not captured or the row is not known. */
+  rowId: string | null;
+  /** The passage, capped at `CITE_MAX_CHARS`. */
+  text: string;
+  /** What the user wants to say about it; empty for none. */
+  note: string;
+}
+
 export type MentionData =
   | MentionFile
   | MentionFolder
@@ -228,7 +250,8 @@ export type MentionData =
   | MentionConversation
   | MentionRecordedSession
   | MentionComment
-  | MentionPastedText;
+  | MentionPastedText
+  | MentionCitedText;
 
 // ── Catalog ──────────────────────────────────────────────────────────────────
 
@@ -454,6 +477,8 @@ export function toShortForm(m: MentionData): string {
       return `@comment:${shortFormValue(m.displayName)}`;
     case "pasted_text":
       return `@paste:${m.id}`;
+    case "cited_text":
+      return `@cite:${m.id}`;
   }
 }
 

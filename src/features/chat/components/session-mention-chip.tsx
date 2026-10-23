@@ -24,6 +24,7 @@ import {
   MessageSquare,
   MessageSquareQuote,
   MessagesSquare,
+  Quote,
   Scale,
   SquareSlash,
   User,
@@ -127,6 +128,8 @@ function ChipIcon({ mention }: { mention: MentionData }) {
       return <MessageSquareQuote size={size} />;
     case "pasted_text":
       return <ClipboardPaste size={size} />;
+    case "cited_text":
+      return <Quote size={size} />;
   }
 }
 
@@ -160,6 +163,11 @@ function chipTitle(m: MentionData): string {
     case "pasted_text":
       // The first lines, so a hover tells two pastes apart.
       return m.text.split("\n").slice(0, 12).join("\n");
+    case "cited_text": {
+      // The passage, then the note: what the agent will be pointed at.
+      const quote = m.text.split("\n").slice(0, 12).join("\n");
+      return m.note ? `${quote}\n\nNote: ${m.note}` : quote;
+    }
   }
 }
 

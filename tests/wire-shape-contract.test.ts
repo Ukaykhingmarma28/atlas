@@ -30,7 +30,18 @@ import { fileURLToPath } from "node:url";
  *    renamed argument (`threads_sync_project`'s `cwd`) compiles on both sides
  *    and silently arrives as `undefined` / fails to deserialize.
  *
- * Unlike `tests/state-payload-contract.test.ts` (which is specifically the
+ * #11 pins a cloud comment's shape: the TS `Comment` the threads render and
+ *    the Rust `atlas_artifacts::model::Comment` that deserializes the server's
+ *    rows, field for field, plus their `AnchorKind`s. The server's own
+ *    `ArtifactComment` (in the separate server repository's contracts
+ *    package) is not reachable from this repo or its CI, so it is not pinned
+ *    here; a field the server adds is dropped by serde without an error,
+ *    which is exactly why the two sides this repo owns must at least agree.
+ * #12 pins the cite chip (`MentionCitedText`) to the `compose_prompt`
+ *    variant it deserializes as (`MentionSpec::CitedText`): a renamed field
+ *    there arrives as `None`, and the agent silently loses the note or row.
+ *
+
  * `save_app_state` / `bootstrap_app_state` payload and generalises over many
  * struct pairs), these four are one-off, unrelated commands — plain regression
  * pins on source text rather than a shared parsing framework, so each failure
@@ -476,5 +487,57 @@ describe("timing: tool-call and turn times ↔ the renderer (#10)", () => {
     }
     expect(rust![1]).toMatch(/\bended_at_ms: Option<i64>,/);
     expect(ts![1]).toMatch(/\bended_at_ms\?: number;/);
+  });
+});
+
+/** Field names of one `Variant { ... }` inside an enum body. */
+function rustVariantFields(enumBody: string, variant: string): string[] {
+  const m = new RegExp(`\\n\\s{4}${variant}\\s*\\{([\\s\\S]*?)\\n\\s{4}\\},`).exec(enumBody);
+  if (!m) throw new Error(`Rust variant ${variant} not found — the source moved`);
+  return rustStructFields(m[1]);
+}
+
+describe("cloud comments: TS Comment ↔ atlas_artifacts Comment (#11)", () => {
+  const rust = read("crates", "atlas-artifacts", "src", "model.rs");
+  const ts = read("src", "features", "artifacts", "lib", "comments-api.ts");
+
+  it("Comment has the same fields on both sides, camelCased", () => {
+    const { attrs, body } = rustItem(rust, "struct", "Comment");
+    expect(attrs).toMatch(/rename_all\s*=\s*"camelCase"/);
+    const rustFields = rustStructFields(body).map(snakeToCamel).sort();
+    // Floor against a vacuous pass: the fields the passage comment relies on.
+    expect(rustFields).toEqual(expect.arrayContaining(["anchorKind", "anchorId", "body"]));
+    expect(tsInterfaceProps(ts, "Comment").sort()).toEqual(rustFields);
+  });
+
+  it("CommentVotes has the same fields on both sides", () => {
+    const { body } = rustItem(rust, "struct", "CommentVotes");
+    expect(tsInterfaceProps(ts, "CommentVotes").sort()).toEqual(rustStructFields(body).sort());
+  });
+
+  it("AnchorKind has the same members on both sides", () => {
+    const { attrs, body } = rustItem(rust, "enum", "AnchorKind");
+    expect(attrs).toMatch(/rename_all\s*=\s*"snake_case"/);
+    expect(tsUnionLiterals(ts, "AnchorKind").sort()).toEqual(
+      rustEnumVariants(body).map(pascalToSnake).sort(),
+    );
+  });
+});
+
+describe("cite chip: MentionCitedText ↔ MentionSpec::CitedText (#12)", () => {
+  const rust = read("src-tauri", "src", "commands", "compose_prompt.rs");
+  const ts = read("src", "features", "chat", "lib", "mentions.ts");
+
+  it("carries the same fields under the same tag", () => {
+    const { attrs, body } = rustItem(rust, "enum", "MentionSpec");
+    expect(attrs).toMatch(/tag\s*=\s*"kind"/);
+    expect(attrs).toMatch(/rename_all\s*=\s*"snake_case"/);
+    expect(attrs).toMatch(/rename_all_fields\s*=\s*"camelCase"/);
+    const rustFields = rustVariantFields(body, "CitedText").map(snakeToCamel).sort();
+    expect(rustFields).toEqual(expect.arrayContaining(["messageId", "rowId", "text", "note"]));
+    const tsFields = tsInterfaceProps(ts, "MentionCitedText").filter((f) => f !== "kind");
+    expect(tsFields.sort()).toEqual(rustFields);
+    expect(ts).toMatch(/interface MentionCitedText \{\s*kind: "cited_text";/);
+    expect(pascalToSnake("CitedText")).toBe("cited_text");
   });
 });

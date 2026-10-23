@@ -17,7 +17,8 @@
 //
 // In memory on purpose: drafts are too (`chat-store` does not persist them),
 // so the two live and die together. Bounded by count and by bytes, since a
-// paste chip holds its whole text, and a paste is forgotten once it is sent.
+// paste or a cite chip holds its whole text, and either is forgotten once it
+// is sent.
 //
 // A token nobody minted this run can still be rebuilt when its short form
 // carries everything the mention needs: a project-relative `@file:` or
@@ -31,7 +32,7 @@ import type { ShortFormToken } from "./composer-short-forms";
 
 /** Enough for every chip a long session's drafts hold; the oldest go first. */
 const CAPACITY = 500;
-/** What the registry may hold in all; a paste counts its text. */
+/** What the registry may hold in all; a paste or a cite counts its text. */
 export const REGISTRY_MAX_BYTES = 16 * 1024 * 1024;
 /** What any other mention is counted as. */
 const ENTRY_BYTES = 256;
@@ -43,7 +44,14 @@ const keyOf = (raw: string, projectPath: string | null) => `${projectPath ?? ""}
 
 function sizeOf(mention: MentionData): number {
   // UTF-16 code units, two bytes each: what the string costs in memory.
-  return mention.kind === "pasted_text" ? mention.text.length * 2 + ENTRY_BYTES : ENTRY_BYTES;
+  switch (mention.kind) {
+    case "pasted_text":
+      return mention.text.length * 2 + ENTRY_BYTES;
+    case "cited_text":
+      return (mention.text.length + mention.note.length) * 2 + ENTRY_BYTES;
+    default:
+      return ENTRY_BYTES;
+  }
 }
 
 function drop(key: string): void {
@@ -89,13 +97,19 @@ export function knownMention(raw: string, projectPath: string | null): MentionDa
   return mention;
 }
 
-/** Forget the pastes a send just carried: their text has gone out, and the
- *  registry should not keep a copy of every log the user ever pasted. */
-export function forgetSentPastes(mentions: readonly MentionData[]): void {
-  const ids = new Set(mentions.filter((m) => m.kind === "pasted_text").map((m) => m.id));
-  if (ids.size === 0) return;
+/** Whether a mention carries its whole text (a paste, a cite). */
+function carriesText(mention: MentionData): boolean {
+  return mention.kind === "pasted_text" || mention.kind === "cited_text";
+}
+
+/** Forget the pastes and cites a send just carried: their text has gone out,
+ *  and the registry should not keep a copy of every log the user ever pasted
+ *  or every passage they cited. */
+export function forgetSentTexts(mentions: readonly MentionData[]): void {
+  const sent = new Set(mentions.filter(carriesText).map((m) => `${m.kind}:${m.id}`));
+  if (sent.size === 0) return;
   for (const [key, { mention }] of minted) {
-    if (mention.kind === "pasted_text" && ids.has(mention.id)) drop(key);
+    if (carriesText(mention) && sent.has(`${mention.kind}:${mention.id}`)) drop(key);
   }
 }
 

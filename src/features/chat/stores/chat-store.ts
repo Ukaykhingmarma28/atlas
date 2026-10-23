@@ -43,6 +43,7 @@ import { extractPlanMarkdown, type PlanRecord } from "../lib/plans";
 import { extractNextSteps } from "../lib/next-steps";
 import { turnFileOfToolCall } from "../lib/tool-files";
 import { withPastesInline } from "../lib/pasted-text";
+import { withCitesInline } from "../lib/cited-text";
 import type { MentionData } from "../lib/mentions";
 import type { TurnFile, TurnInterruption } from "@/types/agent";
 
@@ -565,9 +566,10 @@ interface ChatActions {
     clearDraft: (tabId: string) => void;
     /**
      * Queue a message. The queue holds strings, so every queued send passes
-     * the mentions it was sent with and its pastes' text goes into the string
-     * (`withPastesInline`): a bare `@paste:<id>` would reach the agent with
-     * nothing behind it. Required, so no queue path can skip it.
+     * the mentions it was sent with and its pastes' and cites' text goes into
+     * the string (`withPastesInline`, then `withCitesInline`): a bare
+     * `@paste:<id>` or `@cite:<id>` would reach the agent with nothing behind
+     * it. Required, so no queue path can skip it.
      */
     enqueueMessage: (sessionId: string, text: string, mentions: readonly MentionData[]) => void;
     removeQueueItem: (sessionId: string, index: number) => void;
@@ -1707,7 +1709,10 @@ export const useChatStore = createSelectors(
         enqueueMessage: (sessionId, text, mentions) =>
           set((s) => {
             const cur = s.queues[sessionId] ?? [];
-            s.queues[sessionId] = [...cur, withPastesInline(text, mentions)];
+            s.queues[sessionId] = [
+              ...cur,
+              withCitesInline(withPastesInline(text, mentions), mentions),
+            ];
           }),
         removeQueueItem: (sessionId, index) =>
           set((s) => {
