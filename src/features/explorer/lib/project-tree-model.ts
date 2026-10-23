@@ -136,6 +136,9 @@ export class ProjectTreeModel {
   private expanded: ReadonlySet<string> = EMPTY_SET;
   private loading: ReadonlySet<string> = EMPTY_SET;
   private errors: ReadonlyMap<string, string> = EMPTY_MAP;
+  /** Loaded directories a refresh skipped because nothing of them was on
+   *  screen; re-read the moment they are opened again. */
+  private stale = new Set<string>();
   private showHidden: boolean;
 
   /** Directories queued for the next batch. */
@@ -296,41 +299,75 @@ export class ProjectTreeModel {
   ) {
     if (this.disposed) return;
     const byPath = new Map(answers.map((a) => [a.path, a]));
-    let loading: Set<string> | null = null;
-    let errors: Map<string, string> | null = null;
     let touched = false;
     for (let i = 0; i < paths.length; i++) {
       const path = paths[i];
       if (this.generation.get(path) !== generations[i]) continue; // superseded
       if (this.loading.has(path)) {
-        loading ??= new Set(this.loading);
+        const loading = new Set(this.loading);
         loading.delete(path);
+        this.loading = loading;
+        touched = true;
       }
       const answer = byPath.get(path);
       const error = failure ?? answer?.error ?? (answer ? null : `No listing for ${path || "/"}`);
       if (error) {
-        errors ??= new Map(this.errors);
-        errors.set(path, error);
-        // A folder that vanished takes its subtree with it.
-        if (path !== "" && this.listings.has(path)) this.forget(path);
-      } else {
-        if (this.errors.has(path)) {
-          errors ??= new Map(this.errors);
-          errors.delete(path);
+        // A folder that vanished takes its subtree with it; the error stays
+        // on the folder itself, which its parent's next listing clears.
+        if (path !== "" && this.listings.has(path)) {
+          this.forget(path);
+          touched = true;
         }
-        this.replaceListing(path, answer!.entries);
+        // Recorded only while something still points at it: a folder its
+        // loaded parent no longer lists is simply gone, and keeping an error
+        // for every vanished path would grow the map for ever.
+        if (this.isReferenced(path)) touched = this.setError(path, error) || touched;
+        else touched = this.setError(path, null) || touched;
+      } else {
+        touched = this.setError(path, null) || touched;
+        touched = this.replaceListing(path, answer!.entries) || touched;
       }
-      touched = true;
     }
-    if (loading) this.loading = loading;
-    if (errors) this.errors = errors;
+    // Only a real change re-flattens. A watcher burst usually re-reads
+    // folders whose listing came back identical; telling the view would
+    // re-measure every row for nothing.
     if (touched) this.changed();
   }
 
-  /** Swap in a fresh listing, dropping cached subdirectories that are gone. */
-  private replaceListing(path: string, entries: ProjectEntry[]) {
+  /** The root, or a path its parent's loaded listing (if any) still holds. */
+  private isReferenced(path: string): boolean {
+    if (path === "") return true;
+    const siblings = this.listings.get(parentOf(path));
+    return !siblings || siblings.some((e) => e.path === path);
+  }
+
+  /** Set or clear one directory's error. Answers whether anything changed. */
+  private setError(path: string, error: string | null): boolean {
+    const current = this.errors.get(path);
+    if (error === null ? current === undefined : current === error) return false;
+    const next = new Map(this.errors);
+    if (error === null) next.delete(path);
+    else next.set(path, error);
+    this.errors = next;
+    return true;
+  }
+
+  /**
+   * Swap in a fresh listing, dropping cached subdirectories that are gone and
+   * clearing the error of any that are back. Answers whether it changed.
+   */
+  private replaceListing(path: string, entries: ProjectEntry[]): boolean {
     const previous = this.listings.get(path);
-    if (previous && sameEntries(previous, entries)) return; // keep row identity
+    this.stale.delete(path);
+    // A folder that failed (deleted) and is listed again (recreated) is fine,
+    // whether or not the listing itself changed.
+    let cleared = false;
+    for (const e of entries) {
+      if (e.kind === "directory" && this.errors.has(e.path)) {
+        cleared = this.setError(e.path, null) || cleared;
+      }
+    }
+    if (previous && sameEntries(previous, entries)) return cleared; // keep row identity
     if (previous) {
       const still = new Set<string>();
       for (const e of entries) if (e.kind === "directory") still.add(e.path);
@@ -339,23 +376,38 @@ export class ProjectTreeModel {
       }
     }
     this.listings.set(path, entries);
+    return true;
   }
 
-  /** Drop a directory's listing and everything cached under it. */
+  /**
+   * Drop a directory and everything cached under it: listings, expansion,
+   * errors, loading marks, and any answer still in flight for it.
+   */
   private forget(path: string) {
     const prefix = `${path}/`;
+    const under = (key: string) => key === path || key.startsWith(prefix);
     // Deleting the entry being visited is safe for a Map iterator.
-    for (const key of this.listings.keys()) {
-      if (key === path || key.startsWith(prefix)) this.listings.delete(key);
+    for (const key of this.listings.keys()) if (under(key)) this.listings.delete(key);
+    for (const key of this.stale) if (under(key)) this.stale.delete(key);
+    // A load still in flight for a dropped folder must not resurrect it.
+    for (const key of this.generation.keys()) {
+      if (under(key)) this.generation.set(key, ++this.nextGeneration);
     }
-    let expanded: Set<string> | null = null;
-    for (const key of this.expanded) {
-      if (key === path || key.startsWith(prefix)) {
-        expanded ??= new Set(this.expanded);
-        expanded.delete(key);
+    const prune = <T extends ReadonlySet<string> | ReadonlyMap<string, unknown>>(
+      from: T,
+      copy: (from: T) => Set<string> | Map<string, unknown>,
+    ): T => {
+      let next: Set<string> | Map<string, unknown> | null = null;
+      for (const key of from.keys()) {
+        if (!under(key)) continue;
+        next ??= copy(from);
+        next.delete(key);
       }
-    }
-    if (expanded) this.expanded = expanded;
+      return (next ?? from) as T;
+    };
+    this.expanded = prune(this.expanded, (f) => new Set(f));
+    this.loading = prune(this.loading, (f) => new Set(f));
+    this.errors = prune(this.errors, (f) => new Map(f)) as ReadonlyMap<string, string>;
   }
 
   // ── Expansion ─────────────────────────────────────────────────────────
@@ -385,7 +437,36 @@ export class ProjectTreeModel {
       this.expanded = next;
       this.changed();
     }
-    return open ? this.load(paths.filter((p) => p !== "")) : Promise.resolve();
+    if (!open) return Promise.resolve();
+    const opening = paths.filter((p) => p !== "");
+    // Folders a refresh skipped while hidden, now visible again.
+    const stale: string[] = [];
+    if (this.stale.size > 0) {
+      for (const path of opening) this.collectVisibleStale(path, stale);
+    }
+    return Promise.all([
+      this.load(opening.filter((p) => !this.stale.has(p))),
+      stale.length > 0 ? this.load(stale, { force: true }) : undefined,
+    ]).then(() => undefined);
+  }
+
+  /** `dir` and every expanded folder showing below it that is stale. */
+  private collectVisibleStale(dir: string, out: string[]) {
+    if (!this.isVisibleDirectory(dir)) return;
+    if (this.stale.has(dir)) out.push(dir);
+    for (const e of this.listings.get(dir) ?? []) {
+      if (e.kind === "directory" && this.expanded.has(e.path))
+        this.collectVisibleStale(e.path, out);
+    }
+  }
+
+  /** The root, or an expanded folder whose every ancestor is expanded: one
+   *  whose children are rows on screen (or would be, scrolled to). */
+  isVisibleDirectory(dir: string): boolean {
+    if (dir === "") return true;
+    if (!this.expanded.has(dir)) return false;
+    for (const a of ancestorsOf(dir)) if (a !== "" && !this.expanded.has(a)) return false;
+    return true;
   }
 
   collapseAll(): void {
@@ -440,20 +521,31 @@ export class ProjectTreeModel {
 
   /**
    * Re-read directories after a change on disk. With `dirs`, only those that
-   * are loaded (a watcher reports every folder it saw touched, most of them
-   * never opened here); without, everything loaded. Expansion survives.
+   * are loaded or failed (a watcher reports every folder it saw touched, most
+   * of them never opened here); without, everything loaded.
+   *
+   * Only folders whose children are on screen are read now. A loaded folder
+   * that is collapsed, or sits under a collapsed one, is marked stale and
+   * read when it is next opened: a full refresh (every atomic save on macOS
+   * is a rename, which the watcher cannot pin to a folder) must not re-read
+   * every folder ever opened. Expansion survives either way.
    */
   refresh(dirs?: readonly string[]): Promise<void> {
     // A folder that failed is retried too: it may have been created since.
     const known = (d: string) => this.listings.has(d) || this.errors.has(d);
-    const targets = dirs
+    const candidates = dirs
       ? dirs.filter(known)
       : [
           ...this.loadedDirectories(),
           ...[...this.errors.keys()].filter((d) => !this.listings.has(d)),
         ];
-    if (!this.listings.has("") && (!dirs || dirs.includes(""))) targets.push("");
-    return this.load(targets, { force: true });
+    if (!this.listings.has("") && (!dirs || dirs.includes(""))) candidates.push("");
+    const now: string[] = [];
+    for (const dir of candidates) {
+      if (this.isVisibleDirectory(dir)) now.push(dir);
+      else if (this.listings.has(dir)) this.stale.add(dir);
+    }
+    return this.load(now, { force: true });
   }
 
   setShowHidden(show: boolean): void {
@@ -477,23 +569,35 @@ function sameEntries(a: readonly ProjectEntry[], b: readonly ProjectEntry[]): bo
 
 // ── One model per project root ──────────────────────────────────────────
 
+/** Roots whose model is kept. Switching between a few projects keeps each
+ *  one's tree as it was; a long session through many does not keep them all. */
+export const MAX_MODELS = 4;
+
 const models = new Map<string, ProjectTreeModel>();
 
-/** The model for `root`, created on first ask and kept for the run. */
+/** The model for `root`, created on first ask. The least recently asked-for
+ *  root is dropped once more than `MAX_MODELS` are held. */
 export function projectTreeModel(
   root: string,
   read: DirectoryReader,
   opts: { showHidden?: boolean } = {},
 ): ProjectTreeModel {
   let model = models.get(root);
-  if (!model) {
+  if (model) {
+    // Most recently used goes last.
+    models.delete(root);
+  } else {
     model = new ProjectTreeModel(root, read, opts);
-    models.set(root, model);
+  }
+  models.set(root, model);
+  while (models.size > MAX_MODELS) {
+    const [oldest] = models.keys();
+    dropProjectTreeModel(oldest);
   }
   return model;
 }
 
-/** Drop a root's model (tests; a project closed for good). */
+/** Drop a root's model (a project closed for good; tests). */
 export function dropProjectTreeModel(root: string): void {
   models.get(root)?.dispose();
   models.delete(root);

@@ -12,8 +12,16 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
-import { ChevronsDownUp, ChevronsUpDown, FilePlus, FolderPlus, RefreshCw } from "lucide-react";
+import {
+  ChevronsDownUp,
+  ChevronsUpDown,
+  FilePlus,
+  FolderPlus,
+  PanelLeftClose,
+  RefreshCw,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import { activeProjectId } from "@/features/projects/lib/active-project";
 import { openFile } from "@/lib/open-file";
 import { IconButton } from "@/ui/icon-button";
 import { Hint } from "@/ui/tooltip";
@@ -31,7 +39,12 @@ import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { useIconThemeStore } from "@/features/icon-theme/stores/icon-theme-store";
 import { useWorkingTreeChanges } from "@/features/git/lib/use-working-tree-changes";
-import { addToGitignore, openInTerminal, readDirectories } from "../lib/fs-api";
+import {
+  addToGitignore,
+  openInTerminal,
+  readDirectories,
+  type DirectoryListing,
+} from "../lib/fs-api";
 import { nameOf, parentOf, projectTreeModel, type TreeRowData } from "../lib/project-tree-model";
 import { absoluteOf, ProjectFileOps, relativeTo } from "../lib/project-file-ops";
 import { INDENT_PER_LEVEL, ROW_HEIGHT } from "../lib/tree-constants";
@@ -62,6 +75,15 @@ interface GhostRow {
 type DisplayRow = TreeRowData | GhostRow;
 
 const isGhost = (row: DisplayRow): row is GhostRow => row.kind === "ghost";
+
+async function revealInFinder(abs: string) {
+  try {
+    const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
+    await revealItemInDir(abs);
+  } catch (e) {
+    toast.error(String(e));
+  }
+}
 const rowHeight = () => ROW_HEIGHT;
 const GHOST_KEY = "\0new-entry";
 
@@ -112,9 +134,29 @@ export interface ProjectFileTreeProps {
   leading?: ReactNode;
   /** Show a changed file's diff; root-relative path. */
   onShowDiff?: (path: string) => void;
+  /**
+   * The file to highlight and reveal, absolute. A file tab passes its own
+   * file; omitted, the tree follows whatever file the reader last looked at.
+   */
+  activeFile?: string | null;
+  /** Changing it reveals `activeFile` again (a file tab coming back into
+   *  view, or its file asked for a second time). */
+  revealNonce?: number;
+  /** After the tree opened a file. */
+  onFileOpened?: (path: string) => void;
+  /** Offer a button that hides the tree. */
+  onHide?: () => void;
 }
 
-export function ProjectFileTree({ root, leading, onShowDiff }: ProjectFileTreeProps) {
+export function ProjectFileTree({
+  root,
+  leading,
+  onShowDiff,
+  activeFile,
+  revealNonce = 0,
+  onFileOpened,
+  onHide,
+}: ProjectFileTreeProps) {
   const showHidden = useSettingsStore((s) => s.settings.showHiddenFiles);
   const model = useMemo(
     () => projectTreeModel(root, readDirectories, { showHidden }),
@@ -135,10 +177,14 @@ export function ProjectFileTree({ root, leading, onShowDiff }: ProjectFileTreePr
   // ── Live: the watcher reports the folders each burst touched ────────────
   useEffect(() => {
     let disposed = false;
-    const off = listen<{ dirs?: string[]; fullRefresh?: boolean }>(
+    const off = listen<{ workspaceId?: string; dirs?: string[]; fullRefresh?: boolean }>(
       "atlas:explorer:changed",
       (e) => {
         if (disposed) return;
+        // A backgrounded project's resident watcher reports too; its full
+        // refreshes are not this tree's to act on.
+        const active = activeProjectId();
+        if (e.payload?.workspaceId && active && e.payload.workspaceId !== active) return;
         if (e.payload?.fullRefresh) {
           void model.refresh();
           return;
@@ -206,14 +252,16 @@ export function ProjectFileTree({ root, leading, onShowDiff }: ProjectFileTreePr
   const [scrollTarget, setScrollTarget] = useState<{ path: string; center: boolean } | null>(null);
   useEffect(() => {
     if (!scrollTarget) return;
-    const index = rows.findIndex((r) => r.path === scrollTarget.path);
+    // Indexed in `display`, which the new-entry row shifts by one.
+    const index = display.findIndex((r) => !isGhost(r) && r.path === scrollTarget.path);
     if (index < 0) return;
     virtualizer.scrollToIndex(index, { align: scrollTarget.center ? "center" : "auto" });
     setScrollTarget(null);
-  }, [rows, scrollTarget, virtualizer]);
+  }, [display, scrollTarget, virtualizer]);
 
   // ── Reveal the active file ──────────────────────────────────────────────
-  const activeAbs = useActiveFilePath();
+  const lastViewed = useActiveFilePath();
+  const activeAbs = activeFile !== undefined ? activeFile : lastViewed;
   const activeRel = activeAbs ? relativeTo(root, activeAbs) : null;
   useEffect(() => {
     if (!activeRel) return;
@@ -226,7 +274,7 @@ export function ProjectFileTree({ root, leading, onShowDiff }: ProjectFileTreePr
     return () => {
       cancelled = true;
     };
-  }, [model, activeRel]);
+  }, [model, activeRel, revealNonce]);
 
   // ── Decorations ─────────────────────────────────────────────────────────
   const changes = useWorkingTreeChanges(root);
@@ -243,12 +291,48 @@ export function ProjectFileTree({ root, leading, onShowDiff }: ProjectFileTreePr
     setFocused(path);
   }, []);
 
+  const open = useCallback(
+    (abs: string) => {
+      void openFile(abs);
+      onFileOpened?.(abs);
+    },
+    [onFileOpened],
+  );
+
+  /**
+   * A link is never followed into the tree (its target may be anywhere, and
+   * may loop). Ask the backend what it points at: a folder inside the project
+   * is said so, anything outside is shown in Finder, and a file opens.
+   */
+  const activateLink = useCallback(
+    async (row: TreeRowData) => {
+      const abs = absoluteOf(root, row.path);
+      let listing: DirectoryListing | undefined;
+      try {
+        [listing] = await readDirectories(root, [row.path]);
+      } catch (e) {
+        toast.error(String(e));
+        return;
+      }
+      const error = listing?.error ?? null;
+      if (listing && !error) {
+        toast.info(`${nameOf(row.path)} links to a folder; links are not followed in the tree.`);
+      } else if (error?.includes("outside the project root")) {
+        void revealInFinder(abs);
+      } else {
+        open(abs);
+      }
+    },
+    [root, open],
+  );
+
   const activate = useCallback(
     (row: TreeRowData) => {
       if (row.kind === "directory") void model.toggle(row.path);
-      else void openFile(absoluteOf(root, row.path));
+      else if (row.kind === "symlink") void activateLink(row);
+      else open(absoluteOf(root, row.path));
     },
-    [model, root],
+    [model, root, open, activateLink],
   );
 
   /** The selection as rows, in tree order; the given row when it is not part
@@ -270,14 +354,6 @@ export function ProjectFileTree({ root, leading, onShowDiff }: ProjectFileTreePr
 
   const copyText = (text: string) => void navigator.clipboard.writeText(text).catch(() => {});
 
-  const revealInFinder = async (abs: string) => {
-    try {
-      const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
-      await revealItemInDir(abs);
-    } catch (e) {
-      toast.error(String(e));
-    }
-  };
   const openInDefaultApp = async (abs: string) => {
     try {
       const { openPath } = await import("@tauri-apps/plugin-opener");
@@ -295,6 +371,7 @@ export function ProjectFileTree({ root, leading, onShowDiff }: ProjectFileTreePr
   const commitRename = useCallback(
     (path: string, name: string) => {
       setRenaming(null);
+      scrollRef.current?.focus({ preventScroll: true });
       void ops.rename(absoluteOf(root, path), name).then((to) => {
         const rel = to ? relativeTo(root, to) : null;
         if (rel) selectOnly(rel);
@@ -304,7 +381,7 @@ export function ProjectFileTree({ root, leading, onShowDiff }: ProjectFileTreePr
   );
   const cancelRename = useCallback(() => {
     setRenaming(null);
-    scrollRef.current?.focus();
+    scrollRef.current?.focus({ preventScroll: true });
   }, []);
 
   const paste = (destRel: string) => {
@@ -401,7 +478,8 @@ export function ProjectFileTree({ root, leading, onShowDiff }: ProjectFileTreePr
     if (extend) selectRange(selection.anchor ?? focused ?? next.path, next.path);
     else setSelection({ paths: new Set([next.path]), anchor: next.path });
     setFocused(next.path);
-    virtualizer.scrollToIndex(all.indexOf(next), { align: "auto" });
+    // The virtualizer counts `display` rows, which a new-entry row shifts.
+    setScrollTarget({ path: next.path, center: false });
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
@@ -518,7 +596,7 @@ export function ProjectFileTree({ root, leading, onShowDiff }: ProjectFileTreePr
           </>
         ) : (
           <>
-            <ContextMenuItem onClick={() => void openFile(abs)}>Open</ContextMenuItem>
+            <ContextMenuItem onClick={() => open(abs)}>Open</ContextMenuItem>
             {changed && onShowDiff && (
               <ContextMenuItem onClick={() => onShowDiff(row.path)}>Open Changes</ContextMenuItem>
             )}
@@ -671,6 +749,11 @@ export function ProjectFileTree({ root, leading, onShowDiff }: ProjectFileTreePr
             onClick={toggleAll}
           />
         </Hint>
+        {onHide && (
+          <Hint label="Hide file tree">
+            <IconButton size="sm" icon={PanelLeftClose} label="Hide file tree" onClick={onHide} />
+          </Hint>
+        )}
       </div>
     </div>
   );
@@ -713,12 +796,16 @@ export function ProjectFileTree({ root, leading, onShowDiff }: ProjectFileTreePr
                   initial=""
                   onCommit={(name) => {
                     setNewEntry(null);
+                    scrollRef.current?.focus({ preventScroll: true });
                     const parent = absoluteOf(root, row.parent);
                     void (row.isDir
                       ? ops.createFolder(parent, name)
                       : ops.createFile(parent, name));
                   }}
-                  onCancel={() => setNewEntry(null)}
+                  onCancel={() => {
+                    setNewEntry(null);
+                    scrollRef.current?.focus({ preventScroll: true });
+                  }}
                 />
               </div>
             );

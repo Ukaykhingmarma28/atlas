@@ -55,6 +55,8 @@ export function ReviewPanel({
     [tabId, setView],
   );
 
+  const backToDiff = useCallback(() => setView(tabId, "diff"), [tabId, setView]);
+
   const switcher = (
     <Segmented
       size="sm"
@@ -69,7 +71,14 @@ export function ReviewPanel({
     case "files":
       return (
         <Suspense fallback={<PanelSkeleton rows={10} />}>
-          <ProjectFileTree root={repoPath} leading={switcher} onShowDiff={showDiff} />
+          <ProjectFileTree
+            root={repoPath}
+            leading={switcher}
+            onShowDiff={showDiff}
+            // The opened file's tab carries the tree from here on, so this
+            // panel goes back to being the diff rather than a second tree.
+            onFileOpened={backToDiff}
+          />
         </Suspense>
       );
     case "diff":

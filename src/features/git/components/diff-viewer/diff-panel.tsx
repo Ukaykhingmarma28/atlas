@@ -19,7 +19,7 @@ import {
   Rows3,
   WrapText,
 } from "lucide-react";
-import { openFile } from "@/lib/open-file";
+import { openReviewFile } from "../../lib/open-review-file";
 import { Button } from "@/ui/button";
 import { IconButton } from "@/ui/icon-button";
 import { Hint } from "@/ui/tooltip";
@@ -517,8 +517,8 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
           <div
             className="h-full min-h-0 min-w-0"
             onClickCapture={(event) => {
-              // A click on a file's header row (not on one of its buttons)
-              // folds it; a click on its name opens the file.
+              // A click on a file's header row or its name (not on one of its
+              // buttons) opens the file.
               const path = event.nativeEvent.composedPath();
               for (const node of path) {
                 if (node instanceof HTMLButtonElement || node instanceof HTMLAnchorElement) return;
@@ -534,8 +534,10 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
               const name = (title ?? header.querySelector("[data-title]"))?.textContent?.trim();
               const file = name ? files.find((f) => f.stat.path === name) : undefined;
               if (!file) return;
-              if (title) void openFile(`${repoPath}/${file.stat.path}`);
-              else if (file.state === "ready") toggleFile(itemIdOf(file));
+              // Header or name alike open the file, as a right-panel file tab
+              // (or the system editor for a file outside the project). The
+              // chevron, a button, still folds.
+              void openReviewFile(`${repoPath}/${file.stat.path}`);
             }}
           >
             <StyledCodeView

@@ -1,3 +1,4 @@
+import { intoItselfError } from "../lib/project-file-ops";
 import { useMemo, useRef, useCallback, useState, useEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { invoke } from "@tauri-apps/api/core";
@@ -309,6 +310,11 @@ export function FileTree() {
     try {
       // Each source resolves its own collision suffix inside destDir.
       for (const src of clipboard.paths) {
+        const into = intoItselfError(src, destDir);
+        if (into) {
+          toast.error(into);
+          continue;
+        }
         const destPath = await resolveCollision(src, destDir);
         if (clipboard.isCut) {
           await invoke("fs_rename", { from: src, to: destPath });

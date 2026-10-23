@@ -1,6 +1,6 @@
 use serde::Serialize;
 use std::fs;
-use std::path::Path;
+use std::path::{Component, Path};
 
 #[derive(Debug, Serialize)]
 pub struct FileEntry {
@@ -341,9 +341,45 @@ pub async fn write_file_base64(path: String, contents: String) -> Result<(), Str
  * sync `#[tauri::command]` handlers freeze the NSApp main thread.
  */
 
+/// These commands take absolute paths and no project root, so they cannot
+/// check containment; what they can refuse is a `..` component, the one way a
+/// name typed into the tree (`../../x`) climbs out of the folder it was typed
+/// in. The tree validates names too; this is the backstop.
+fn refuse_parent_components(path: &str) -> Result<(), String> {
+    if Path::new(path)
+        .components()
+        .any(|c| matches!(c, Component::ParentDir))
+    {
+        return Err(format!("Refusing a path that climbs with `..`: {path}"));
+    }
+    Ok(())
+}
+
+/// A rename that only changes case (`readme.md` → `README.md`). On a
+/// case-insensitive volume (APFS, NTFS) the target "exists", because it is the
+/// source; that must not read as a collision.
+fn is_case_only_rename(from: &Path, to: &Path) -> bool {
+    if from == to || from.to_string_lossy().to_lowercase() != to.to_string_lossy().to_lowercase() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        match (fs::symlink_metadata(from), fs::symlink_metadata(to)) {
+            (Ok(a), Ok(b)) => a.dev() == b.dev() && a.ino() == b.ino(),
+            _ => false,
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
 #[tauri::command]
 pub async fn fs_create_file(path: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
+        refuse_parent_components(&path)?;
         let p = Path::new(&path);
         if p.exists() {
             return Err(format!("Already exists: {path}"));
@@ -360,6 +396,7 @@ pub async fn fs_create_file(path: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn fs_create_dir(path: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
+        refuse_parent_components(&path)?;
         let p = Path::new(&path);
         if p.exists() {
             return Err(format!("Already exists: {path}"));
@@ -373,8 +410,10 @@ pub async fn fs_create_dir(path: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn fs_rename(from: String, to: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
+        refuse_parent_components(&from)?;
+        refuse_parent_components(&to)?;
         let dst = Path::new(&to);
-        if dst.exists() {
+        if dst.exists() && !is_case_only_rename(Path::new(&from), dst) {
             return Err(format!("Target already exists: {to}"));
         }
         fs::rename(&from, &to).map_err(|e| format!("Failed to rename: {e}"))
@@ -1045,5 +1084,47 @@ mod terminal_env_tests {
         );
         assert_eq!(parse_terminal_env(""), None);
         assert_eq!(parse_terminal_env("   "), None);
+    }
+}
+
+#[cfg(test)]
+mod tree_op_tests {
+    use super::{is_case_only_rename, refuse_parent_components};
+    use std::fs;
+
+    #[test]
+    fn parent_components_are_refused() {
+        assert!(refuse_parent_components("/p/a/../../etc/x").is_err());
+        assert!(refuse_parent_components("/p/a/b.ts").is_ok());
+        assert!(refuse_parent_components("/p/a/..hidden").is_ok());
+    }
+
+    #[test]
+    fn case_only_rename_is_not_a_collision() {
+        let dir = tempfile::tempdir().unwrap();
+        let from = dir.path().join("readme.md");
+        fs::write(&from, "x").unwrap();
+        let to = dir.path().join("README.md");
+        // Case-insensitive volume: `to` is `from`. Case-sensitive: `to` is
+        // absent, and a rename has no collision to excuse either way.
+        if to.exists() {
+            assert!(is_case_only_rename(&from, &to));
+        }
+        let other = dir.path().join("README.MD.bak");
+        fs::write(&other, "y").unwrap();
+        assert!(!is_case_only_rename(&from, &other));
+    }
+
+    #[test]
+    fn a_different_file_with_a_case_twin_name_is_a_collision() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.txt");
+        fs::write(&a, "x").unwrap();
+        let b = dir.path().join("A.TXT");
+        if !b.exists() {
+            // Case-sensitive volume: two real files, never "case only".
+            fs::write(&b, "y").unwrap();
+            assert!(!is_case_only_rename(&a, &b));
+        }
     }
 }

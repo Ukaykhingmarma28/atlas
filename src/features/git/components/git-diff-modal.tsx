@@ -19,7 +19,7 @@ import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panel
 import type { CodeViewDiffItem, FileDiffMetadata } from "@pierre/diffs";
 import type { CodeViewHandle } from "@pierre/diffs/react";
 import { AlertCircle, X } from "lucide-react";
-import { openFile } from "@/lib/open-file";
+import { openReviewFile } from "../lib/open-review-file";
 import { IconButton } from "@/ui/icon-button";
 import { Hint } from "@/ui/tooltip";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
@@ -316,7 +316,7 @@ export function GitDiffModal({
                   if (!name || !repoPath) return;
                   // The editor tab opens BEHIND this modal — close it so the
                   // jump lands where the reader is looking.
-                  void openFile(`${repoPath}/${name}`);
+                  void openReviewFile(`${repoPath}/${name}`);
                   onOpenChange(false);
                 }}
               >

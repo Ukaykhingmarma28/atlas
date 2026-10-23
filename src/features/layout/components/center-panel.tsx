@@ -24,6 +24,7 @@ import { FileIcon, type FallbackIcon } from "@/features/icon-theme/components/fi
 import { ChatPanel } from "@/features/chat/components/chat-panel";
 import { WelcomeScreen } from "@/features/app/components/welcome-screen";
 import { UnsupportedView } from "@/features/unsupported/components/unsupported-view";
+import { FileTabFrame } from "@/features/explorer/components/file-tab-frame";
 
 // Every other tab type is lazy. Editor/Terminal in particular pull in
 // CodeMirror+Lezer (~600 KB) and xterm (~250 KB) respectively — keeping
@@ -868,11 +869,13 @@ function PersistentPanel({
   switch (tab.type) {
     case "editor":
       return (
-        <EditorPanel
-          tabId={tab.id}
-          filePath={tab.data.filePath as string | undefined}
-          containerHeight={height}
-        />
+        <FileTabFrame tabId={tab.id} filePath={tab.data.filePath as string | undefined}>
+          <EditorPanel
+            tabId={tab.id}
+            filePath={tab.data.filePath as string | undefined}
+            containerHeight={height}
+          />
+        </FileTabFrame>
       );
     case "browser":
       return (
@@ -883,7 +886,11 @@ function PersistentPanel({
         />
       );
     case "pdf":
-      return <PdfViewer filePath={tab.data.filePath as string} tabId={tab.id} />;
+      return (
+        <FileTabFrame tabId={tab.id} filePath={tab.data.filePath as string}>
+          <PdfViewer filePath={tab.data.filePath as string} tabId={tab.id} />
+        </FileTabFrame>
+      );
     case "team-chat":
       return <CommsPanel />;
     // Chat is normally handled by the caller, which needs its own
@@ -995,6 +1002,12 @@ function PanelLoading() {
 }
 
 function TabContent({ tab }: { tab: Tab }) {
+  // A file tab carries the project tree beside the file (see FileTabFrame).
+  const framed = (content: React.ReactNode) => (
+    <FileTabFrame tabId={tab.id} filePath={tab.data.filePath as string | undefined}>
+      {content}
+    </FileTabFrame>
+  );
   switch (tab.type) {
     case "chat":
       return <ChatPanel tabId={tab.id} />;
@@ -1005,13 +1018,13 @@ function TabContent({ tab }: { tab: Tab }) {
     case "source-control":
       return <SourceControlPanel />;
     case "media":
-      return <MediaViewer filePath={tab.data.filePath as string} />;
+      return framed(<MediaViewer filePath={tab.data.filePath as string} />);
     case "svg":
-      return <SvgViewer filePath={tab.data.filePath as string} />;
+      return framed(<SvgViewer filePath={tab.data.filePath as string} />);
     case "pdf":
-      return <PdfViewer filePath={tab.data.filePath as string} tabId={tab.id} />;
+      return framed(<PdfViewer filePath={tab.data.filePath as string} tabId={tab.id} />);
     case "notebook":
-      return <NotebookViewer filePath={tab.data.filePath as string} />;
+      return framed(<NotebookViewer filePath={tab.data.filePath as string} />);
     case "diff":
       return <ReviewPanel tabId={tab.id} repoPath={tab.data.repoPath as string} />;
     case "commit":
@@ -1029,7 +1042,7 @@ function TabContent({ tab }: { tab: Tab }) {
         <CommsDraftTab convId={tab.data.convId as string} draftId={tab.data.draftId as string} />
       );
     case "unsupported":
-      return <UnsupportedView filePath={tab.data.filePath as string} />;
+      return framed(<UnsupportedView filePath={tab.data.filePath as string} />);
     default:
       return <PlaceholderContent tab={tab} />;
   }

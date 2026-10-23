@@ -3,7 +3,10 @@ import type { DirectoryListing, ProjectEntry } from "./fs-api";
 import {
   ancestorsOf,
   BATCH_SIZE,
+  dropProjectTreeModel,
   flattenTree,
+  MAX_MODELS,
+  projectTreeModel,
   ProjectTreeModel,
   type DirectoryReader,
 } from "./project-tree-model";
@@ -38,6 +41,18 @@ const TREE: Record<string, ProjectEntry[]> = {
 
 const paths = (m: ProjectTreeModel) => m.getSnapshot().rows.map((r) => r.path);
 const flushed = () => new Promise((r) => setTimeout(r, 0));
+
+describe("projectTreeModel", () => {
+  it("keeps one model per root and drops the least recently used past the cap", () => {
+    const { read } = disk(TREE);
+    const first = projectTreeModel("/r0", read);
+    expect(projectTreeModel("/r0", read)).toBe(first);
+    for (let i = 1; i <= MAX_MODELS; i++) projectTreeModel(`/r${i}`, read);
+    // /r0 was the oldest: asking again builds a new one.
+    expect(projectTreeModel("/r0", read)).not.toBe(first);
+    for (let i = 0; i <= MAX_MODELS; i++) dropProjectTreeModel(`/r${i}`);
+  });
+});
 
 describe("ancestorsOf", () => {
   it("lists the root and every folder above a path", () => {
@@ -224,6 +239,8 @@ describe("ProjectTreeModel", () => {
 
   it("records a failed directory and clears it on success", async () => {
     const { tree, read } = disk(structuredClone(TREE));
+    // Listed by the root, but its own read fails (permissions, a race).
+    tree[""] = [dir("ghost"), ...tree[""]];
     const m = new ProjectTreeModel("/p", read);
     await m.load([""]);
     await m.expand("ghost");
@@ -262,6 +279,96 @@ describe("ProjectTreeModel", () => {
     m.setShowHidden(true);
     expect(paths(m)).toContain(".env");
     expect(calls.length).toBe(before);
+  });
+
+  it("an identical re-listing keeps the same rows array and tells no one", async () => {
+    const { read } = disk(TREE);
+    const m = new ProjectTreeModel("/p", read);
+    await m.load([""]);
+    await m.expand("a");
+    const before = m.getSnapshot().rows;
+    const listener = vi.fn();
+    m.subscribe(listener);
+    await m.refresh();
+    expect(listener).not.toHaveBeenCalled();
+    expect(m.getSnapshot().rows).toBe(before);
+  });
+
+  it("a full refresh reads only folders on screen; hidden ones re-read on reopen", async () => {
+    const { tree, read, calls } = disk(structuredClone(TREE));
+    const m = new ProjectTreeModel("/p", read);
+    await m.load([""]);
+    await m.expand("a");
+    await m.expand("a/x");
+    await m.expand("b");
+    m.collapse("a"); // a and a/x are loaded but off screen
+    calls.length = 0;
+    await m.refresh();
+    expect(calls).toEqual([["", "b"]]);
+    tree["a/x"] = [file("a/x/deep.ts"), file("a/x/fresh.ts")];
+    calls.length = 0;
+    await m.expand("a");
+    expect(calls.flat().sort()).toEqual(["a", "a/x"]);
+    expect(paths(m)).toContain("a/x/fresh.ts");
+  });
+
+  it("a watcher's folder list skips folders that are collapsed until reopened", async () => {
+    const { read, calls } = disk(TREE);
+    const m = new ProjectTreeModel("/p", read);
+    await m.load([""]);
+    await m.expand("a");
+    m.collapse("a");
+    calls.length = 0;
+    await m.refresh(["a"]);
+    expect(calls).toEqual([]);
+    await m.expand("a");
+    expect(calls).toEqual([["a"]]);
+  });
+
+  it("clears the error of a folder that was deleted and recreated", async () => {
+    const { tree, read } = disk(structuredClone(TREE));
+    const m = new ProjectTreeModel("/p", read);
+    await m.load([""]);
+    await m.expand("b");
+    // Deleted: its own read fails while the parent still lists it.
+    delete tree.b;
+    await m.refresh(["b"]);
+    expect(m.getSnapshot().errors.has("b")).toBe(true);
+    // Recreated: the parent lists it again and the error goes.
+    tree.b = [file("b/two.ts")];
+    await m.refresh([""]);
+    expect(m.getSnapshot().errors.has("b")).toBe(false);
+  });
+
+  it("keeps no error for a folder that is gone from its parent", async () => {
+    const { tree, read } = disk(structuredClone(TREE));
+    const m = new ProjectTreeModel("/p", read);
+    await m.load([""]);
+    await m.expand("b");
+    delete tree.b;
+    tree[""] = tree[""].filter((e) => e.path !== "b");
+    await m.refresh(["", "b"]);
+    expect(m.getSnapshot().errors.size).toBe(0);
+    expect(m.isExpanded("b")).toBe(false);
+  });
+
+  it("discards an in-flight load for a folder that was dropped", async () => {
+    let release: (() => void) | null = null;
+    const tree = structuredClone(TREE);
+    const read: DirectoryReader = async (_root, ps) => {
+      if (ps.includes("a/x")) await new Promise<void>((r) => (release = r));
+      return ps.map((path) => ({ path, entries: tree[path] ?? [] }));
+    };
+    const m = new ProjectTreeModel("/p", read);
+    await m.load([""]);
+    await m.expand("a");
+    const slow = m.expand("a/x");
+    await flushed();
+    tree.a = [file("a/one.ts")]; // a/x deleted
+    await m.refresh(["a"]);
+    release!();
+    await slow;
+    expect(m.isLoaded("a/x")).toBe(false);
   });
 
   it("keeps rows identical when a refresh returns the same listing", async () => {

@@ -37,6 +37,31 @@ export function absoluteOf(root: string, rel: string): string {
 }
 
 /**
+ * Why `name` cannot be a file or folder name, or null when it can. Refuses
+ * what would not name one entry in the folder it was typed in: empty, `.`,
+ * `..`, a path separator of either platform, or a control character.
+ */
+export function entryNameError(name: string): string | null {
+  if (name.trim() === "") return "A name is required.";
+  if (name === "." || name === "..") return `"${name}" is not a valid name.`;
+  if (/[/\\]/.test(name)) return "A name can't contain / or \\.";
+  // oxlint-disable-next-line no-control-regex -- refusing control characters is the point
+  if (/[\u0000-\u001f\u007f]/.test(name)) return "A name can't contain control characters.";
+  return null;
+}
+
+/**
+ * Why `src` cannot be moved or copied into `destDir`, or null. A folder into
+ * itself or anything below it would never finish copying (each pass copies
+ * the copy) and cannot be moved at all.
+ */
+export function intoItselfError(src: string, destDir: string): string | null {
+  return destDir === src || destDir.startsWith(`${src}/`)
+    ? "Can't put a folder inside itself"
+    : null;
+}
+
+/**
  * `name`, or `name copy`, `name copy 2`… — the first that `taken` does not
  * hold, keeping the extension last, as Finder does.
  */
@@ -91,8 +116,21 @@ export class ProjectFileOps {
     toast.error(error instanceof Error ? error.message : String(error));
   }
 
-  async createFile(parentDir: string, name: string): Promise<void> {
+  /** `name` inside `parentDir`, refused when it is not a plain name or would
+   *  land outside the project. */
+  private childPath(parentDir: string, name: string): string | null {
+    const invalid = entryNameError(name);
     const path = `${parentDir}/${name}`;
+    if (invalid || relativeTo(this.root, path) === null || relativeTo(this.root, path) === "") {
+      toast.error(invalid ?? "That would land outside the project.");
+      return null;
+    }
+    return path;
+  }
+
+  async createFile(parentDir: string, name: string): Promise<void> {
+    const path = this.childPath(parentDir, name);
+    if (!path) return;
     try {
       await createFile(path);
       await this.touched(parentDir);
@@ -103,8 +141,10 @@ export class ProjectFileOps {
   }
 
   async createFolder(parentDir: string, name: string): Promise<void> {
+    const path = this.childPath(parentDir, name);
+    if (!path) return;
     try {
-      await createDirectory(`${parentDir}/${name}`);
+      await createDirectory(path);
       await this.touched(parentDir);
     } catch (e) {
       this.fail(e);
@@ -113,8 +153,9 @@ export class ProjectFileOps {
 
   /** Rename in place. Answers the new path, or null when nothing happened. */
   async rename(oldPath: string, name: string): Promise<string | null> {
-    const newPath = `${dirOf(oldPath)}/${name}`;
-    if (newPath === oldPath) return null;
+    if (`${dirOf(oldPath)}/${name}` === oldPath) return null;
+    const newPath = this.childPath(dirOf(oldPath), name);
+    if (!newPath) return null;
     try {
       await renamePath(oldPath, newPath);
       this.followMove(oldPath, newPath);
@@ -130,8 +171,9 @@ export class ProjectFileOps {
   async move(src: string, destDir: string): Promise<void> {
     const parent = dirOf(src);
     if (parent === destDir) return;
-    if (destDir === src || destDir.startsWith(`${src}/`)) {
-      toast.error("Can't move a folder into itself");
+    const into = intoItselfError(src, destDir);
+    if (into) {
+      toast.error(into);
       return;
     }
     try {
@@ -147,6 +189,11 @@ export class ProjectFileOps {
   async copyInto(sources: readonly string[], destDir: string): Promise<void> {
     let copied = 0;
     for (const src of sources) {
+      const into = intoItselfError(src, destDir);
+      if (into) {
+        toast.error(into);
+        continue;
+      }
       try {
         await copyPath(src, await destinationFor(src, destDir));
         copied++;

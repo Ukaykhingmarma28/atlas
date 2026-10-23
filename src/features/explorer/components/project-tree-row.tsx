@@ -1,8 +1,10 @@
 import { memo, useEffect, useRef } from "react";
-import { AlertCircle, ChevronRight, GitCompare, LoaderCircle } from "lucide-react";
+import { AlertCircle, ChevronRight, GitCompare, Link2, LoaderCircle } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { FileIcon } from "@/features/icon-theme/components/file-icon";
 import type { TreeRowData } from "../lib/project-tree-model";
+import { entryNameError } from "../lib/project-file-ops";
 import { INDENT_PER_LEVEL, ROW_HEIGHT } from "../lib/tree-constants";
 
 /**
@@ -137,6 +139,9 @@ export const ProjectTreeRow = memo(function ProjectTreeRow({
           {row.name}
         </span>
       )}
+      {!renaming && row.kind === "symlink" && (
+        <Link2 aria-label="Symbolic link" className="size-3 shrink-0 text-muted-foreground" />
+      )}
       {!renaming && (
         <span className="ml-auto flex shrink-0 items-center gap-1">
           {loading && (
@@ -215,11 +220,18 @@ export function RenameInput({
       cancelAnimationFrame(raf2);
     };
   }, [initial]);
-  const finish = (value: string) => {
+  /** Enter keeps the editor open on a bad name and says why; leaving the
+   *  field (blur) gives up on it instead. */
+  const finish = (value: string, fromEnter: boolean) => {
     if (settled.current) return;
-    settled.current = true;
     const name = value.trim();
-    if (name && name !== initial && !name.includes("/")) onCommit(name);
+    const invalid = name && name !== initial ? entryNameError(name) : null;
+    if (invalid && fromEnter) {
+      toast.error(invalid);
+      return;
+    }
+    settled.current = true;
+    if (name && name !== initial && !invalid) onCommit(name);
     else onCancel();
   };
   return (
@@ -234,14 +246,14 @@ export function RenameInput({
         e.stopPropagation();
         if (e.key === "Enter") {
           e.preventDefault();
-          finish(e.currentTarget.value);
+          finish(e.currentTarget.value, true);
         } else if (e.key === "Escape") {
           e.preventDefault();
           settled.current = true;
           onCancel();
         }
       }}
-      onBlur={(e) => finish(e.currentTarget.value)}
+      onBlur={(e) => finish(e.currentTarget.value, false)}
       className="min-w-0 flex-1 rounded border border-border bg-panel-input px-1 py-0.5 font-mono text-xs leading-4 text-foreground outline-none focus:border-border-strong"
     />
   );
