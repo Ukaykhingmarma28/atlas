@@ -279,6 +279,7 @@ export const ProseRowView = memo(function ProseRowView({
   agentLabel,
   priority,
   pinScopeKey,
+  canBranch = false,
 }: {
   row: ProseRow;
   tabId: string;
@@ -286,6 +287,9 @@ export const ProseRowView = memo(function ProseRowView({
   /** Position in the thread — newest parses first. See `CachedMarkdown`. */
   priority: number;
   pinScopeKey: string;
+  /** True only for the session's latest settled response on an agent that can
+   *  fork, with no turn running. Resolved by the transcript, like `canRetry`. */
+  canBranch?: boolean;
 }) {
   return (
     // A settled response reserves the gap its action bar sits in (see
@@ -344,6 +348,8 @@ export const ProseRowView = memo(function ProseRowView({
           timestamp={row.timestamp}
           text={row.text}
           pinScopeKey={pinScopeKey}
+          canBranch={canBranch}
+          showTimestamp={!row.showHeader}
         />
       )}
     </Column>
