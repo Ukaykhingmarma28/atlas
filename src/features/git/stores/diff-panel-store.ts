@@ -3,7 +3,7 @@
 // nothing else.
 //
 // Two lifetimes:
-//  - Preferences (layout, wrap, whitespace, the file tree) and each panel's
+//  - Preferences (layout, whitespace, the file tree) and each panel's
 //    chosen scope and base branch persist: they are how the reader likes to
 //    review, and a relaunch should not reset them.
 //  - Which files are folded lives for the run only. It is keyed by the scope
@@ -35,7 +35,6 @@ interface DiffPanelState {
    *  Absent or `null`: the remote default, as the backend picks it. */
   baseRef: Record<string, string | null>;
   layout: DiffLayout;
-  wordWrap: boolean;
   /** `null`: follow the `diffIgnoreWhitespace` setting. */
   ignoreWhitespace: boolean | null;
   fileTreeOpen: boolean;
@@ -48,7 +47,6 @@ interface DiffPanelState {
     setTurn: (panel: string, turn: string) => void;
     setBaseRef: (repo: string, baseRef: string | null) => void;
     setLayout: (layout: DiffLayout) => void;
-    setWordWrap: (wrap: boolean) => void;
     setIgnoreWhitespace: (ignore: boolean) => void;
     setFileTreeOpen: (open: boolean) => void;
     /** Replace a scope's folded set; `defaults` stands in when it has none. */
@@ -89,7 +87,6 @@ export const useDiffPanelStore = createSelectors(
         turn: {},
         baseRef: {},
         layout: "unified",
-        wordWrap: false,
         ignoreWhitespace: null,
         fileTreeOpen: true,
         collapsed: {},
@@ -103,7 +100,6 @@ export const useDiffPanelStore = createSelectors(
           setBaseRef: (repo, baseRef) =>
             set((s) => ({ baseRef: { ...s.baseRef, [repo]: baseRef?.trim() || null } })),
           setLayout: (layout) => set({ layout }),
-          setWordWrap: (wordWrap) => set({ wordWrap }),
           setIgnoreWhitespace: (ignoreWhitespace) => set({ ignoreWhitespace }),
           setFileTreeOpen: (fileTreeOpen) => set({ fileTreeOpen }),
           updateCollapsed: (scopeKey, defaults, update) =>
@@ -124,7 +120,6 @@ export const useDiffPanelStore = createSelectors(
           turn: s.turn,
           baseRef: s.baseRef,
           layout: s.layout,
-          wordWrap: s.wordWrap,
           ignoreWhitespace: s.ignoreWhitespace,
           fileTreeOpen: s.fileTreeOpen,
         }),

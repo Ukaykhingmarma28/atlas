@@ -16,20 +16,24 @@ import { useAppStore } from "@/features/app/stores/app-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { ChevronRight, RefreshCw } from "lucide-react";
+import { ChevronRight, RefreshCw, WrapText } from "lucide-react";
 import { logEvent } from "@/features/log/lib/log";
 import { diffGutter, applyDiffStatus } from "../lib/diff-gutter";
 import { gitDiffLineStatus } from "@/features/git/lib/git-diff-api";
-import { blameInline, applyBlame } from "../lib/blame-inline";
+import { blameInline, applyBlame, type BlamePart } from "../lib/blame-inline";
 import { loadLanguageExtension } from "../lib/languages";
 import { applyReveal } from "../lib/reveal";
+import { setWordWrap, wordWrapExtension } from "../lib/word-wrap";
 import { registerEditorView } from "../lib/editor-views";
 import { gitBlameFile } from "@/features/git/lib/git-blame-api";
 import { MarkdownFile } from "@/lib/markdown-fileviewer";
 import { openFileAs } from "@/lib/open-file";
 import { cn } from "@/lib/utils";
+import { IconButton } from "@/ui/icon-button";
+import { Hint } from "@/ui/tooltip";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { projectSettingNow, useProjectSetting } from "@/features/settings/lib/use-scoped-setting";
+import { useWordWrap } from "@/features/settings/lib/use-word-wrap";
 
 const TOOLBAR_HEIGHT = 32;
 const DIRTY_CHECK_DEBOUNCE = 300; // ms — only check dirty state, not sync content
@@ -66,6 +70,9 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
   const dirtyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [renderMode, setRenderMode] = useState<"editor" | "preview">("editor");
+  // With word wrap on, inline blame is shown in the header rather than in the
+  // text (see `blame-inline.ts`); the extension reports it here.
+  const [wrappedBlame, setWrappedBlame] = useState<BlamePart[] | null>(null);
   // Bumped when a view is built, so a reveal that arrived before the view
   // existed (a file opened at a line) is applied the moment it does.
   const [viewGen, setViewGen] = useState(0);
@@ -357,9 +364,12 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
           themeCompartment.of(editorThemeExtensions()),
           langExt,
           lineNumbers(),
+          wordWrapExtension(useSettingsStore.getState().settings.wordWrap),
           diffGutter(),
           blameCompartment.of(
-            projectSettingNow(projectPath, "gitBlameInline") ? blameInline() : [],
+            projectSettingNow(projectPath, "gitBlameInline")
+              ? blameInline({ onWrapped: setWrappedBlame })
+              : [],
           ),
           highlightActiveLine(),
           drawSelection(),
@@ -463,10 +473,20 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
     const view = viewRef.current;
     if (!view) return;
     view.dispatch({
-      effects: blameCompartment.reconfigure(gitBlameInline ? blameInline() : []),
+      effects: blameCompartment.reconfigure(
+        gitBlameInline ? blameInline({ onWrapped: setWrappedBlame }) : [],
+      ),
     });
     if (gitBlameInline) refreshBlameRef.current();
   }, [gitBlameInline]);
+
+  // Live-toggle line wrapping, in place like the blame above. Global: the
+  // header button flips it for every file tab and the review diff at once.
+  const { wrap: wordWrap, toggle: toggleWordWrap } = useWordWrap();
+  useEffect(() => {
+    const view = viewRef.current;
+    if (view) setWordWrap(view, wordWrap);
+  }, [wordWrap, viewGen]);
 
   if (!buffer) {
     return (
@@ -491,6 +511,7 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
       >
         <Breadcrumbs filePath={path} projectPath={projectPath} />
         {buffer.dirty && <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0 ml-2" />}
+        {wrappedBlame && effectiveMode === "editor" && <HeaderBlame parts={wrappedBlame} />}
         {/* Right-hand controls. `ml-auto` on the group (rather than on whichever
             child happens to be present) keeps them pinned right no matter which
             of them render — the reload pill is conditional, and hanging the
@@ -506,6 +527,17 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
             >
               <RefreshCw size={10} /> Disk changed · Reload
             </button>
+          )}
+          {effectiveMode === "editor" && (
+            <Hint label={wordWrap ? "Disable word wrap" : "Enable word wrap"}>
+              <IconButton
+                size="sm"
+                icon={WrapText}
+                label="Word wrap"
+                aria-pressed={wordWrap}
+                onClick={toggleWordWrap}
+              />
+            </Hint>
           )}
           {isMarkdownFile && (
             <div className="inline-flex items-center h-control-xs rounded-full border border-border bg-card p-[2px] text-2xs font-medium shrink-0">
@@ -561,6 +593,33 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
         )}
       </div>
     </div>
+  );
+}
+
+/** Colours per part, the same syntax keys the inline note uses. */
+const BLAME_PART_COLOR: Record<BlamePart["kind"], string> = {
+  author: "var(--atlas-syntax-function)",
+  time: "var(--atlas-syntax-number)",
+  summary: "var(--atlas-syntax-string)",
+  uncommitted: "var(--atlas-syntax-keyword)",
+  sep: "var(--atlas-syntax-comment)",
+};
+
+/** The cursor line's blame beside the path, for a wrapping editor: one row
+ *  that truncates before the path does. */
+function HeaderBlame({ parts }: { parts: BlamePart[] }) {
+  const label = parts.map((p) => p.text).join("");
+  return (
+    <span
+      className="ml-3 min-w-0 flex-1 truncate text-xs italic opacity-80 select-none"
+      title={label}
+    >
+      {parts.map((part, i) => (
+        <span key={i} style={{ color: BLAME_PART_COLOR[part.kind] }}>
+          {part.text}
+        </span>
+      ))}
+    </span>
   );
 }
 

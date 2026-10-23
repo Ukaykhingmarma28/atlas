@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { EditorView } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
-import { blameInline, relativeTime } from "./blame-inline";
+import { applyBlame, blameInline, relativeTime, type BlamePart } from "./blame-inline";
+import { setWordWrap, wordWrapExtension } from "./word-wrap";
 
 const NOW = Date.UTC(2026, 9, 9, 12, 0, 0);
 const ago = (seconds: number) => relativeTime(NOW - seconds * 1000, NOW);
@@ -56,5 +57,54 @@ describe("the inline blame widget", () => {
     expect(rule).toContain("padding-left");
     expect(rule).not.toContain("margin");
     view.destroy();
+  });
+});
+
+describe("inline blame with word wrap", () => {
+  /// The note must never change a line's height. Drawn inline in a wrapping
+  /// editor it added visual rows to whichever line held the cursor, so the
+  /// text below jumped at every arrow key and an "open at line" target grew
+  /// after it was centred. With wrap on, nothing is drawn in the text at all;
+  /// the attribution goes to the header instead.
+  it("draws nothing in the text while wrapping, and hands the header the attribution", () => {
+    const sink = vi.fn<(parts: BlamePart[] | null) => void>();
+    const view = new EditorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc: "a long first line\nsecond",
+        extensions: [wordWrapExtension(true), blameInline({ onWrapped: sink })],
+      }),
+    });
+    applyBlame(view, [
+      {
+        line: 1,
+        sha: "abc",
+        shortSha: "abc",
+        author: "Ada",
+        timeMs: 0,
+        summary: "first",
+        committed: true,
+      },
+    ]);
+    const inText = () => view.contentDOM.querySelector(".cm-blame-inline");
+
+    expect(inText()).toBeNull();
+    expect(sink).toHaveBeenLastCalledWith([
+      { kind: "author", text: "Ada" },
+      { kind: "sep", text: " · " },
+      { kind: "summary", text: "first" },
+    ]);
+
+    // Without wrap it is the inline note it always was, and the header clears.
+    setWordWrap(view, false);
+    expect(inText()).not.toBeNull();
+    expect(sink).toHaveBeenLastCalledWith(null);
+
+    setWordWrap(view, true);
+    expect(inText()).toBeNull();
+    expect(sink.mock.lastCall?.[0]?.[0]).toEqual({ kind: "author", text: "Ada" });
+
+    view.destroy();
+    expect(sink).toHaveBeenLastCalledWith(null);
   });
 });

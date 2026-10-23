@@ -202,6 +202,10 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
         "# Wrap long lines in a session's code blocks. Off: they keep their lines and\n# scroll sideways. (default: true)",
     ),
     (
+        "wordWrap",
+        "# Wrap long lines in file tabs and diffs. Off: lines keep their shape and\n# scroll sideways. The wrap button in a file's or the review diff's header\n# flips this same setting. A session's code blocks follow chatCodeWrap\n# instead. (default: true)",
+    ),
+    (
         "sidebarSort",
         "# The order of sessions in the sidebar: \"recent\" puts the session with the\n# latest activity first, \"created\" the one started most recently. (default:\n# \"recent\")",
     ),

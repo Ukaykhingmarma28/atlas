@@ -495,6 +495,9 @@ pub struct AppSettings {
     /// Wrap long lines in chat code blocks; off scrolls them sideways.
     #[serde(default = "default_true")]
     pub chat_code_wrap: bool,
+    /// Wrap long lines in file views and diffs; off scrolls them sideways.
+    #[serde(default = "default_true")]
+    pub word_wrap: bool,
     /// Session sidebar order.
     #[serde(default)]
     pub sidebar_sort: SidebarSort,
@@ -649,6 +652,7 @@ impl Default for AppSettings {
             default_agent: default_agent(),
             chat_width: ChatWidth::default(),
             chat_code_wrap: true,
+            word_wrap: true,
             sidebar_sort: SidebarSort::default(),
             auto_settle_after_days: DEFAULT_AUTO_SETTLE_AFTER_DAYS,
             time_format: TimeFormat::default(),
@@ -1113,6 +1117,7 @@ pub struct SettingsPatch {
     pub default_agent: Option<String>,
     pub chat_width: Option<ChatWidth>,
     pub chat_code_wrap: Option<bool>,
+    pub word_wrap: Option<bool>,
     pub sidebar_sort: Option<SidebarSort>,
     pub auto_settle_after_days: Option<u32>,
     pub time_format: Option<TimeFormat>,
@@ -1275,6 +1280,7 @@ impl SettingsPatch {
             default_agent,
             chat_width,
             chat_code_wrap,
+            word_wrap,
             sidebar_sort,
             auto_settle_after_days,
             time_format,
@@ -1341,6 +1347,7 @@ impl SettingsPatch {
         set_bool!(confirm_delete_chat, "confirmDeleteChat");
         set_bool!(confirm_quit_while_running, "confirmQuitWhileRunning");
         set_bool!(chat_code_wrap, "chatCodeWrap");
+        set_bool!(word_wrap, "wordWrap");
         set_bool!(diff_ignore_whitespace, "diffIgnoreWhitespace");
         set_bool!(diff_files_collapsed, "diffFilesCollapsed");
         macro_rules! set_str {
@@ -2210,6 +2217,34 @@ mod tests {
         assert!(!mgr.effective().agent_code_tools);
     }
 
+    /// Files and diffs wrap unless the user switched it off; a file that
+    /// predates the key reads as on, and the wrap buttons' patch turns it off.
+    #[test]
+    fn word_wrap_is_on_by_default_and_patched_off() {
+        assert!(AppSettings::default().word_wrap);
+        let (_dir, path) = tmp_config_path();
+        let mgr = ConfigManager::from_raw(
+            path,
+            "schemaVersion = 1\n\n[settings]\nenterToSend = false\n",
+        )
+        .unwrap();
+        assert!(mgr.effective().word_wrap);
+
+        let (_dir, path) = tmp_config_path();
+        let mgr =
+            ConfigManager::from_raw(path, "schemaVersion = 1\n\n[settings]\nwordWrap = false\n")
+                .unwrap();
+        assert!(!mgr.effective().word_wrap);
+
+        let patch: SettingsPatch = serde_json::from_str(r#"{ "wordWrap": false }"#).unwrap();
+        let mut settings = AppSettings::default();
+        patch.apply_to(&mut settings);
+        assert!(!settings.word_wrap);
+        let mut document = document_for(&AppSettings::default());
+        patch.write_into(&mut document);
+        assert_eq!(document["settings"]["wordWrap"].as_bool(), Some(false));
+    }
+
     #[test]
     fn missing_keys_fall_back_to_defaults() {
         let (_dir, path) = tmp_config_path();
@@ -2489,6 +2524,7 @@ someFutureKey = \"left alone\"
             default_agent: Some("claude-code".to_string()),
             chat_width: Some(ChatWidth::Wide),
             chat_code_wrap: Some(!defaults.chat_code_wrap),
+            word_wrap: Some(!defaults.word_wrap),
             sidebar_sort: Some(SidebarSort::Created),
             auto_settle_after_days: Some(7),
             time_format: Some(TimeFormat::TwentyFourHour),
