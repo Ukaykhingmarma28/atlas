@@ -38,6 +38,7 @@ import {
 import { formatTime } from "@/lib/format-time";
 import type { EditTurn } from "@/features/chat/lib/turn-edits";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
+import { useWordWrap } from "@/features/settings/lib/use-word-wrap";
 import { useSessionFiles } from "@/features/chat/lib/session-files";
 import { getDiffFileContents, getDiffPreview, type DiffSource } from "../../lib/git-review-api";
 import { buildFileDiffContentVersion, fnv1a32 } from "../../lib/diff-rendering";
@@ -160,7 +161,8 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
   const turnChoice = useDiffPanelStore((s) => s.turn[tabId] ?? LATEST_TURN);
   const baseRef = useDiffPanelStore((s) => s.baseRef[repoPath] ?? null);
   const layout = useDiffPanelStore.use.layout();
-  const wordWrap = useDiffPanelStore.use.wordWrap();
+  // The global `wordWrap` setting: the button below flips it for file tabs too.
+  const { wrap: wordWrap, toggle: toggleWordWrap } = useWordWrap();
   const fileTreeOpen = useDiffPanelStore.use.fileTreeOpen();
   const storedWhitespace = useDiffPanelStore.use.ignoreWhitespace();
   const settingWhitespace = useSettingsStore((s) => s.settings.diffIgnoreWhitespace);
@@ -540,13 +542,13 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
             onClick={() => actionsApi.setLayout(layout === "split" ? "unified" : "split")}
           />
         </Hint>
-        <Hint label={wordWrap ? "Don't wrap lines" : "Wrap lines"}>
+        <Hint label={wordWrap ? "Disable word wrap" : "Enable word wrap"}>
           <IconButton
             size="sm"
             icon={WrapText}
-            label="Wrap lines"
+            label="Word wrap"
             aria-pressed={wordWrap}
-            onClick={() => actionsApi.setWordWrap(!wordWrap)}
+            onClick={toggleWordWrap}
           />
         </Hint>
         <Hint label={ignoreWhitespace ? "Show whitespace changes" : "Hide whitespace changes"}>

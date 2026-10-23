@@ -243,6 +243,12 @@ export interface AppSettings {
   /** Wrap long lines in a session's code blocks. Off: they keep their lines and scroll sideways. */
   chatCodeWrap: boolean;
   /**
+   * Wrap long lines in file tabs and diffs. Off: lines keep their shape and scroll sideways.
+   * The wrap button in a file's or the review diff's header flips this same setting. A
+   * session's code blocks follow chatCodeWrap instead.
+   */
+  wordWrap: boolean;
+  /**
    * The order of sessions in the sidebar: "recent" puts the session with the latest activity
    * first, "created" the one started most recently.
    */
@@ -366,6 +372,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultAgent: "atlas-agent",
   chatWidth: "normal",
   chatCodeWrap: true,
+  wordWrap: true,
   sidebarSort: "recent",
   autoSettleAfterDays: 3,
   timeFormat: "system",
@@ -947,6 +954,15 @@ export const SETTINGS_REGISTRY: readonly SettingMeta[] = [
     section: "Layout",
     title: "Wrap code in sessions",
     summary: "Wrap long lines in a session's code blocks instead of scrolling sideways.",
+  },
+  {
+    key: "wordWrap",
+    type: "boolean",
+    status: "live",
+    page: "appearance",
+    section: "Interface",
+    title: "Word wrap",
+    summary: "Wrap long lines in files and diffs instead of scrolling sideways.",
   },
   {
     key: "sidebarSort",

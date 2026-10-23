@@ -205,6 +205,10 @@ const blameTheme = EditorView.baseTheme({
     pointerEvents: "none",
     userSelect: "none",
   },
+  // With word wrap on, an unbreakable annotation is the widest thing on its
+  // line, and it would hold the content wider than the editor: every line
+  // would wrap past the right edge. Let it wrap with the code.
+  ".cm-lineWrapping .cm-blame-inline": { whiteSpace: "pre-wrap" },
   ".cm-blame-author": { color: "var(--atlas-syntax-function)" },
   ".cm-blame-time": { color: "var(--atlas-syntax-number)" },
   ".cm-blame-summary": { color: "var(--atlas-syntax-string)" },

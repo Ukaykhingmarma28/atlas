@@ -878,6 +878,22 @@ sideways.
 validation = "—"
 
 [[setting]]
+key = "wordWrap"
+type = "boolean"
+default = true
+status = "live"
+page = "appearance"
+section = "Interface"
+title = "Word wrap"
+summary = "Wrap long lines in files and diffs instead of scrolling sideways."
+doc = """
+Wrap long lines in file tabs and diffs. Off: lines keep their shape and scroll
+sideways. The wrap button in a file's or the review diff's header flips this
+same setting. A session's code blocks follow chatCodeWrap instead.
+"""
+validation = "—"
+
+[[setting]]
 key = "sidebarSort"
 type = "enum"
 values = ["recent", "created"]
