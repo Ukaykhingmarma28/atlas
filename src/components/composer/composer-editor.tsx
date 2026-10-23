@@ -33,7 +33,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { AnyExtension, Editor, JSONContent } from "@tiptap/core";
-import { EditorContent, useEditor } from "@tiptap/react";
+import { EditorContent, useEditor, type UseEditorOptions } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Fragment, Slice } from "@tiptap/pm/model";
 import { Selection, TextSelection } from "@tiptap/pm/state";
@@ -162,8 +162,11 @@ const Placeholder = memo(function Placeholder({
   );
 });
 
-export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorProps>(
-  function ComposerEditor(props, ref) {
+// Memoized: what a re-render could change is read through `live`, so a parent
+// re-rendering (a picker opening, a status flip, a draft kept in a store) does
+// not re-render the editor shell with it.
+export const ComposerEditor = memo(
+  forwardRef<ComposerEditorHandle, ComposerEditorProps>(function ComposerEditor(props, ref) {
     const {
       extensions,
       serializer,
@@ -181,138 +184,141 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     const [emptyFlag] = useState(() => createFlag(initialValue.length === 0));
     const blankRef = useRef(initialValue.trim().length === 0);
 
-    const editor = useEditor(
-      {
-        immediatelyRender: true,
-        shouldRerenderOnTransaction: false,
-        extensions: [
-          StarterKit.configure({
-            blockquote: false,
-            bold: false,
-            bulletList: false,
-            code: false,
-            codeBlock: false,
-            gapcursor: false,
-            hardBreak: false,
-            heading: false,
-            horizontalRule: false,
-            italic: false,
-            link: false,
-            listItem: false,
-            listKeymap: false,
-            orderedList: false,
-            strike: false,
-            trailingNode: false,
-            underline: false,
-          }),
-          ComposerTriggers.configure({
-            getTriggers: () => live.current.triggers ?? [],
-            getKeyInterceptor: () => live.current.keyInterceptor ?? null,
-          }),
-          ComposerKeymap.configure({
-            getEnterToSend: () => live.current.enterToSend ?? true,
-            onSubmit: () => live.current.onSubmit?.(),
-            onEscape: () => live.current.onEscape?.() ?? false,
-          }),
-          ...extensions,
-        ],
-        content: textToDoc(initialValue, serializer),
-        editorProps: {
-          attributes: {
-            role: "textbox",
-            "aria-multiline": "true",
-            ...(ariaLabel ? { "aria-label": ariaLabel } : {}),
-          },
-          // Copy writes the composer's own text — chips as their tokens, lines
-          // joined by one newline — instead of ProseMirror's block-per-
-          // paragraph default with blank lines between.
-          clipboardTextSerializer: (slice) => fragmentToText(slice.content, serializer),
-          // A plain-text drop (and a paste the handler below declines) goes
-          // through the same tokenizer as a paste.
-          clipboardTextParser: (text, _$context, _plain, view) =>
-            textSlice(view.state.schema, text, serializer),
-          handleDOMEvents: {
-            // Stamp typing activity at the very start of key handling, so the
-            // transcript's deferred markdown parse cannot slip a long task in
-            // between a keydown and its edit (`input-activity.ts`).
-            keydown: () => {
-              markInputActivity();
-              return false;
-            },
-          },
-          handlePaste: (view, event) => {
-            const dt = event.clipboardData;
-            if (!dt) return false;
-            const p = live.current;
-            // Clipboard images (screenshots) first. `filesFromClipboard` skips
-            // Finder's zero-byte stubs — a copied `.png` file has an image mime
-            // but no bytes, and must take the path route below instead.
-            const images = filesFromClipboard(dt).filter((f) => f.type.startsWith("image/"));
-            if (images.length > 0 && p.onPasteImages?.(images)) {
-              event.preventDefault();
-              markInputActivity();
-              return true;
-            }
-            // Finder-copied files: the web paste event cannot expose a path, so
-            // ask Rust for the native pasteboard's file URLs.
-            if (hasFiles(dt)) {
-              event.preventDefault();
-              void (async () => {
-                try {
-                  const paths = await invoke<string[]>("clipboard_file_paths");
-                  if (!paths || paths.length === 0) return;
-                  markInputActivity();
-                  if (live.current.onPastePaths) {
-                    live.current.onPastePaths(paths);
-                    return;
-                  }
-                  view.dispatch(view.state.tr.insertText(paths.map(quotePath).join(" ") + " "));
-                  view.focus();
-                } catch (err) {
-                  console.warn("clipboard file paste failed:", err);
-                }
-              })();
-              return true;
-            }
-            const text = dt.getData("text/plain").replace(/\r\n?/g, "\n");
-            if (!text) return false;
-            if (isLargePaste(text) && p.onPasteLargeText?.(text)) {
-              event.preventDefault();
-              markInputActivity();
-              return true;
-            }
-            // HTML from this editor carries its chips whole; ProseMirror's own
-            // HTML paste rebuilds them from it.
-            const html = dt.getData("text/html");
-            if (html && html.includes("data-composer-chip")) return false;
-            // Anything else as text: other HTML (a web page, a code editor)
-            // would arrive with its whitespace collapsed and its blocks
-            // flattened into lines the user did not write.
-            event.preventDefault();
-            view.dispatch(
-              view.state.tr
-                .replaceSelection(textSlice(view.state.schema, text, serializer))
-                .scrollIntoView()
-                .setMeta("uiEvent", "paste"),
-            );
-            return true;
+    // The options object is built once and kept. `useEditor` compares it with
+    // the editor's on every render, and a fresh one (new extension instances,
+    // new `editorProps`) makes it call `setOptions`, which re-runs the whole
+    // view update — and `content` would re-tokenize the initial text. A
+    // parent re-render must cost nothing here.
+    const [options] = useState((): UseEditorOptions => ({
+      immediatelyRender: true,
+      shouldRerenderOnTransaction: false,
+      extensions: [
+        StarterKit.configure({
+          blockquote: false,
+          bold: false,
+          bulletList: false,
+          code: false,
+          codeBlock: false,
+          gapcursor: false,
+          hardBreak: false,
+          heading: false,
+          horizontalRule: false,
+          italic: false,
+          link: false,
+          listItem: false,
+          listKeymap: false,
+          orderedList: false,
+          strike: false,
+          trailingNode: false,
+          underline: false,
+        }),
+        ComposerTriggers.configure({
+          getTriggers: () => live.current.triggers ?? [],
+          getKeyInterceptor: () => live.current.keyInterceptor ?? null,
+        }),
+        ComposerKeymap.configure({
+          getEnterToSend: () => live.current.enterToSend ?? true,
+          onSubmit: () => live.current.onSubmit?.(),
+          onEscape: () => live.current.onEscape?.() ?? false,
+        }),
+        ...extensions,
+      ],
+      content: textToDoc(initialValue, serializer),
+      editorProps: {
+        attributes: {
+          role: "textbox",
+          "aria-multiline": "true",
+          ...(ariaLabel ? { "aria-label": ariaLabel } : {}),
+        },
+        // Copy writes the composer's own text — chips as their tokens, lines
+        // joined by one newline — instead of ProseMirror's block-per-
+        // paragraph default with blank lines between.
+        clipboardTextSerializer: (slice) => fragmentToText(slice.content, serializer),
+        // A plain-text drop (and a paste the handler below declines) goes
+        // through the same tokenizer as a paste.
+        clipboardTextParser: (text, _$context, _plain, view) =>
+          textSlice(view.state.schema, text, serializer),
+        handleDOMEvents: {
+          // Stamp typing activity at the very start of key handling, so the
+          // transcript's deferred markdown parse cannot slip a long task in
+          // between a keydown and its edit (`input-activity.ts`).
+          keydown: () => {
+            markInputActivity();
+            return false;
           },
         },
-        onUpdate: ({ editor: e }) => {
-          // Stamp activity so a deferred markdown parse waits out the burst.
-          markInputActivity();
-          const doc = e.state.doc;
-          emptyFlag.set(isDocEmpty(doc));
-          const blank = isDocBlank(doc);
-          if (blank !== blankRef.current) {
-            blankRef.current = blank;
-            live.current.onEmptyChange?.(blank);
+        handlePaste: (view, event) => {
+          const dt = event.clipboardData;
+          if (!dt) return false;
+          const p = live.current;
+          // Clipboard images (screenshots) first. `filesFromClipboard` skips
+          // Finder's zero-byte stubs — a copied `.png` file has an image mime
+          // but no bytes, and must take the path route below instead.
+          const images = filesFromClipboard(dt).filter((f) => f.type.startsWith("image/"));
+          if (images.length > 0 && p.onPasteImages?.(images)) {
+            event.preventDefault();
+            markInputActivity();
+            return true;
           }
-          live.current.onDocChange?.();
+          // Finder-copied files: the web paste event cannot expose a path, so
+          // ask Rust for the native pasteboard's file URLs.
+          if (hasFiles(dt)) {
+            event.preventDefault();
+            void (async () => {
+              try {
+                const paths = await invoke<string[]>("clipboard_file_paths");
+                if (!paths || paths.length === 0) return;
+                markInputActivity();
+                if (live.current.onPastePaths) {
+                  live.current.onPastePaths(paths);
+                  return;
+                }
+                view.dispatch(view.state.tr.insertText(paths.map(quotePath).join(" ") + " "));
+                view.focus();
+              } catch (err) {
+                console.warn("clipboard file paste failed:", err);
+              }
+            })();
+            return true;
+          }
+          const text = dt.getData("text/plain").replace(/\r\n?/g, "\n");
+          if (!text) return false;
+          if (isLargePaste(text) && p.onPasteLargeText?.(text)) {
+            event.preventDefault();
+            markInputActivity();
+            return true;
+          }
+          // HTML from this editor carries its chips whole; ProseMirror's own
+          // HTML paste rebuilds them from it.
+          const html = dt.getData("text/html");
+          if (html && html.includes("data-composer-chip")) return false;
+          // Anything else as text: other HTML (a web page, a code editor)
+          // would arrive with its whitespace collapsed and its blocks
+          // flattened into lines the user did not write.
+          event.preventDefault();
+          view.dispatch(
+            view.state.tr
+              .replaceSelection(textSlice(view.state.schema, text, serializer))
+              .scrollIntoView()
+              .setMeta("uiEvent", "paste"),
+          );
+          return true;
         },
       },
-      [],
-    );
+      onUpdate: ({ editor: e }) => {
+        // Stamp activity so a deferred markdown parse waits out the burst.
+        markInputActivity();
+        const doc = e.state.doc;
+        emptyFlag.set(isDocEmpty(doc));
+        const blank = isDocBlank(doc);
+        if (blank !== blankRef.current) {
+          blankRef.current = blank;
+          live.current.onEmptyChange?.(blank);
+        }
+        live.current.onDocChange?.();
+      },
+    }));
+    const editor = useEditor(options, []);
 
     // A restored draft is one the user is about to continue: caret at the
     // end, not ProseMirror's default start. Here rather than in `onCreate`,
@@ -386,7 +392,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
         <Placeholder text={placeholder} flag={emptyFlag} />
       </div>
     );
-  },
+  }),
 );
 
 /** Text → a slice that opens into the current line at both ends, so a
