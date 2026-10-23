@@ -569,7 +569,7 @@ export const MarkerGroupRowView = memo(function MarkerGroupRowView({
         <ToolGlyph tool={row.running && row.liveTool ? row.liveTool : row.tool} failed={failed} />
       </span>
       <span
-        ref={shimmer}
+        ref={row.running ? shimmer : undefined}
         className={cn("min-w-0 truncate", row.running && "atlas-thinking-shimmer")}
       >
         {row.running ? row.liveLabel : row.summary}

@@ -1002,6 +1002,9 @@ interface Segment {
   turnInProgress: boolean;
   expanded: ReadonlySet<string>;
   expandedTurns: ReadonlySet<string>;
+  /** Cleared when the session rebinds to a new agent session, with the
+   *  messages untouched: a turn projected with children is stale without. */
+  subagents: Record<string, Subagent> | undefined;
   /** Where its rows and first message sat when its `turns` were stamped. */
   offset: number;
   start: number;
@@ -1021,7 +1024,7 @@ function segmentHolds(
 ): boolean {
   // A delegating session re-projects every turn: a child's calls can land in
   // messages outside its launching turn, so the slice is not the whole input.
-  if (opts.subagents) return false;
+  if (opts.subagents || s.subagents !== opts.subagents) return false;
   if (s.final !== final) return false;
   if (final && (s.streaming !== opts.streaming || s.turnInProgress !== turnInProgress)) {
     return false;
@@ -1381,6 +1384,7 @@ function projectSegment(
     turnInProgress: opts.turnInProgress ?? opts.streaming,
     expanded: opts.expanded,
     expandedTurns: opts.expandedTurns,
+    subagents: opts.subagents,
     offset,
     start,
     rows,

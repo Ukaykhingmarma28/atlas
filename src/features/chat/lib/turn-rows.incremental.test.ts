@@ -146,6 +146,23 @@ describe("incremental projection", () => {
     step(messages, opts({ expandedTurns: new Set(["wk:t:a1t"]) }), prev);
   });
 
+  it("drops a turn's children when the session's subagents are cleared", () => {
+    const messages = [
+      user("u1", "delegate"),
+      assistant("a1", { toolCalls: [call("launch")], mode: "tool" }),
+      assistant("a2", { content: "done" }),
+    ];
+    const child = {
+      name: "helper",
+      status: "completed",
+      prompt: "",
+      result: null,
+      toolCallCount: 0,
+    } as unknown as NonNullable<ProjectOptions["subagents"]>[string];
+    const prev = step(messages, opts({ subagents: { launch: child } }), null);
+    step(messages, opts(), prev);
+  });
+
   it("handles a rewind that drops the last turn", () => {
     const messages = [...exchange(1), ...exchange(2)];
     const prev = step(messages, opts(), null);
