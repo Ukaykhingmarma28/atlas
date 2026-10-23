@@ -83,7 +83,11 @@ export type MentionKind =
   | "recorded_session"
   // A comment on the chat's own recorded session, linked so the agent attends
   // to it (`comment-mentions.ts`). Rides as `atlas-org://comment/…` + a quote.
-  | "comment";
+  | "comment"
+  // Text too large to sit in the composer (`isLargePaste`), kept as a chip.
+  // Never reaches `compose_prompt`: it rides `agents_send`'s `pastedTexts`,
+  // and Rust picks its form by the agent's `embeddedContext` capability.
+  | "pasted_text";
 
 export interface MentionFile {
   kind: "file";
@@ -198,6 +202,17 @@ export interface MentionPastSession {
   endBeforeRemember?: boolean;
 }
 
+/** A large paste, held whole in the chip until the send. */
+export interface MentionPastedText {
+  kind: "pasted_text";
+  /** Short and unique — the `@paste:<id>` token and the `atlas://paste/<id>`
+   *  URI the agent may see. */
+  id: string;
+  displayName: string; // "Pasted text · 120 lines"
+  lines: number;
+  text: string;
+}
+
 export type MentionData =
   | MentionFile
   | MentionFolder
@@ -212,7 +227,8 @@ export type MentionData =
   | MentionMember
   | MentionConversation
   | MentionRecordedSession
-  | MentionComment;
+  | MentionComment
+  | MentionPastedText;
 
 // ── Catalog ──────────────────────────────────────────────────────────────────
 
@@ -436,6 +452,8 @@ export function toShortForm(m: MentionData): string {
       return `@recorded-session:${shortFormValue(m.displayName)}`;
     case "comment":
       return `@comment:${shortFormValue(m.displayName)}`;
+    case "pasted_text":
+      return `@paste:${m.id}`;
   }
 }
 
@@ -735,6 +753,12 @@ export interface ResourceLinkSpec {
   name: string;
 }
 
+/** A large paste's whole text, for `agents_send`. */
+export interface PastedTextSpec {
+  id: string;
+  text: string;
+}
+
 /** Prose plus the structured file references the turn should carry.
  *
  *  `resourceLinks` used to be flattened into the prose ("File at `/x/y`. Use
@@ -744,13 +768,22 @@ export interface ResourceLinkSpec {
 export interface ComposedPrompt {
   prose: string;
   resourceLinks: ResourceLinkSpec[];
+  /** Large pastes, each sent in full beside the prose — never through
+   *  `compose_prompt`, which has no such kind. */
+  pastedTexts: PastedTextSpec[];
 }
 
 export async function composePrompt(
   prosePlainText: string,
-  mentions: MentionData[],
+  allMentions: MentionData[],
 ): Promise<ComposedPrompt> {
-  if (mentions.length === 0) return { prose: prosePlainText, resourceLinks: [] };
+  const pastedTexts: PastedTextSpec[] = [];
+  const mentions: MentionData[] = [];
+  for (const m of allMentions) {
+    if (m.kind === "pasted_text") pastedTexts.push({ id: m.id, text: m.text });
+    else mentions.push(m);
+  }
+  if (mentions.length === 0) return { prose: prosePlainText, resourceLinks: [], pastedTexts };
   const wireMentions = await Promise.all(
     mentions.map(async (m) => {
       if (m.kind === "knowledge") {
@@ -780,13 +813,14 @@ export async function composePrompt(
     }),
   );
   try {
-    return await invoke<ComposedPrompt>("compose_prompt", {
+    const composed = await invoke<Omit<ComposedPrompt, "pastedTexts">>("compose_prompt", {
       prose: prosePlainText,
       mentions: wireMentions,
     });
+    return { ...composed, pastedTexts };
   } catch (e) {
     console.warn("compose_prompt invoke failed, sending raw prose:", e);
-    return { prose: prosePlainText, resourceLinks: [] };
+    return { prose: prosePlainText, resourceLinks: [], pastedTexts };
   }
 }
 

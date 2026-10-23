@@ -1402,6 +1402,15 @@ impl AgentHost {
 
     // ---- session reads ---------------------------------------------------
 
+    /// Whether the session's agent advertised
+    /// `promptCapabilities.embeddedContext` at initialize — the send path's
+    /// choice between an embedded resource and a text block for a paste.
+    pub fn prompt_embedded_context(&self, key: &SessionKey) -> Result<bool> {
+        let handle = self.thread(&key.session_id)?;
+        let embedded = lock_thread(&handle).prompt_capabilities().embedded_context;
+        Ok(embedded)
+    }
+
     fn thread(&self, session_id: &str) -> Result<AcpThreadHandle> {
         self.manager
             .session(&acp::SessionId::new(session_id))

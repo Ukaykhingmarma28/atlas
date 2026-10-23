@@ -164,6 +164,17 @@ pub struct UserMessage {
     pub indented: bool,
 }
 
+impl UserMessage {
+    /// The prompt as the agent was sent it, one block after another with a
+    /// blank line between (`prompt::flatten_text`). `content` merges the
+    /// blocks for display and glues text blocks end to end, so a turn's large
+    /// paste (`prompt::with_pasted_texts`) would run straight on from the
+    /// prose. A retry re-sends this, and it carries every paste in full.
+    pub fn prompt_text(&self) -> String {
+        crate::prompt::flatten_text(&self.chunks)
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct AssistantMessage {
     pub chunks: Vec<AssistantMessageChunk>,

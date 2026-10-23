@@ -16,6 +16,7 @@ import type {
 import type { Subagent } from "@/types/agent";
 import type { TypedHandlers, Unit } from "./types";
 import { text, tool, tools } from "./fixtures/chat";
+import { pasteAsText } from "@/features/chat/lib/pasted-text";
 import {
   askUserQuestionMulti,
   askUserQuestionSingle,
@@ -38,6 +39,22 @@ interface FakeSession {
 }
 
 const sessions = new Map<string, FakeSession>();
+
+/** The fake agents advertise no `promptCapabilities.embeddedContext` — the
+ *  case every agent must be served in, so it is the one a browser review
+ *  sees. A large paste therefore reaches them the way Rust sends it to such
+ *  an agent: as a fenced text block after the prose. */
+export const FAKE_AGENT_EMBEDDED_CONTEXT = false;
+
+/** What a fake agent receives for one send: the prose, then each paste in
+ *  the form its capabilities allow. */
+export function receivedText(prose: string, pastes: { id: string; text: string }[]): string {
+  if (pastes.length === 0) return prose;
+  const blocks = pastes.map((p) =>
+    FAKE_AGENT_EMBEDDED_CONTEXT ? `[embedded atlas://paste/${p.id}]` : pasteAsText(p),
+  );
+  return [prose, ...blocks].join("\n\n");
+}
 let seq = 0;
 
 /** What a new session replays once it is bound. Set by a scenario. */
@@ -657,15 +674,17 @@ export const agentHandlers: TypedHandlers<AgentResponses> = {
     void resolvePermission(agentId, sessionId, requestId, decision);
     return null;
   },
-  // Echo the prompt back so the composer loop is exercisable.
-  agents_send: async ({ key, text }) => {
+  // Echo the prompt back so the composer loop is exercisable — the prompt as
+  // the agent would receive it, large pastes included.
+  agents_send: async ({ key, text: sent, pastedTexts }) => {
     const s = sessions.get(key.session_id);
     if (!s) return null;
+    const text = receivedText(String(sent), (pastedTexts ?? []) as { id: string; text: string }[]);
     const handled = promptHandler?.({
       sessionId: s.key.session_id,
       pluginId: s.pluginId,
       cwd: s.cwd,
-      text: String(text),
+      text,
     });
     if (handled) return null;
     const now = () => new Date().toISOString();

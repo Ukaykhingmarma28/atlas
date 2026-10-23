@@ -3770,12 +3770,13 @@ impl RewindHandle {
     /// rollback ran lands here too. Everything past a rollback known to have
     /// succeeded is an `Err`, so the only ambiguity left is this one.
     ///
-    /// Only the FLATTENED text survives. `ContentBlock::to_text` returns a
-    /// resource link as a bare URI and joins mixed blocks without the newlines
-    /// the original input carried (`thread.rs:99` vs `sink.rs:351`), so a turn
-    /// whose prompt mixed prose and `@`-mentions does not round-trip verbatim.
-    /// Attachments are not reconstructed at all — the thread stores what was
-    /// sent, not the composer state that produced it.
+    /// Only the FLATTENED text survives: the blocks the turn sent, a blank line
+    /// between each (`UserMessage::prompt_text`). A resource link comes back as
+    /// its bare URI, so a turn whose prompt mixed prose and `@`-mentions does
+    /// not round-trip verbatim; a large paste rode as a text block and comes
+    /// back whole, set apart from the prose. Attachments are not reconstructed
+    /// at all — the thread stores what was sent, not the composer state that
+    /// produced it.
     async fn rewind_last_turn(&self, session_id: &acp::SessionId) -> Result<Option<String>> {
         // Ask before trimming. The engine refusing (nothing to drop) has to
         // leave the transcript exactly as it was, so nothing local moves until
@@ -3823,7 +3824,7 @@ impl RewindHandle {
                 .rev()
                 .find_map(|(ix, entry)| match entry {
                     atlas_acp_thread::AgentThreadEntry::UserMessage(msg) => {
-                        Some((ix, msg.content.to_text().to_string()))
+                        Some((ix, msg.prompt_text()))
                     }
                     _ => None,
                 });

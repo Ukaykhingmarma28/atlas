@@ -163,7 +163,7 @@ export function switchAgentForTab(
     );
     actions.updateSessionStatus(tabId, "running");
     actions.setPendingSend(tabId, held);
-    for (const text of restTyped) actions.enqueueMessage(tabId, text);
+    for (const text of restTyped) actions.enqueueMessage(tabId, text, []);
   }
   if (handoff && firstTyped !== undefined) {
     toast(
@@ -349,7 +349,7 @@ async function rememberThenSwitch(
       model: pending.model,
     });
     if (stillOn(tabId, from)) {
-      for (const text of typed) useChatStore.getState().actions.enqueueMessage(tabId, text);
+      for (const text of typed) useChatStore.getState().actions.enqueueMessage(tabId, text, []);
     }
   } finally {
     pendingSwitches.delete(tabId);

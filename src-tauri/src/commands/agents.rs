@@ -35,7 +35,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
-use atlas_acp_thread::prompt::{self, ImageAttachment, ResourceLinkSpec};
+use atlas_acp_thread::prompt::{self, ImageAttachment, PastedText, ResourceLinkSpec};
 use atlas_agent_store::{
     AgentRegistryStore, AgentServerStore, InheritedProjectEnvironment, NodeRuntime, ReqwestClient,
 };
@@ -1914,6 +1914,9 @@ pub async fn agents_send(
     // rather than flattened into the prose — the ACP-native way to hand an
     // agent a file, and every agent is required to accept it.
     resource_links: Option<Vec<ResourceLinkSpec>>,
+    // Large pastes the composer kept as chips. Each goes in full: an embedded
+    // resource when the agent takes embedded context, a text block otherwise.
+    pasted_texts: Option<Vec<PastedText>>,
     host: State<'_, Arc<AgentHost>>,
     sharing: State<'_, MemorySharingState>,
     app: AppHandle,
@@ -1930,6 +1933,7 @@ pub async fn agents_send(
     // later turn to pick up.
     let images = attachments.unwrap_or_default();
     let links = resource_links.unwrap_or_default();
+    let pastes = pasted_texts.unwrap_or_default();
 
     // Resolve the project cwd. Unknown session → fail with the SAME error
     // shape `manager.send` produces, without attempting a send that would
@@ -2000,9 +2004,17 @@ pub async fn agents_send(
         app.state::<SharedMemoryStore>()
             .register_session(&key.session_id, &cwd, &plugin_id);
     }
+    let embedded_context = !pastes.is_empty()
+        && host
+            .prompt_embedded_context(&key)
+            .map_err(|e| e.to_string())?;
     host.send(
         &key,
-        prompt::with_resource_links(prompt::compose(text, images), links),
+        prompt::with_pasted_texts(
+            prompt::with_resource_links(prompt::compose(text, images), links),
+            pastes,
+            embedded_context,
+        ),
     )
     .map_err(|e| e.to_string())
 }
