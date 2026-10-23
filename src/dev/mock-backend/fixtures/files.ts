@@ -862,7 +862,10 @@ export function directoryListings(
         path: path ? `${path}/${entry.name}` : entry.name,
         kind: entry.is_symlink ? "symlink" : entry.is_dir ? "directory" : "file",
       }));
-      const merged = [...entries, ...overlay].sort(
+      // The overlay wins where it repeats a real entry (`.env.local` is both
+      // seeded and ignored): Rust lists each name once, flagged.
+      const overlaid = new Set(overlay.map((entry) => entry.path));
+      const merged = [...entries.filter((entry) => !overlaid.has(entry.path)), ...overlay].sort(
         (a, b) =>
           Number(isDirEntry(b)) - Number(isDirEntry(a)) ||
           nameOf(a).toLowerCase().localeCompare(nameOf(b).toLowerCase()),

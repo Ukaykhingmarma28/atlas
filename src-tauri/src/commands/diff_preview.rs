@@ -955,13 +955,28 @@ fn is_binary(bytes: &[u8]) -> bool {
 /// link) outside the project. A missing file is an empty side.
 fn read_worktree(cwd: &Path, rel: &Path) -> Result<Vec<u8>, String> {
     let target = cwd.join(rel);
-    let Ok(meta) = std::fs::metadata(&target) else {
+    // `symlink_metadata`, not `metadata`: a symlink is diffed as the path it
+    // points at (mode 120000), the way git and `new_file` present it, never as
+    // the file behind it. Following it showed a link's target file against
+    // the old side's link text, and a dangling link as a deletion.
+    let Ok(meta) = std::fs::symlink_metadata(&target) else {
         return Ok(Vec::new());
     };
+    let real_root = std::fs::canonicalize(cwd).map_err(|e| e.to_string())?;
+    if meta.file_type().is_symlink() {
+        // The link itself must sit inside the project, wherever it points.
+        if let Some(parent) = target.parent() {
+            let real_parent = std::fs::canonicalize(parent).map_err(|e| e.to_string())?;
+            if !real_parent.starts_with(&real_root) {
+                return Err(format!("{} resolves outside the project", rel.display()));
+            }
+        }
+        let link = std::fs::read_link(&target).map_err(|e| e.to_string())?;
+        return Ok(link.into_os_string().into_encoded_bytes());
+    }
     if !meta.is_file() {
         return Ok(Vec::new());
     }
-    let real_root = std::fs::canonicalize(cwd).map_err(|e| e.to_string())?;
     let real = std::fs::canonicalize(&target).map_err(|e| e.to_string())?;
     if !real.starts_with(&real_root) {
         return Err(format!("{} resolves outside the project", rel.display()));
@@ -1299,5 +1314,20 @@ mod tests {
         let c = file_contents(&r.0, SourceKind::WorkingTree, None, "bin.dat", None).unwrap();
         assert!(c.binary);
         assert!(file_contents(&r.0, SourceKind::WorkingTree, None, "../x", None).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn file_contents_diffs_a_symlink_as_its_target_path() {
+        let r = Repo::new("symlink");
+        r.write("real.txt", "body\n");
+        std::os::unix::fs::symlink("real.txt", r.0.join("link")).unwrap();
+        r.commit("init");
+        std::fs::remove_file(r.0.join("link")).unwrap();
+        // Retargeted, and dangling: the link text is what changed.
+        std::os::unix::fs::symlink("gone.txt", r.0.join("link")).unwrap();
+        let c = file_contents(&r.0, SourceKind::WorkingTree, None, "link", None).unwrap();
+        assert_eq!(c.old_text, "real.txt");
+        assert_eq!(c.new_text, "gone.txt");
     }
 }

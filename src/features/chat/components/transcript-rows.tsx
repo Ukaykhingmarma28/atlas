@@ -365,9 +365,10 @@ export const ThinkingRowView = memo(function ThinkingRowView({
   // only then, so an undiscussed row's DOM is exactly what it was.
   const messageId = row.id.slice(3);
   const discussed = useRowHasComments(tabId, messageId);
-  const shimmer = useVisibleAnimation<HTMLSpanElement>();
+  const shimmer = useVisibleAnimation<HTMLElement>();
   const toggle = (
     <button
+      ref={row.streaming ? shimmer : undefined}
       type="button"
       onClick={() => onToggleExpand(row.id)}
       className={cn(
@@ -386,10 +387,7 @@ export const ThinkingRowView = memo(function ThinkingRowView({
       {/* The thought itself when it has one: "Checking the cache key" says
           more than "Thinking…", and it is the live line while the agent
           reasons. One truncated line, so the row stays 26px as it changes. */}
-      <span
-        ref={row.streaming ? shimmer : undefined}
-        className={cn("min-w-0 truncate", row.streaming && "atlas-thinking-shimmer")}
-      >
+      <span className={cn("min-w-0 truncate", row.streaming && "atlas-thinking-shimmer")}>
         {row.headline ?? (row.streaming ? "Thinking…" : "Thought process")}
       </span>
       <ChevronRight
@@ -562,9 +560,10 @@ export const MarkerGroupRowView = memo(function MarkerGroupRowView({
   // on every marker state change.
   const callIds = useMemo(() => row.markers.map((marker) => marker.toolCallId), [row.markers]);
   const discussed = useGroupHasComments(tabId, callIds);
-  const shimmer = useVisibleAnimation<HTMLSpanElement>();
+  const shimmer = useVisibleAnimation<HTMLElement>();
   const summary = (
     <button
+      ref={row.running ? shimmer : undefined}
       type="button"
       aria-expanded={row.open}
       aria-controls={`${row.id}:actions`}
@@ -579,10 +578,7 @@ export const MarkerGroupRowView = memo(function MarkerGroupRowView({
       <span className="flex w-4 shrink-0 justify-center">
         <ToolGlyph tool={row.running && row.liveTool ? row.liveTool : row.tool} failed={failed} />
       </span>
-      <span
-        ref={row.running ? shimmer : undefined}
-        className={cn("min-w-0 truncate", row.running && "atlas-thinking-shimmer")}
-      >
+      <span className={cn("min-w-0 truncate", row.running && "atlas-thinking-shimmer")}>
         {row.running ? row.liveLabel : row.summary}
       </span>
       {row.running &&

@@ -56,3 +56,10 @@ describe("thoughtHeadline on awkward reasoning", () => {
     expect(performance.now() - t0).toBeLessThan(20);
   });
 });
+
+describe("thoughtHeadline before there is anything to show", () => {
+  it("is null rather than empty for a bare `**` or an empty heading", () => {
+    expect(thoughtHeadline("**")).toBeNull();
+    expect(thoughtHeadline("** **\n")).toBeNull();
+  });
+});

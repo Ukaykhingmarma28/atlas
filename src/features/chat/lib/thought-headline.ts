@@ -14,7 +14,10 @@
  */
 export function thoughtHeadline(markdown: string): string | null {
   const headings = [...markdown.matchAll(/^[ \t]*\*\*([^*\r\n]+)\*\*[ \t]*$/gm)];
-  if (headings.length > 0) return clean(headings[headings.length - 1][1]);
+  if (headings.length > 0) {
+    const heading = clean(headings[headings.length - 1][1].slice(0, MAX_SCAN));
+    if (heading) return heading;
+  }
 
   const paragraphs = markdown.split(/\r?\n\s*\r?\n/);
   for (let i = paragraphs.length - 1; i >= 0; i--) {
@@ -27,6 +30,8 @@ export function thoughtHeadline(markdown: string): string | null {
     // fragment that then regrows a letter per chunk. Keep the previous
     // paragraph's line until this one has said something.
     if (!end && text.length < MIN_UNFINISHED && i > 0) continue;
+    // `**` as a thought's first chunk cleans to nothing: no line yet.
+    if (!text) continue;
     return end ? text.slice(0, end.index + end[0].length) : text;
   }
   return null;
