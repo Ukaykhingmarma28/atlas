@@ -651,7 +651,10 @@ fn score_rel(
 ///
 /// Nested ignored directories (`packages/*/node_modules`) still fall inside a
 /// watched subtree; [`is_ignored_event_path`] drops their events on arrival.
-fn watch_roots(root: &Path) -> Vec<(PathBuf, RecursiveMode)> {
+/// The directories to watch under one root, and how deep each watch goes.
+type WatchPlan = Vec<(PathBuf, RecursiveMode)>;
+
+fn watch_roots(root: &Path) -> WatchPlan {
     match plan_watches(root, 0) {
         // Nothing ignored anywhere in reach — one recursive watch is optimal.
         None => vec![(root.to_path_buf(), RecursiveMode::Recursive)],
@@ -682,7 +685,7 @@ const MAX_WATCHES: usize = 256;
 /// if anything below it does. Deciding on the immediate level alone was not
 /// enough — in this very repo `target/` sits at `src-tauri/target`, so the
 /// project root looks perfectly clean while 265k files hide two levels down.
-fn plan_watches(dir: &Path, depth: usize) -> Option<Vec<(PathBuf, RecursiveMode)>> {
+fn plan_watches(dir: &Path, depth: usize) -> Option<WatchPlan> {
     if depth >= MAX_SPLIT_DEPTH {
         // Stop splitting; report clean so the caller takes one recursive watch.
         // `is_ignored_event_path` absorbs whatever noise remains below.
@@ -725,7 +728,7 @@ fn plan_watches(dir: &Path, depth: usize) -> Option<Vec<(PathBuf, RecursiveMode)
         .unwrap_or(kept.len());
     let pruned_here = on_disk != kept.len();
 
-    let child_plans: Vec<(PathBuf, Option<Vec<(PathBuf, RecursiveMode)>>)> = kept
+    let child_plans: Vec<(PathBuf, Option<WatchPlan>)> = kept
         .into_iter()
         .map(|c| {
             let plan = plan_watches(&c, depth + 1);
