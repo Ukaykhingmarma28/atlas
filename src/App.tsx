@@ -145,7 +145,7 @@ import { listenModelDone } from "@/features/settings/lib/models-api";
 import { useModelsStore } from "@/features/settings/stores/models-store";
 import { useLoadProjectSettings } from "@/features/settings/lib/use-scoped-setting";
 import { toggleSourceControl } from "@/features/layout/lib/source-control";
-import { revealFiles } from "@/features/layout/lib/files-surface";
+import { toggleFiles } from "@/features/layout/lib/files-surface";
 import { refreshProjectTree } from "@/features/explorer/lib/project-tree-model";
 import { toggleTeamChat } from "@/features/layout/lib/team-chat";
 import { toggleDestination } from "@/features/layout/lib/destinations";
@@ -1344,8 +1344,9 @@ export function App() {
     "nav.commandPalette": () => setCommandPaletteOpen(true),
     "nav.filePicker": () => setFilePickerOpen(true),
     "nav.search": () => setSearchOpen(true),
-    // ⌘B — the project tree, a surface tab beside the agent.
-    "panels.files": () => revealFiles(),
+    // ⌘B — the project tree, a surface tab beside the agent. The id keeps its
+    // old name (it toggled the left file panel) so a rebinding still applies.
+    "panels.left": toggleFiles,
     // ⌘⇧B — source control, a surface tab beside the agent. The id keeps its
     // old name so a user's rebinding of it still applies.
     "panels.right": toggleSourceControl,

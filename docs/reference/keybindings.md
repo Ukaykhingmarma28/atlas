@@ -1,7 +1,7 @@
 # Atlas keybindings (`keybindings.json`)
 
 Every rebindable shortcut in Atlas is an **action** with a stable id
-(`panels.files`, `tabs.close`, `terminal.nextTab` …). The registry of actions,
+(`panels.left`, `tabs.close`, `terminal.nextTab` …). The registry of actions,
 their titles, default chords and the focus context they fire in lives in
 `src/features/keybindings/lib/actions.ts`; Settings → Keybindings renders that
 registry and lets you rebind each row.
@@ -62,7 +62,7 @@ without a relaunch. The file button beside **Add keybinding** opens it.
       "name": "My keybindings",
       "basedOn": "vscode",
       "bindings": {
-        "panels.files": ["cmd+shift+l"],
+        "panels.left": ["cmd+shift+l"],
         "panels.right": null,
         "view.zoomIn": ["cmd+=", "cmd+shift+="]
       }
@@ -170,7 +170,7 @@ active profile in a stable, versioned form:
   "atlasKeybindings": 1,
   "name": "My keybindings",
   "basedOn": "vscode",
-  "bindings": { "panels.files": ["cmd+shift+l"] }
+  "bindings": { "panels.left": ["cmd+shift+l"] }
 }
 ```
 

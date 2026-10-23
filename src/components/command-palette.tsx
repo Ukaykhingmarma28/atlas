@@ -33,7 +33,7 @@ import {
 } from "lucide-react";
 import type { TabType } from "@/lib/constants";
 import { revealSourceControl, toggleSourceControl } from "@/features/layout/lib/source-control";
-import { revealFiles } from "@/features/layout/lib/files-surface";
+import { revealFiles, toggleFiles } from "@/features/layout/lib/files-surface";
 import { toggleTeamChat } from "@/features/layout/lib/team-chat";
 
 interface Command {
@@ -180,6 +180,14 @@ export function CommandPalette({
 
       // ── Layout toggles ──
       {
+        id: "toggle-files",
+        label: "Toggle Files",
+        actionId: "panels.left",
+        icon: FolderTree,
+        category: "Layout",
+        action: toggleFiles,
+      },
+      {
         id: "toggle-right",
         label: "Toggle Source Control",
         actionId: "panels.right",
@@ -250,7 +258,6 @@ export function CommandPalette({
       {
         id: "view-project-files",
         label: "Show Files",
-        actionId: "panels.files",
         icon: FolderTree,
         category: "View",
         action: () => revealFiles(),

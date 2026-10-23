@@ -1107,8 +1107,8 @@ export const fsHandlers: TypedHandlers<FsResponses> = {
   // — the updated list only reaches the store through the change event.
   recent_files_rename: ({ oldPath, newPath, workspaceId: projectId }): RecentFile[] => {
     // Rust takes `project_id: String`, so Tauri rejects a call that omits it
-    // before the command body ever runs. `file-tree.tsx`'s drag-move does omit
-    // it; faking a success there would hide that.
+    // before the command body ever runs. A caller that omits it (no active
+    // project) must see that failure; faking a success here would hide it.
     if (projectId === undefined) {
       throw new Error(
         "invalid args `workspaceId` for command `recent_files_rename`: command recent_files_rename missing required key workspaceId",

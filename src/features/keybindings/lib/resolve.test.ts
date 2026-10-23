@@ -13,14 +13,20 @@ const profile = (bindings: KeybindingProfile["bindings"]): KeybindingProfile => 
 describe("resolveProfile", () => {
   it("falls back to defaults when no profile", () => {
     const r = resolveProfile(undefined);
-    expect(r.byAction.get("panels.files")![0]!.serialized).toBe("cmd+b");
-    expect(r.byAction.get("panels.files")![0]!.source).toBe("default");
+    expect(r.byAction.get("panels.left")![0]!.serialized).toBe("cmd+b");
+    expect(r.byAction.get("panels.left")![0]!.source).toBe("default");
+    expect(r.unknownActionIds).toEqual([]);
+  });
+  it("⌘B keeps the id it always had, so a user's rebinding of it still applies", () => {
+    expect(ACTIONS.find((a) => a.id === "panels.left")?.title).toBe("Toggle Files");
+    const r = resolveProfile(profile({ "panels.left": ["cmd+shift+l"] }));
+    expect(r.byAction.get("panels.left")!.map((b) => b.serialized)).toEqual(["cmd+shift+l"]);
     expect(r.unknownActionIds).toEqual([]);
   });
   it("override replaces, null unbinds, missing keeps default", () => {
-    const r = resolveProfile(profile({ "panels.files": ["cmd+shift+l"], "panels.right": null }));
-    expect(r.byAction.get("panels.files")!.map((b) => b.serialized)).toEqual(["cmd+shift+l"]);
-    expect(r.byAction.get("panels.files")![0]!.source).toBe("user");
+    const r = resolveProfile(profile({ "panels.left": ["cmd+shift+l"], "panels.right": null }));
+    expect(r.byAction.get("panels.left")!.map((b) => b.serialized)).toEqual(["cmd+shift+l"]);
+    expect(r.byAction.get("panels.left")![0]!.source).toBe("user");
     expect(r.byAction.get("panels.right")).toEqual([]);
     expect(r.perAction.get("panels.right")!.overridden).toBe(true);
     expect(r.byAction.get("panels.terminal")![0]!.serialized).toBe("cmd+j");
@@ -46,12 +52,12 @@ describe("resolveProfile", () => {
   });
   it("same chord under different conditions is soft, the same condition hard", () => {
     const soft = resolveProfile({
-      ...profile({ "panels.files": ["cmd+alt+shift+f12"], "panels.right": ["cmd+alt+shift+f12"] }),
-      when: { "panels.files": "chatFocus" },
+      ...profile({ "panels.left": ["cmd+alt+shift+f12"], "panels.right": ["cmd+alt+shift+f12"] }),
+      when: { "panels.left": "chatFocus" },
     });
     expect([...findConflicts(soft.list).values()][0]!.kind).toBe("soft");
     const hard = resolveProfile(
-      profile({ "panels.files": ["cmd+alt+shift+f12"], "panels.right": ["cmd+alt+shift+f12"] }),
+      profile({ "panels.left": ["cmd+alt+shift+f12"], "panels.right": ["cmd+alt+shift+f12"] }),
     );
     expect([...findConflicts(hard.list).values()][0]!.kind).toBe("hard");
   });
@@ -75,7 +81,7 @@ describe("findConflicts", () => {
     const r = resolveProfile(profile({ "panels.right": ["cmd+b"] }));
     const c = findConflicts(r.list).get("cmd+b")!;
     expect(c.kind).toBe("hard");
-    expect(c.bindings.map((b) => b.actionId).sort()).toEqual(["panels.files", "panels.right"]);
+    expect(c.bindings.map((b) => b.actionId).sort()).toEqual(["panels.left", "panels.right"]);
   });
   it("bindingsForCombo excludes the action being edited", () => {
     const r = resolveProfile(undefined);
@@ -125,7 +131,7 @@ describe("findConflicts across platforms", () => {
     expect(findConflicts(r.list, false).get("cmd+b")!.kind).toBe("hard");
   });
   it("one action bound twice to the same effective chord is not a conflict", () => {
-    const r = resolveProfile(profile({ "panels.files": ["cmd+b", "ctrl+b"] }));
+    const r = resolveProfile(profile({ "panels.left": ["cmd+b", "ctrl+b"] }));
     expect(findConflicts(r.list, false).get("cmd+b")).toBeUndefined();
   });
 });

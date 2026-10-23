@@ -30,8 +30,11 @@ export function revealFiles(path?: string): void {
   revealSingleton(FILES_TAB);
 }
 
-/** Close the Files tab when it is on screen, else reveal it. */
+/**
+ * Close the Files tab when it is on screen, else reveal it following the file
+ * being read (⌘B, View → Files, `ui_focus` panel "files").
+ */
 export function toggleFiles(): void {
-  useFilesRevealStore.getState().actions.reveal(null);
+  useFilesRevealStore.getState().actions.take();
   toggleSingleton(FILES_TAB);
 }

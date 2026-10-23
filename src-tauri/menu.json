@@ -55,7 +55,7 @@
         { "type": "action", "id": "nav.filePicker", "label": "Go to File…" },
         { "type": "separator" },
         { "type": "action", "id": "workspace.toggleSidebar", "label": "Project Sidebar" },
-        { "type": "action", "id": "panels.files", "label": "Files" },
+        { "type": "action", "id": "panels.left", "label": "Files" },
         { "type": "action", "id": "panels.right", "label": "Source Control" },
         { "type": "action", "id": "panels.teamChat", "label": "Team Chat" },
         { "type": "action", "id": "panels.terminal", "label": "Terminal" },

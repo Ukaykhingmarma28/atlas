@@ -46,7 +46,7 @@ export function buildExtensions(opts: BuildExtensionsOpts = {}) {
       link: false, // override with our own Link config below
       // Disable StarterKit's Bold so we can re-register it without the
       // Cmd+B / Ctrl+B keyboard shortcut — Cmd+B is reserved app-wide
-      // for Show Files, and users were accidentally bolding
+      // for Toggle Files, and users were accidentally bolding
       // KB notes while reaching for it.
       bold: false,
       // Replaced by WikilinkText, which keeps `[[page-id]]` unescaped on save.

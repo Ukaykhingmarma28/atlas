@@ -161,8 +161,10 @@ export const ACTIONS = [
   },
   // ── Panels ──
   {
-    id: "panels.files",
-    title: "Show Files",
+    // The id predates the Files surface (it toggled the left file panel); it
+    // is kept so a user's rebinding of ⌘B still applies. Same as `panels.right`.
+    id: "panels.left",
+    title: "Toggle Files",
     category: "Panels",
     when: "global",
     defaults: ["cmd+b"],

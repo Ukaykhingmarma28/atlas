@@ -122,7 +122,7 @@ const REVIEWED_AGENT_COMMANDS = [
   "nav.layoutSwitcher",
   "usage.open",
   "hintNav.toggle",
-  "panels.files",
+  "panels.left",
   "panels.right",
   "panels.teamChat",
   "panels.terminal",

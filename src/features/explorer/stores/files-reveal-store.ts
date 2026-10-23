@@ -1,19 +1,27 @@
-// The path the Files surface was last asked to reveal (`ui_focus` explorer,
-// `revealFiles(path)`). The surface's tree highlights it and opens every folder
-// above it; a new request with the same path reveals it again (the nonce).
+// A request for the Files surface to reveal a path (`ui_focus` explorer,
+// `revealFiles(path)`), or to go back to following the file being read
+// (`revealFiles()`, `toggleFiles()`: `path` null).
 //
-// Not persisted: a reveal is a one-off request. The Files tab closes itself on
-// the first file opened from it, and `revealFiles()` without a path clears the
-// request, so the tree goes back to following the file being read.
+// A request is read once. The Files surface takes it and clears it here
+// (`take`), and clears any left over when it unmounts, so reopening Files later
+// (⌘T F, ⌘B) never re-highlights an old path. Not persisted.
 
 import { create } from "zustand";
 import { createSelectors } from "@/lib/create-selectors";
 
+export interface FilesRevealRequest {
+  /** Absolute; null to follow the file being read. */
+  path: string | null;
+  /** Distinguishes a second ask for the same path. */
+  nonce: number;
+}
+
 interface FilesRevealState {
-  /** Absolute. */
-  request: { path: string; nonce: number } | null;
+  request: FilesRevealRequest | null;
   actions: {
     reveal: (path: string | null) => void;
+    /** Clear the request once the surface has read it. */
+    take: () => void;
   };
 }
 
@@ -23,7 +31,8 @@ export const useFilesRevealStore = createSelectors(
   create<FilesRevealState>()((set) => ({
     request: null,
     actions: {
-      reveal: (path) => set({ request: path === null ? null : { path, nonce: ++nonce } }),
+      reveal: (path) => set({ request: { path, nonce: ++nonce } }),
+      take: () => set({ request: null }),
     },
   })),
 );

@@ -18,7 +18,8 @@ vi.mock("./project-file-tree", () => ({
   },
 }));
 
-import { revealFiles } from "@/features/layout/lib/files-surface";
+import { revealFiles, toggleFiles } from "@/features/layout/lib/files-surface";
+import { useFilesRevealStore } from "../stores/files-reveal-store";
 import { useLayoutStore, type Tab } from "@/features/layout/stores/layout-store";
 import { useProjectStore } from "@/features/projects/stores/project-store";
 import { FilesPanel } from "./files-panel";
@@ -37,6 +38,7 @@ const layout = () => useLayoutStore.getState();
 
 beforeEach(() => {
   treeProps.current = null;
+  useFilesRevealStore.setState({ request: null });
   useProjectStore.setState({
     projects: [{ id: "w-1", name: "atlas", path: "/p" }] as never,
     activeProjectId: "w-1",
@@ -88,7 +90,43 @@ describe("Files surface", () => {
     act(() => revealFiles("/elsewhere/b.ts"));
     expect(treeProps.current!.activeFile).toBeUndefined();
 
+    act(() => revealFiles("/p/src/deep/a.ts"));
     act(() => revealFiles());
     expect(treeProps.current!.activeFile).toBeUndefined();
+  });
+
+  it("takes a reveal once, so Files opened again later follows the reader", async () => {
+    revealFiles("/p/src/deep/a.ts");
+    const id = layout().tabs.find((t) => t.type === "files")!.id;
+    const view = render(<FilesPanel tabId={id} projectId="w-1" />);
+    await waitFor(() => expect(treeProps.current?.activeFile).toBe("/p/src/deep/a.ts"));
+    // Read and cleared: nothing is left for the next Files tab.
+    expect(useFilesRevealStore.getState().request).toBeNull();
+    view.unmount();
+
+    // ⌘T F later: a fresh Files tab with no request follows the reader.
+    treeProps.current = null;
+    render(<FilesPanel tabId={id} projectId="w-1" />);
+    await waitFor(() => expect(treeProps.current).not.toBeNull());
+    expect(treeProps.current!.activeFile).toBeUndefined();
+  });
+
+  it("drops a request the surface never read once it closes", () => {
+    const view = render(<FilesPanel tabId="files" projectId={null} />);
+    // No project yet: the request waits rather than being read for nothing.
+    act(() => useFilesRevealStore.getState().actions.reveal("/p/a.ts"));
+    expect(useFilesRevealStore.getState().request?.path).toBe("/p/a.ts");
+    view.unmount();
+    expect(useFilesRevealStore.getState().request).toBeNull();
+  });
+
+  it("⌘B toggles: opens Files beside the session, closes it when on screen", () => {
+    useFilesRevealStore.getState().actions.reveal("/p/stale.ts");
+    toggleFiles();
+    expect(layout().tabs.some((t) => t.type === "files")).toBe(true);
+    // A toggle follows the reader; it never revives an old reveal.
+    expect(useFilesRevealStore.getState().request).toBeNull();
+    toggleFiles();
+    expect(layout().tabs.some((t) => t.type === "files")).toBe(false);
   });
 });
