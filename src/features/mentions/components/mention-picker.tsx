@@ -112,7 +112,7 @@ export interface MentionPickerProps {
   excludeIds?: Set<string>;
   /** Additional CSS selectors that, if any ancestor matches, should
    *  NOT trigger an outside-click dismiss. Always includes
-   *  `.atlas-chat-cm-host` and `.atlas-mention-picker`; callers in
+   *  `.atlas-chat-composer` and `.atlas-mention-picker`; callers in
    *  other surfaces (Tiptap, future composers) add their own. */
   hostSelectors?: string[];
   /** Lock the picker to a single kind from the moment it opens —
@@ -508,7 +508,7 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
     );
 
     // Dismiss on click outside the picker AND outside the host editor.
-    // Defaults cover the chat composer (.atlas-chat-cm-host); other
+    // Defaults cover the chat composer (.atlas-chat-composer); other
     // surfaces (Tiptap, future composers) pass their own selectors via
     // `hostSelectors` so a click inside their editable doesn't dismiss.
     const hostSelectorsRef = useRef(hostSelectors);
@@ -518,7 +518,7 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
       const handler = (e: MouseEvent) => {
         const target = e.target as HTMLElement | null;
         if (!target) return;
-        if (target.closest(".atlas-chat-cm-host")) return;
+        if (target.closest(".atlas-chat-composer")) return;
         if (target.closest(".atlas-mention-picker")) return;
         const extras = hostSelectorsRef.current;
         if (extras) {

@@ -536,11 +536,11 @@ function Composer({
         <ChatInput
           ref={inputRef}
           // Fixed, not conditional: `ChatInput` reads its placeholder when the
-          // CodeMirror view is built and never again, so a message that depended
+          // editor is built and never again, so a message that depended
           // on readiness froze at whatever was true on mount — "Pick a model to
           // start" stayed up long after one was picked.
           placeholder="Ask about this session…"
-          onChange={(v) => setHasText(v.trim().length > 0)}
+          onEmptyChange={(blank) => setHasText(!blank)}
           onSubmit={submit}
           enterToSend={enterToSend}
         />

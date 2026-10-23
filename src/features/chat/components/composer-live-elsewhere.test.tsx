@@ -8,7 +8,7 @@
 // list the session — so a session opened from History or another project is
 // guarded too.
 //
-// The CodeMirror input is replaced by a textarea behind the same handle: the
+// The editor is replaced by a textarea behind the same handle: the
 // guard lives in `MessageInput.submit`, not in the editor.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -47,28 +47,44 @@ vi.mock("./chat-input", async () => {
   const React = await import("react");
   const ChatInput = React.forwardRef<
     { getValue(): string; setValue(t: string): void; clear(): void; getMentions(): never[] },
-    { onChange?: (v: string) => void; onSubmit?: () => void }
-  >(function FakeChatInput({ onChange, onSubmit }, ref) {
+    {
+      onEmptyChange?: (blank: boolean) => void;
+      onDocChange?: () => void;
+      onSubmit?: () => void;
+    }
+  >(function FakeChatInput({ onEmptyChange, onDocChange, onSubmit }, ref) {
     const el = React.useRef<HTMLTextAreaElement>(null);
+    const blank = React.useRef(true);
+    const changed = (value: string) => {
+      const next = value.trim().length === 0;
+      if (next !== blank.current) {
+        blank.current = next;
+        onEmptyChange?.(next);
+      }
+      onDocChange?.();
+    };
     React.useImperativeHandle(ref, () => ({
       focus: () => el.current?.focus(),
       blur: () => el.current?.blur(),
       getValue: () => el.current?.value ?? "",
       setValue: (t: string) => {
         if (el.current) el.current.value = t;
+        changed(t);
       },
       clear: () => {
         if (el.current) el.current.value = "";
+        changed("");
       },
       getMentions: () => [],
       insertMention: () => {},
-      view: () => null,
+      replaceRange: () => {},
+      insertText: () => {},
     }));
     return (
       <textarea
         aria-label="Message"
         ref={el}
-        onChange={(e) => onChange?.(e.target.value)}
+        onChange={(e) => changed(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();

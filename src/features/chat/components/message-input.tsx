@@ -48,18 +48,23 @@ import { loadCachedAcpModels } from "../lib/acp-models-cache";
 import { capitalizeModelName, modelLabel } from "../lib/model-label";
 import { ModelPicker, type PickerAgent } from "./model-picker";
 import { onModelPickerRequest } from "../lib/model-picker-events";
-// `ChatInput` pulls in CodeMirror (~870 KB) via `cm-mention-extension`.
+// `ChatInput` pulls in Tiptap and ProseMirror (the shared composer core).
 // We import it dynamically so the chunk is not in the initial preload set.
 // The import is kicked off at module-evaluation time (below, outside the
 // component) so the chunk starts downloading the moment this module is
 // reached in the import graph — *before* MessageInput even mounts. Until
 // the chunk resolves the composer renders a same-sized empty placeholder
-// so the panel doesn't reflow when CM lands.
+// so the panel doesn't reflow when the editor lands.
 //
 // `MentionPicker` only mounts when the user types `@`, so we let its chunk
 // load purely on demand — no eager preload (that would add a wasted Vite
 // roundtrip in dev for every MessageInput mount).
-import type { ChatInput as ChatInputComponent, ChatInputHandle } from "./chat-input";
+import type {
+  ChatInput as ChatInputComponent,
+  ChatInputHandle,
+  MentionTrigger,
+  SlashTrigger,
+} from "./chat-input";
 import type {
   MentionPicker as MentionPickerComponent,
   MentionPickerHandle,
@@ -109,17 +114,14 @@ import { toast } from "sonner";
 import { useComposerFileDrop } from "../hooks/use-composer-file-drop";
 import { scratchPathForFile } from "@/lib/scratch-file";
 import { useAppStore } from "@/features/app/stores/app-store";
-import type { MentionTrigger } from "../lib/cm-mention-extension";
-import type { SlashTrigger } from "../lib/cm-slash-extension";
-// Value import — MUST come from the CodeMirror-free module, not from
-// `cm-slash-extension` (see `cm-clear-range.ts`), or the composer's dynamic
-// `import("./chat-input")` boundary below is defeated and the CodeMirror
-// vendor chunk lands in the eager boot graph.
-import { clearSlashRange } from "../lib/cm-clear-range";
+// Value imports from the composer stay editor-free: anything that imports
+// Tiptap at module scope would pull it into this eager module's graph and
+// defeat the dynamic `import("./chat-input")` boundary below.
+import { useComposerDraft } from "@/components/composer/use-composer-draft";
 import type { MentionData } from "../lib/mentions";
 import { COMMENT_LINK_EVENT, type CommentLinkDetail } from "../lib/comment-mentions";
 
-// Start the CodeMirror chunk download at module-evaluation time. Vite still
+// Start the editor chunk download at module-evaluation time. Vite still
 // excludes it from `<link rel="modulepreload">` because the static analysis
 // only sees a dynamic `import()`. The promise is reused by every MessageInput
 // instance.
@@ -938,49 +940,41 @@ export function MessageInput({
   }, [agentType, availableCommands]);
   const queue = useChatStore((s) => s.queues[tabId] ?? EMPTY_QUEUE);
 
-  // CodeMirror owns the document; React only needs the empty↔non-empty EDGE
-  // (for the submit button's tri-state). The old shape mirrored every doc
-  // change into `useState` — re-rendering this whole component, footer menus
-  // included, per keystroke — and ran an immer store write per keystroke via a
-  // draft-sync effect (fanning out to every chat-store selector in the app).
-  // Now the text lives in a ref, `hasText` flips only on the edge, and the
-  // per-tab draft mirror is a 300ms trailing debounce + a flush on unmount
-  // (tab switches unmount this component, so nothing is lost; the live-insert
-  // paths go through `atlas:chat-insert`, not the draft).
-  //
-  // Initial seed reads the per-tab draft from chat-store. `useState`'s lazy
-  // initializer runs once per mount with the mount-time tabId — exactly right.
-  const [initialDraft] = useState(() => useChatStore.getState().drafts[tabId] ?? "");
-  const valueRef = useRef(initialDraft);
-  const [hasText, setHasText] = useState(() => initialDraft.trim().length > 0);
+  // The editor owns the document; React only needs the empty↔non-empty EDGE
+  // (for the submit button's tri-state), which the editor reports as an edge
+  // (`onEmptyChange`) — a keystroke re-renders nothing here. The per-tab
+  // draft mirror is `useComposerDraft`: a 300ms trailing debounce + a flush on
+  // unmount (tab switches unmount this component, so nothing is lost; the
+  // live-insert paths go through `atlas:chat-insert`, not the draft).
   const inputRef = useRef<ChatInputHandle>(null);
-
   const { setDraft } = useChatStore.use.actions();
-  const draftTimer = useRef<number | null>(null);
-  // Every path that updates the composer — typing, slash insertion, queue
-  // recall — routes through this (it is the ChatInput onChange), so the ref,
-  // the edge state and the draft mirror can't drift apart.
-  const setValue = useCallback(
-    (text: string) => {
-      valueRef.current = text;
-      const next = text.trim().length > 0;
-      setHasText((prev) => (prev === next ? prev : next));
-      if (draftTimer.current !== null) window.clearTimeout(draftTimer.current);
-      draftTimer.current = window.setTimeout(() => {
-        draftTimer.current = null;
-        setDraft(tabId, valueRef.current);
-      }, 300);
-    },
-    [tabId, setDraft],
+  const draft = useComposerDraft(
+    tabId,
+    () => useChatStore.getState().drafts[tabId] ?? "",
+    (text) => setDraft(tabId, text),
+    () => inputRef.current?.getValue(),
   );
-  useEffect(() => {
-    return () => {
-      if (draftTimer.current !== null) window.clearTimeout(draftTimer.current);
-      setDraft(tabId, valueRef.current);
-    };
-  }, [tabId, setDraft]);
+  const valueRef = draft.latest;
+  const [hasText, setHasText] = useState(() => draft.initialValue.trim().length > 0);
+  const onEmptyChange = useCallback((blank: boolean) => setHasText(!blank), []);
+  // Every programmatic rewrite — reply, prefill, insert, queue recall — goes
+  // through here. Before the editor chunk has landed there is no editor to
+  // write to, so the text waits in the draft and seeds the editor on mount.
+  const writeComposer = useCallback(
+    (text: string) => {
+      const input = inputRef.current;
+      if (input) {
+        input.setValue(text);
+        return;
+      }
+      valueRef.current = text;
+      setHasText(text.trim().length > 0);
+      setDraft(tabId, text);
+    },
+    [tabId, setDraft, valueRef],
+  );
 
-  // The CM chunk started downloading at module-eval time (see the top of this
+  // The editor chunk started downloading at module-eval time (see the top of this
   // file). Mirror the resolution into component state so React re-renders
   // once the component class is available. We never render a textarea
   // fallback — instead the placeholder div below holds the layout slot at
@@ -1074,7 +1068,7 @@ export function MessageInput({
   const handleMentionSelect = useCallback((mention: MentionData) => {
     const t = triggerRef.current;
     if (!t) return;
-    inputRef.current?.insertMention(mention, t.from, t.to);
+    inputRef.current?.insertMention(mention, { from: t.from, to: t.to });
     // Trigger naturally closes when the doc no longer has an `@…` before
     // the caret; the plugin will fire the null transition for us.
   }, []);
@@ -1417,6 +1411,30 @@ export function MessageInput({
     [imageSupported, insertFileChips],
   );
 
+  // A paste over the large-paste limit (`isLargePaste`: ~4,000 characters or
+  // 80 lines) — a log, a stack dump, a whole file — rides the way an attached
+  // file does: spooled to a scratch `.txt` and referenced by a path chip, so
+  // the agent receives it as an ACP `ResourceLink` (`compose_prompt`) and the
+  // editor never holds it. If the spool fails the text is pasted after all;
+  // losing what the user copied is worse than a long prompt.
+  const handlePasteLargeText = useCallback(
+    (text: string) => {
+      const lines = text.split("\n").length;
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      const file = new File([text], `pasted-text-${lines}-lines-${stamp}.txt`, {
+        type: "text/plain",
+      });
+      void scratchPathForFile(file)
+        .then((path) => insertFileChips([path]))
+        .catch((err) => {
+          console.warn("large paste spool failed:", err);
+          inputRef.current?.insertText(text);
+        });
+      return true;
+    },
+    [insertFileChips],
+  );
+
   // `submit` (below) is defined after `handleSlashSelect` but the latter
   // needs to invoke it — routed through a ref (set right after `submit` is
   // declared) rather than a direct reference, since a `useCallback` deps
@@ -1427,14 +1445,16 @@ export function MessageInput({
   const handleSlashSelect = useCallback(
     (cmd: SlashCommand) => {
       const t = slashTriggerRef.current;
-      const view = inputRef.current?.view();
-      if (!t || !view) return;
+      const input = inputRef.current;
+      if (!t || !input) return;
+      // An Atlas-local command leaves no literal `/login` behind.
+      const clearSlashRange = () => input.replaceRange(t.from, t.to, "");
 
       if (cmd.handler === "agent-login") {
         // An Atlas-handled command (S1): every agent opens the same
         // `AgentOAuthModal`. `reason` is passed so the modal can tell an
         // "agent wants a provider key" failure from a plain "not signed in".
-        clearSlashRange(view, t.from, t.to);
+        clearSlashRange();
         setSlashTrigger(null);
         promptSignIn(agentType, { reason: lastAuthReasonRef.current ?? undefined });
         inputRef.current?.focus();
@@ -1442,7 +1462,7 @@ export function MessageInput({
       }
       if (cmd.handler === "fork") {
         // Same flow as the header's "branch from here" menu item.
-        clearSlashRange(view, t.from, t.to);
+        clearSlashRange();
         setSlashTrigger(null);
         forkSessionToNewTab(tabId);
         inputRef.current?.focus();
@@ -1464,7 +1484,7 @@ export function MessageInput({
       // agent would just surface an error. `/login` bypasses this gate
       // above because it's the path that fixes "not authed".
       if (disabled) {
-        clearSlashRange(view, t.from, t.to);
+        clearSlashRange();
         setSlashTrigger(null);
         return;
       }
@@ -1472,13 +1492,9 @@ export function MessageInput({
         // Drop `/<name> ` into the composer and put the caret at the
         // end so the user can fill in the required args. Don't send
         // until they press Enter.
-        const insertText = `/${cmd.name} `;
-        view.dispatch({
-          changes: { from: t.from, to: t.to, insert: insertText },
-          selection: { anchor: t.from + insertText.length },
-        });
+        input.replaceRange(t.from, t.to, `/${cmd.name} `);
         setSlashTrigger(null);
-        inputRef.current?.focus();
+        input.focus();
         return;
       }
 
@@ -1486,11 +1502,7 @@ export function MessageInput({
       // typed token (the query may be a prefix, e.g. "he" → "help"). Since
       // the trigger can sit mid-message, replacing just [from, to] preserves
       // any surrounding text instead of wiping the whole composer.
-      const insertText = `/${cmd.name}`;
-      view.dispatch({
-        changes: { from: t.from, to: t.to, insert: insertText },
-        selection: { anchor: t.from + insertText.length },
-      });
+      input.replaceRange(t.from, t.to, `/${cmd.name}`);
       setSlashTrigger(null);
       if (!t.atStart) {
         // Mid-message: complete the text and stop. Only a command at byte 0
@@ -1508,7 +1520,7 @@ export function MessageInput({
     [disabled, agentType, tabId],
   );
 
-  // Forward Up/Down/Enter/Esc/Backspace/Tab from CodeMirror to whichever
+  // Forward Up/Down/Enter/Esc/Backspace/Tab from the editor to whichever
   // picker is open. Slash and mention pickers are mutually exclusive in
   // practice (each trigger requires its own sigil to open the token being
   // typed), but we still route deterministically.
@@ -1531,7 +1543,7 @@ export function MessageInput({
             setSlashTrigger(null);
             return true;
           case "Backspace":
-            // Let CM delete a query char or the `/` itself (which closes
+            // Let the editor delete a query char or the `/` itself (which closes
             // the picker via the trigger detector).
             return false;
           case "Tab": {
@@ -1552,13 +1564,7 @@ export function MessageInput({
             // lands right after a trailing space, which the trigger
             // detector reads as "hit whitespace" and closes the picker on
             // its own — same as if the user had typed the space by hand.
-            const view = inputRef.current?.view();
-            if (!view) return true;
-            const insertText = `/${active.name} `;
-            view.dispatch({
-              changes: { from: st.from, to: st.to, insert: insertText },
-              selection: { anchor: st.from + insertText.length },
-            });
+            inputRef.current?.replaceRange(st.from, st.to, `/${active.name} `);
             return true;
           }
         }
@@ -1583,14 +1589,14 @@ export function MessageInput({
           return true;
         case "Backspace":
           // Only consume Backspace when at a sublevel AND the query is
-          // empty — otherwise let CM delete a character in the query (or
+          // empty — otherwise let the editor delete a character in the query (or
           // the `@` itself, which closes the picker via the trigger
           // detector).
           if (t.query === "" && p.goBack()) return true;
           return false;
         case "Tab":
-          // Not handled for the mention picker — fall through to CM's
-          // default Tab handling (list indent / outdent).
+          // Not handled for the mention picker — fall through to the
+          // composer's Tab (list indent / outdent).
           return false;
       }
     },
@@ -1598,7 +1604,7 @@ export function MessageInput({
   );
 
   // Auto-focus the composer whenever this panel mounts (tab switch back into
-  // chat). If the CodeMirror chunk hasn't resolved yet, the next re-render
+  // chat). If the editor chunk hasn't resolved yet, the next re-render
   // (driven by `LazyChatInput` flipping non-null) re-runs this effect and
   // focuses the real input as soon as it exists.
   useEffect(() => {
@@ -1615,15 +1621,13 @@ export function MessageInput({
         .split("\n")
         .map((l) => `> ${l}`)
         .join("\n");
-      const cur = inputRef.current?.getValue() ?? "";
-      const next = `${quoted}\n\n${cur}`;
-      inputRef.current?.setValue(next);
-      setValue(next);
+      const cur = inputRef.current?.getValue() ?? valueRef.current;
+      writeComposer(`${quoted}\n\n${cur}`);
       requestAnimationFrame(() => inputRef.current?.focus());
     };
     window.addEventListener("atlas:chat-reply", handler);
     return () => window.removeEventListener("atlas:chat-reply", handler);
-  }, []);
+  }, [writeComposer, valueRef]);
 
   // Prefill the composer with raw text (empty-state prompt chips, a user row's
   // "Edit as new message"). Unlike "reply" this replaces the value verbatim (no
@@ -1638,16 +1642,14 @@ export function MessageInput({
       if (!detail?.text) return;
       if (detail.tabId != null && detail.tabId !== tabId) return;
       const previous = inputRef.current?.getValue() ?? valueRef.current;
-      inputRef.current?.setValue(detail.text);
-      setValue(detail.text);
+      writeComposer(detail.text);
       requestAnimationFrame(() => inputRef.current?.focus());
       if (previous.trim() && previous !== detail.text) {
         toast("Replaced your draft", {
           action: {
             label: "Undo",
             onClick: () => {
-              inputRef.current?.setValue(previous);
-              setValue(previous);
+              writeComposer(previous);
               requestAnimationFrame(() => inputRef.current?.focus());
             },
           },
@@ -1656,7 +1658,7 @@ export function MessageInput({
     };
     window.addEventListener("atlas:chat-prefill", handler);
     return () => window.removeEventListener("atlas:chat-prefill", handler);
-  }, [tabId, setValue]);
+  }, [tabId, writeComposer, valueRef]);
 
   // Focus the composer on demand. The sidebar "+ new chat" button fires this
   // when it reuses an already-empty tab: no remount happens in that case, so
@@ -1682,14 +1684,12 @@ export function MessageInput({
       if (detail.tabId ? detail.tabId !== tabId : useChatStore.getState().activeSessionId !== tabId)
         return;
       const cur = inputRef.current?.getValue() ?? valueRef.current;
-      const next = insertedDraft(cur, detail);
-      inputRef.current?.setValue(next);
-      setValue(next);
+      writeComposer(insertedDraft(cur, detail));
       requestAnimationFrame(() => inputRef.current?.focus());
     };
     window.addEventListener("atlas:chat-insert", handler);
     return () => window.removeEventListener("atlas:chat-insert", handler);
-  }, [tabId]);
+  }, [tabId, writeComposer, valueRef]);
 
   // A comment popover's link button: this tab's own recorded session's
   // comment, as a chip at the caret. Linking one already in the draft just
@@ -1703,16 +1703,7 @@ export function MessageInput({
       const linked = input
         .getMentions()
         .some((m) => m.kind === "comment" && m.id === detail.mention.id);
-      if (!linked) {
-        const view = input.view();
-        const doc = view?.state.doc;
-        const head = view?.state.selection.main.head ?? 0;
-        const before = doc && head > 0 ? doc.sliceString(head - 1, head) : "";
-        if (before && !/\s/.test(before)) {
-          view?.dispatch({ changes: { from: head, insert: " " }, selection: { anchor: head + 1 } });
-        }
-        input.insertMention(detail.mention);
-      }
+      if (!linked) input.insertMention(detail.mention, { padBefore: true });
       requestAnimationFrame(() => inputRef.current?.focus());
     };
     window.addEventListener(COMMENT_LINK_EVENT, handler);
@@ -1731,7 +1722,7 @@ export function MessageInput({
       const attached = input
         .getMentions()
         .some((m) => m.kind === "past_session" && m.id === detail.mention.id);
-      if (!attached) input.insertMention(detail.mention, 0, 0);
+      if (!attached) input.insertMention(detail.mention, { atStart: true });
       requestAnimationFrame(() => inputRef.current?.focus());
     };
     window.addEventListener(SESSION_HANDOFF_EVENT, handler);
@@ -1757,15 +1748,13 @@ export function MessageInput({
     // too). They drive app affordances, so they never reach the agent.
     if (trimmed === "/fork" && agentCatalogEntry(agentType)?.supportsFork === true) {
       forkSessionToNewTab(tabId);
-      inputRef.current?.clear();
-      setValue("");
+      writeComposer("");
       return;
     }
     if (trimmed === "/queue" || trimmed.startsWith("/queue ")) {
       const queued = trimmed.slice("/queue".length).trim();
       if (queued) enqueueMessage(tabId, queued);
-      inputRef.current?.clear();
-      setValue("");
+      writeComposer("");
       return;
     }
     const mentions = inputRef.current?.getMentions() ?? [];
@@ -1782,12 +1771,13 @@ export function MessageInput({
       onSend(trimmed, mentions, images.length ? images : undefined);
       if (images.length) setStagedImages([]);
     }
-    inputRef.current?.clear();
-    setValue("");
+    // Through `setValue`, not `clear`, so the send is one undo step away.
+    writeComposer("");
     // The debounced draft mirror will collapse the empty value into a
     // `delete s.drafts[tabId]`, so no explicit clearDraft call is needed.
   }, [
-    setValue,
+    writeComposer,
+    valueRef,
     running,
     onSend,
     onStop,
@@ -1839,8 +1829,7 @@ export function MessageInput({
                   onEdit={() => {
                     const cur = inputRef.current?.getValue() ?? "";
                     const merged = cur.trim() ? `${cur}\n${q}` : q;
-                    inputRef.current?.setValue(merged);
-                    setValue(merged);
+                    writeComposer(merged);
                     removeQueueItem(tabId, i);
                     requestAnimationFrame(() => inputRef.current?.focus());
                   }}
@@ -1965,11 +1954,10 @@ export function MessageInput({
             className={cn(
               // `min-h-[44px]`: the send button is absolutely positioned 8px
               // from the top at 28px tall, so it needs 36px of field to sit
-              // inside. CodeMirror's own min-height normally provides it —
-              // but if its theme fails to inject (see globals.css's
-              // `.atlas-chat-cm-host` block) the field collapses and the
-              // button hangs out over the footer. The floor makes the
-              // geometry hold even with no editor mounted at all.
+              // inside. The editor's own min-height (`.atlas-chat-composer`
+              // in globals.css) normally provides it; the floor makes the
+              // geometry hold before the editor chunk has landed, or with no
+              // editor mounted at all.
               "relative m-1 min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--background)]",
               "transition-[border-color,box-shadow] duration-150",
               // Focus treatment at HALF strength: the full border-focus +
@@ -2001,18 +1989,21 @@ export function MessageInput({
                   ref={inputRef}
                   initialValue={valueRef.current}
                   placeholder={effectivePlaceholder}
-                  onChange={setValue}
+                  projectPath={projectPath}
+                  onEmptyChange={onEmptyChange}
+                  onDocChange={draft.onDocChange}
                   onSubmit={submit}
                   enterToSend={enterToSend}
                   onMentionTrigger={setTrigger}
                   onSlashTrigger={setSlashTrigger}
                   onPasteImages={handlePasteImages}
                   onPastePaths={attachPaths}
+                  onPasteLargeText={handlePasteLargeText}
                   keyInterceptor={keyInterceptor}
                 />
               ) : (
                 // Same-height empty slot so the panel layout doesn't reflow when
-                // CodeMirror lands. Non-interactive — by the time the user can
+                // the editor lands. Non-interactive — by the time the user can
                 // visually find this region the chunk has typically resolved.
                 <div aria-hidden="true" style={{ minHeight: 44 }} className="px-4 pt-3 pb-1" />
               )}
@@ -2049,8 +2040,8 @@ export function MessageInput({
                   // the field grows).
                   // Geometry IN PX, not rem: Atlas's UI-scale setting shrinks
                   // the root font-size, so rem utilities (w-7/top-2 → 23px/6.5px
-                  // under scale) drift against CodeMirror's hardcoded 12px/16px
-                  // padding — the ruler-measured misalignment. CM's first text
+                  // under scale) drift against the editor's hardcoded 12px/16px
+                  // padding — the ruler-measured misalignment. The first text
                   // line centers at 12px pad + ~10px half-line = 22px; a 28px
                   // button at 8px top centers at 22px at EVERY UI scale.
                   "absolute top-[8px] right-[8px] flex items-center justify-center w-[28px] h-[28px] rounded-lg border transition-colors",
