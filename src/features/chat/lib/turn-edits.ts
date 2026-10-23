@@ -13,9 +13,13 @@ export interface TurnEdit {
   /**
    * The native engine's unified diff of the file, when that is the turn's
    * only edit to it: hunks with the file's real line numbers, which the
-   * viewer renders as they are instead of diffing `old` against `new`.
+   * viewer renders as they are instead of diffing `old` against `new`. Empty
+   * for a file the turn only moved: there is no diff to show.
    */
   patch?: string;
+  /** The turn deleted the file. Said outright, because an empty file's
+   *  deletion has no text either side to tell it by. */
+  deleted?: true;
 }
 
 export interface TurnEdits {
@@ -30,6 +34,9 @@ export interface TurnEdits {
    * numbers count from the fragment, and the viewer says so.
    */
   excerpts: ReadonlySet<string>;
+  /** A renamed file's previous path, by the path it went to (the one in
+   *  `files`). Absent when nothing was renamed. */
+  renames?: Readonly<Record<string, string>>;
 }
 
 /** How one path's edits fold, as the turn's calls arrive in order. */
@@ -44,6 +51,8 @@ interface Fold {
   /** The engine's hunks, kept while they are the path's only edit. */
   patch: string | null;
   edits: number;
+  /** The last thing the turn did to the file was delete it. */
+  deleted: boolean;
 }
 
 const newFold = (): Fold => ({
@@ -52,12 +61,22 @@ const newFold = (): Fold => ({
   fragmentary: false,
   patch: null,
   edits: 0,
+  deleted: false,
 });
 
 /** A whole file written out. */
 function foldWrite(f: Fold, content: string) {
   f.pair = f.edits === 0 ? { old: "", new: content } : f.pair && { ...f.pair, new: content };
   f.concat = { old: f.concat.old, new: f.concat.new + content };
+  f.deleted = false;
+  f.edits++;
+}
+
+/** A whole file removed, `content` being what it held. */
+function foldDelete(f: Fold, content: string) {
+  f.pair = f.edits === 0 ? { old: content, new: "" } : f.pair && { ...f.pair, new: "" };
+  f.concat = { old: f.concat.old + content, new: f.concat.new };
+  f.deleted = true;
   f.edits++;
 }
 
@@ -109,14 +128,16 @@ function foldHunks(f: Fold, hunks: string) {
  *   applied for real (a string replace), so `Write` then `Edit` reads as the
  *   file the turn left. Otherwise fragments CONCATENATE into an excerpt — all
  *   the record holds — and the viewer says so.
- * - **The native engine's patch** (`{ paths, patch }`) carries each file's
- *   unified diff, or a created file's whole content (`enginePatchFiles`). A
- *   file whose only edit is one diff renders that diff as it is, with real
- *   line numbers. A diff on a file this turn wrote whole is applied to it;
- *   several diffs to one file otherwise fold into an excerpt, like fragments.
+ * - **The native engine's edit** (`{ paths, patch, changes? }`) carries each
+ *   file's unified diff, a created file's whole content, or a deleted one's
+ *   (`enginePatchFiles`). A file whose only edit is one diff renders that
+ *   diff as it is, with real line numbers. A diff on a file this turn wrote
+ *   whole is applied to it; several diffs to one file otherwise fold into an
+ *   excerpt, like fragments. A deletion is its whole old text against
+ *   nothing, so it reads as deleted.
  *
- * A file the turn only deleted contributes no edit at all and simply does not
- * appear, which is the correct answer — there is nothing to browse.
+ * A file another agent deleted (`rm`, a command) contributes no edit at all
+ * and simply does not appear: nothing recorded its text.
  */
 export function collectTurnEdits(
   messages: ChatMessage[],
@@ -129,11 +150,30 @@ export function collectTurnEdits(
   const whole: Record<string, TurnEdit> = {};
   const folds: Record<string, Fold> = {};
   const order: string[] = [];
+  const renames: Record<string, string> = {};
 
   const see = (path: string) => {
     if (!order.includes(path)) order.push(path);
   };
   const foldOf = (path: string) => (folds[path] ??= newFold());
+  /** A file the turn moved: whatever it already did to `from` carries on
+   *  under `to`, in the same place in the list, so an edit and then a
+   *  rename read as one file, not two. */
+  const moveTo = (from: string, to: string) => {
+    if (from === to) return;
+    const origin = renames[from] ?? from;
+    delete renames[from];
+    if (origin !== to) renames[to] = origin;
+    if (folds[from] && !folds[to]) folds[to] = folds[from];
+    delete folds[from];
+    if (whole[from] && !whole[to]) whole[to] = whole[from];
+    delete whole[from];
+    const at = order.indexOf(from);
+    if (at >= 0) {
+      if (order.includes(to)) order.splice(at, 1);
+      else order[at] = to;
+    }
+  };
 
   for (let i = run?.start ?? 0; run && i < run.end; i++) {
     for (const tc of messages[i].toolCalls) {
@@ -165,10 +205,15 @@ export function collectTurnEdits(
       }
       for (const file of enginePatchFiles(args) ?? []) {
         if (file.shape === "unknown") continue;
-        const path = toRepoRelative(file.path, repoPath);
+        // A renamed file is shown where it went.
+        const from = toRepoRelative(file.path, repoPath);
+        const path = file.movePath ? toRepoRelative(file.movePath, repoPath) : from;
+        if (file.movePath) moveTo(from, path);
         see(path);
         if (file.shape === "content") foldWrite(foldOf(path), file.text);
-        else foldHunks(foldOf(path), file.text);
+        else if (file.shape === "deleted") foldDelete(foldOf(path), file.text);
+        else if (file.shape === "hunks") foldHunks(foldOf(path), file.text);
+        else foldOf(path);
       }
     }
   }
@@ -178,8 +223,12 @@ export function collectTurnEdits(
   for (const path of order) {
     const fold = folds[path];
     if (whole[path]) sources[path] = whole[path];
+    else if (fold.deleted && fold.pair) sources[path] = { ...fold.pair, deleted: true };
     else if (fold.pair) sources[path] = fold.pair;
-    else if (fold.edits === 1 && fold.patch !== null) {
+    else if (fold.edits === 0) {
+      // Moved, never edited: a rename with nothing to diff.
+      sources[path] = { old: "", new: "", patch: "" };
+    } else if (fold.edits === 1 && fold.patch !== null) {
       sources[path] = { ...fold.concat, patch: fold.patch };
     } else {
       sources[path] = fold.concat;
@@ -187,12 +236,18 @@ export function collectTurnEdits(
     }
   }
 
-  const wanted = preferredFile ? toRepoRelative(preferredFile, repoPath) : "";
+  // The row that was clicked may name the file by the path it had before
+  // the turn renamed it.
+  let wanted = preferredFile ? toRepoRelative(preferredFile, repoPath) : "";
+  if (wanted && !sources[wanted]) {
+    wanted = Object.keys(renames).find((to) => renames[to] === wanted) ?? wanted;
+  }
   return {
     files: order,
     initial: wanted && sources[wanted] ? wanted : (order[0] ?? ""),
     sources,
     excerpts,
+    ...(Object.keys(renames).length > 0 ? { renames } : {}),
   };
 }
 
@@ -224,22 +279,28 @@ function snippetOf(message: ChatMessage | undefined): string {
     : prose;
 }
 
-/** The paths one tool call edits, by any shape `collectTurnEdits` reads. */
-function editedPathsOf(tc: ChatMessage["toolCalls"][number], repoPath: string): string[] {
-  const paths: string[] = [];
+/** Add the paths one tool call edits to `paths`, by any shape
+ *  `collectTurnEdits` reads. A rename replaces the path it moved from, as it
+ *  does there. */
+function addEditedPaths(
+  paths: Set<string>,
+  tc: ChatMessage["toolCalls"][number],
+  repoPath: string,
+) {
   for (const block of tc.contentBlocks ?? []) {
-    if (block.type === "diff") paths.push(toRepoRelative(block.path, repoPath));
+    if (block.type === "diff") paths.add(toRepoRelative(block.path, repoPath));
   }
   const args = tc.arguments ?? {};
   if (getEditParts(tc.toolName, args, tc.kind).length > 0) {
     const abs = getFilePathFromInput(args);
-    if (abs) paths.push(toRepoRelative(abs, repoPath));
-  } else {
-    for (const file of enginePatchFiles(args) ?? []) {
-      if (file.shape !== "unknown") paths.push(toRepoRelative(file.path, repoPath));
-    }
+    if (abs) paths.add(toRepoRelative(abs, repoPath));
+    return;
   }
-  return paths;
+  for (const file of enginePatchFiles(args) ?? []) {
+    if (file.shape === "unknown") continue;
+    if (file.movePath) paths.delete(toRepoRelative(file.path, repoPath));
+    paths.add(toRepoRelative(file.movePath ?? file.path, repoPath));
+  }
 }
 
 /**
@@ -266,7 +327,7 @@ export function listEditTurns(messages: ChatMessage[], repoPath: string): EditTu
     for (; i < messages.length && messages[i].role === "assistant"; i++) {
       if (!isEmptyMessage(messages[i])) shown = true;
       for (const tc of messages[i].toolCalls) {
-        for (const path of editedPathsOf(tc, repoPath)) paths.add(path);
+        addEditedPaths(paths, tc, repoPath);
       }
     }
     run.end = i;

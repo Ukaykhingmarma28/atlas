@@ -666,6 +666,19 @@ function liveMarkerLabel(marker: MarkerRow): string {
   }
 }
 
+/** Where the engine moved the file its arguments name, read off its `changes`
+ *  list without parsing the patch: a renamed file's row opens where it went. */
+function movedPathOf(args: Record<string, unknown>, path: string | null): string | null {
+  if (!path || !Array.isArray(args.changes)) return null;
+  for (const change of args.changes as unknown[]) {
+    if (!change || typeof change !== "object") continue;
+    const c = change as { path?: unknown; movePath?: unknown };
+    if (c.path !== path) continue;
+    return typeof c.movePath === "string" && c.movePath.length > 0 ? c.movePath : null;
+  }
+  return null;
+}
+
 /**
  * One tool call → one marker. Codex shows a single line with the command
  * truncated and no separate result row; state lives in the glyph and the full
@@ -715,7 +728,8 @@ function markerFor(tc: ToolCallDisplay, turnId: string, first: boolean): MarkerR
       : diffEditOf(tc);
   // The path the marker reports: whatever the arguments named, else whatever
   // the diff blocks did. It is what the diff viewer lands on.
-  const path = argsPath ?? edit?.path ?? null;
+  // A file the engine renamed is reported where it went.
+  const path = movedPathOf(args, argsPath) ?? argsPath ?? edit?.path ?? null;
 
   const orgTool = orgToolOf(tc.toolName);
   const memoryTool = memoryToolOf(tc.toolName);

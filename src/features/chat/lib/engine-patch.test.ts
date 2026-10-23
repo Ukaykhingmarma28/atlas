@@ -124,3 +124,164 @@ describe("a native edit as the turn's record keeps it", () => {
     expect(isFileCreated(call.toolName, call.arguments, call.kind)).toBe(false);
   });
 });
+
+describe("the edit's per-file `changes`", () => {
+  // Two whole contents side by side: `patch` alone cannot split them, and
+  // cannot say the second was a deletion. Each entry names its file's lines
+  // of `patch`, half-open, the rename's stopping before its `Moved to:` note
+  // (the ranges `file_changes_json` in the engine sink writes).
+  const args = {
+    paths: ["/r/a.rs", "/r/b.rs", "/r/c.rs", "/r/d.rs"],
+    patch: join(
+      created,
+      "gone\n",
+      `${update}\n\nMoved to: /r/z.rs`,
+      "@@ -1,3 +1,4 @@\n a\n+b\n\n c\n",
+    ),
+    changes: [
+      { path: "/r/a.rs", kind: "add", lines: [0, 3] },
+      { path: "/r/b.rs", kind: "delete", lines: [3, 5] },
+      { path: "/r/c.rs", kind: "rename", lines: [5, 11], movePath: "/r/z.rs" },
+      { path: "/r/d.rs", kind: "update", lines: [13, 19] },
+    ],
+  };
+
+  it("is read first: each file's kind and counts, and where a rename went", () => {
+    expect(enginePatchFiles(args)).toEqual([
+      { path: "/r/a.rs", shape: "content", text: created, added: 2, removed: 0 },
+      { path: "/r/b.rs", shape: "deleted", text: "gone\n", added: 0, removed: 1 },
+      {
+        path: "/r/c.rs",
+        shape: "hunks",
+        text: update,
+        added: 1,
+        removed: 0,
+        movePath: "/r/z.rs",
+      },
+      // An empty context line gets its space back here too.
+      {
+        path: "/r/d.rs",
+        shape: "hunks",
+        text: "@@ -1,3 +1,4 @@\n a\n+b\n \n c\n",
+        added: 1,
+        removed: 0,
+      },
+    ]);
+  });
+
+  it("counts a deletion as removed lines, never as a created file", () => {
+    expect(turnFilesOfToolCall({ toolName: "Edit", kind: "edit", arguments: args })[1]).toEqual({
+      path: "/r/b.rs",
+      kind: "edit",
+      added: 0,
+      removed: 1,
+      created: false,
+    });
+  });
+
+  it("lists a renamed file where it went, and says where it came from", () => {
+    expect(turnFilesOfToolCall({ toolName: "Edit", kind: "edit", arguments: args })[2]).toEqual({
+      path: "/r/z.rs",
+      kind: "edit",
+      added: 1,
+      removed: 0,
+      created: false,
+      movedFrom: "/r/c.rs",
+    });
+  });
+
+  it.each([
+    ["an unknown kind", { kind: "mystery", lines: [0, 6] }],
+    ["a range past the end", { kind: "update", lines: [0, 99] }],
+    ["a backward range", { kind: "update", lines: [4, 2] }],
+    ["a fractional index", { kind: "update", lines: [0.5, 6] }],
+    ["no range", { kind: "update" }],
+  ])("falls back to splitting `patch` for %s", (_, entry) => {
+    const files = enginePatchFiles({
+      paths: ["/r/a.rs"],
+      patch: update,
+      changes: [{ path: "/r/a.rs", ...entry }],
+    })!;
+    expect(files.map((f) => [f.shape, f.text])).toEqual([["hunks", update]]);
+  });
+
+  it("falls back when ranges overlap", () => {
+    const files = enginePatchFiles({
+      paths: ["/r/a.rs", "/r/b.rs"],
+      patch: join(update, update),
+      changes: [
+        { path: "/r/a.rs", kind: "update", lines: [0, 6] },
+        { path: "/r/b.rs", kind: "update", lines: [3, 12] },
+      ],
+    })!;
+    expect(files.map((f) => f.shape)).toEqual(["hunks", "hunks"]);
+    expect(files[1].text).toBe(update);
+  });
+});
+
+describe("a rename in a patch with no `changes`", () => {
+  it("still finds where the file went, from the engine's note", () => {
+    const [file] = enginePatchFiles({
+      paths: ["/r/c.rs"],
+      patch: `${update}\n\nMoved to: /r/z.rs`,
+    })!;
+    expect(file).toMatchObject({ shape: "hunks", text: update, movePath: "/r/z.rs" });
+  });
+
+  it("never reads a created file's first line as a rename note", () => {
+    // One blank line is only the join: what follows is the next file.
+    const content = "Moved to: /r/elsewhere.rs\nsecond\n";
+    const files = enginePatchFiles({
+      paths: ["/r/a.rs", "/r/b.rs"],
+      patch: join(update, content),
+    })!;
+    expect(files[0]).toEqual({
+      path: "/r/a.rs",
+      shape: "hunks",
+      text: update,
+      added: 1,
+      removed: 0,
+    });
+    expect(files[1]).toEqual({
+      path: "/r/b.rs",
+      shape: "content",
+      text: content,
+      added: 2,
+      removed: 0,
+    });
+  });
+
+  it("reads a file moved and not edited as renamed", () => {
+    const files = enginePatchFiles({
+      paths: ["/r/c.rs", "/r/a.rs"],
+      patch: join("\n\nMoved to: /r/z.rs", update),
+    })!;
+    expect(files).toEqual([
+      { path: "/r/c.rs", shape: "renamed", text: "", added: 0, removed: 0, movePath: "/r/z.rs" },
+      { path: "/r/a.rs", shape: "hunks", text: update, added: 1, removed: 0 },
+    ]);
+  });
+});
+
+describe("a rename with no diff in `changes`", () => {
+  it("is renamed, with nothing to show under it", () => {
+    const args = {
+      paths: ["/r/c.rs"],
+      patch: "\n\nMoved to: /r/z.rs",
+      changes: [{ path: "/r/c.rs", kind: "rename", lines: [0, 0], movePath: "/r/z.rs" }],
+    };
+    expect(enginePatchFiles(args)).toEqual([
+      { path: "/r/c.rs", shape: "renamed", text: "", added: 0, removed: 0, movePath: "/r/z.rs" },
+    ]);
+    expect(turnFilesOfToolCall({ toolName: "Edit", kind: "edit", arguments: args })).toEqual([
+      {
+        path: "/r/z.rs",
+        kind: "edit",
+        added: 0,
+        removed: 0,
+        created: false,
+        movedFrom: "/r/c.rs",
+      },
+    ]);
+  });
+});

@@ -185,12 +185,14 @@ export function turnFilesOfToolCall(call: {
   if (kind === "edit" && getEditParts(call.toolName, call.arguments, call.kind).length === 0) {
     const engine = enginePatchFiles(call.arguments);
     if (engine) {
+      // A renamed file is listed where it went.
       return engine.map((f) => ({
-        path: f.path,
+        path: f.movePath ?? f.path,
         kind,
         added: f.added,
         removed: f.removed,
         created: f.shape === "content",
+        ...(f.movePath ? { movedFrom: f.path } : {}),
       }));
     }
   }

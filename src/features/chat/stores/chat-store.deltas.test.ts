@@ -752,6 +752,55 @@ describe("applyAgentDelta: turn terminals", () => {
     expect(session().toolRevision).toBe((revision ?? 0) + 1);
   });
 
+  it("a file edited, then renamed, in one turn is one file where it went", () => {
+    boundTab();
+    const hunks = "@@ -1 +1 @@\n-c\n+d\n";
+    apply(
+      d("status", { status: "running", turn_seq: 1 }),
+      d("tool_call_upserted", {
+        message_id: "t",
+        tool_call: wireTool("tc1", {
+          tool_name: "Edit /tmp/project/c.rs",
+          kind: "edit",
+          status: "completed",
+          arguments: { paths: ["/tmp/project/c.rs"], patch: "@@ -1 +1 @@\n-a\n+b\n" },
+        }),
+      }),
+      d("tool_call_upserted", {
+        message_id: "t",
+        tool_call: wireTool("tc2", {
+          tool_name: "Edit /tmp/project/c.rs",
+          kind: "edit",
+          status: "completed",
+          arguments: {
+            paths: ["/tmp/project/c.rs"],
+            patch: `${hunks}\n\nMoved to: /tmp/project/d.rs`,
+            changes: [
+              {
+                path: "/tmp/project/c.rs",
+                kind: "rename",
+                lines: [0, 4],
+                movePath: "/tmp/project/d.rs",
+              },
+            ],
+          },
+        }),
+      }),
+      d("text_chunk", { message_id: "m", delta: "Renamed." }),
+      d("turn_finished", { stop_reason: "end_turn", turn_seq: 1 }),
+    );
+    expect(last().turnSummary?.files).toEqual([
+      {
+        path: "/tmp/project/d.rs",
+        kind: "edit",
+        added: 2,
+        removed: 2,
+        created: false,
+        movedFrom: "/tmp/project/c.rs",
+      },
+    ]);
+  });
+
   it("turn_failed fails live tool calls, says what went wrong, and errors the session", () => {
     boundTab();
     apply(

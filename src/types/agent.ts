@@ -188,6 +188,8 @@ export interface TurnFile {
   /** For edits only: the file was created new (all edit ops had empty `old`) →
    *  git-status "A"; otherwise "M". Undefined for reads. */
   created?: boolean;
+  /** For a renamed file, the path it had before; `path` is where it went. */
+  movedFrom?: string;
 }
 
 export interface ChatSession {
