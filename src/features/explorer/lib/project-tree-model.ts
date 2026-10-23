@@ -148,8 +148,10 @@ export class ProjectTreeModel {
   private inflight = new Map<string, Promise<void>>();
   /** Waiters for a queued (not yet sent) directory. */
   private waiting = new Map<string, Array<() => void>>();
-  /** Per directory: the request generation, so a slow stale answer never
-   *  overwrites a fresher one. */
+  /** Per directory with a request out: its generation, so a slow stale
+   *  answer never overwrites a fresher one. An entry lives only while its
+   *  request is in flight; an answer with no entry (forgotten, superseded)
+   *  is dropped. */
   private generation = new Map<string, number>();
   private nextGeneration = 0;
 
@@ -302,7 +304,8 @@ export class ProjectTreeModel {
     let touched = false;
     for (let i = 0; i < paths.length; i++) {
       const path = paths[i];
-      if (this.generation.get(path) !== generations[i]) continue; // superseded
+      if (this.generation.get(path) !== generations[i]) continue; // superseded or forgotten
+      this.generation.delete(path);
       if (this.loading.has(path)) {
         const loading = new Set(this.loading);
         loading.delete(path);
@@ -389,10 +392,9 @@ export class ProjectTreeModel {
     // Deleting the entry being visited is safe for a Map iterator.
     for (const key of this.listings.keys()) if (under(key)) this.listings.delete(key);
     for (const key of this.stale) if (under(key)) this.stale.delete(key);
-    // A load still in flight for a dropped folder must not resurrect it.
-    for (const key of this.generation.keys()) {
-      if (under(key)) this.generation.set(key, ++this.nextGeneration);
-    }
+    // A load still in flight for a dropped folder must not resurrect it:
+    // with its generation gone, its answer reads as superseded.
+    for (const key of this.generation.keys()) if (under(key)) this.generation.delete(key);
     const prune = <T extends ReadonlySet<string> | ReadonlyMap<string, unknown>>(
       from: T,
       copy: (from: T) => Set<string> | Map<string, unknown>,

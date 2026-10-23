@@ -533,7 +533,9 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
               if (!header) return;
               const name = (title ?? header.querySelector("[data-title]"))?.textContent?.trim();
               const file = name ? files.find((f) => f.stat.path === name) : undefined;
-              if (!file) return;
+              // A deleted file has nothing on disk to open; its diff is all
+              // there is of it.
+              if (!file || file.stat.status === "deleted") return;
               // Header or name alike open the file, as a right-panel file tab
               // (or the system editor for a file outside the project). The
               // chevron, a button, still folds.

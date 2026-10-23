@@ -358,22 +358,37 @@ fn refuse_parent_components(path: &str) -> Result<(), String> {
 /// A rename that only changes case (`readme.md` → `README.md`). On a
 /// case-insensitive volume (APFS, NTFS) the target "exists", because it is the
 /// source; that must not read as a collision.
+///
+/// It is decided by the parent folder's own listing, not by the names: a
+/// case-sensitive folder (Linux, APFS case-sensitive, NTFS with per-directory
+/// case sensitivity on) can hold `a.txt` and `A.TXT` as two files, and then
+/// the listing names the target exactly. Only when no entry is spelled like
+/// the target is the "existing" target the source itself. One rule on every
+/// platform, so the macOS test run exercises the one Windows ships.
 fn is_case_only_rename(from: &Path, to: &Path) -> bool {
-    if from == to || from.to_string_lossy().to_lowercase() != to.to_string_lossy().to_lowercase() {
+    let (Some(parent), Some(from_name), Some(to_name)) =
+        (from.parent(), from.file_name(), to.file_name())
+    else {
+        return false;
+    };
+    if to.parent() != Some(parent)
+        || from_name == to_name
+        || from_name.to_string_lossy().to_lowercase() != to_name.to_string_lossy().to_lowercase()
+    {
         return false;
     }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        match (fs::symlink_metadata(from), fs::symlink_metadata(to)) {
-            (Ok(a), Ok(b)) => a.dev() == b.dev() && a.ino() == b.ino(),
-            _ => false,
+    let Ok(entries) = fs::read_dir(parent) else {
+        return false;
+    };
+    let mut saw_source = false;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        if name == to_name {
+            return false; // a distinct file already spelled exactly so
         }
+        saw_source |= name == from_name;
     }
-    #[cfg(not(unix))]
-    {
-        true
-    }
+    saw_source
 }
 
 #[tauri::command]
@@ -1113,6 +1128,18 @@ mod tree_op_tests {
         let other = dir.path().join("README.MD.bak");
         fs::write(&other, "y").unwrap();
         assert!(!is_case_only_rename(&from, &other));
+    }
+
+    #[test]
+    fn a_rename_to_another_folder_is_never_case_only() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("sub")).unwrap();
+        let from = dir.path().join("a.txt");
+        fs::write(&from, "x").unwrap();
+        assert!(!is_case_only_rename(
+            &from,
+            &dir.path().join("sub").join("A.txt")
+        ));
     }
 
     #[test]

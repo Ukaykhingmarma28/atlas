@@ -71,6 +71,12 @@ const ReviewPanel = lazy(() =>
     default: m.ReviewPanel,
   })),
 );
+// The project tree as a surface of its own (`files-surface.ts`).
+const FilesPanel = lazy(() =>
+  import("@/features/explorer/components/files-panel").then((m) => ({
+    default: m.FilesPanel,
+  })),
+);
 const SourceControlPanel = lazy(() =>
   import("@/features/git/components/source-control-panel").then((m) => ({
     default: m.SourceControlPanel,
@@ -116,6 +122,7 @@ import {
   Maximize2,
   Minimize2,
   MessagesSquare,
+  FolderTree,
 } from "lucide-react";
 import { PROJECTLESS_TYPES, surfaceMinWidth, type TabType } from "@/lib/constants";
 import { teamChatShown, toggleTeamChat } from "../lib/team-chat";
@@ -132,6 +139,7 @@ const tabIcons: Record<TabType, FallbackIcon> = {
   browser: Globe,
   tasks: CheckSquare,
   editor: Code,
+  files: FolderTree,
   knowledge: Brain,
   "knowledge-graph": Network,
   memory: BrainCircuit,
@@ -840,7 +848,9 @@ const TabContentContainer = memo(function TabContentContainer({
             the same slot here, and without a key React reuses the first tab's
             component — and its state — for the second. Two draft tabs shared
             one Y.Doc that way and wrote each other's content. */}
-        {activeIsNonPersistent && <TabContent key={activeTab.id} tab={activeTab} />}
+        {activeIsNonPersistent && (
+          <TabContent key={activeTab.id} tab={activeTab} projectId={projectId} />
+        )}
       </Suspense>
     </div>
   );
@@ -869,7 +879,11 @@ function PersistentPanel({
   switch (tab.type) {
     case "editor":
       return (
-        <FileTabFrame tabId={tab.id} filePath={tab.data.filePath as string | undefined}>
+        <FileTabFrame
+          tabId={tab.id}
+          projectId={projectId}
+          filePath={tab.data.filePath as string | undefined}
+        >
           <EditorPanel
             tabId={tab.id}
             filePath={tab.data.filePath as string | undefined}
@@ -887,7 +901,7 @@ function PersistentPanel({
       );
     case "pdf":
       return (
-        <FileTabFrame tabId={tab.id} filePath={tab.data.filePath as string}>
+        <FileTabFrame tabId={tab.id} projectId={projectId} filePath={tab.data.filePath as string}>
           <PdfViewer filePath={tab.data.filePath as string} tabId={tab.id} />
         </FileTabFrame>
       );
@@ -1001,10 +1015,14 @@ function PanelLoading() {
   return <PanelSkeleton rows={7} />;
 }
 
-function TabContent({ tab }: { tab: Tab }) {
+function TabContent({ tab, projectId = null }: { tab: Tab; projectId?: string | null }) {
   // A file tab carries the project tree beside the file (see FileTabFrame).
   const framed = (content: React.ReactNode) => (
-    <FileTabFrame tabId={tab.id} filePath={tab.data.filePath as string | undefined}>
+    <FileTabFrame
+      tabId={tab.id}
+      projectId={projectId}
+      filePath={tab.data.filePath as string | undefined}
+    >
       {content}
     </FileTabFrame>
   );
@@ -1017,6 +1035,8 @@ function TabContent({ tab }: { tab: Tab }) {
       return <LogPanel />;
     case "source-control":
       return <SourceControlPanel />;
+    case "files":
+      return <FilesPanel tabId={tab.id} projectId={projectId} />;
     case "media":
       return framed(<MediaViewer filePath={tab.data.filePath as string} />);
     case "svg":

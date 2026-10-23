@@ -1,5 +1,13 @@
 import type { ElementType } from "react";
-import { Code, GitBranch, Globe, MessagesSquare, ScrollText, Terminal } from "lucide-react";
+import {
+  Code,
+  FolderTree,
+  GitBranch,
+  Globe,
+  MessagesSquare,
+  ScrollText,
+  Terminal,
+} from "lucide-react";
 import { AtlasIcon } from "@/components/atlas-icon";
 import type { TabType } from "@/lib/constants";
 import { useLayoutStore } from "../stores/layout-store";
@@ -30,6 +38,7 @@ export const SURFACES: readonly Surface[] = [
   { type: "terminal", label: "Terminal", icon: Terminal, key: "T" },
   { type: "browser", label: "Browser", icon: Globe, key: "B" },
   { type: "editor", label: "New file", icon: Code, key: "N" },
+  { type: "files", label: "Files", icon: FolderTree, key: "F" },
   { type: "source-control", label: "Source control", icon: GitBranch, key: "G" },
   { type: "team-chat", label: "Team chat", icon: MessagesSquare, key: "C" },
   { type: "log", label: "Log", icon: ScrollText, key: "L" },
@@ -37,8 +46,8 @@ export const SURFACES: readonly Surface[] = [
 
 /** Open `surface` as a new tab in split column `groupId`. */
 export function openSurface(surface: Surface, groupId: string): void {
-  // Source control and team chat are one per window; `addTab` focuses the
-  // open one wherever it is.
+  // Source control and team chat are one per window, Files one per project;
+  // `addTab` focuses the open one wherever it is.
   const { addTab } = useLayoutStore.getState().actions;
   const ts = Date.now();
   if (surface.type === "editor") {
@@ -60,7 +69,9 @@ export function openSurface(surface: Surface, groupId: string): void {
   addTab(
     {
       id:
-        surface.type === "source-control" || surface.type === "team-chat"
+        surface.type === "source-control" ||
+        surface.type === "team-chat" ||
+        surface.type === "files"
           ? surface.type
           : `${surface.type}-${ts}`,
       type: surface.type,

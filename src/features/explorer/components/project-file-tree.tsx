@@ -293,8 +293,9 @@ export function ProjectFileTree({
 
   const open = useCallback(
     (abs: string) => {
-      void openFile(abs);
-      onFileOpened?.(abs);
+      // After the file's tab exists: a caller that closes its own tab on
+      // this (the Files surface) must not empty the column first.
+      void openFile(abs).then(() => onFileOpened?.(abs));
     },
     [onFileOpened],
   );

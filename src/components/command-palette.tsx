@@ -30,9 +30,11 @@ import {
   Search,
   FolderOpen,
   Circle,
+  FolderTree,
 } from "lucide-react";
 import type { TabType } from "@/lib/constants";
 import { revealSourceControl, toggleSourceControl } from "@/features/layout/lib/source-control";
+import { revealFiles } from "@/features/layout/lib/files-surface";
 import { toggleTeamChat } from "@/features/layout/lib/team-chat";
 
 interface Command {
@@ -274,6 +276,13 @@ export function CommandPalette({
         icon: PanelLeft,
         category: "View",
         action: () => showLeft("files"),
+      },
+      {
+        id: "view-project-files",
+        label: "Show Files",
+        icon: FolderTree,
+        category: "View",
+        action: revealFiles,
       },
       {
         id: "view-knowledge",

@@ -4,6 +4,7 @@ export const TAB_TYPES = [
   "browser",
   "tasks",
   "editor",
+  "files",
   "knowledge",
   "knowledge-graph",
   "memory",
@@ -101,6 +102,9 @@ export const TAB_PLACEMENT = {
   chat: { kind: "session" },
 
   editor: { kind: "surface", minWidth: 320 },
+  // The project tree: used while a session works, and a tree is a column's
+  // natural shape, so a surface.
+  files: { kind: "surface", minWidth: 240 },
   terminal: { kind: "surface", minWidth: 280 },
   browser: { kind: "surface", minWidth: 360 },
   diff: { kind: "surface", minWidth: 360 },

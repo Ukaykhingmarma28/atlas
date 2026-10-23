@@ -615,9 +615,14 @@ export const useLayoutStore = createSelectors(
                 return;
               }
               s.destinationShown = false;
-              // Source control and team chat are one per window, wherever the
-              // open one is.
-              if (tab.type === "source-control" || WINDOW_TYPES.has(tab.type)) {
+              // Source control and team chat are one per window, and Files one
+              // per project (these tabs are the project's), wherever the open
+              // one is.
+              if (
+                tab.type === "source-control" ||
+                tab.type === "files" ||
+                WINDOW_TYPES.has(tab.type)
+              ) {
                 const open = s.tabs.find((t) => t.type === tab.type);
                 if (open) {
                   const grp = groupOf(open);

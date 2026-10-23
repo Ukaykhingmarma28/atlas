@@ -3,10 +3,11 @@ import { PanelLeftOpen } from "lucide-react";
 import { IconButton } from "@/ui/icon-button";
 import { Hint } from "@/ui/tooltip";
 import { PanelSkeleton } from "@/components/panel-skeleton";
-import { useAppStore } from "@/features/app/stores/app-store";
+import { useProjectStore } from "@/features/projects/stores/project-store";
 import { groupOf, useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useFileTabTreeStore } from "../stores/file-tab-tree-store";
 import { relativeTo } from "../lib/project-file-ops";
+import { showWorkingTreeDiff } from "@/features/git/lib/open-review-file";
 
 // The tree is the heavy part (its model, file operations, drag hooks); a file
 // tab with the tree hidden, or outside the project, never loads it.
@@ -25,17 +26,29 @@ const ProjectFileTree = lazy(() =>
  * open files must not each keep a tree, a watcher subscription and a
  * virtualizer alive. The tree's model is per project, so remounting keeps
  * what was expanded.
+ *
+ * The frame's shape never changes, only whether its tree column is filled.
+ * Editor tabs of background projects stay mounted, and the file they hold
+ * goes in and out of "the project" as the user switches; a frame that
+ * dropped its wrapper then would remount the editor and lose unsaved edits
+ * and undo history. For the same reason the root is the tab's own project,
+ * never whichever one happens to be active.
  */
 export function FileTabFrame({
   tabId,
+  projectId,
   filePath,
   children,
 }: {
   tabId: string;
+  /** The project the tab belongs to; null for the projectless strip. */
+  projectId: string | null;
   filePath: string | undefined;
   children: ReactNode;
 }) {
-  const root = useAppStore.use.currentProject()?.path ?? null;
+  const root = useProjectStore(
+    (s) => (projectId && s.projects.find((p) => p.id === projectId)?.path) || null,
+  );
   const shown = useFileTabTreeStore.use.shown();
   const { setShown } = useFileTabTreeStore.use.actions();
   const active = useLayoutStore((s) => {
@@ -57,11 +70,12 @@ export function FileTabFrame({
     !!filePath &&
     !filePath.startsWith("untitled:") &&
     relativeTo(root, filePath) !== null;
-  if (!inProject) return <>{children}</>;
 
+  // Always this element tree: the tree column is a slot that may be empty,
+  // so `children` keeps its position (and its state) whatever the slot holds.
   return (
     <div className="flex h-full min-h-0 w-full">
-      {shown ? (
+      {!inProject ? null : shown ? (
         <aside
           className="flex min-h-0 shrink-0 flex-col border-r border-border"
           style={{ width: "min(22rem, 46%)" }}
@@ -69,9 +83,10 @@ export function FileTabFrame({
           {active && (
             <Suspense fallback={<PanelSkeleton rows={8} />}>
               <ProjectFileTree
-                root={root}
+                root={root!}
                 activeFile={filePath}
                 revealNonce={revealNonce}
+                onShowDiff={(path) => showWorkingTreeDiff(root!, path)}
                 onHide={() => setShown(false)}
               />
             </Suspense>

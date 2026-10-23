@@ -314,6 +314,8 @@ export function GitDiffModal({
                   );
                   const name = titleEl?.textContent?.trim();
                   if (!name || !repoPath) return;
+                  // A file this diff deletes has nothing on disk to open.
+                  if (byPath.get(name)?.status === "deleted") return;
                   // The editor tab opens BEHIND this modal — close it so the
                   // jump lands where the reader is looking.
                   void openReviewFile(`${repoPath}/${name}`);

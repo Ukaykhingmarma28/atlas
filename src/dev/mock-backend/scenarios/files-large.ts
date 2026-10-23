@@ -140,10 +140,8 @@ export const filesLarge: Scenario = {
     },
   },
   setup: async () => {
-    const { useReviewViewStore } = await import("@/features/git/stores/review-view-store");
-    const { diffTabId, openGitDiff } = await import("@/features/git/lib/git-diff-api");
-    useReviewViewStore.getState().actions.setView(diffTabId(MOCK_PROJECT.path), "files");
-    openGitDiff(MOCK_PROJECT.path, "", false);
+    const { revealFiles } = await import("@/features/layout/lib/files-surface");
+    revealFiles();
   },
   actions: {
     filesAddOne: () => {

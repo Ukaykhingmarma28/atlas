@@ -371,6 +371,17 @@ describe("ProjectTreeModel", () => {
     expect(m.isLoaded("a/x")).toBe(false);
   });
 
+  it("keeps request bookkeeping only while a request is out", async () => {
+    const { read } = disk(TREE);
+    const m = new ProjectTreeModel("/p", read);
+    await m.load([""]);
+    await m.expandAll();
+    for (let i = 0; i < 5; i++) await m.refresh();
+    // One entry per directory ever read would grow with every folder opened
+    // over a long session; answered requests leave nothing behind.
+    expect(m["generation"].size).toBe(0);
+  });
+
   it("keeps rows identical when a refresh returns the same listing", async () => {
     const { read } = disk(TREE);
     const m = new ProjectTreeModel("/p", read);
