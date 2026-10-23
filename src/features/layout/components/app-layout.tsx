@@ -181,7 +181,9 @@ export function AppLayout() {
             {showRight && (
               <>
                 <Separator className="w-px bg-border hover:bg-primary data-[separator=active]:bg-primary transition-colors cursor-col-resize" />
-                <Panel id="atlas-right" defaultSize="18" minSize="12" maxSize="50">
+                {/* A pixel floor, not a percentage: 12% of a narrow window
+                    squeezed the composer's toolbar into wrapping. */}
+                <Panel id="atlas-right" defaultSize="18" minSize="320px" maxSize="50">
                   <RightPanel />
                 </Panel>
               </>
