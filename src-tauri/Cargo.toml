@@ -226,6 +226,14 @@ posthog-rs = "0.14"
 # features; `atlas-engine-app-server` these axum ones), so this adds no resolution.
 rmcp = { workspace = true, features = ["server", "transport-streamable-http-server"] }
 axum = { workspace = true, features = ["http1", "tokio"] }
+# NFC-folding names for a case-only rename (`commands::fs`): macOS hands back
+# NFD, a typed name is NFC. 0.1.25 is already in the lockfile transitively, so
+# this adds no resolution.
+unicode-normalization = "0.1"
+# A rename that refuses to replace its target (`renamex_np(RENAME_EXCL)`,
+# `renameat2(RENAME_NOREPLACE)`) in `commands::fs`. The workspace's libc,
+# already linked through the engine.
+libc = { workspace = true }
 
 [dev-dependencies]
 # An in-process MCP client for the memory tool server's loopback tests.

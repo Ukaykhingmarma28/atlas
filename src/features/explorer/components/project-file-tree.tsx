@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { activeProjectId } from "@/features/projects/lib/active-project";
-import { openFile } from "@/lib/open-file";
+import { openInProject } from "../lib/open-in-project";
 import { IconButton } from "@/ui/icon-button";
 import { Hint } from "@/ui/tooltip";
 import { KbdCombo } from "@/ui/kbd";
@@ -294,8 +294,9 @@ export function ProjectFileTree({
   const open = useCallback(
     (abs: string) => {
       // After the file's tab exists: a caller that closes its own tab on
-      // this (the Files surface) must not empty the column first.
-      void openFile(abs).then(() => onFileOpened?.(abs));
+      // this (the Files surface) must not empty the column first. Neither
+      // happens if the project changed while the file was being classified.
+      void openInProject(abs, onFileOpened);
     },
     [onFileOpened],
   );
