@@ -16,6 +16,7 @@
 
 import { emit } from "@tauri-apps/api/event";
 import type { FileEntry } from "@/features/explorer/stores/explorer-store";
+import type { DirectoryListing, ProjectEntry } from "@/features/explorer/lib/fs-api";
 import type {
   FileIndexStatus,
   FileMatch,
@@ -814,6 +815,65 @@ export function listDir(absPath: string): FileEntry[] {
   return [...dirEntries, ...here];
 }
 
+// ── `read_directories`: the new tree's listing ────────────────────────────
+
+/**
+ * Ignored entries layered over a fake project's root, so the tree's dimmed
+ * rows have something to show. Nothing else in the mock sees them: they are
+ * not files, so search, git and the editor stay as they were.
+ */
+const IGNORED: Record<string, ProjectEntry[]> = {
+  "": [
+    { path: "dist", kind: "directory", ignored: true },
+    { path: "node_modules", kind: "directory", ignored: true },
+    { path: ".env.local", kind: "file", ignored: true },
+  ],
+  dist: [
+    { path: "dist/assets", kind: "directory", ignored: true },
+    { path: "dist/index.html", kind: "file", ignored: true },
+  ],
+  "dist/assets": [{ path: "dist/assets/index-4f2a.js", kind: "file", ignored: true }],
+  node_modules: [
+    { path: "node_modules/react", kind: "directory", ignored: true },
+    { path: "node_modules/.package-lock.json", kind: "file", ignored: true },
+  ],
+  "node_modules/react": [{ path: "node_modules/react/package.json", kind: "file", ignored: true }],
+};
+
+const isDirEntry = (entry: ProjectEntry) => entry.kind === "directory";
+const nameOf = (entry: ProjectEntry) => entry.path.slice(entry.path.lastIndexOf("/") + 1);
+
+/**
+ * `read_directories` over any fake tree that already answers `read_directory`:
+ * the same listing, made root-relative, with the ignored overlay merged in
+ * when `withIgnored`. Directories first, then case-insensitive by name.
+ */
+export function directoryListings(
+  root: string,
+  paths: string[],
+  list: (absPath: string) => FileEntry[],
+  withIgnored: boolean,
+): DirectoryListing[] {
+  return paths.map((path) => {
+    const overlay = withIgnored ? (IGNORED[path] ?? []) : [];
+    if (withIgnored && path in IGNORED && path !== "") return { path, entries: overlay };
+    try {
+      const entries: ProjectEntry[] = list(path ? `${root}/${path}` : root).map((entry) => ({
+        path: path ? `${path}/${entry.name}` : entry.name,
+        kind: entry.is_symlink ? "symlink" : entry.is_dir ? "directory" : "file",
+      }));
+      const merged = [...entries, ...overlay].sort(
+        (a, b) =>
+          Number(isDirEntry(b)) - Number(isDirEntry(a)) ||
+          nameOf(a).toLowerCase().localeCompare(nameOf(b).toLowerCase()),
+      );
+      return { path, entries: merged };
+    } catch (error) {
+      return { path, entries: [], error: String(error) };
+    }
+  });
+}
+
 /**
  * Binary files outside any project that `convertFileSrc` must still resolve —
  * a scenario's cached avatar photos. Kept apart from `files` so they never show
@@ -992,6 +1052,7 @@ export interface FsResponses {
   fs_add_to_gitignore: Unread;
   fs_open_in_terminal: Unread;
   code_grep: CodeGrepResult;
+  read_directories: DirectoryListing[];
 }
 
 export const fsHandlers: TypedHandlers<FsResponses> = {
@@ -1233,4 +1294,14 @@ export const fsHandlers: TypedHandlers<FsResponses> = {
       partial: false,
     };
   },
+
+  // The new tree's listing: root-relative, with ignored entries flagged. Only
+  // the fake project gets the ignored overlay; other roots list as empty.
+  read_directories: ({ root, paths }): DirectoryListing[] =>
+    directoryListings(
+      String(root),
+      (paths ?? []) as string[],
+      listDir,
+      String(root) === MOCK_PROJECT.path,
+    ),
 };

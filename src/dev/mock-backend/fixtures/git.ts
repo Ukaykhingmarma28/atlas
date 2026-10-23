@@ -25,6 +25,11 @@ import type { BlameLine } from "@/features/git/lib/git-blame-api";
 import type { RepoPullRequests } from "@/features/git/lib/git-pr-api";
 import type { RepoAvatars } from "@/features/git/lib/git-avatars-api";
 import type { CommitFile, DiffLineStatus, FileDiff } from "@/features/git/lib/git-diff-api";
+import type {
+  DiffFileContents,
+  DiffFileStatus,
+  DiffPreview,
+} from "@/features/git/lib/git-review-api";
 import type { GitErrorCode, GitErrorPayload } from "@/features/git/lib/git-errors";
 import type { BuiltGraph, CommitRow, LaneSegment } from "@/features/git/lib/git-graph";
 import type {
@@ -50,7 +55,14 @@ import type { RawGitStatus } from "@/features/terminal/components/block-terminal
 import type { GitSummary } from "@/features/projects/stores/project-git-store";
 import type { TypedHandlers, Unread } from "../types";
 import { ALL_PROJECTS, MOCK_PROJECT } from "../project";
-import { binaryFileDiff, buildFileDiff, lineStatusOf, unifiedDiff } from "./diff";
+import {
+  binaryFileDiff,
+  buildFileDiff,
+  diffPreviewOf,
+  lineStatusOf,
+  unifiedDiff,
+  type PreviewChange,
+} from "./diff";
 import { fileText } from "./files";
 
 /** Apply ordered substitutions, refusing to produce a no-op diff silently. */
@@ -276,6 +288,19 @@ function restoreChange(path: string, status: string, isStaged: boolean): void {
   if (!changeFor(path)) CHANGES = [changeForPath(path, status, isStaged), ...CHANGES];
   staged.set(path, isStaged);
   partial.delete(path);
+}
+
+const PREVIEW_STATUSES = new Set<string>(["added", "deleted", "modified", "renamed", "untracked"]);
+
+/** A working-tree change as `git_diff_preview` lists it. */
+function previewChange(change: FakeChange): PreviewChange {
+  return {
+    path: change.path,
+    before: change.status === "untracked" || change.status === "added" ? null : change.before(),
+    after: change.status === "deleted" ? null : change.after(),
+    status: (PREVIEW_STATUSES.has(change.status) ? change.status : "modified") as DiffFileStatus,
+    binary: change.binary,
+  };
 }
 
 function diffFor(file: string): FileDiff {
@@ -1038,6 +1063,8 @@ export interface GitResponses {
   git_diff_line_status: DiffLineStatus;
   git_diff_file: string;
   git_diff_all: string;
+  git_diff_preview: DiffPreview;
+  git_diff_file_contents: DiffFileContents;
   git_blame_file: BlameLine[];
   git_repo_pull_requests: RepoPullRequests;
   git_repo_avatars: RepoAvatars;
@@ -1293,6 +1320,19 @@ export const gitHandlers: TypedHandlers<GitResponses> = {
     CHANGES.filter((change) => !change.binary)
       .map((change) => unifiedDiff(change.before(), change.after(), change.path))
       .join(""),
+  // The review diff. The branch has no commits of its own on top of
+  // `origin/main`, so the range holds the same change set.
+  git_diff_preview: (): DiffPreview =>
+    diffPreviewOf(CHANGES.map(previewChange), { baseRef: "origin/main", mergeBase: HEAD().sha }),
+  git_diff_file_contents: ({ filePath }): DiffFileContents => {
+    const change = changeFor(String(filePath));
+    if (change?.binary) return { oldText: "", newText: "", truncated: false, binary: true };
+    if (change) {
+      return { oldText: change.before(), newText: change.after(), truncated: false, binary: false };
+    }
+    const text = fileText(String(filePath));
+    return { oldText: text, newText: text, truncated: false, binary: false };
+  },
   git_blame_file: ({ file }): BlameLine[] => blame(String(file)),
   // The default repository has no GitHub remote, so `gh` has nothing to say.
   git_repo_pull_requests: (): RepoPullRequests => ({ kind: "failed" }),
