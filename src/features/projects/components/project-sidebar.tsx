@@ -74,6 +74,7 @@ import { AtlasIcon } from "@/components/atlas-icon";
 import { useFullscreen } from "@/hooks/use-fullscreen";
 import { isMac } from "@/lib/platform";
 import { cn } from "@/lib/utils";
+import { DevBadge } from "@/components/titlebar";
 import { GitDot, NumStatPill } from "./git-summary";
 import { sourceControlShown, toggleSourceControl } from "@/features/layout/lib/source-control";
 import { teamChatShown, toggleTeamChat } from "@/features/layout/lib/team-chat";
@@ -902,6 +903,10 @@ export function ProjectSidebar() {
         )}
         data-tauri-drag-region
       >
+        {/* Right of the traffic lights, pushing the rail's buttons right. */}
+        <DevBadge
+          className={cn("mr-auto", !fullscreen && isMac && "ml-[calc(70px/var(--ui-zoom,1))]")}
+        />
         <HintGroup>
           <RailIconButton
             onClick={toggleSidebarPinned}

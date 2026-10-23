@@ -487,8 +487,6 @@ const TabColumn = memo(function TabColumn({
 
   return (
     <div
-      // The dev badge centres itself on the session in this column.
-      data-main-column={main || undefined}
       className="h-full flex flex-col overflow-hidden bg-background"
       onMouseDownCapture={() => setFocusedGroup(groupId)}
     >

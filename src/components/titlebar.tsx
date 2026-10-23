@@ -4,7 +4,6 @@ import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcu
 import { Popover } from "@base-ui/react/popover";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { useProjectStore } from "@/features/projects/stores/project-store";
-import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import {
   useNotificationsStore,
   hasUnread,
@@ -167,7 +166,7 @@ export function PaneHeader({
 
 /**
  * The window's top bar: the leading cluster (traffic-light inset, project and
- * left-panel toggles, `org / project`), the dev badge centred, and the
+ * left-panel toggles, `org / project`), and the
  * trailing dock (update, notifications, account, and the
  * Windows/Linux window buttons). Every stretch of it drags the window.
  */
@@ -179,7 +178,6 @@ export function Titlebar() {
       className="relative z-titlebar flex h-titlebar shrink-0 select-none items-center border-b border-border bg-background"
     >
       <TopbarLeading />
-      <DevModePill />
       <TopbarTrailing />
     </div>
   );
@@ -212,6 +210,8 @@ function TopbarLeading({ breadcrumb = true }: { breadcrumb?: boolean }) {
         inset ? "pl-[calc(78px/var(--ui-zoom,1))]" : "pl-2",
       )}
     >
+      {/* The docked rail owns the corner then, and carries the badge. */}
+      {!(sidebarPinned && sidebarOpen) && <DevBadge className="mr-1" />}
       {/* Windows and Linux: the menus macOS shows in the system menu bar. */}
       {!isMac && <MenuBar className="mr-1" />}
       {/* One sidebar toggle. The file tree has ⌘B, the View
@@ -507,7 +507,7 @@ function ProjectLabel({
  * Deliberately outside the theme: this capsule exists to say "you are not
  * looking at a release build", and a badge that took on the colours of
  * whatever theme is active would say it more quietly the better the theme
- * fits. It is also dev-only — `DevModePill` returns null in a release build —
+ * fits. It is also dev-only — `DevBadge` returns null in a release build —
  * so nothing a user sees depends on any of it.
  */
 // ratchet-allow: the dev-build badge is meant to look alien to the theme.
@@ -518,80 +518,29 @@ const DEV_PILL_CREAM = "#FFFFE2";
 const DEV_PILL_INK = "#1A1A14";
 
 /**
- * Where the dev badge's centre goes: over the session the main column shows
- * (the area the Atlas mark and the composer centre on, beside the session
- * list), else over the main column, else the window. Re-measured whenever any
- * of them resizes or the main column switches tab.
+ * The dev-build badge. It sits in flow, right of the macOS traffic lights, in
+ * whichever bar owns the window's top-left corner: the project rail's band
+ * when the rail is docked, else the workspace bar's leading cluster (and the
+ * settings sidebar's band on that screen). It used to float, centred on the
+ * session, and so moved every time a column opened, closed or resized, and
+ * landed on whatever the bar held there. Here it is always in the same place
+ * and the bar makes room for it.
  */
-function useSessionCentreX(): number | null {
-  const [x, setX] = useState<number | null>(null);
-  useEffect(() => {
-    let frame = 0;
-    const observer = new ResizeObserver(() => schedule());
-    let watched: Element[] = [];
-    const measure = () => {
-      const column = document.querySelector<HTMLElement>("[data-main-column]");
-      // The visible one: hidden persistent tabs keep their (inert) chat mounted.
-      const session = column
-        ? [...column.querySelectorAll<HTMLElement>("[data-chat-drop-zone]")].find(
-            (el) => el.getClientRects().length > 0 && !el.closest("[inert]"),
-          )
-        : undefined;
-      const target = session ?? column;
-      const next = target ? [column!, target] : [];
-      if (next.some((el, i) => el !== watched[i]) || next.length !== watched.length) {
-        observer.disconnect();
-        for (const el of next) observer.observe(el);
-        watched = next;
-      }
-      if (!target) return setX(null);
-      const r = target.getBoundingClientRect();
-      setX(Math.round(r.left + r.width / 2));
-    };
-    const schedule = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(measure);
-    };
-    schedule();
-    window.addEventListener("resize", schedule);
-    const unsubscribe = useLayoutStore.subscribe(schedule);
-    return () => {
-      cancelAnimationFrame(frame);
-      observer.disconnect();
-      window.removeEventListener("resize", schedule);
-      unsubscribe();
-    };
-  }, []);
-  return x;
-}
-
-export function DevModePill() {
+export function DevBadge({ className }: { className?: string }) {
   if (!isDev || !isTauri()) return null;
-  return <DevModeBadge />;
-}
-
-function DevModeBadge() {
-  const centre = useSessionCentreX();
   return (
-    // Centred over the session below it rather than the window: the bar's
-    // left holds the breadcrumb and its right the controls, so the window's
-    // centre lines up with nothing, while the session's lines up with the
-    // mark and the composer. Fixed, because no single header spans it.
-    // `pointer-events-none` keeps the bar beneath it fully draggable: it's an
-    // indicator, not a control. Flat, in the mark's cream: it should say which
-    // build this is without being the loudest thing on screen.
-    <div
-      className="pointer-events-none fixed top-0 z-titlebar flex h-titlebar -translate-x-1/2 items-center"
-      style={{ left: centre ?? "50%" }}
+    <span
+      // An indicator, not a control: no pointer events, so the bar under it
+      // still drags the window.
+      className={cn(
+        "pointer-events-none flex h-5 shrink-0 items-center gap-1 rounded-full px-2 text-xs leading-none font-medium",
+        className,
+      )}
+      style={{ backgroundColor: DEV_PILL_CREAM, color: DEV_PILL_INK }}
     >
-      <span
-        className="flex h-5 shrink-0 items-center gap-1 rounded-full px-2 text-xs leading-none font-medium"
-        style={{ backgroundColor: DEV_PILL_CREAM, color: DEV_PILL_INK }}
-      >
-        <Hammer size={11} />
-        Dev Mode
-      </span>
-    </div>
+      <Hammer size={11} />
+      Dev
+    </span>
   );
 }
 

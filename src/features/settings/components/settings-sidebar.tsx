@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { ArrowLeft, ChevronDown, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useWindowDrag } from "@/components/titlebar";
+import { DevBadge, useWindowDrag } from "@/components/titlebar";
 import { useFullscreen } from "@/hooks/use-fullscreen";
 import { isMac } from "@/lib/platform";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
@@ -109,6 +109,7 @@ export function SettingsSidebar({
         )}
       >
         Atlas
+        <DevBadge className="ml-2" />
       </div>
       <div className="shrink-0 px-2 pb-1">
         <div className="relative w-full">

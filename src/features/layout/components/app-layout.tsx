@@ -3,7 +3,6 @@ import { Group, Panel, Separator, useDefaultLayout, usePanelRef } from "react-re
 import { useProjectStore } from "@/features/projects/stores/project-store";
 import { ProjectSidebar } from "@/features/projects/components/project-sidebar";
 import { useProjectGitPrefetch } from "@/features/projects/lib/use-project-prefetch";
-import { DevModePill } from "@/components/titlebar";
 import { useSettingsNav } from "@/features/settings/stores/settings-nav-store";
 import { useShellEdges } from "../lib/shell-edges";
 import { cn } from "@/lib/utils";
@@ -129,9 +128,7 @@ export function AppLayout() {
           inside the window no matter what any panel renders. */}
       <div className="flex flex-col flex-1 min-h-0 min-w-0">
         {/* No top bar row: each column's header is its slice of the bar (see
-            `useShellEdges`), and only the dev badge floats over it. */}
-        <DevModePill />
-
+            `useShellEdges`). */}
         {/* `relative` for the destination, which covers the file tree and the
             columns while the session runs underneath (ADR-0024). */}
         <div className="relative flex-1 min-h-0">
