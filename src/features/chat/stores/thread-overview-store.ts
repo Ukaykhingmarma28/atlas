@@ -9,7 +9,7 @@
 // itself answers badly because the answer is scattered through it — how many
 // children are running, what this turn has changed, what it remembered, where
 // the checkpoints are. Claude Desktop's right rail ("Background tasks · 3
-// running") and t3code's thread details panel are the two references.
+// running") is the reference.
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";

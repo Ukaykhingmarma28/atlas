@@ -13,6 +13,7 @@ import {
   type EditorPosition,
 } from "@/features/editor/lib/editor-views";
 import type { UiActionRequest } from "./types";
+import { sourceControlShown } from "@/features/layout/lib/source-control";
 
 export interface UiTabState {
   id: string;
@@ -40,11 +41,13 @@ export interface UiState {
   activeFile: ({ path: string } & Partial<EditorPosition>) | null;
   panels: {
     left: { visible: boolean; section: string };
-    right: { visible: boolean; section: string; mode: string };
+    /** Team chat, the right slot's only occupant. */
+    right: { visible: boolean };
+    /** The source-control surface tab: on screen, and its section. */
+    sourceControl: { visible: boolean; section: string };
     chatSidebar: boolean;
     /** Whether any column is showing a terminal tab. */
     terminalVisible: boolean;
-    tabBar: boolean;
     zen: boolean;
   };
   focusedGroup: string;
@@ -97,14 +100,13 @@ export function buildUiState(request: UiActionRequest): UiState {
         : null,
     panels: {
       left: { visible: layout.leftPanel.visible, section: layout.leftPanel.activeSection },
-      right: {
-        visible: layout.rightPanel.visible,
-        section: layout.rightPanel.activeSection,
-        mode: layout.rightPanel.mode,
+      right: { visible: layout.rightPanel.visible },
+      sourceControl: {
+        visible: sourceControlShown(layout),
+        section: layout.sourceControl.section,
       },
       chatSidebar: layout.chatSidebar.visible,
       terminalVisible: tabs.some((t) => t.active && t.type === "terminal"),
-      tabBar: layout.tabBarVisible,
       zen: layout.zen,
     },
     focusedGroup: layout.focusedGroupId,

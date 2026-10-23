@@ -21,9 +21,6 @@ import { cn } from "@/lib/utils";
 // one place. Bound once for the app's lifetime.
 terminalSessions.bindToStore();
 
-/** The same inset the chat and timeline tabs use, so the three cards align. */
-const CARD_INSET = 4;
-
 interface TerminalPanelProps {
   tabId: string;
   /** The project this tab belongs to — recorded so a notification can route
@@ -184,22 +181,18 @@ export function TerminalPanel({ tabId, projectId }: TerminalPanelProps) {
     : null;
 
   return (
-    // The chat and timeline tabs' card: an inset on the tab's card fill, the
-    // tab's own surface as a rounded card inside it, its edge carried by the
-    // ring and the shadow only lifting it. `overflow-hidden` is what makes
-    // the corners real — the panes paint to the edge.
-    <div className="h-full min-h-0 bg-[var(--card)]" style={{ padding: CARD_INSET }}>
-      <div
-        ref={rootRef}
-        data-when-scope="terminalFocus"
-        className="relative h-full min-h-0 overflow-hidden rounded-lg bg-[var(--atlas-terminal-background)] shadow-lg ring-1 ring-[var(--border)]"
-      >
-        {zoomed ? (
-          <PaneView pane={zoomed} tabId={tabId} panelVisible={panelVisible} zoomed />
-        ) : (
-          <LayoutRenderer node={tab.root} tabId={tabId} panelVisible={panelVisible} />
-        )}
-      </div>
+    // Flat, edge to edge — the column border is the terminal's edge. It used
+    // to be a rounded card inset on a lighter frame, a panel inside a panel.
+    <div
+      ref={rootRef}
+      data-when-scope="terminalFocus"
+      className="relative h-full min-h-0 overflow-hidden bg-[var(--atlas-terminal-background)]"
+    >
+      {zoomed ? (
+        <PaneView pane={zoomed} tabId={tabId} panelVisible={panelVisible} zoomed />
+      ) : (
+        <LayoutRenderer node={tab.root} tabId={tabId} panelVisible={panelVisible} />
+      )}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect, useLayoutEffect, Fragment } from "react";
 import { ActionKbd } from "@/features/keybindings/components/action-kbd";
+import { openSettingsSection } from "@/features/settings/lib/open-settings";
 import type { ActionId } from "@/features/keybindings/lib/actions";
 import { Dialog } from "@base-ui/react/dialog";
 import { cn } from "@/lib/utils";
@@ -13,7 +14,6 @@ import {
   PanelLeft,
   PanelRight,
   MessageSquare,
-  PanelTop,
   Map,
   Sidebar,
   Columns2,
@@ -32,6 +32,7 @@ import {
   Circle,
 } from "lucide-react";
 import type { TabType } from "@/lib/constants";
+import { revealSourceControl, toggleSourceControl } from "@/features/layout/lib/source-control";
 
 interface Command {
   id: string;
@@ -56,13 +57,10 @@ export function CommandPalette({
   const {
     addTab,
     toggleLeftPanel,
-    toggleRightPanel,
-    toggleRightChatPanel,
+    toggleTeamChat,
     toggleChatSidebar,
-    toggleTabBar,
     toggleZenMode,
     setLeftSection,
-    setRightSection,
     addGroup,
     focusAdjacentGroup,
     closeGroup,
@@ -89,7 +87,6 @@ export function CommandPalette({
     "memory",
     "log",
     "usage",
-    "settings",
   ]);
   const openTab = (type: TabType, title: string) =>
     addTab({
@@ -106,10 +103,6 @@ export function CommandPalette({
     if (!useLayoutStore.getState().leftPanel.visible) toggleLeftPanel();
     setLeftSection(section);
   };
-  const showRight = (section: "changes" | "github" | "git-graph") => {
-    if (!useLayoutStore.getState().rightPanel.visible) toggleRightPanel();
-    setRightSection(section);
-  };
 
   const commands = useMemo<Command[]>(
     () => [
@@ -125,7 +118,7 @@ export function CommandPalette({
       // ── Open tabs ──
       {
         id: "new-agents-chat",
-        label: "New Agents Chat",
+        label: "New Session",
         actionId: "tabs.newChat",
         icon: AtlasIcon,
         category: "Open",
@@ -209,11 +202,11 @@ export function CommandPalette({
       },
       {
         id: "toggle-right",
-        label: "Toggle Source Control Panel",
+        label: "Toggle Source Control",
         actionId: "panels.right",
-        icon: PanelRight,
+        icon: GitBranch,
         category: "Layout",
-        action: toggleRightPanel,
+        action: toggleSourceControl,
       },
       {
         id: "toggle-right-chat",
@@ -221,7 +214,7 @@ export function CommandPalette({
         actionId: "panels.teamChat",
         icon: MessageSquare,
         category: "Layout",
-        action: toggleRightChatPanel,
+        action: toggleTeamChat,
       },
       {
         id: "toggle-chat-sidebar",
@@ -230,14 +223,6 @@ export function CommandPalette({
         icon: Sidebar,
         category: "Layout",
         action: toggleChatSidebar,
-      },
-      {
-        id: "toggle-tab-bar",
-        label: "Toggle Tab Bar",
-        actionId: "panels.tabBar",
-        icon: PanelTop,
-        category: "Layout",
-        action: toggleTabBar,
       },
       {
         id: "toggle-zen",
@@ -302,14 +287,14 @@ export function CommandPalette({
         label: "Show Source Control",
         icon: PanelRight,
         category: "View",
-        action: () => showRight("changes"),
+        action: () => revealSourceControl("changes"),
       },
       {
         id: "view-git-graph",
         label: "Show Git Graph",
         icon: GitBranch,
         category: "View",
-        action: () => showRight("git-graph"),
+        action: () => revealSourceControl("git-graph"),
       },
 
       // ── App ──
@@ -319,7 +304,7 @@ export function CommandPalette({
         actionId: "app.settings",
         icon: Settings,
         category: "App",
-        action: () => openTab("settings", "Settings"),
+        action: () => openSettingsSection(),
       },
       {
         id: "open-capture",
@@ -333,13 +318,10 @@ export function CommandPalette({
     [
       addTab,
       toggleLeftPanel,
-      toggleRightPanel,
-      toggleRightChatPanel,
+      toggleTeamChat,
       toggleChatSidebar,
-      toggleTabBar,
       toggleZenMode,
       setLeftSection,
-      setRightSection,
       addGroup,
       focusAdjacentGroup,
       closeGroup,

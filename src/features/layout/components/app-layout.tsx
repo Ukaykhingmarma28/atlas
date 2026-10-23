@@ -1,11 +1,11 @@
-import { useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Group, Panel, Separator, useDefaultLayout, usePanelRef } from "react-resizable-panels";
-import { useLayoutStore } from "../stores/layout-store";
-import { useAppStore } from "@/features/app/stores/app-store";
 import { useProjectStore } from "@/features/projects/stores/project-store";
 import { ProjectSidebar } from "@/features/projects/components/project-sidebar";
 import { useProjectGitPrefetch } from "@/features/projects/lib/use-project-prefetch";
-import { Titlebar } from "@/components/titlebar";
+import { DevModePill } from "@/components/titlebar";
+import { useSettingsNav } from "@/features/settings/stores/settings-nav-store";
+import { useShellEdges } from "../lib/shell-edges";
 import { cn } from "@/lib/utils";
 import { LeftPanel } from "./left-panel";
 import { RightPanel } from "./right-panel";
@@ -18,10 +18,19 @@ import { CenterPanel } from "./center-panel";
 // are load-bearing for the same reason — a layout is a map keyed by them.
 const MAIN_LAYOUT_ID = "atlas-main-layout";
 
+const SettingsScreen = lazy(() =>
+  import("@/features/settings/components/settings-screen").then((m) => ({
+    default: m.SettingsScreen,
+  })),
+);
+
 export function AppLayout() {
-  const leftPanel = useLayoutStore.use.leftPanel();
-  const rightPanel = useLayoutStore.use.rightPanel();
-  const currentProject = useAppStore.use.currentProject();
+  const { leftPanelShown: showLeft, rightPanelShown: showRight } = useShellEdges();
+  // Settings covers the window once opened, and stays mounted (hidden) after,
+  // so its open page and drafts survive a trip back to the workspace.
+  const settingsOpen = useSettingsNav((s) => s.open);
+  const [settingsMounted, setSettingsMounted] = useState(settingsOpen);
+  if (settingsOpen && !settingsMounted) setSettingsMounted(true);
   const sidebarOpen = useProjectStore.use.sidebarOpen();
   const sidebarPinned = useProjectStore.use.sidebarPinned();
   const { setSidebarOpen } = useProjectStore.use.actions();
@@ -52,23 +61,28 @@ export function AppLayout() {
     return () => document.removeEventListener("keydown", onKey);
   }, [overlayOpen, setSidebarOpen]);
 
-  const showLeft = leftPanel.visible && !!currentProject;
-
   // The left panel stays mounted and is collapsed/expanded imperatively (see the
   // Panel below). `defaultSize` is only read on first mount, so the initial
   // visibility is captured once — otherwise a panel that starts hidden would
   // render at full width for a frame and then snap shut.
   const leftPanelRef = usePanelRef();
   const leftInitiallyVisible = useRef(showLeft);
+  //
+  // Synced again on the next frame, not only now: on mount the Group has not
+  // measured itself yet, so an `expand()` of a panel restored from a saved
+  // width of 0 is a no-op — the store said "visible" while the tree sat at
+  // zero width, and the first ⌘B then appeared to do nothing.
   useEffect(() => {
-    const panel = leftPanelRef.current;
-    if (!panel) return;
-    if (showLeft && panel.isCollapsed()) panel.expand();
-    else if (!showLeft && !panel.isCollapsed()) panel.collapse();
+    const sync = () => {
+      const panel = leftPanelRef.current;
+      if (!panel) return;
+      if (showLeft && panel.isCollapsed()) panel.expand();
+      else if (!showLeft && !panel.isCollapsed()) panel.collapse();
+    };
+    sync();
+    const raf = requestAnimationFrame(sync);
+    return () => cancelAnimationFrame(raf);
   }, [showLeft]);
-  // Source control needs a project; team chat is org-scoped and is reachable
-  // with no project open, so the slot stays available in chat mode.
-  const showRight = rightPanel.visible && (!!currentProject || rightPanel.mode === "chat");
   const isLinux =
     typeof window !== "undefined" && navigator.userAgent.toLowerCase().includes("linux");
 
@@ -114,7 +128,9 @@ export function AppLayout() {
           intrinsic width. Capping the column here is what keeps the shell
           inside the window no matter what any panel renders. */}
       <div className="flex flex-col flex-1 min-h-0 min-w-0">
-        <Titlebar />
+        {/* No top bar row: each column's header is its slice of the bar (see
+            `useShellEdges`), and only the dev badge floats over it. */}
+        <DevModePill />
 
         <div className="flex-1 min-h-0">
           <Group
@@ -229,6 +245,11 @@ export function AppLayout() {
             <ProjectSidebar />
           </div>
         </>
+      )}
+      {settingsMounted && (
+        <Suspense fallback={null}>
+          <SettingsScreen />
+        </Suspense>
       )}
     </div>
   );

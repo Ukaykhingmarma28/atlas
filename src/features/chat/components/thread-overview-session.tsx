@@ -151,7 +151,7 @@ export function SessionBody({
           />
           <RoundButton
             icon={Search}
-            label={findHint ? `Find in chat (${findHint})` : "Find in chat"}
+            label={findHint ? `Find in session (${findHint})` : "Find in session"}
             disabled={!onOpenSearch}
             onClick={() => onOpenSearch?.()}
           />

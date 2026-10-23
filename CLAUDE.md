@@ -190,9 +190,9 @@ Each of these is a multi-file edit where missing one compiles fine.
   `[profile.dev.package.<name>]` stanza, and an entry in `.github/ci-crates.json`.
   If it reads a file outside its own directory, that file also goes in
   `EXTRA_INPUTS` in `scripts/ci-affected.mjs` (`ci-affected.test.ts` checks).
-- **A tab/panel type** — `TAB_TYPES` in `src/lib/constants.ts`, plus the lazy import,
-  the render branch and `NEW_TAB_OPTIONS` in
-  `src/features/layout/components/center-panel.tsx`. If it stays mounted across tab
+- **A tab/panel type** — `TAB_TYPES` in `src/lib/constants.ts`, plus the lazy import
+  and the render branch in `src/features/layout/components/center-panel.tsx`, and
+  (if ⌘T should offer it) an entry in `SURFACES` in `src/features/layout/lib/surfaces.ts`. If it stays mounted across tab
   switches it also joins `PERSISTENT_TYPES`, guarded by
   `persistent-tab-render-contract.test.ts`.
 - **A mock** — an unmocked command resolves `null`, so an empty panel in `bun run dev`

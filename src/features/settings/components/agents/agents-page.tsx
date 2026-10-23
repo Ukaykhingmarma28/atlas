@@ -1,4 +1,4 @@
-// Settings → Agents, after T3 Code's Providers page: one card, the agents the
+// Settings → Agents: one card, the agents the
 // user has on the left and the picked one's settings on the right. Browsing
 // the ACP registry for more is the Add agent dialog.
 

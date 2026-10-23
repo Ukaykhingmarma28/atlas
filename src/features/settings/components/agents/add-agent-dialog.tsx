@@ -1,6 +1,6 @@
 // The Add agent dialog: the ACP registry's agents that aren't added yet,
 // searchable, one row each with Install. What the old full-page marketplace
-// grid was, now behind the Agents page's + button, like T3 Code's Add provider.
+// grid was, now behind the Agents page's + button.
 
 import { useEffect, useMemo, useState } from "react";
 import { Download } from "lucide-react";
