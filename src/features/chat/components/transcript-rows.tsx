@@ -454,9 +454,11 @@ export const MarkerRowView = memo(function MarkerRowView({
   }, [row.opens, row.path, row.toolCallId, tabId]);
   const fileLink = clickable && FILE_DETAIL.has(row.tool);
   const discussed = useRowHasComments(tabId, row.toolCallId);
+  const shimmer = useVisibleAnimation<HTMLElement>();
 
   const line = (
     <button
+      ref={row.state === "running" ? shimmer : undefined}
       type="button"
       disabled={!clickable}
       onClick={clickable ? onClick : undefined}
@@ -664,9 +666,11 @@ export const SubagentRowView = memo(function SubagentRowView({
 }) {
   const running = row.status === "running";
   const failed = row.status === "failed";
+  const shimmer = useVisibleAnimation<HTMLElement>();
   return (
     <Column>
       <button
+        ref={running ? shimmer : undefined}
         type="button"
         onClick={() => openDetail(tabId, { kind: "subagent", toolCallId: row.toolCallId })}
         title={`${row.name} — open in side panel`}

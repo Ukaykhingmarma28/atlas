@@ -2648,7 +2648,8 @@ html[data-chat-code-wrap="off"] .prose-chat pre {
    scrolled away. See `src/lib/visible-animation.ts`. */
 :root[data-atlas-hidden] :is(.atlas-thinking-shimmer, .atlas-marker-running, .atlas-pixel-cell),
 [data-atlas-offstage] :is(.atlas-thinking-shimmer, .atlas-marker-running, .atlas-pixel-cell),
-[data-offscreen] :is(.atlas-thinking-shimmer, .atlas-marker-running, .atlas-pixel-cell) {
+[data-offscreen] :is(.atlas-thinking-shimmer, .atlas-marker-running, .atlas-pixel-cell),
+:is(.atlas-thinking-shimmer, .atlas-marker-running, .atlas-pixel-cell)[data-offscreen] {
   animation-play-state: paused;
 }
 @media (prefers-reduced-motion: reduce) {
