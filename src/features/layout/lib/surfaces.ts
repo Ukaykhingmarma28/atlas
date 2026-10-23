@@ -11,8 +11,8 @@ import { useLayoutStore } from "../stores/layout-store";
  *
  * `key` is a bare letter. It is the hint shown beside each row AND the key that
  * picks it — inside the open `+` menu, and anywhere while a focused column is
- * showing the launcher — so `⌘T` then `A` is a new agent, `⌘T` then `T` a
- * terminal. The hint and the match read the same field, so they cannot drift.
+ * showing the launcher — so `⌘T` then `A` is a new agent (which opens in the
+ * session column, like every session), `⌘T` then `T` a terminal. The hint and the match read the same field, so they cannot drift.
  *
  * Surfaces only (ADR-0024): Knowledge, Memory, Spaces and the other
  * destinations take the window, so they are not offered as a column's tab

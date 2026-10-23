@@ -87,6 +87,28 @@ describe("the main column holds sessions only", () => {
     }
   });
 
+  it("opens a session in the main column even when a surfaces column has focus", () => {
+    actions().setFocusedGroup("g2");
+    actions().addTab(tab("chat-2", "chat", "g2"), "g2");
+    expect(groupOf(layout().tabs.find((t) => t.id === "chat-2"))).toBe("main");
+    expect(layout().activeByGroup.main).toBe("chat-2");
+    expect(layout().activeByGroup.g2).toBe("term-1");
+  });
+
+  it("moves a session restored into the surfaces pane back to the main column", () => {
+    useLayoutStore.setState((s) => ({
+      tabs: [...s.tabs, tab("chat-2", "chat", "g3")],
+      groupOrder: ["main", "g2", "g3"],
+      activeByGroup: { ...s.activeByGroup, g3: "chat-2" },
+      viewsByWs: {},
+    }));
+    actions().commitProjectView("w");
+    actions().loadProjectView("w");
+    expect(groupOf(layout().tabs.find((t) => t.id === "chat-2"))).toBe("main");
+    // The column it emptied closes; the terminal's column stays.
+    expect(layout().groupOrder).toEqual(["main", "g2"]);
+  });
+
   it("hides the parked tools behind a one-column template", () => {
     const focus = LAYOUT_TEMPLATES.find((t) => t.columns.length === 1)!;
     actions().applyLayoutTemplate(focus);

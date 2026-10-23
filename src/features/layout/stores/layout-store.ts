@@ -334,14 +334,29 @@ function surfaceGroupFor(s: LayoutState): string {
   return gid;
 }
 
-/** Move anything that is not a session out of the main column — a restored
- *  layout from before the main column held only the agent. */
+/**
+ * Put every tab in the column its placement says (ADR-0024): anything that
+ * is not a session out of the main column, and any session out of the
+ * surfaces pane into it. Restored layouts, templates and zen can leave either
+ * behind. A surfaces column emptied by losing its sessions closes.
+ */
 function keepMainForSessions(s: LayoutState): void {
   const main = s.groupOrder[0];
   const strays = s.tabs.filter((t) => groupOf(t) === main && !belongsInMain(t.type));
-  if (strays.length === 0) return;
-  const target = surfaceGroupFor(s);
-  for (const t of strays) t.groupId = target;
+  const exiles = s.tabs.filter((t) => groupOf(t) !== main && belongsInMain(t.type));
+  if (strays.length === 0 && exiles.length === 0) return;
+  const emptied = new Set(exiles.map(groupOf));
+  for (const t of exiles) t.groupId = main;
+  for (const g of emptied) {
+    if (s.tabs.some((t) => groupOf(t) === g)) continue;
+    s.groupOrder = s.groupOrder.filter((x) => x !== g);
+    delete s.activeByGroup[g];
+  }
+  if (s.groupOrder.length === 1) s.surfaces = "shown";
+  if (strays.length > 0) {
+    const target = surfaceGroupFor(s);
+    for (const t of strays) t.groupId = target;
+  }
   if (!s.tabs.some((t) => groupOf(t) === main)) s.tabs.push(WELCOME_TAB(main));
   reconcileGroups(s);
 }
@@ -632,10 +647,12 @@ export const useLayoutStore = createSelectors(
               // Where the tab lands: caller-specified column, else the focused one.
               let targetGroup = groupId ?? s.focusedGroupId;
               if (!s.groupOrder.includes(targetGroup)) targetGroup = s.focusedGroupId;
-              // …unless that is the main column and this is not a session.
-              if (targetGroup === s.groupOrder[0] && !belongsInMain(tab.type)) {
-                targetGroup = surfaceGroupFor(s);
-              }
+              // …unless that is the main column and this is not a session. And
+              // a session always opens in the main column, wherever the focus
+              // was (ADR-0024): a session in the surfaces pane gets the
+              // narrow column's cramped layout and no breadcrumb.
+              if (belongsInMain(tab.type)) targetGroup = s.groupOrder[0];
+              else if (targetGroup === s.groupOrder[0]) targetGroup = surfaceGroupFor(s);
 
               if (!allowMultiple) {
                 const existingInGroup = s.tabs.find(
