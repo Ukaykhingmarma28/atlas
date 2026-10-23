@@ -1,7 +1,15 @@
 import { WorkerPoolContext, useWorkerPool } from "@pierre/diffs/react";
 import { WorkerPoolManager } from "@pierre/diffs/worker";
 import DiffsWorker from "@pierre/diffs/worker/worker.js?worker";
-import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { DIFF_THEME_NAME, ensureDiffTheme } from "../../lib/diff-theme";
 
 /**
@@ -88,26 +96,48 @@ function subscribe(onStoreChange: () => void): () => void {
 const getPool = () => shared?.pool;
 const getServerPool = () => undefined;
 
+const PoolFailedContext = createContext(false);
+
+/** The workers could not start. A viewer then shows its diffs as plain text:
+ *  highlighting them here instead would put every grammar on the UI thread. */
+export function useDiffPoolFailed(): boolean {
+  return useContext(PoolFailedContext);
+}
+
+let warned = false;
+
 /** Children mount once the workers are up, so a first paint is never
  *  highlighted on the main thread. */
 function PoolReady({ children, fallback }: { children: ReactNode; fallback: ReactNode }) {
   const pool = useWorkerPool();
-  const [readyPool, setReadyPool] = useState<WorkerPoolManager>();
-  const ready = pool ? readyPool === pool || pool.isInitialized() || !pool.isWorkingPool() : false;
+  const [settled, setSettled] = useState<{ pool: WorkerPoolManager; failed: boolean }>();
+  const failed = pool ? (settled?.pool === pool && settled.failed) || !pool.isWorkingPool() : false;
+  const ready = pool ? settled?.pool === pool || pool.isInitialized() || failed : false;
 
   useEffect(() => {
     if (ready || !pool) return;
     let mounted = true;
-    const finish = () => {
-      if (mounted) setReadyPool(pool);
-    };
-    void pool.initialize().then(finish, finish);
+    pool.initialize().then(
+      () => {
+        if (mounted) setSettled({ pool, failed: false });
+      },
+      (error: unknown) => {
+        if (!warned) {
+          warned = true;
+          console.warn("Diff highlighting workers failed to start; showing plain text.", error);
+        }
+        // The pool is dropped at its idle timeout, so a later viewer tries
+        // afresh.
+        if (mounted) setSettled({ pool, failed: true });
+      },
+    );
     return () => {
       mounted = false;
     };
   }, [ready, pool]);
 
-  return ready ? children : fallback;
+  if (!ready) return fallback;
+  return <PoolFailedContext value={failed}>{children}</PoolFailedContext>;
 }
 
 export function DiffWorkerPoolProvider({

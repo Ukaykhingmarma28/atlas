@@ -59,6 +59,12 @@ describe("getRenderablePatch", () => {
   it("falls back to raw text for something that is not a patch", () => {
     expect(getRenderablePatch("not a diff at all")?.kind).toBe("raw");
   });
+
+  it("falls back to the whole raw patch rather than drop a bad hunk", () => {
+    const broken = TWO_FILES.replace("@@ -40,2 +40,3 @@", "@@ -40,9 +40,9 @@");
+    const rendered = getRenderablePatch(broken);
+    expect(rendered?.kind).toBe("raw");
+  });
 });
 
 describe("content version", () => {
@@ -67,6 +73,23 @@ describe("content version", () => {
     const after = filesOf(TWO_FILES.replace("const b = 3;", "const b = 5;"));
     expect(buildFileDiffContentVersion(after[0])).not.toBe(buildFileDiffContentVersion(before[0]));
     expect(buildFileDiffContentVersion(after[1])).toBe(buildFileDiffContentVersion(before[1]));
+  });
+
+  it("keeps an unchanged file's highlight-cache key when another file changes", () => {
+    const before = filesOf(TWO_FILES);
+    const after = filesOf(TWO_FILES.replace("const b = 3;", "const b = 5;"));
+    expect(after[1].cacheKey).toBe(before[1].cacheKey);
+    expect(after[0].cacheKey).not.toBe(before[0].cacheKey);
+    expect(before[0].cacheKey).not.toBe(before[1].cacheKey);
+  });
+
+  it("keeps a trailing context line that is a lone space", () => {
+    const patch = TWO_FILES.replace(" const w = 3;\n", " const w = 3;\n \n").replace(
+      "@@ -40,2 +40,3 @@",
+      "@@ -40,3 +40,4 @@",
+    );
+    const [a] = filesOf(`${patch.split("diff --git a/src/b.ts")[0]}`);
+    expect(a.hunks[1].additionCount).toBe(4);
   });
 
   it("keys identity by path and change type", () => {

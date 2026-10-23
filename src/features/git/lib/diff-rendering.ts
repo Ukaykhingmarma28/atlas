@@ -24,14 +24,6 @@ export function fnv1a32(
   return hash >>> 0;
 }
 
-/** Two independent 32-bit hashes and the length: the viewer's highlight cache
- *  is keyed by this, and a collision would paint one patch's tokens on another. */
-function buildPatchCacheKey(patch: string, scope: string): string {
-  const primary = fnv1a32(patch).toString(36);
-  const secondary = fnv1a32(patch, SECONDARY_HASH_SEED, SECONDARY_HASH_MULTIPLIER).toString(36);
-  return `${scope}:${patch.length}:${primary}:${secondary}`;
-}
-
 export type RenderablePatch =
   | { kind: "files"; files: FileDiffMetadata[] }
   | { kind: "raw"; text: string; reason: string };
@@ -78,21 +70,30 @@ function compactPartialHunkOffsets(file: FileDiffMetadata): FileDiffMetadata {
   };
 }
 
-/** `null` for an empty patch; `raw` when it does not parse as files. */
+/**
+ * `null` for an empty patch; `raw` when it does not parse as files, or parses
+ * only in part (a bad hunk would otherwise be dropped without a word).
+ *
+ * Each file's highlight-cache key is its own content's
+ * ({@link withContentCacheKey}), not the patch's: when one file of a live
+ * diff changes, every other file keeps its cached tokens.
+ */
 export function getRenderablePatch(
   patch: string | undefined,
   cacheScope = "diff-panel",
 ): RenderablePatch | null {
-  if (!patch) return null;
-  const normalized = patch.trim();
-  if (normalized.length === 0) return null;
+  // Trimmed only to test for emptiness: a trailing context line is a lone
+  // space, and trimming the patch itself would cut it.
+  if (!patch || patch.trim().length === 0) return null;
   try {
-    const parsed = parsePatchFiles(normalized, buildPatchCacheKey(normalized, cacheScope));
-    const files = parsed.flatMap((p) => p.files).map(compactPartialHunkOffsets);
+    const parsed = parsePatchFiles(patch, cacheScope, true);
+    const files = parsed
+      .flatMap((p) => p.files)
+      .map((file) => withContentCacheKey(compactPartialHunkOffsets(file), cacheScope));
     if (files.length > 0) return { kind: "files", files };
-    return { kind: "raw", text: normalized, reason: "Unsupported diff format. Showing raw patch." };
+    return { kind: "raw", text: patch, reason: "Unsupported diff format. Showing raw patch." };
   } catch {
-    return { kind: "raw", text: normalized, reason: "Failed to parse patch. Showing raw patch." };
+    return { kind: "raw", text: patch, reason: "Failed to parse patch. Showing raw patch." };
   }
 }
 
@@ -111,20 +112,41 @@ export function buildFileDiffIdentityKey(fileDiff: FileDiffMetadata): string {
   return `${resolveFileDiffPreviousPath(fileDiff)}\u0000${resolveFileDiffPath(fileDiff)}\u0000${fileDiff.type}`;
 }
 
-function hashPart(hash: number, value: string | number | boolean | undefined): number {
+function hashPart(
+  hash: number,
+  value: string | number | boolean | undefined,
+  multiplier: number,
+): number {
   const serialized = value === undefined ? "undefined" : String(value);
-  return fnv1a32(serialized, fnv1a32(`${typeof value}:${serialized.length}:`, hash));
+  return fnv1a32(
+    serialized,
+    fnv1a32(`${typeof value}:${serialized.length}:`, hash, multiplier),
+    multiplier,
+  );
 }
 
 /**
- * A version for one file's content. The parser's cache key covers the whole
- * patch, so keying a viewer item by it would repaint every file when one
- * changes; this changes only when this file does.
+ * A version for one file's content, which changes only when this file does:
+ * a viewer item keyed by it repaints alone.
  */
 export function buildFileDiffContentVersion(fileDiff: FileDiffMetadata): number {
-  let hash = FNV_OFFSET_BASIS_32;
+  return contentHash(fileDiff, FNV_OFFSET_BASIS_32, FNV_PRIME_32);
+}
+
+/**
+ * A copy of `fileDiff` whose highlight-cache key is its own path and content.
+ * Two independent hashes: a collision would paint one file's tokens on another.
+ */
+export function withContentCacheKey(fileDiff: FileDiffMetadata, scope: string): FileDiffMetadata {
+  const primary = buildFileDiffContentVersion(fileDiff).toString(36);
+  const secondary = contentHash(fileDiff, SECONDARY_HASH_SEED, SECONDARY_HASH_MULTIPLIER);
+  return { ...fileDiff, cacheKey: `${scope}:${primary}:${secondary.toString(36)}` };
+}
+
+function contentHash(fileDiff: FileDiffMetadata, seed: number, multiplier: number): number {
+  let hash = seed;
   const append = (value: string | number | boolean | undefined) => {
-    hash = hashPart(hash, value);
+    hash = hashPart(hash, value, multiplier);
   };
   append(fileDiff.name);
   append(fileDiff.prevName);

@@ -5,11 +5,16 @@ import {
   type ControlledCodeViewProps,
   type UncontrolledCodeViewProps,
 } from "@pierre/diffs/react";
-import type { ReactNode, Ref } from "react";
+import type { CodeViewItem } from "@pierre/diffs";
+import { useMemo, type ReactNode, type Ref } from "react";
 import { getActiveTheme } from "@/features/theme/apply-theme";
 import { useThemeVersion } from "@/features/theme/theme-values";
 import { DIFF_THEME_NAME } from "../../lib/diff-theme";
-import { DiffWorkerPoolProvider, PREFERRED_HIGHLIGHTER } from "./diff-worker-pool";
+import {
+  DiffWorkerPoolProvider,
+  PREFERRED_HIGHLIGHTER,
+  useDiffPoolFailed,
+} from "./diff-worker-pool";
 
 /**
  * The one place Atlas renders `@pierre/diffs`. Everything that styles the
@@ -237,9 +242,9 @@ export function StyledCodeView<A = undefined>({
   const appearance = useDiffAppearance();
   return (
     <DiffWorkerPoolProvider fallback={fallback}>
-      <CodeView<A>
+      <PoolAwareCodeView<A>
         {...props}
-        {...(viewerRef ? { ref: viewerRef } : {})}
+        viewerRef={viewerRef}
         className={className ? `outline-none ${className}` : "outline-none"}
         options={{
           ...options,
@@ -253,4 +258,38 @@ export function StyledCodeView<A = undefined>({
       />
     </DiffWorkerPoolProvider>
   );
+}
+
+const plainCache = new WeakMap<object, CodeViewItem<unknown>>();
+
+/** As plain text, for when the workers failed: `text` is the one language that
+ *  costs the UI thread nothing to "highlight". One copy per item object. */
+function asPlainText<A>(item: CodeViewItem<A>): CodeViewItem<A> {
+  let plain = plainCache.get(item) as CodeViewItem<A> | undefined;
+  if (!plain) {
+    plain =
+      item.type === "diff"
+        ? { ...item, fileDiff: { ...item.fileDiff, lang: "text" } }
+        : { ...item, file: { ...item.file, lang: "text" } };
+    plainCache.set(item, plain as CodeViewItem<unknown>);
+  }
+  return plain;
+}
+
+function PoolAwareCodeView<A>({
+  viewerRef,
+  ...props
+}: CodeViewProps<A, undefined> & { viewerRef?: Ref<CodeViewHandle<A, undefined>> }) {
+  const failed = useDiffPoolFailed();
+  const items = props.items;
+  const plainItems = useMemo(
+    () => (failed && items ? items.map(asPlainText) : items),
+    [failed, items],
+  );
+  const ref = viewerRef ? { ref: viewerRef } : {};
+  if (plainItems !== items) {
+    const plain = { ...props, items: plainItems } as ControlledCodeViewProps<A, undefined>;
+    return <CodeView<A> {...plain} {...ref} />;
+  }
+  return <CodeView<A> {...props} {...ref} />;
 }
