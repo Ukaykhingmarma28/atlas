@@ -2637,7 +2637,19 @@ html[data-chat-code-wrap="off"] .prose-chat pre {
   background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: atlas-thinking-sweep 2.2s linear infinite;
+  /* Stepped: a moving background is a repaint per frame, and at 120Hz that
+     kept the display link busy for minutes on end. Thirty steps across the
+     sweep still reads as motion. */
+  animation: atlas-thinking-sweep 2.2s steps(30) infinite;
+}
+
+/* Nobody is looking: the window is hidden, the session sits in a background
+   tab (still laid out, where animations keep running), or the row is
+   scrolled away. See `src/lib/visible-animation.ts`. */
+:root[data-atlas-hidden] :is(.atlas-thinking-shimmer, .atlas-marker-running, .atlas-pixel-cell),
+[data-atlas-offstage] :is(.atlas-thinking-shimmer, .atlas-marker-running, .atlas-pixel-cell),
+.atlas-thinking-shimmer[data-offscreen] {
+  animation-play-state: paused;
 }
 @media (prefers-reduced-motion: reduce) {
   .atlas-thinking-shimmer {

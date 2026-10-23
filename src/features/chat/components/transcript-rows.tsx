@@ -46,6 +46,7 @@ import type {
 import { userRowMessageId } from "../lib/turn-rows";
 import { CONTENT_COLUMN, M } from "../lib/row-metrics";
 import { formatTime } from "@/lib/format-time";
+import { useVisibleAnimation } from "@/lib/visible-animation";
 
 /** Shared by every row: the centred content column. */
 function Column({ children, className }: { children: React.ReactNode; className?: string }) {
@@ -550,6 +551,7 @@ export const MarkerGroupRowView = memo(function MarkerGroupRowView({
   // on every marker state change.
   const callIds = useMemo(() => row.markers.map((marker) => marker.toolCallId), [row.markers]);
   const discussed = useGroupHasComments(tabId, callIds);
+  const shimmer = useVisibleAnimation<HTMLSpanElement>();
   const summary = (
     <button
       type="button"
@@ -566,7 +568,10 @@ export const MarkerGroupRowView = memo(function MarkerGroupRowView({
       <span className="flex w-4 shrink-0 justify-center">
         <ToolGlyph tool={row.running && row.liveTool ? row.liveTool : row.tool} failed={failed} />
       </span>
-      <span className={cn("min-w-0 truncate", row.running && "atlas-thinking-shimmer")}>
+      <span
+        ref={row.running ? shimmer : undefined}
+        className={cn("min-w-0 truncate", row.running && "atlas-thinking-shimmer")}
+      >
         {row.running ? row.liveLabel : row.summary}
       </span>
       {row.running &&
