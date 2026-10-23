@@ -64,7 +64,7 @@ export function ChatPage() {
           />
           <SettingsRow
             setting="autoSettleAfterDays"
-            control={<SettingStepper setting="autoSettleAfterDays" unit="d" />}
+            control={<SettingStepper setting="autoSettleAfterDays" unit="d" zeroLabel="Off" />}
           />
         </SettingsGroup>
       </SettingsSection>

@@ -677,6 +677,15 @@ export const SessionSidebar = memo(function SessionSidebar({
     })();
   };
 
+  /** Whether a tab other than this one already holds the row's session. */
+  const isOpenInAnotherTab = (item: SidebarItem) => {
+    if (item.kind !== "agent") return false;
+    const openTabIds = new Set(useLayoutStore.getState().tabs.map((t) => t.id));
+    return Object.entries(useChatStore.getState().sessions).some(
+      ([tid, s]) => tid !== tabId && openTabIds.has(tid) && s.acpSessionId === item.id,
+    );
+  };
+
   const isActiveItem = (item: SidebarItem) => {
     if (item.kind === "agent") {
       // Match the active tab by the SAME id formula `items` uses for live
@@ -690,19 +699,31 @@ export const SessionSidebar = memo(function SessionSidebar({
   };
 
   // Settle: onto the shelf, with a few seconds to take it back. Settling the
-  // open session moves the chat on to the next active one (or a fresh
-  // session when there is none) — the open session is what the user just
-  // finished with, and leaving it on screen would make the shelf pointless.
-  // The target is chosen BEFORE the list changes under it.
+  // open session moves this tab on to the next active one (or a fresh session
+  // when there is none) — the open session is what the user just finished
+  // with, and leaving it on screen would make the shelf pointless. A row
+  // already open in another tab is skipped: opening it would focus that tab
+  // and leave this one showing the settled session. The target is chosen
+  // BEFORE the list changes under it. Undo takes the session back off the
+  // shelf and, if it was the open one, back into view.
   const handleSettleAgent = async (item: SidebarItem) => {
     const wasOpen = isActiveItem(item);
-    const next = wasOpen ? nextAfterSettling(filtered, item.threadId) : null;
+    const next = wasOpen
+      ? nextAfterSettling(
+          filtered.filter((row) => row.threadId === item.threadId || !isOpenInAnotherTab(row)),
+          item.threadId,
+        )
+      : null;
+    let settled: boolean;
     try {
-      await settleThread(item.threadId);
+      settled = await settleThread(item.threadId);
     } catch (err) {
       toast.error(`Couldn't settle: ${invokeErrorMessage(err)}`);
       return;
     }
+    // Nothing changed (already settled, gone, or just sent to): no move, no
+    // toast, nothing to undo.
+    if (!settled) return;
     if (wasOpen) {
       if (next && next.threadId !== item.threadId) handleOpenAgent(next);
       else openNewAgentChat();
@@ -712,9 +733,13 @@ export const SessionSidebar = memo(function SessionSidebar({
       action: {
         label: "Undo",
         onClick: () => {
-          void unsettleThread(item.threadId).catch((err: unknown) => {
-            toast.error(`Couldn't undo: ${invokeErrorMessage(err)}`);
-          });
+          void unsettleThread(item.threadId)
+            .then(() => {
+              if (wasOpen) handleOpenAgent(item);
+            })
+            .catch((err: unknown) => {
+              toast.error(`Couldn't undo: ${invokeErrorMessage(err)}`);
+            });
         },
       },
     });
@@ -860,13 +885,20 @@ export const SessionSidebar = memo(function SessionSidebar({
     !isLoading && !showError && filtered.length === 0 && settledFiltered.length === 0;
 
   // What the shelf shows. A search looks through all of it, open or not. Open,
-  // a page at a time. Collapsed, nothing — except the open session, which
-  // never disappears from the sidebar just because it was settled.
+  // a page at a time. Collapsed, only the rows that need to be seen: the open
+  // session, and any that came alive again — running, waiting on the user, or
+  // live in another process. Outside activity does not un-settle a session,
+  // but it must not be buried behind a shut shelf either.
+  const needsSight = (item: SidebarItem) => {
+    if (isActiveItem(item) || item.liveElsewhere) return true;
+    const status = liveByKey.get(`${item.kind}:${item.id}`)?.status;
+    return status === "running" || status === "waiting";
+  };
   const shelfRows = query
     ? settledFiltered
     : settledExpanded
       ? settledFiltered.slice(0, settledLimit)
-      : settledFiltered.filter(isActiveItem);
+      : settledFiltered.filter(needsSight);
   const shelfHidden = query ? 0 : settledFiltered.length - shelfRows.length;
   const shelfOpen = settledExpanded || !!query;
 

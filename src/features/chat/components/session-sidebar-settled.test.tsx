@@ -10,6 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const backend = vi.hoisted(() => ({
   threads: [] as Array<Record<string, unknown>>,
   calls: [] as Array<[string, unknown]>,
+  /** What `threads_settle` answers: whether anything moved. */
+  settles: true,
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -19,6 +21,8 @@ vi.mock("@tauri-apps/api/core", () => ({
       return [{ name: "atlas", paths: ["/p/atlas"], isCurrent: true, threads: backend.threads }];
     }
     if (cmd === "threads_sync_project") return 0;
+    if (cmd === "threads_settle") return backend.settles;
+    if (cmd === "threads_unsettle") return true;
     return undefined;
   }),
 }));
@@ -37,7 +41,12 @@ import { SessionSidebar } from "./session-sidebar";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useChatStore } from "../stores/chat-store";
 
-function thread(id: string, updatedAt: string, settledAt: string | null = null) {
+function thread(
+  id: string,
+  updatedAt: string,
+  settledAt: string | null = null,
+  liveElsewhere = false,
+) {
   return {
     threadId: `th-${id}`,
     sessionId: `s-${id}`,
@@ -49,7 +58,7 @@ function thread(id: string, updatedAt: string, settledAt: string | null = null) 
     settledAt,
     projectName: "atlas",
     folderPaths: ["/p/atlas"],
-    liveElsewhere: false,
+    liveElsewhere,
     branch: null,
   };
 }
@@ -69,6 +78,7 @@ const savedSidebar = useLayoutStore.getState().chatSidebar;
 
 beforeEach(() => {
   backend.calls = [];
+  backend.settles = true;
   backend.threads = [
     thread("a", "2026-10-06T10:03:00Z"),
     thread("b", "2026-10-06T10:02:00Z"),
@@ -162,5 +172,44 @@ describe("the Settled shelf", () => {
     await waitFor(() =>
       expect(backend.calls).toContainEqual(["threads_unsettle", { threadId: "th-b" }]),
     );
+  });
+
+  it("keeps a settled session that came alive elsewhere in sight while shut", async () => {
+    backend.threads = [
+      thread("a", "2026-10-06T10:03:00Z"),
+      thread("b", "2026-10-06T10:02:00Z"),
+      thread("old", "2026-09-01T10:00:00Z", "2026-09-04T10:00:00Z", true),
+      thread("new", "2026-09-10T10:00:00Z", "2026-09-13T10:00:00Z"),
+    ];
+    await mount();
+    const shelf = screen.getByTestId("settled-shelf");
+    expect(titlesIn(shelf)).toEqual(["chat old"]);
+    expect(within(shelf).getByTestId("live-elsewhere-working")).toBeTruthy();
+  });
+
+  it("says nothing when the settle changed nothing", async () => {
+    backend.settles = false;
+    await mount();
+    const card = screen.getByText("chat b").closest("div.group")!;
+    fireEvent.click(within(card as HTMLElement).getByRole("button", { name: "Settle session" }));
+    await waitFor(() =>
+      expect(backend.calls).toContainEqual(["threads_settle", { threadId: "th-b" }]),
+    );
+    await Promise.resolve();
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it("moves the tab on when the open session settles, and Undo brings it back", async () => {
+    useChatStore.getState().actions.createSession("tab-1", "claude-code");
+    useChatStore.getState().actions.setAcpBinding("tab-1", "agent-1", "s-a", "/p/atlas");
+    await mount();
+    const card = screen.getByText("chat a").closest("div.group")!;
+    fireEvent.click(within(card as HTMLElement).getByRole("button", { name: "Settle session" }));
+    await waitFor(() => expect(toast).toHaveBeenCalled());
+    expect(useChatStore.getState().sessions["tab-1"]?.title).toBe("chat b");
+
+    const [, options] = toast.mock.calls[0] as [string, { action: { onClick: () => void } }];
+    options.action.onClick();
+    await waitFor(() => expect(useChatStore.getState().sessions["tab-1"]?.title).toBe("chat a"));
   });
 });

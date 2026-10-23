@@ -114,6 +114,7 @@ import { useTeamPresenceStore } from "@/features/artifacts/stores/team-presence-
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { useSettingsNav } from "@/features/settings/stores/settings-nav-store";
 import { closeSettings, openSettingsSection } from "@/features/settings/lib/open-settings";
+import { onSessionsAutoSettled } from "@/features/chat/lib/history-api";
 import { commsActions, pruneTyping } from "@/features/comms/stores/comms-store";
 import { useUpdaterStore } from "@/features/updater/stores/updater-store";
 import {
@@ -174,6 +175,21 @@ export function App() {
 
   // App warnings (auto-fetch failing, behind remote, config.toml errors).
   useEffect(() => startAppWarnings(), []);
+
+  // The first idle sweep that settles a pile of sessions at once says so,
+  // once ever (Rust keeps the flag): otherwise a long list just vanishes.
+  useEffect(() => {
+    const off = onSessionsAutoSettled(({ count }) => {
+      toast(`Settled ${count} idle sessions`, {
+        description: "Sessions idle for a few days move to the Settled shelf.",
+        action: {
+          label: "Settings",
+          onClick: () => openSettingsSection("chat", "autoSettleAfterDays"),
+        },
+      });
+    });
+    return () => void off.then((f) => f());
+  }, []);
 
   // Keybinding profiles: load once, then pick up hand edits to
   // keybindings.json whenever the window regains focus.

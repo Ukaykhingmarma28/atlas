@@ -498,7 +498,8 @@ pub struct AppSettings {
     /// Session sidebar order.
     #[serde(default)]
     pub sidebar_sort: SidebarSort,
-    /// Days a session may sit idle before it is settled on its own.
+    /// Days a session may sit idle before it is settled on its own; 0 turns
+    /// auto-settling off.
     #[serde(default = "default_auto_settle_after_days")]
     pub auto_settle_after_days: u32,
     /// 12- or 24-hour clock, or the system's.
@@ -584,7 +585,8 @@ pub fn default_ui_scale() -> f32 {
 }
 
 pub const DEFAULT_AUTO_SETTLE_AFTER_DAYS: u32 = 3;
-pub const MIN_AUTO_SETTLE_AFTER_DAYS: u32 = 1;
+/// 0 is "off": the idle sweep skips its pass.
+pub const MIN_AUTO_SETTLE_AFTER_DAYS: u32 = 0;
 pub const MAX_AUTO_SETTLE_AFTER_DAYS: u32 = 90;
 
 pub fn default_auto_settle_after_days() -> u32 {
@@ -2128,6 +2130,21 @@ mod tests {
     #[test]
     fn defaults_pass_validation() {
         assert!(validate(&AppSettings::default()).is_ok());
+    }
+
+    /// 0 is "off", not out of range; past 90 is.
+    #[test]
+    fn auto_settle_after_days_takes_zero_for_off() {
+        let off = AppSettings {
+            auto_settle_after_days: 0,
+            ..AppSettings::default()
+        };
+        assert!(validate(&off).is_ok());
+        let too_long = AppSettings {
+            auto_settle_after_days: MAX_AUTO_SETTLE_AFTER_DAYS + 1,
+            ..AppSettings::default()
+        };
+        assert_eq!(validate(&too_long).unwrap_err().key, "autoSettleAfterDays");
     }
 
     /// ADR-0012: on unless the user switched it off, and a file that predates

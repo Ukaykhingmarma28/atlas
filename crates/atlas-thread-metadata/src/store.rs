@@ -830,15 +830,29 @@ impl ThreadMetadataStore {
     /// is already settled, or that does not exist, is a no-op with no event.
     ///
     /// Whether the session may be settled right now (not mid-turn) is the
-    /// host's to decide; the store only records it.
+    /// host's to decide, with one exception decided here, under the lock: a
+    /// row the user sent to within [`SETTLE_AFTER_SEND_GRACE_SECS`] is
+    /// refused. A send records the interaction before the host counts the
+    /// turn in, so a settle landing in that gap would pass the host's busy
+    /// check and bury the session the user just spoke to.
     pub fn settle(&self, thread_id: ThreadId) -> bool {
+        let now = Utc::now();
         self.update(thread_id, |thread| {
-            if thread.settled_at.is_some() {
+            if thread.settled_at.is_some() || sent_to_recently(thread, now) {
                 return false;
             }
-            thread.settled_at = Some(Utc::now());
+            thread.settled_at = Some(now);
             true
         })
+    }
+
+    /// Whether the user sent to this session within the settle grace — the
+    /// host refuses a settle with a message when it is.
+    pub fn sent_to_recently(&self, thread_id: ThreadId) -> bool {
+        read(&self.inner.cache)
+            .threads
+            .get(&thread_id)
+            .is_some_and(|thread| sent_to_recently(thread, Utc::now()))
     }
 
     /// Back off the shelf. Recorded as `unsettled_at`, which keeps the idle
@@ -854,6 +868,19 @@ impl ThreadMetadataStore {
         })
     }
 
+    /// The sessions the idle sweep would settle at `cutoff`, before the host
+    /// rules out the busy ones. Read under the read lock, ids only: the
+    /// host's busy check is per session and costs a thread lock each, so it
+    /// runs over this short list rather than every row.
+    pub fn idle_sessions(&self, cutoff: DateTime<Utc>) -> Vec<acp::SessionId> {
+        read(&self.inner.cache)
+            .threads
+            .values()
+            .filter(|t| due_for_settling(t, cutoff))
+            .filter_map(|t| t.session_id.clone())
+            .collect()
+    }
+
     /// Settle every session idle since before `cutoff`. Answers how many were
     /// settled; one change event if any were.
     ///
@@ -863,32 +890,40 @@ impl ThreadMetadataStore {
     /// nothing has happened since. `busy` names the sessions the host knows
     /// are running, waiting on the user, or live in another process; those
     /// are skipped too. It is passed in rather than asked for because it is
-    /// read from the host, which reads this store, and this runs under the
-    /// store's write lock.
+    /// read from the host, which reads this store.
+    ///
+    /// The scan runs under the read lock; the write lock is taken only when
+    /// something is due, and each row is checked again under it, since a send
+    /// may have landed in between.
     ///
     /// The settled time is the row's last activity, not now: the session
     /// was done then, and that is the order the shelf lists it in.
     pub fn auto_settle_idle(&self, cutoff: DateTime<Utc>, busy: &HashSet<acp::SessionId>) -> usize {
+        let is_due = |t: &ThreadMetadata| {
+            due_for_settling(t, cutoff)
+                && t.session_id
+                    .as_ref()
+                    .is_some_and(|session_id| !busy.contains(session_id))
+        };
+        let due: Vec<ThreadId> = read(&self.inner.cache)
+            .threads
+            .values()
+            .filter(|t| is_due(t))
+            .map(|t| t.thread_id)
+            .collect();
+        if due.is_empty() {
+            return 0;
+        }
         let mut settled = 0;
         {
             let mut cache = write(&self.inner.cache);
-            let due: Vec<ThreadMetadata> = cache
-                .threads
-                .values()
-                .filter(|t| {
-                    let Some(session_id) = t.session_id.as_ref() else {
-                        return false;
-                    };
-                    let last = t.last_activity();
-                    !t.archived
-                        && t.settled_at.is_none()
-                        && last < cutoff
-                        && t.unsettled_at.is_none_or(|at| at <= last)
-                        && !busy.contains(session_id)
-                })
-                .cloned()
-                .collect();
-            for mut thread in due {
+            for thread_id in due {
+                let Some(mut thread) = cache.threads.get(&thread_id).cloned() else {
+                    continue;
+                };
+                if !is_due(&thread) {
+                    continue;
+                }
                 thread.settled_at = Some(thread.last_activity());
                 cache.insert(thread.clone());
                 self.enqueue(DbOperation::Upsert(Box::new(thread)));
@@ -1218,6 +1253,25 @@ fn tiebreak(a: &ThreadMetadata, b: &ThreadMetadata) -> std::cmp::Ordering {
 // counters — none of it is a half-applied invariant — so taking it anyway
 // degrades to "possibly one stale row" rather than turning every later sidebar
 // read into a second panic.
+/// How long after a user send a settle is refused ([`ThreadMetadataStore::settle`]).
+pub const SETTLE_AFTER_SEND_GRACE_SECS: i64 = 10;
+
+fn sent_to_recently(thread: &ThreadMetadata, now: DateTime<Utc>) -> bool {
+    thread.interacted_at.is_some_and(|at| {
+        now.signed_duration_since(at) < chrono::Duration::seconds(SETTLE_AFTER_SEND_GRACE_SECS)
+    })
+}
+
+/// The store's half of the idle sweep's rule; the host adds "not busy".
+fn due_for_settling(thread: &ThreadMetadata, cutoff: DateTime<Utc>) -> bool {
+    let last = thread.last_activity();
+    thread.session_id.is_some()
+        && !thread.archived
+        && thread.settled_at.is_none()
+        && last < cutoff
+        && thread.unsettled_at.is_none_or(|at| at <= last)
+}
+
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }

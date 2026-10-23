@@ -2431,20 +2431,27 @@ impl AgentHost {
     /// process (`modified` is the session watcher's file times, the input the
     /// sidebar's "Working" reads) — or the agent is waiting on the user: a
     /// session that is mid-work is not done, and settling it would hide the
-    /// very thing about to need attention.
+    /// very thing about to need attention. Also refused just after a user
+    /// send: the send records the interaction before the turn is counted in,
+    /// and the store re-checks that under its lock, so a settle racing a send
+    /// cannot slip through the gap.
+    ///
+    /// Answers whether the session moved; `false` when it was already settled
+    /// or no longer exists.
     pub fn settle_thread(
         &self,
         thread_id: ThreadId,
         modified: &HashMap<String, DateTime<Utc>>,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let history = self.history_or_err()?;
         let Some(thread) = history.store().thread(thread_id) else {
-            return Ok(());
+            return Ok(false);
         };
         if let Some(session_id) = thread.session_id.as_ref() {
             let id = session_id.0.as_ref();
             let activity = self.atlas_activity();
-            if self.session_is_busy(id, &activity)
+            if history.store().sent_to_recently(thread_id)
+                || self.session_is_busy(id, &activity)
                 || live_elsewhere(modified.get(id).copied(), activity.get(id), Utc::now())
             {
                 return Err(HostError::new(
@@ -2453,14 +2460,13 @@ impl AgentHost {
                 ));
             }
         }
-        history.store().settle(thread_id);
-        Ok(())
+        Ok(history.store().settle(thread_id))
     }
 
-    /// Take a session back off the Settled shelf.
-    pub fn unsettle_thread(&self, thread_id: ThreadId) -> Result<()> {
-        self.history_or_err()?.store().unsettle(thread_id);
-        Ok(())
+    /// Take a session back off the Settled shelf. Answers whether it was on
+    /// it.
+    pub fn unsettle_thread(&self, thread_id: ThreadId) -> Result<bool> {
+        Ok(self.history_or_err()?.store().unsettle(thread_id))
     }
 
     /// Whether Atlas has work in flight in this session: a turn it sent that
@@ -2508,20 +2514,23 @@ impl AgentHost {
     ) -> Result<usize> {
         let history = self.history_or_err()?;
         let now = Utc::now();
+        let cutoff = now - idle;
+        // Only the rows already idle past the cutoff are worth a busy check:
+        // most ticks find none, and then nothing else is read.
+        let idle_sessions = history.store().idle_sessions(cutoff);
+        if idle_sessions.is_empty() {
+            return Ok(0);
+        }
         let activity = self.atlas_activity();
-        let busy: std::collections::HashSet<acp::SessionId> = history
-            .store()
-            .threads()
+        let busy: std::collections::HashSet<acp::SessionId> = idle_sessions
             .into_iter()
-            .filter(|t| !t.archived && !t.is_settled())
-            .filter_map(|t| t.session_id)
             .filter(|session_id| {
                 let id = session_id.0.as_ref();
                 self.session_is_busy(id, &activity)
                     || live_elsewhere(modified.get(id).copied(), activity.get(id), now)
             })
             .collect();
-        Ok(history.store().auto_settle_idle(now - idle, &busy))
+        Ok(history.store().auto_settle_idle(cutoff, &busy))
     }
 
     /// Which installed agents can be imported from, and how much they have.
@@ -4624,8 +4633,15 @@ mod tests {
         assert_eq!(settled, 0, "busy here, live elsewhere: neither is settled");
 
         host.end_atlas_turn("ses-running");
-        host.settle_thread(running_id, &HashMap::new())
-            .expect("a quiet session settles");
+        assert!(
+            host.settle_thread(running_id, &HashMap::new())
+                .expect("a quiet session settles"),
+            "and says it moved"
+        );
+        assert!(
+            !host.settle_thread(running_id, &HashMap::new()).unwrap(),
+            "settling it again changes nothing, and says so"
+        );
         let settled = host
             .auto_settle_idle(chrono::Duration::days(3), &HashMap::new())
             .unwrap();
@@ -4639,6 +4655,30 @@ mod tests {
                 .unwrap();
             assert!(row.settled_at.is_some(), "settledAt on the wire");
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A send records the interaction before the turn is counted in. A settle
+    /// that lands in that gap is refused, not taken as "quiet".
+    #[tokio::test]
+    async fn a_session_just_sent_to_is_not_settled() {
+        let (host, dir) = fresh_host();
+        let history = host.history().expect("a fresh host has history");
+        let mut thread = atlas_thread_metadata::ThreadMetadata::new(
+            atlas_thread_metadata::ThreadId::new(),
+            "an-uninstalled-agent".into(),
+            atlas_thread_metadata::PathList::new(&[PathBuf::from("/tmp/atlas")]),
+        );
+        thread.session_id = Some(acp::SessionId::new("ses-sent"));
+        let id = thread.thread_id;
+        history.store().save_all(vec![thread]);
+        history.store().update_interacted_at(id, Utc::now());
+
+        let err = host
+            .settle_thread(id, &HashMap::new())
+            .expect_err("the turn has not been counted in yet");
+        assert!(err.message.contains("still running"));
+        assert!(!history.store().settle(id), "the store refuses it too");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

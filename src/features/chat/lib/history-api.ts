@@ -137,15 +137,33 @@ export function archiveThread(threadId: string): Promise<void> {
 
 /**
  * Move a session to the Settled shelf: done for now, still in the sidebar.
- * Rejects while a turn is running in it.
+ * Rejects while a turn is running in it. Resolves whether anything changed —
+ * `false` for a session already settled, gone, or sent to a moment ago.
  */
-export function settleThread(threadId: string): Promise<void> {
-  return invoke<void>("threads_settle", { threadId });
+export function settleThread(threadId: string): Promise<boolean> {
+  return invoke<boolean>("threads_settle", { threadId });
 }
 
-/** Take a session back off the Settled shelf. */
-export function unsettleThread(threadId: string): Promise<void> {
-  return invoke<void>("threads_unsettle", { threadId });
+/** Take a session back off the Settled shelf. Resolves whether it was on it. */
+export function unsettleThread(threadId: string): Promise<boolean> {
+  return invoke<boolean>("threads_unsettle", { threadId });
+}
+
+/**
+ * Fired once, ever: the first idle sweep that settled more than a handful of
+ * sessions at a time, so the user learns where they went.
+ */
+export const SESSIONS_AUTO_SETTLED_EVENT = "atlas:sessions-auto-settled";
+
+/** The first big idle sweep's payload: how many sessions it settled. */
+export interface AutoSettledNotice {
+  count: number;
+}
+
+export function onSessionsAutoSettled(
+  handler: (notice: AutoSettledNotice) => void,
+): Promise<UnlistenFn> {
+  return listen<AutoSettledNotice>(SESSIONS_AUTO_SETTLED_EVENT, (e) => handler(e.payload));
 }
 
 /** Whether an agent can be imported from, and why not when it cannot. */

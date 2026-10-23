@@ -431,21 +431,25 @@ export const miscHandlers: MockHandlers = {
     return null;
   },
   // As in Rust: settling sinks the row to the Settled shelf; it stays listed.
-  threads_settle: ({ threadId }): null => {
+  threads_settle: ({ threadId }): boolean => {
+    const due = threads.some((t) => t.threadId === String(threadId) && t.settledAt === null);
+    if (!due) return false;
     threads = threads.map((thread) =>
-      thread.threadId === String(threadId) && thread.settledAt === null
+      thread.threadId === String(threadId)
         ? { ...thread, settledAt: new Date().toISOString() }
         : thread,
     );
     threadsChanged();
-    return null;
+    return true;
   },
-  threads_unsettle: ({ threadId }): null => {
+  threads_unsettle: ({ threadId }): boolean => {
+    const due = threads.some((t) => t.threadId === String(threadId) && t.settledAt !== null);
+    if (!due) return false;
     threads = threads.map((thread) =>
       thread.threadId === String(threadId) ? { ...thread, settledAt: null } : thread,
     );
     threadsChanged();
-    return null;
+    return true;
   },
   threads_archive: ({ threadId }): null => {
     threads = threads.map((thread) =>

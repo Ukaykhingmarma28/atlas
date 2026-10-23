@@ -188,3 +188,32 @@ fn the_idle_sweep_skips_archived_busy_and_unsettled_sessions() {
         .collect();
     assert_eq!(settled, [false, false, false, true]);
 }
+
+#[test]
+fn a_session_sent_to_a_moment_ago_is_not_settled() {
+    // The send records the interaction before the host counts the turn in;
+    // the store refuses a settle in that gap, under its own lock.
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(&dir);
+    let row = thread(Duration::hours(1));
+    let id = row.thread_id;
+    store.save_all(vec![row]);
+    store.update_interacted_at(id, Utc::now());
+
+    assert!(store.sent_to_recently(id));
+    assert!(!store.settle(id));
+    assert!(!store.thread(id).unwrap().is_settled());
+}
+
+#[test]
+fn idle_sessions_lists_only_what_the_sweep_could_settle() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(&dir);
+    let old = thread(Duration::days(5));
+    let fresh = thread(Duration::hours(2));
+    let old_session = old.session_id.clone().unwrap();
+    store.save_all(vec![old, fresh]);
+
+    let cutoff = Utc::now() - Duration::days(3);
+    assert_eq!(store.idle_sessions(cutoff), vec![old_session]);
+}
