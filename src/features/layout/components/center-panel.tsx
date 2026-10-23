@@ -24,6 +24,7 @@ import { FileIcon, type FallbackIcon } from "@/features/icon-theme/components/fi
 import { ChatPanel } from "@/features/chat/components/chat-panel";
 import { WelcomeScreen } from "@/features/app/components/welcome-screen";
 import { UnsupportedView } from "@/features/unsupported/components/unsupported-view";
+import { FileTabFrame } from "@/features/explorer/components/file-tab-frame";
 
 // Every other tab type is lazy. Editor/Terminal in particular pull in
 // CodeMirror+Lezer (~600 KB) and xterm (~250 KB) respectively — keeping
@@ -68,6 +69,12 @@ const CommitView = lazy(() =>
 const ReviewPanel = lazy(() =>
   import("@/features/git/components/diff-viewer/review-panel").then((m) => ({
     default: m.ReviewPanel,
+  })),
+);
+// The project tree as a surface of its own (`files-surface.ts`).
+const FilesPanel = lazy(() =>
+  import("@/features/explorer/components/files-panel").then((m) => ({
+    default: m.FilesPanel,
   })),
 );
 const SourceControlPanel = lazy(() =>
@@ -115,6 +122,7 @@ import {
   Maximize2,
   Minimize2,
   MessagesSquare,
+  FolderTree,
 } from "lucide-react";
 import { PROJECTLESS_TYPES, surfaceMinWidth, type TabType } from "@/lib/constants";
 import { teamChatShown, toggleTeamChat } from "../lib/team-chat";
@@ -131,6 +139,7 @@ const tabIcons: Record<TabType, FallbackIcon> = {
   browser: Globe,
   tasks: CheckSquare,
   editor: Code,
+  files: FolderTree,
   knowledge: Brain,
   "knowledge-graph": Network,
   memory: BrainCircuit,
@@ -839,7 +848,9 @@ const TabContentContainer = memo(function TabContentContainer({
             the same slot here, and without a key React reuses the first tab's
             component — and its state — for the second. Two draft tabs shared
             one Y.Doc that way and wrote each other's content. */}
-        {activeIsNonPersistent && <TabContent key={activeTab.id} tab={activeTab} />}
+        {activeIsNonPersistent && (
+          <TabContent key={activeTab.id} tab={activeTab} projectId={projectId} />
+        )}
       </Suspense>
     </div>
   );
@@ -868,11 +879,17 @@ function PersistentPanel({
   switch (tab.type) {
     case "editor":
       return (
-        <EditorPanel
+        <FileTabFrame
           tabId={tab.id}
+          projectId={projectId}
           filePath={tab.data.filePath as string | undefined}
-          containerHeight={height}
-        />
+        >
+          <EditorPanel
+            tabId={tab.id}
+            filePath={tab.data.filePath as string | undefined}
+            containerHeight={height}
+          />
+        </FileTabFrame>
       );
     case "browser":
       return (
@@ -883,7 +900,11 @@ function PersistentPanel({
         />
       );
     case "pdf":
-      return <PdfViewer filePath={tab.data.filePath as string} tabId={tab.id} />;
+      return (
+        <FileTabFrame tabId={tab.id} projectId={projectId} filePath={tab.data.filePath as string}>
+          <PdfViewer filePath={tab.data.filePath as string} tabId={tab.id} />
+        </FileTabFrame>
+      );
     case "team-chat":
       return <CommsPanel />;
     // Chat is normally handled by the caller, which needs its own
@@ -994,7 +1015,17 @@ function PanelLoading() {
   return <PanelSkeleton rows={7} />;
 }
 
-function TabContent({ tab }: { tab: Tab }) {
+function TabContent({ tab, projectId = null }: { tab: Tab; projectId?: string | null }) {
+  // A file tab carries the project tree beside the file (see FileTabFrame).
+  const framed = (content: React.ReactNode) => (
+    <FileTabFrame
+      tabId={tab.id}
+      projectId={projectId}
+      filePath={tab.data.filePath as string | undefined}
+    >
+      {content}
+    </FileTabFrame>
+  );
   switch (tab.type) {
     case "chat":
       return <ChatPanel tabId={tab.id} />;
@@ -1004,14 +1035,16 @@ function TabContent({ tab }: { tab: Tab }) {
       return <LogPanel />;
     case "source-control":
       return <SourceControlPanel />;
+    case "files":
+      return <FilesPanel tabId={tab.id} projectId={projectId} />;
     case "media":
-      return <MediaViewer filePath={tab.data.filePath as string} />;
+      return framed(<MediaViewer filePath={tab.data.filePath as string} />);
     case "svg":
-      return <SvgViewer filePath={tab.data.filePath as string} />;
+      return framed(<SvgViewer filePath={tab.data.filePath as string} />);
     case "pdf":
-      return <PdfViewer filePath={tab.data.filePath as string} tabId={tab.id} />;
+      return framed(<PdfViewer filePath={tab.data.filePath as string} tabId={tab.id} />);
     case "notebook":
-      return <NotebookViewer filePath={tab.data.filePath as string} />;
+      return framed(<NotebookViewer filePath={tab.data.filePath as string} />);
     case "diff":
       return <ReviewPanel tabId={tab.id} repoPath={tab.data.repoPath as string} />;
     case "commit":
@@ -1029,7 +1062,7 @@ function TabContent({ tab }: { tab: Tab }) {
         <CommsDraftTab convId={tab.data.convId as string} draftId={tab.data.draftId as string} />
       );
     case "unsupported":
-      return <UnsupportedView filePath={tab.data.filePath as string} />;
+      return framed(<UnsupportedView filePath={tab.data.filePath as string} />);
     default:
       return <PlaceholderContent tab={tab} />;
   }

@@ -1,6 +1,6 @@
 use serde::Serialize;
 use std::fs;
-use std::path::Path;
+use std::path::{Component, Path};
 
 #[derive(Debug, Serialize)]
 pub struct FileEntry {
@@ -341,9 +341,139 @@ pub async fn write_file_base64(path: String, contents: String) -> Result<(), Str
  * sync `#[tauri::command]` handlers freeze the NSApp main thread.
  */
 
+/// These commands take absolute paths and no project root, so they cannot
+/// check containment; what they can refuse is a `..` component, the one way a
+/// name typed into the tree (`../../x`) climbs out of the folder it was typed
+/// in. The tree validates names too; this is the backstop.
+fn refuse_parent_components(path: &str) -> Result<(), String> {
+    if Path::new(path)
+        .components()
+        .any(|c| matches!(c, Component::ParentDir))
+    {
+        return Err(format!("Refusing a path that climbs with `..`: {path}"));
+    }
+    Ok(())
+}
+
+/// `name` in NFC. macOS hands names back decomposed (NFD: `e` + U+0301) and a
+/// typed name arrives composed (NFC: `é`); compared raw, the same name reads
+/// as two.
+fn nfc(name: &std::ffi::OsStr) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    name.to_string_lossy().nfc().collect()
+}
+
+/// A rename that only changes case or Unicode normalisation (`readme.md` →
+/// `README.md`, an NFD `café.md` → an NFC `Café.md`). On a case-insensitive
+/// volume (APFS, NTFS) the target "exists", because it is the source; that
+/// must not read as a collision.
+///
+/// It is decided by the parent folder's own listing, not by the names: a
+/// case-sensitive folder (Linux, APFS case-sensitive, NTFS with per-directory
+/// case sensitivity on) can hold `a.txt` and `A.TXT` as two files, and then
+/// the listing names the target. Only when no entry other than the source is
+/// spelled like the target is the "existing" target the source itself. One
+/// rule on every platform, so the macOS test run exercises the one Windows
+/// ships.
+fn is_case_only_rename(from: &Path, to: &Path) -> bool {
+    let (Some(parent), Some(from_name), Some(to_name)) =
+        (from.parent(), from.file_name(), to.file_name())
+    else {
+        return false;
+    };
+    let (from_nfc, to_nfc) = (nfc(from_name), nfc(to_name));
+    if to.parent() != Some(parent)
+        || from_name == to_name
+        || from_nfc.to_lowercase() != to_nfc.to_lowercase()
+    {
+        return false;
+    }
+    let Ok(entries) = fs::read_dir(parent) else {
+        return false;
+    };
+    let mut saw_source = false;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        if name == to_name {
+            return false; // a distinct file already spelled exactly so
+        }
+        let name_nfc = nfc(&name);
+        if name_nfc == from_nfc {
+            saw_source = true;
+        } else if name_nfc == to_nfc {
+            return false; // the target, stored in the other normal form
+        }
+    }
+    saw_source
+}
+
+/// Rename `from` to `to` without ever replacing what is at `to`, and say
+/// which: `Ok(false)` when `to` already exists. Atomic where the platform has
+/// a no-replace rename (macOS `renamex_np(RENAME_EXCL)`, glibc Linux
+/// `renameat2(RENAME_NOREPLACE)`), so nothing can appear at `to` between a
+/// check and the rename. Elsewhere (Windows, musl, a filesystem that refuses
+/// the flag) it falls back to check-then-rename, which leaves that window:
+/// std's Windows rename passes `MOVEFILE_REPLACE_EXISTING`, and calling
+/// `MoveFileExW` without it would mean another direct dependency.
+fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<bool> {
+    #[cfg(any(target_os = "macos", all(target_os = "linux", target_env = "gnu")))]
+    {
+        use std::ffi::CString;
+        use std::os::unix::ffi::OsStrExt;
+        let c = |p: &Path| {
+            CString::new(p.as_os_str().as_bytes())
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
+        };
+        let (src, dst) = (c(from)?, c(to)?);
+        // SAFETY: both are valid NUL-terminated paths that outlive the call.
+        #[cfg(target_os = "macos")]
+        let rc = unsafe { libc::renamex_np(src.as_ptr(), dst.as_ptr(), libc::RENAME_EXCL) };
+        // SAFETY: as above; AT_FDCWD resolves relative paths as rename(2) would.
+        #[cfg(target_os = "linux")]
+        let rc = unsafe {
+            libc::renameat2(
+                libc::AT_FDCWD,
+                src.as_ptr(),
+                libc::AT_FDCWD,
+                dst.as_ptr(),
+                libc::RENAME_NOREPLACE,
+            )
+        };
+        if rc == 0 {
+            return Ok(true);
+        }
+        let err = std::io::Error::last_os_error();
+        match err.raw_os_error() {
+            Some(libc::EEXIST) => return Ok(false),
+            // The filesystem (or kernel) has no no-replace rename: fall back.
+            Some(libc::EINVAL | libc::ENOSYS | libc::ENOTSUP) => {}
+            _ => return Err(err),
+        }
+    }
+    if to.exists() {
+        return Ok(false);
+    }
+    fs::rename(from, to).map(|()| true)
+}
+
+/// `fs_rename`'s work: never onto another entry, but a case-only rename of the
+/// one entry is allowed (and is what the no-replace rename refuses on a
+/// case-insensitive volume, where the target "exists" as the source).
+fn rename_entry(from: &Path, to: &Path) -> Result<(), String> {
+    match rename_no_replace(from, to) {
+        Ok(true) => Ok(()),
+        Ok(false) if is_case_only_rename(from, to) => {
+            fs::rename(from, to).map_err(|e| format!("Failed to rename: {e}"))
+        }
+        Ok(false) => Err(format!("Target already exists: {}", to.display())),
+        Err(e) => Err(format!("Failed to rename: {e}")),
+    }
+}
+
 #[tauri::command]
 pub async fn fs_create_file(path: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
+        refuse_parent_components(&path)?;
         let p = Path::new(&path);
         if p.exists() {
             return Err(format!("Already exists: {path}"));
@@ -360,6 +490,7 @@ pub async fn fs_create_file(path: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn fs_create_dir(path: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
+        refuse_parent_components(&path)?;
         let p = Path::new(&path);
         if p.exists() {
             return Err(format!("Already exists: {path}"));
@@ -373,11 +504,9 @@ pub async fn fs_create_dir(path: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn fs_rename(from: String, to: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
-        let dst = Path::new(&to);
-        if dst.exists() {
-            return Err(format!("Target already exists: {to}"));
-        }
-        fs::rename(&from, &to).map_err(|e| format!("Failed to rename: {e}"))
+        refuse_parent_components(&from)?;
+        refuse_parent_components(&to)?;
+        rename_entry(Path::new(&from), Path::new(&to))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1045,5 +1174,108 @@ mod terminal_env_tests {
         );
         assert_eq!(parse_terminal_env(""), None);
         assert_eq!(parse_terminal_env("   "), None);
+    }
+}
+
+#[cfg(test)]
+mod tree_op_tests {
+    use super::{is_case_only_rename, refuse_parent_components, rename_entry};
+    use std::fs;
+
+    #[test]
+    fn parent_components_are_refused() {
+        assert!(refuse_parent_components("/p/a/../../etc/x").is_err());
+        assert!(refuse_parent_components("/p/a/b.ts").is_ok());
+        assert!(refuse_parent_components("/p/a/..hidden").is_ok());
+    }
+
+    #[test]
+    fn case_only_rename_is_not_a_collision() {
+        let dir = tempfile::tempdir().unwrap();
+        let from = dir.path().join("readme.md");
+        fs::write(&from, "x").unwrap();
+        let to = dir.path().join("README.md");
+        // Case-insensitive volume: `to` is `from`. Case-sensitive: `to` is
+        // absent, and a rename has no collision to excuse either way.
+        if to.exists() {
+            assert!(is_case_only_rename(&from, &to));
+        }
+        let other = dir.path().join("README.MD.bak");
+        fs::write(&other, "y").unwrap();
+        assert!(!is_case_only_rename(&from, &other));
+    }
+
+    #[test]
+    fn a_case_rename_across_unicode_forms_is_case_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let nfd = dir.path().join("cafe\u{301}.md");
+        fs::write(&nfd, "x").unwrap();
+        let nfc_upper = dir.path().join("Caf\u{e9}.md");
+        assert!(is_case_only_rename(&nfd, &nfc_upper));
+        rename_entry(&nfd, &nfc_upper).unwrap();
+        assert_eq!(fs::read_to_string(&nfc_upper).unwrap(), "x");
+    }
+
+    #[test]
+    fn a_rename_never_replaces_another_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.txt");
+        let b = dir.path().join("b.txt");
+        fs::write(&a, "a").unwrap();
+        fs::write(&b, "b").unwrap();
+        let err = rename_entry(&a, &b).unwrap_err();
+        assert!(err.contains("already exists"), "{err}");
+        assert_eq!(fs::read_to_string(&b).unwrap(), "b");
+        assert_eq!(fs::read_to_string(&a).unwrap(), "a");
+    }
+
+    #[test]
+    fn a_case_only_rename_goes_through() {
+        let dir = tempfile::tempdir().unwrap();
+        let from = dir.path().join("readme.md");
+        fs::write(&from, "x").unwrap();
+        let to = dir.path().join("README.md");
+        rename_entry(&from, &to).unwrap();
+        let names: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, vec![std::ffi::OsString::from("README.md")]);
+    }
+
+    #[test]
+    fn a_plain_rename_moves_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let from = dir.path().join("a.txt");
+        fs::write(&from, "x").unwrap();
+        let to = dir.path().join("b.txt");
+        rename_entry(&from, &to).unwrap();
+        assert!(!from.exists());
+        assert_eq!(fs::read_to_string(&to).unwrap(), "x");
+    }
+
+    #[test]
+    fn a_rename_to_another_folder_is_never_case_only() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("sub")).unwrap();
+        let from = dir.path().join("a.txt");
+        fs::write(&from, "x").unwrap();
+        assert!(!is_case_only_rename(
+            &from,
+            &dir.path().join("sub").join("A.txt")
+        ));
+    }
+
+    #[test]
+    fn a_different_file_with_a_case_twin_name_is_a_collision() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.txt");
+        fs::write(&a, "x").unwrap();
+        let b = dir.path().join("A.TXT");
+        if !b.exists() {
+            // Case-sensitive volume: two real files, never "case only".
+            fs::write(&b, "y").unwrap();
+            assert!(!is_case_only_rename(&a, &b));
+        }
     }
 }

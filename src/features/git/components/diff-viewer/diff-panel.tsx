@@ -19,7 +19,7 @@ import {
   Rows3,
   WrapText,
 } from "lucide-react";
-import { openFile } from "@/lib/open-file";
+import { openReviewFile } from "../../lib/open-review-file";
 import { Button } from "@/ui/button";
 import { IconButton } from "@/ui/icon-button";
 import { Hint } from "@/ui/tooltip";
@@ -122,9 +122,11 @@ export interface DiffPanelProps {
   sessionId?: string | null;
   /** Source-control actions (commit, push, branch) go here when they land. */
   actions?: ReactNode;
+  /** Heads the header: the review panel's view switch. */
+  leading?: ReactNode;
 }
 
-export function DiffPanel({ tabId, repoPath, sessionId = null, actions }: DiffPanelProps) {
+export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading }: DiffPanelProps) {
   const scopes: DiffScope[] = sessionId
     ? ["session", "working-tree", "branch-range"]
     : ["working-tree", "branch-range"];
@@ -366,6 +368,7 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions }: DiffPa
 
   const header = (
     <div className="flex h-control-lg shrink-0 items-center gap-1 border-b border-border px-2">
+      {leading}
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
@@ -514,8 +517,8 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions }: DiffPa
           <div
             className="h-full min-h-0 min-w-0"
             onClickCapture={(event) => {
-              // A click on a file's header row (not on one of its buttons)
-              // folds it; a click on its name opens the file.
+              // A click on a file's header row or its name (not on one of its
+              // buttons) opens the file.
               const path = event.nativeEvent.composedPath();
               for (const node of path) {
                 if (node instanceof HTMLButtonElement || node instanceof HTMLAnchorElement) return;
@@ -530,9 +533,13 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions }: DiffPa
               if (!header) return;
               const name = (title ?? header.querySelector("[data-title]"))?.textContent?.trim();
               const file = name ? files.find((f) => f.stat.path === name) : undefined;
-              if (!file) return;
-              if (title) void openFile(`${repoPath}/${file.stat.path}`);
-              else if (file.state === "ready") toggleFile(itemIdOf(file));
+              // A deleted file has nothing on disk to open; its diff is all
+              // there is of it.
+              if (!file || file.stat.status === "deleted") return;
+              // Header or name alike open the file, as a right-panel file tab
+              // (or the system editor for a file outside the project). The
+              // chevron, a button, still folds.
+              void openReviewFile(`${repoPath}/${file.stat.path}`);
             }}
           >
             <StyledCodeView
