@@ -36,7 +36,7 @@ const TREE: Record<string, ProjectEntry[]> = {
   a: [dir("a/x"), file("a/one.ts")],
   "a/x": [file("a/x/deep.ts")],
   b: [file("b/two.ts")],
-  node_modules: [dir("node_modules/react", true)],
+  node_modules: [dir("node_modules/react", true), file("node_modules/main.js")],
   "node_modules/react": [],
 };
 
@@ -409,5 +409,76 @@ describe("ProjectTreeModel", () => {
     await m.refresh();
     const after = m.getSnapshot().rows;
     expect(after.every((row, i) => row === before[i])).toBe(true);
+  });
+});
+
+describe("compacted folder chains", () => {
+  const CHAIN: Record<string, ProjectEntry[]> = {
+    "": [dir("vendor"), dir("src"), file("README.md")],
+    vendor: [dir("vendor/engine")],
+    "vendor/engine": [dir("vendor/engine/core")],
+    "vendor/engine/core": [file("vendor/engine/core/lib.rs"), file("vendor/engine/core/mod.rs")],
+    src: [dir("src/a"), file("src/main.ts")],
+    "src/a": [file("src/a/x.ts")],
+  };
+
+  it("draws a folder whose only child is a folder as one row, as far as the chain goes", () => {
+    const rows = flattenTree(new Map(Object.entries(CHAIN)), new Set(), true);
+    expect(rows[0]).toMatchObject({
+      path: "vendor/engine/core",
+      name: "core",
+      depth: 0,
+      chain: ["vendor", "vendor/engine", "vendor/engine/core"],
+    });
+    expect(rows.map((r) => r.path)).toEqual(["vendor/engine/core", "src", "README.md"]);
+  });
+
+  it("stops at a folder that is not loaded yet, and never compacts a folder with siblings", () => {
+    const partial = new Map(Object.entries(CHAIN));
+    partial.delete("vendor/engine");
+    const rows = flattenTree(partial, new Set(), true);
+    expect(rows[0].chain).toEqual(["vendor", "vendor/engine"]);
+    expect(rows.find((r) => r.path === "src")?.chain).toBeUndefined();
+  });
+
+  it("opens only when every link is open, and draws the children one level in", () => {
+    const listings = new Map(Object.entries(CHAIN));
+    const half = flattenTree(listings, new Set(["vendor", "vendor/engine"]), true);
+    expect(half.map((r) => r.path)).not.toContain("vendor/engine/core/lib.rs");
+    const open = flattenTree(
+      listings,
+      new Set(["vendor", "vendor/engine", "vendor/engine/core"]),
+      true,
+    );
+    expect(open.find((r) => r.path === "vendor/engine/core/lib.rs")?.depth).toBe(1);
+  });
+
+  it("keeps the compacted row's identity across flattens", () => {
+    const listings = new Map(Object.entries(CHAIN));
+    const a = flattenTree(listings, new Set(), true)[0];
+    const b = flattenTree(listings, new Set(["src"]), true)[0];
+    expect(b).toBe(a);
+  });
+
+  it("does not count a hidden only-child unless hidden files are shown", () => {
+    const listings = new Map(
+      Object.entries({ "": [dir("pkg")], pkg: [dir("pkg/.cache"), dir("pkg/src")] }),
+    );
+    expect(flattenTree(listings, new Set(), false)[0].chain).toEqual(["pkg", "pkg/src"]);
+    expect(flattenTree(listings, new Set(), true)[0].chain).toBeUndefined();
+  });
+
+  it("opening the head of a chain opens the whole chain as it loads", async () => {
+    const { read } = disk(CHAIN);
+    const m = new ProjectTreeModel("/c", read);
+    await m.load([""]);
+    await m.expand("vendor");
+    expect(m.isExpanded("vendor/engine")).toBe(true);
+    expect(m.isExpanded("vendor/engine/core")).toBe(true);
+    expect(paths(m)).toContain("vendor/engine/core/lib.rs");
+    // Closing the row closes the chain.
+    await m.setRowExpanded(m.getSnapshot().rows[0], false);
+    expect(m.isExpanded("vendor")).toBe(false);
+    expect(paths(m)).not.toContain("vendor/engine/core/lib.rs");
   });
 });

@@ -43,7 +43,22 @@ import {
   readDirectories,
   type DirectoryListing,
 } from "../lib/fs-api";
-import { nameOf, parentOf, projectTreeModel, type TreeRowData } from "../lib/project-tree-model";
+import {
+  chainOpen,
+  nameOf,
+  parentOf,
+  projectTreeModel,
+  type TreeRowData,
+} from "../lib/project-tree-model";
+import {
+  buildSearchRows,
+  collectMatches,
+  normalizeTreeQuery,
+  SEARCH_DEBOUNCE_MS,
+  SEARCH_INDEX_LIMIT,
+} from "../lib/tree-search";
+import { searchProjectFiles } from "@/features/file-picker/lib/file-picker-api";
+import { useProjectStore } from "@/features/projects/stores/project-store";
 import { absoluteOf, ProjectFileOps, relativeTo } from "../lib/project-file-ops";
 import { INDENT_PER_LEVEL, ROW_HEIGHT } from "../lib/tree-constants";
 import { ROOT_DROP, useFileTreeDragDrop } from "../hooks/use-file-tree-drag-drop";
@@ -165,7 +180,68 @@ export function ProjectFileTree({
   );
   const ops = useMemo(() => new ProjectFileOps(model), [model]);
   const snapshot = useSyncExternalStore(model.subscribe, model.getSnapshot);
-  const { rows, expanded, loading, errors, ready } = snapshot;
+  const { expanded, loading, errors, ready } = snapshot;
+
+  // ── Search ──────────────────────────────────────────────────────────────
+  // The field updates on every keystroke; nothing else does. After a pause
+  // the project's file index is asked, and the tree is filtered from its
+  // answer plus the listings already loaded (`tree-search.ts`). Until then
+  // the tree shows what it showed before, so typing never waits on a filter.
+  const workspaceId = useProjectStore((s) => s.projects.find((p) => p.path === root)?.id ?? null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState("");
+  const [search, setSearch] = useState<{
+    query: string;
+    indexHits: readonly string[];
+    truncated: boolean;
+  } | null>(null);
+  /** Folders closed by hand during this search; every other one is open. */
+  const [searchCollapsed, setSearchCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+  const searchSeq = useRef(0);
+  const [searchNonce, setSearchNonce] = useState(0);
+  useEffect(() => {
+    const q = normalizeTreeQuery(query);
+    if (!q) {
+      searchSeq.current++;
+      setSearch(null);
+      return;
+    }
+    const seq = ++searchSeq.current;
+    const timer = setTimeout(() => {
+      const answer = workspaceId
+        ? searchProjectFiles(workspaceId, root, q, SEARCH_INDEX_LIMIT).then(
+            (hits) => hits.map((h) => h.rel),
+            () => [] as string[],
+          )
+        : Promise.resolve([] as string[]);
+      void answer.then((indexHits) => {
+        if (seq !== searchSeq.current) return;
+        setSearchCollapsed(new Set());
+        setSearch({ query: q, indexHits, truncated: indexHits.length >= SEARCH_INDEX_LIMIT });
+      });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [query, root, workspaceId, searchNonce]);
+  const searching = search !== null;
+  const searchResult = useMemo(
+    () =>
+      search
+        ? buildSearchRows(
+            collectMatches(model.listingEntries(), search.indexHits, search.query, showHidden),
+            searchCollapsed,
+          )
+        : null,
+    // `snapshot` stands for the listings: a folder that loads or changes
+    // during a search is searched too.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    [model, search, searchCollapsed, showHidden, snapshot],
+  );
+  const rows = searchResult ? searchResult.rows : snapshot.rows;
+  const clearSearch = useCallback(() => {
+    setQuery("");
+    searchSeq.current++;
+    setSearch(null);
+  }, []);
 
   useEffect(() => model.setShowHidden(showHidden), [model, showHidden]);
   useEffect(() => {
@@ -234,12 +310,28 @@ export function ProjectFileTree({
     setScrollTarget(null);
   }, [display, scrollTarget, virtualizer]);
 
+  // A fresh answer starts at the top, with the first hit focused, so Tab
+  // or ↓ from the field lands on it.
+  useEffect(() => {
+    if (!search) return;
+    virtualizer.scrollToOffset(0);
+    if (searchResult?.firstMatch) setFocused(searchResult.firstMatch);
+    // Per answer, not per re-filter while folders load.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
   // ── Reveal the active file ──────────────────────────────────────────────
   const lastViewed = useActiveFilePath();
   const activeAbs = activeFile !== undefined ? activeFile : lastViewed;
   const activeRel = activeAbs ? relativeTo(root, activeAbs) : null;
+  // A file opened from the tree is already in view: revealing it must not
+  // end the search it was picked from. Anything else that points the tree
+  // at a file (another tab, ⌘P, an agent) does.
+  const openedFromTree = useRef<string | null>(null);
   useEffect(() => {
     if (!activeRel) return;
+    if (activeAbs !== openedFromTree.current) clearSearch();
+    openedFromTree.current = null;
     let cancelled = false;
     void model.reveal(activeRel).then((index) => {
       if (cancelled || index < 0) return;
@@ -249,6 +341,8 @@ export function ProjectFileTree({
     return () => {
       cancelled = true;
     };
+    // `activeAbs` moves with `activeRel`; `clearSearch` is stable.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [model, activeRel, revealNonce]);
 
   // ── Decorations ─────────────────────────────────────────────────────────
@@ -268,12 +362,37 @@ export function ProjectFileTree({
 
   const open = useCallback(
     (abs: string) => {
+      openedFromTree.current = abs;
       // After the file's tab exists: a caller that closes its own tab on
       // this (the Files surface) must not empty the column first. Neither
       // happens if the project changed while the file was being classified.
       void openInProject(abs, onFileOpened);
     },
     [onFileOpened],
+  );
+
+  /** A folder row's open state: during a search, open unless closed by hand
+   *  in it; otherwise the model's (every link of a compacted chain). */
+  const isOpen = useCallback(
+    (row: TreeRowData) =>
+      row.kind === "directory" &&
+      (searching ? !searchCollapsed.has(row.path) : chainOpen(row, expanded)),
+    [searching, searchCollapsed, expanded],
+  );
+  const setOpen = useCallback(
+    (row: TreeRowData, open: boolean) => {
+      if (!searching) {
+        void model.setRowExpanded(row, open);
+        return;
+      }
+      setSearchCollapsed((prev) => {
+        const next = new Set(prev);
+        if (open) next.delete(row.path);
+        else next.add(row.path);
+        return next;
+      });
+    },
+    [model, searching],
   );
 
   /**
@@ -305,11 +424,11 @@ export function ProjectFileTree({
 
   const activate = useCallback(
     (row: TreeRowData) => {
-      if (row.kind === "directory") void model.toggle(row.path);
+      if (row.kind === "directory") setOpen(row, !isOpen(row));
       else if (row.kind === "symlink") void activateLink(row);
       else open(absoluteOf(root, row.path));
     },
-    [model, root, open, activateLink],
+    [root, open, activateLink, isOpen, setOpen],
   );
 
   /** The selection as rows, in tree order; the given row when it is not part
@@ -323,10 +442,12 @@ export function ProjectFileTree({
   const beginNewEntry = useCallback(
     (parent: string, isDir: boolean) => {
       setRenaming(null);
+      // The new entry goes in the real tree, where it will land.
+      clearSearch();
       if (parent !== "") void model.expand(parent);
       setNewEntry({ parent, isDir });
     },
-    [model],
+    [model, clearSearch],
   );
 
   const copyText = (text: string) => void navigator.clipboard.writeText(text).catch(() => {});
@@ -494,14 +615,15 @@ export function ProjectFileTree({
       case "ArrowRight":
         if (!row || row.kind !== "directory") return;
         handled();
-        if (!expanded.has(row.path)) void model.expand(row.path);
+        if (!isOpen(row)) setOpen(row, true);
         else if (all[index + 1]?.depth === row.depth + 1) moveFocus(index + 1, false);
         return;
       case "ArrowLeft": {
         if (!row) return;
         handled();
-        if (row.kind === "directory" && expanded.has(row.path)) return model.collapse(row.path);
-        const parent = parentOf(row.path);
+        if (isOpen(row)) return setOpen(row, false);
+        // A compacted row's parent is the one above its outermost folder.
+        const parent = parentOf(row.chain?.[0] ?? row.path);
         if (parent)
           moveFocus(
             all.findIndex((r) => r.path === parent),
@@ -679,6 +801,7 @@ export function ProjectFileTree({
   const anyExpanded = expanded.size > 0;
   const toggleAll = () => {
     expandAbort.current?.abort();
+    clearSearch();
     if (anyExpanded) {
       model.collapseAll();
       return;
@@ -690,10 +813,49 @@ export function ProjectFileTree({
   const focusedRow = focused ? rows.find((r) => r.path === focused) : undefined;
   const newEntryParent = dirForPaste(focusedRow ?? null);
 
+  const refresh = () => {
+    void model.refresh();
+    // The index has its own watcher; asking again picks up what it saw.
+    if (search) setSearchNonce((n) => n + 1);
+  };
+
+  // One quiet row: refresh, the search field filling the width, then the
+  // tree's own buttons.
   const header = (
     <div className="flex h-control-lg shrink-0 items-center gap-1 border-b border-border px-2">
       {leading}
-      <div className="ml-auto flex shrink-0 items-center gap-0.5">
+      <Hint label="Refresh">
+        <IconButton size="sm" icon={RefreshCw} label="Refresh files" onClick={refresh} />
+      </Hint>
+      <div className="flex h-control-md min-w-0 flex-1 items-center rounded-md px-1.5 transition-colors duration-fast hover:bg-element-hover focus-within:bg-element-hover">
+        <input
+          ref={searchRef}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              e.stopPropagation();
+              clearSearch();
+              e.currentTarget.blur();
+            } else if (e.key === "ArrowDown" && rows.length > 0) {
+              // Into the results, at the first hit (or the first row).
+              e.preventDefault();
+              const first = searchResult?.firstMatch ?? rows[0].path;
+              setFocused(first);
+              setSelection({ paths: new Set([first]), anchor: first });
+              scrollRef.current?.focus({ preventScroll: true });
+            }
+          }}
+          placeholder="Search files"
+          aria-label={`Search ${nameOf(root)} files`}
+          spellCheck={false}
+          autoComplete="off"
+          maxLength={256}
+          className="min-w-0 flex-1 bg-transparent font-sans text-md text-foreground outline-none placeholder:text-muted-foreground"
+        />
+      </div>
+      <div className="flex shrink-0 items-center gap-0.5">
         <Hint label="New file">
           <IconButton
             size="sm"
@@ -708,14 +870,6 @@ export function ProjectFileTree({
             icon={FolderPlus}
             label="New folder"
             onClick={() => beginNewEntry(newEntryParent, true)}
-          />
-        </Hint>
-        <Hint label="Refresh">
-          <IconButton
-            size="sm"
-            icon={RefreshCw}
-            label="Refresh files"
-            onClick={() => void model.refresh()}
           />
         </Hint>
         <Hint label={anyExpanded ? "Collapse all folders" : "Expand all folders"}>
@@ -750,6 +904,12 @@ export function ProjectFileTree({
     );
   } else if (!ready) {
     body = <PanelSkeleton rows={10} className="gap-1.5 p-2" />;
+  } else if (searchResult && searchResult.matchCount === 0) {
+    body = (
+      <div role="status" className="px-3 py-4 text-xs text-muted-foreground">
+        No matching files.
+      </div>
+    );
   } else if (display.length === 0) {
     body = <div className="px-3 py-4 text-center text-xs text-muted-foreground">Empty folder</div>;
   } else {
@@ -763,8 +923,8 @@ export function ProjectFileTree({
                 key={GHOST_KEY}
                 className="absolute top-0 right-1 left-1 flex items-center gap-1.5 rounded-md bg-card"
                 style={{
-                  height: ROW_HEIGHT - 2,
-                  transform: `translateY(${item.start + 1}px)`,
+                  height: ROW_HEIGHT,
+                  transform: `translateY(${item.start}px)`,
                   paddingLeft: 2 + row.depth * INDENT_PER_LEVEL + 12 + 6,
                   paddingRight: 6,
                 }}
@@ -789,13 +949,11 @@ export function ProjectFileTree({
           }
           const abs = absoluteOf(root, row.path);
           const isDir = row.kind === "directory";
-          const isOpen = isDir && expanded.has(row.path);
+          const rowOpen = isOpen(row);
           const change = isDir ? undefined : changes.files.get(abs);
-          const gitColor = isDir
-            ? isOpen
-              ? null
-              : (changes.dirs.get(abs)?.color ?? null)
-            : (change?.color ?? null);
+          // A folder keeps its dot open or closed: it says "something below
+          // here changed" either way.
+          const gitColor = isDir ? (changes.dirs.get(abs)?.color ?? null) : (change?.color ?? null);
           return (
             <ProjectTreeRow
               key={row.path}
@@ -803,8 +961,8 @@ export function ProjectFileTree({
               absPath={abs}
               domId={domIdOf(row.path)}
               start={item.start}
-              expanded={isOpen}
-              loading={isOpen && loading.has(row.path)}
+              expanded={rowOpen}
+              loading={rowOpen && loading.has(row.path)}
               error={errors.get(row.path) ?? null}
               selected={selection.paths.has(row.path)}
               focused={focused === row.path}
@@ -830,6 +988,11 @@ export function ProjectFileTree({
   return (
     <div className="flex h-full min-h-0 flex-col bg-[var(--atlas-editor-background)]">
       {header}
+      {search?.truncated && (
+        <div className="shrink-0 px-3 py-1 text-xs text-muted-foreground">
+          More matches available. Refine your search.
+        </div>
+      )}
       <ContextMenu>
         <ContextMenuTrigger render={<div className="flex min-h-0 flex-1 flex-col" />}>
           <div

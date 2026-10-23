@@ -4,7 +4,9 @@
 // uncommitted changes spread through it. Listings are generated per path on
 // demand, so nothing is materialized until the tree asks.
 //
-// Opens the review panel beside the session on its Files view. Actions:
+// Opens the Files surface. `fileindex_search` answers from every file outside
+// `node_modules`, as the real index would, so the tree's search has the whole
+// project to look in. Actions:
 //   __atlasMock.actions.filesAddOne()   — a file appears on disk; the watcher fires
 //   __atlasMock.actions.filesRemoveOne() — the last one added goes away again
 
@@ -87,6 +89,43 @@ function generated(path: string): ProjectEntry[] | null {
 
 const nameOf = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 
+/** Every file the index would hold: all of them but `node_modules`, which a
+ *  `.gitignore`-respecting walk skips. Built on the first search. */
+let indexed: { rel: string; lower: string }[] | null = null;
+function indexedFiles() {
+  if (indexed) return indexed;
+  const out: string[] = [];
+  const walk = (path: string) => {
+    for (const entry of listing(path).entries) {
+      if (entry.ignored) continue;
+      if (entry.kind === "directory") walk(entry.path);
+      else out.push(entry.path);
+    }
+  };
+  walk("");
+  indexed = out.map((rel) => ({ rel, lower: rel.toLowerCase() }));
+  return indexed;
+}
+
+/** The index's search, roughly: substring hits rank above subsequence ones. */
+function searchIndex(query: string, limit: number) {
+  const q = query.trim().toLowerCase();
+  const exact: string[] = [];
+  const loose: string[] = [];
+  for (const { rel, lower } of indexedFiles()) {
+    if (lower.includes(q)) exact.push(rel);
+    else if (exact.length < limit) {
+      let i = 0;
+      for (const ch of lower) if (ch === q[i]) i++;
+      if (i === q.length) loose.push(rel);
+    }
+    if (exact.length >= limit) break;
+  }
+  return [...exact, ...loose]
+    .slice(0, limit)
+    .map((rel) => ({ path: `${MOCK_PROJECT.path}/${rel}`, rel }));
+}
+
 function listing(path: string): DirectoryListing {
   const base = generated(path);
   if (!base) return { path, entries: [], error: `No such directory: ${path}` };
@@ -128,6 +167,8 @@ export const filesLarge: Scenario = {
   description: "The review panel's Files view on ~56,000 entries with 300 changes.",
   commands: {
     read_directories: ({ paths }) => ((paths ?? []) as string[]).map(listing),
+    fileindex_open_project: () => indexedFiles().length,
+    fileindex_search: ({ query, limit }) => searchIndex(String(query ?? ""), Number(limit ?? 100)),
     git_diff_preview: () => PREVIEW,
     git_diff_file_contents: ({ filePath }) => {
       const change = byPath.get(String(filePath));
