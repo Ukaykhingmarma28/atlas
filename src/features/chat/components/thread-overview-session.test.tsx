@@ -48,7 +48,7 @@ describe("SessionBody", () => {
       expect(b.hasAttribute("disabled")).toBe(false);
     }
     expect(screen.getAllByRole("button", { name: /Share this project/ })).toHaveLength(3);
-    fireEvent.click(button(/Find in chat/));
+    fireEvent.click(button(/Find in session/));
     expect(onOpenSearch).toHaveBeenCalledOnce();
   });
 

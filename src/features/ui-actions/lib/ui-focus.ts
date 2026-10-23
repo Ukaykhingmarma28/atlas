@@ -1,24 +1,29 @@
 /**
- * `ui_focus`: activate a tab, show or hide a panel, pick a side panel's
- * section or the right panel's occupant, focus a split column, or reveal a
- * path in the explorer. Always through the layout store's own actions.
+ * `ui_focus`: activate a tab, show or hide a panel, pick the left panel's or
+ * source control's section, focus a split column, or reveal a path in the
+ * explorer. Always through the layout store's own actions.
  */
 
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
+import {
+  revealSourceControl,
+  sourceControlShown,
+  toggleSourceControl,
+} from "@/features/layout/lib/source-control";
 import { useExplorerStore } from "@/features/explorer/stores/explorer-store";
 import { runAction } from "@/features/keybindings/lib/action-registry";
 import { readArgs, refuse } from "./args";
 import { activeProject, resolvePath, tabInScope } from "./scope";
 import type { UiActionRequest } from "./types";
 
-const TARGETS = ["tab", "panel", "section", "right_mode", "group", "explorer"] as const;
+const TARGETS = ["tab", "panel", "section", "group", "explorer"] as const;
 const PANELS = [
   "left",
   "right",
+  "source_control",
   "chat_sidebar",
   "terminal",
   "timeline_sidebar",
-  "tab_bar",
 ] as const;
 type Panel = (typeof PANELS)[number];
 
@@ -31,12 +36,12 @@ function panelVisible(name: Panel): boolean {
       return s.leftPanel.visible;
     case "right":
       return s.rightPanel.visible;
+    case "source_control":
+      return sourceControlShown(s);
     case "chat_sidebar":
       return s.chatSidebar.visible;
     case "timeline_sidebar":
       return s.timelinePanel.showSidebar;
-    case "tab_bar":
-      return s.tabBarVisible;
     case "terminal":
       return s.tabs.some(
         (t) => t.type === "terminal" && s.activeByGroup[t.groupId ?? "main"] === t.id,
@@ -51,16 +56,13 @@ function togglePanel(name: Panel): void {
     case "left":
       return a.toggleLeftPanel();
     case "right":
-      // Hides whichever occupant is showing; opens on source control.
-      return s.rightPanel.visible
-        ? a.toggleRightPanelMode(s.rightPanel.mode)
-        : a.toggleRightPanel();
+      return a.toggleTeamChat();
+    case "source_control":
+      return toggleSourceControl();
     case "chat_sidebar":
       return a.toggleChatSidebar();
     case "timeline_sidebar":
       return a.toggleTimelineSidebar();
-    case "tab_bar":
-      return a.toggleTabBar();
     case "terminal": {
       // The app shell's own terminal toggle, the one ⌃` runs.
       const ran = runAction("panels.terminal");
@@ -87,7 +89,7 @@ export async function performFocus(request: UiActionRequest): Promise<unknown> {
       return { panel: name, visible: panelVisible(name) };
     }
     case "section": {
-      const side = a.oneOf("side", ["left", "right"] as const);
+      const side = a.oneOf("side", ["left", "source_control"] as const);
       if (side === "left") {
         const section = a.oneOf("section", ["files", "knowledge"] as const);
         if (!layout().leftPanel.visible) actions.toggleLeftPanel();
@@ -95,15 +97,8 @@ export async function performFocus(request: UiActionRequest): Promise<unknown> {
         return { side, section };
       }
       const section = a.oneOf("section", ["changes", "github", "git-graph"] as const);
-      actions.revealRightSection(section);
+      revealSourceControl(section);
       return { side, section };
-    }
-    case "right_mode": {
-      const mode = a.oneOf("mode", ["source-control", "chat"] as const);
-      const { visible, mode: current } = layout().rightPanel;
-      // The action toggles; only call it when it would open or swap.
-      if (!(visible && current === mode)) actions.toggleRightPanelMode(mode);
-      return { mode, visible: true };
     }
     case "group": {
       const index = a.optInt("index", 0) ?? refuse("ui_focus: index must be an integer ≥ 0");

@@ -5,7 +5,7 @@ import {
 } from "@/features/notifications/lib/agent-notifier";
 import { copyText } from "@/lib/clipboard";
 import { matchesAction } from "@/features/keybindings/lib/use-scoped-hotkeys";
-import { useChatStore } from "../stores/chat-store";
+import { UNTITLED_SESSION, useChatStore } from "../stores/chat-store";
 import { pinScope, resolvePinIndex, type ChatPin } from "../stores/chat-pins-store";
 import { useDetailPanelStore } from "../stores/detail-panel-store";
 import { overviewScope, useThreadOverviewStore } from "../stores/thread-overview-store";
@@ -156,11 +156,6 @@ import type { TranscriptHandle } from "./transcript";
 import { requestModelPicker } from "../lib/model-picker-events";
 // Diffs + tool output live here rather than inline in the thread — see the
 // module header for why that's a perf decision as much as a UX one.
-/** The card's margin on every side. 4px, matching the Timeline tab — enough
- *  for the ring and its shadow to read as an edge, not enough to look like a
- *  gutter. */
-const CARD_INSET = 4;
-
 const DetailPanel = lazy(() => import("./detail-panel").then((m) => ({ default: m.DetailPanel })));
 const ThreadOverviewPanel = lazy(() =>
   import("./thread-overview-panel").then((m) => ({ default: m.ThreadOverviewPanel })),
@@ -418,14 +413,14 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   // invalidated on every render.
   // Header label. Prefer the session's own title; fall back to the first user
   // message (what the history list shows) so a chat that hasn't been titled yet
-  // still reads as itself rather than "New Chat".
+  // still reads as itself rather than "New session".
   const headerTitle = useMemo(() => {
     const t = stripInjectedContext(session?.title ?? "").trim();
-    if (t && t !== "New Chat") return t;
+    if (t && t !== UNTITLED_SESSION) return t;
     const first = stripInjectedContext(session?.firstUserContent ?? "")
       .replace(/\s+/g, " ")
       .trim();
-    return first.slice(0, 60) || "New chat";
+    return first.slice(0, 60) || UNTITLED_SESSION;
   }, [session?.title, session?.firstUserContent]);
 
   const filteredMessages = useMemo(
@@ -1236,16 +1231,11 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   // skeleton rather than a blank pane so that wait doesn't read as a broken tab.
   if (!session) {
     return (
-      // The same card, so the tab does not change shape when the session
-      // lands a frame later.
-      <div className="h-full min-h-0 bg-[var(--card)]" style={{ padding: CARD_INSET }}>
-        <div
-          ref={rootRef}
-          className="h-full overflow-hidden rounded-lg bg-[var(--background)] shadow-lg ring-1 ring-[var(--border)]"
-        >
-          <div className="mx-auto w-full max-w-(--atlas-chat-column) pt-[46px]">
-            <PanelSkeleton rows={6} />
-          </div>
+      // The same flat surface as the live chat, so the tab does not change
+      // shape when the session lands a frame later.
+      <div ref={rootRef} className="h-full min-h-0 overflow-hidden bg-[var(--background)]">
+        <div className="mx-auto w-full max-w-(--atlas-chat-column) pt-[46px]">
+          <PanelSkeleton rows={6} />
         </div>
       </div>
     );
@@ -1547,46 +1537,36 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   handleStopRef.current = handleStop;
 
   return (
-    // One card, inset on every side — the same recipe as the Timeline tab and
-    // the project rail: a near-black surface floating on the tab's own colour,
-    // its edge carried by a hairline ring with a soft shadow behind it. The
-    // tab is chrome; the conversation is content sitting in it, and the curve
-    // says that better than a line would.
-    //
-    // `overflow-hidden` is what makes the corners real: the session sidebar,
-    // the transcript's blur band and the docked panels all paint to the edge,
-    // and without it they square off the curve from the inside.
-    <div className="h-full min-h-0 bg-[var(--card)]" style={{ padding: CARD_INSET }}>
-      <div
-        ref={rootRef}
-        // `relative` is the positioning context for the bash-history panel,
-        // which slides in from the right as an absolute overlay (scrim +
-        // panel) instead of a flex column that shrinks the chat. The session
-        // sidebar (left) stays a normal flex column.
-        //
-        // On a near-black panel a shadow has almost nothing to darken, so the
-        // ring carries the edge and the shadow only lifts the card.
-        className="relative flex h-full min-h-0 overflow-hidden rounded-lg bg-[var(--background)] shadow-lg ring-1 ring-[var(--border)]"
-      >
-        <SessionSidebar tabId={tabId} />
+    // Flat, edge to edge. This used to be a rounded card inset 4px on a
+    // lighter frame, which put a second panel inside the column's own — the
+    // column border already says where the conversation ends.
+    <div
+      ref={rootRef}
+      // `relative` is the positioning context for the bash-history panel,
+      // which slides in from the right as an absolute overlay (scrim +
+      // panel) instead of a flex column that shrinks the chat. The session
+      // sidebar (left) stays a normal flex column.
+      className="relative flex h-full min-h-0 overflow-hidden bg-[var(--background)]"
+    >
+      <SessionSidebar tabId={tabId} />
 
-        {/* `data-chat-drop-zone`: Finder drops land anywhere on the conversation
+      {/* `data-chat-drop-zone`: Finder drops land anywhere on the conversation
           column, not just the composer (see `attachPaths` in message-input). */}
-        <div data-chat-drop-zone className="relative flex-1 flex flex-col min-w-0">
-          {/* The header FLOATS over the transcript rather than sitting above it in
+      <div data-chat-drop-zone className="relative flex-1 flex flex-col min-w-0">
+        {/* The header FLOATS over the transcript rather than sitting above it in
             the column. That is what lets the thread scroll underneath and be
             progressively blurred by the band the transcript draws at its top
             edge — a `backdrop-filter` can only blur what is painted behind it,
             and a header that owns its own row has nothing behind it but the
             panel background. The transcript reserves `HEADER_INSET` of top
             padding so the first row still starts below the bar. */}
-          {session.messages.length === 0 ? (
-            <div className="flex-1 overflow-y-auto">
-              {session.transcriptLoading ? <LoadingTranscriptState /> : <WelcomeState />}
-            </div>
-          ) : (
-            <div className="relative flex-1 min-h-0 flex flex-col">
-              {/* Transcript and overview rail share one row, INSIDE the
+        {session.messages.length === 0 ? (
+          <div className="flex-1 overflow-y-auto">
+            {session.transcriptLoading ? <LoadingTranscriptState /> : <WelcomeState />}
+          </div>
+        ) : (
+          <div className="relative flex-1 min-h-0 flex flex-col">
+            {/* Transcript and overview rail share one row, INSIDE the
                   conversation column. That placement is the whole point: the
                   header floats across this column, so its right-hand icons
                   land directly above the rail — the cards read as what those
@@ -1594,8 +1574,8 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
                   this column sat a third of the window away from the button
                   that opened it, with the transcript still centred in the
                   space between. */}
-              <div className="relative flex min-h-0 flex-1 justify-center">
-                {/* Capped at the transcript's own column width, so the thread
+            <div className="relative flex min-h-0 flex-1 justify-center">
+              {/* Capped at the transcript's own column width, so the thread
                     and the rail read as one composition centred in whatever
                     space there is. Left to `flex-1` the transcript took the
                     whole remainder and centred its 760px column inside it,
@@ -1604,210 +1584,209 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
                     attached to the thread it describes. Unchanged when the
                     rail is closed: 760 is what `Column` was already giving
                     the rows. */}
-                <div className="relative flex min-h-0 w-full min-w-0 max-w-(--atlas-chat-column) flex-1 flex-col">
-                  <Suspense fallback={<LoadingTranscriptState />}>
-                    <Transcript
-                      ref={messagesListRef}
-                      tabId={tabId}
-                      acpSessionId={acpSessionId}
-                      messages={filteredMessages}
-                      isStreaming={session.status === "running"}
-                      turnInProgress={isBusyAgentStatus(session.status)}
-                      agentType={session.agentType}
-                      topInset={HEADER_INSET}
-                      onShowJumpChange={onShowJumpChange}
-                      workingLabel={
-                        session.pendingSend
-                          ? (startingStatus ?? `Starting ${agentMeta(session.agentType).label}`)
-                          : undefined
-                      }
-                      workingEpoch={bindEpoch}
-                      onStallRestart={handleRestartAgent}
-                      onStallSwitch={handleSwitchAgent}
-                      onStallCopyDiagnostics={handleCopyDiagnostics}
-                      footer={
-                        <MemoryUpdatedCard
-                          projectPath={projectPathForTab(tabId)}
-                          sessionId={acpSessionId || null}
-                          since={memoryWritesSince}
-                        />
-                      }
-                    />
-                  </Suspense>
-                </div>
-                {/* Reserves its own width — the conversation narrows beside it
+              <div className="relative flex min-h-0 w-full min-w-0 max-w-(--atlas-chat-column) flex-1 flex-col">
+                <Suspense fallback={<LoadingTranscriptState />}>
+                  <Transcript
+                    ref={messagesListRef}
+                    tabId={tabId}
+                    acpSessionId={acpSessionId}
+                    messages={filteredMessages}
+                    isStreaming={session.status === "running"}
+                    turnInProgress={isBusyAgentStatus(session.status)}
+                    agentType={session.agentType}
+                    topInset={HEADER_INSET}
+                    onShowJumpChange={onShowJumpChange}
+                    workingLabel={
+                      session.pendingSend
+                        ? (startingStatus ?? `Starting ${agentMeta(session.agentType).label}`)
+                        : undefined
+                    }
+                    workingEpoch={bindEpoch}
+                    onStallRestart={handleRestartAgent}
+                    onStallSwitch={handleSwitchAgent}
+                    onStallCopyDiagnostics={handleCopyDiagnostics}
+                    footer={
+                      <MemoryUpdatedCard
+                        projectPath={projectPathForTab(tabId)}
+                        sessionId={acpSessionId || null}
+                        since={memoryWritesSince}
+                      />
+                    }
+                  />
+                </Suspense>
+              </div>
+              {/* Reserves its own width — the conversation narrows beside it
                     rather than being covered, so nothing the reader is
                     following disappears under the thing describing it. */}
-                {overviewOpen && (
-                  <Suspense fallback={null}>
-                    <ThreadOverviewPanel
-                      tabId={tabId}
-                      title={headerTitle}
-                      onOpenSearch={onOpenSearchStable}
-                    />
-                  </Suspense>
-                )}
-              </div>
-              <div className="absolute inset-x-0 top-0 z-20">
-                <ChatHeader
-                  tabId={tabId}
-                  title={headerTitle}
-                  roleFilter={roleFilter}
-                  onRoleFilterChange={setRoleFilter}
-                  pinScopeKey={pinScopeKey}
-                  onJumpToPin={onJumpToPinStable}
-                  bashPanelOpen={bashPanelOpen}
-                  onToggleBash={onToggleBashStable}
-                  plansPanelOpen={plansPanelOpen}
-                  onTogglePlans={onTogglePlansStable}
-                  overviewOpen={overviewOpen}
-                  onToggleOverview={onToggleOverviewStable}
-                  sidebarOpen={chatSidebarVisible}
-                  onToggleSidebar={toggleChatSidebar}
-                  // Zero-arg wrapper, NOT a bare reference: React would call
-                  // openNewAgentChat(SyntheticMouseEvent) and the event object
-                  // sailed through `agent?` into the store as agentType —
-                  // poisoning the bind ("JSON.stringify cannot serialize cyclic
-                  // structures" from agents_spawn) and killing the composer.
-                  onNewSession={onNewSessionStable}
-                  onForkSession={canFork ? onForkSessionStable : undefined}
-                />
-              </div>
+              {overviewOpen && (
+                <Suspense fallback={null}>
+                  <ThreadOverviewPanel
+                    tabId={tabId}
+                    title={headerTitle}
+                    onOpenSearch={onOpenSearchStable}
+                  />
+                </Suspense>
+              )}
             </div>
-          )}
+            <div className="absolute inset-x-0 top-0 z-20">
+              <ChatHeader
+                tabId={tabId}
+                title={headerTitle}
+                roleFilter={roleFilter}
+                onRoleFilterChange={setRoleFilter}
+                pinScopeKey={pinScopeKey}
+                onJumpToPin={onJumpToPinStable}
+                bashPanelOpen={bashPanelOpen}
+                onToggleBash={onToggleBashStable}
+                plansPanelOpen={plansPanelOpen}
+                onTogglePlans={onTogglePlansStable}
+                overviewOpen={overviewOpen}
+                onToggleOverview={onToggleOverviewStable}
+                sidebarOpen={chatSidebarVisible}
+                onToggleSidebar={toggleChatSidebar}
+                // Zero-arg wrapper, NOT a bare reference: React would call
+                // openNewAgentChat(SyntheticMouseEvent) and the event object
+                // sailed through `agent?` into the store as agentType —
+                // poisoning the bind ("JSON.stringify cannot serialize cyclic
+                // structures" from agents_spawn) and killing the composer.
+                onNewSession={onNewSessionStable}
+                onForkSession={canFork ? onForkSessionStable : undefined}
+              />
+            </div>
+          </div>
+        )}
 
-          <div
-            className="relative"
-            // The composer stack has to sit under the THREAD, not under the
-            // thread-plus-rail. The transcript row centres a 760px column and
-            // the rail as one group, which puts the column's centre half a
-            // rail to the left of this element's own centre — so a composer
-            // left to centre itself drifted right of the conversation it
-            // belongs to. Reserving the rail's width here makes the two
-            // centres the same number. Capped the way the rail is
-            // (`max-w-[50%]`, of this same column): reserving the stored width
-            // once the rail had hit its cap starved the composer of the
-            // difference — at a 900px window, a third of the thread's width.
-            //
-            // A MARGIN, not padding: the pill below is `absolute inset-x-0`
-            // against this element, and an absolute child is laid out
-            // against the padding box, so under padding it still spanned the
-            // full width and centred half a rail right of the composer. A
-            // margin shrinks the box itself, which every child honours.
-            //
-            // Only while the rail is DRAWN, which needs a thread. The rail is
-            // keyed per thread, but an unbound thread is keyed by its tab, so
-            // an empty welcome screen can still read an open flag; reserving
-            // then pushed that composer half a rail left of everything else.
-            style={
-              overviewWidth > 0 && session.messages.length > 0
-                ? { marginRight: `min(${overviewWidth}px, 50%)` }
-                : undefined
-            }
-          >
-            {/* Anchored to this whole stack, not to the composer: the card below
+        <div
+          className="relative"
+          // The composer stack has to sit under the THREAD, not under the
+          // thread-plus-rail. The transcript row centres a 760px column and
+          // the rail as one group, which puts the column's centre half a
+          // rail to the left of this element's own centre — so a composer
+          // left to centre itself drifted right of the conversation it
+          // belongs to. Reserving the rail's width here makes the two
+          // centres the same number. Capped the way the rail is
+          // (`max-w-[50%]`, of this same column): reserving the stored width
+          // once the rail had hit its cap starved the composer of the
+          // difference — at a 900px window, a third of the thread's width.
+          //
+          // A MARGIN, not padding: the pill below is `absolute inset-x-0`
+          // against this element, and an absolute child is laid out
+          // against the padding box, so under padding it still spanned the
+          // full width and centred half a rail right of the composer. A
+          // margin shrinks the box itself, which every child honours.
+          //
+          // Only while the rail is DRAWN, which needs a thread. The rail is
+          // keyed per thread, but an unbound thread is keyed by its tab, so
+          // an empty welcome screen can still read an open flag; reserving
+          // then pushed that composer half a rail left of everything else.
+          style={
+            overviewWidth > 0 && session.messages.length > 0
+              ? { marginRight: `min(${overviewWidth}px, 50%)` }
+              : undefined
+          }
+        >
+          {/* Anchored to this whole stack, not to the composer: the card below
               sits directly on top of the composer, so a pill anchored there
               floated over the card's own buttons and answer field. */}
-            {showJumpToBottom && (
-              <JumpToBottomPill count={jumpCount} onClick={onScrollToBottomStable} />
-            )}
-            {/* Permission / question prompt — an inline card pinned above the
+          {showJumpToBottom && (
+            <JumpToBottomPill count={jumpCount} onClick={onScrollToBottomStable} />
+          )}
+          {/* Permission / question prompt — an inline card pinned above the
               composer (plan reviews still render as a centered modal). */}
-            <PermissionModal tabId={tabId} onSendMessage={onPermissionSend} />
-            {/* Mounted whether or not a question is pending: the drawer inside
+          <PermissionModal tabId={tabId} onSendMessage={onPermissionSend} />
+          {/* Mounted whether or not a question is pending: the drawer inside
               owns the enter AND exit animation, and a component the parent
               unmounts cannot animate anything out. */}
-            <SessionElicitation
-              pending={pendingElicitation ?? null}
-              onClose={() => {
-                if (!pendingElicitation) return;
-                clearAgentQuestion(tabId, pendingElicitation.requestId);
-                clearElicitation(tabId);
-              }}
-            />
-            {/* Bottom fade lives in the transcript; the centered floating
+          <SessionElicitation
+            pending={pendingElicitation ?? null}
+            onClose={() => {
+              if (!pendingElicitation) return;
+              clearAgentQuestion(tabId, pendingElicitation.requestId);
+              clearElicitation(tabId);
+            }}
+          />
+          {/* Bottom fade lives in the transcript; the centered floating
               row (setup pill + scroll-to-bottom) lives inside
               ChatComposer below. */}
-            <ChatComposer
-              tabId={tabId}
-              onSend={onSendStable}
-              onStop={onStopStable}
-              running={isBusyAgentStatus(session.status) || hasInFlightToolCalls(session)}
-              stopping={!!session.stopping}
-            />
-          </div>
+          <ChatComposer
+            tabId={tabId}
+            onSend={onSendStable}
+            onStop={onStopStable}
+            running={isBusyAgentStatus(session.status) || hasInFlightToolCalls(session)}
+            stopping={!!session.stopping}
+          />
         </div>
+      </div>
 
-        {bashPanelOpen && (
-          <Suspense fallback={null}>
-            <BashHistoryPanel
-              messages={session.messages}
-              onJump={(idx) => {
-                if (roleFilter !== "all") setRoleFilter("all");
-                window.dispatchEvent(
-                  new CustomEvent("atlas:chat-jump", { detail: { index: idx, tabId } }),
-                );
-              }}
-              onClose={() => setBashPanelOpen(false)}
-            />
-          </Suspense>
-        )}
+      {bashPanelOpen && (
+        <Suspense fallback={null}>
+          <BashHistoryPanel
+            messages={session.messages}
+            onJump={(idx) => {
+              if (roleFilter !== "all") setRoleFilter("all");
+              window.dispatchEvent(
+                new CustomEvent("atlas:chat-jump", { detail: { index: idx, tabId } }),
+              );
+            }}
+            onClose={() => setBashPanelOpen(false)}
+          />
+        </Suspense>
+      )}
 
-        {plansPanelOpen && (
-          <Suspense fallback={null}>
-            <PlansPanel onClose={() => setPlansPanelOpen(false)} />
-          </Suspense>
-        )}
+      {plansPanelOpen && (
+        <Suspense fallback={null}>
+          <PlansPanel onClose={() => setPlansPanelOpen(false)} />
+        </Suspense>
+      )}
 
-        {/* Cloud comments: the resolver runs for the pane's lifetime. It is
+      {/* Cloud comments: the resolver runs for the pane's lifetime. It is
           what tells the overview's Session card whether this thread is synced,
           and what feeds comments to the transcript rows and the comments popup. */}
-        <ChatCommentsController tabId={tabId} />
+      <ChatCommentsController tabId={tabId} />
 
-        {/* Diff / tool-output detail. Gated on a narrow boolean selector so the
+      {/* Diff / tool-output detail. Gated on a narrow boolean selector so the
           chunk isn't fetched until the reader first opens it, and so this
           subscription only fires on open/close — never on a streaming chunk.
           The panel's own store owns the target, so toggling it re-renders zero
           transcript rows. */}
-        {detailOpen && (
-          <Suspense fallback={null}>
-            <DetailPanel tabId={tabId} messages={session.messages} />
-          </Suspense>
-        )}
+      {detailOpen && (
+        <Suspense fallback={null}>
+          <DetailPanel tabId={tabId} messages={session.messages} />
+        </Suspense>
+      )}
 
-        {turnDiff !== null && turnDiff.files.length > 0 && (
-          <Suspense fallback={null}>
-            <GitDiffModal
-              open
-              onOpenChange={(o) => !o && setTurnDiff(null)}
-              repoPath={useAppStore.getState().currentProject?.path ?? ""}
-              files={turnDiff.files}
-              initialFile={turnDiff.initial}
-              textSources={turnDiff.sources}
-              title={
-                turnDiff.files.length === 1
-                  ? (turnDiff.files[0].split("/").pop() ?? "Changes")
-                  : `${turnDiff.files.length} files changed`
-              }
-            />
-          </Suspense>
-        )}
+      {turnDiff !== null && turnDiff.files.length > 0 && (
+        <Suspense fallback={null}>
+          <GitDiffModal
+            open
+            onOpenChange={(o) => !o && setTurnDiff(null)}
+            repoPath={useAppStore.getState().currentProject?.path ?? ""}
+            files={turnDiff.files}
+            initialFile={turnDiff.initial}
+            textSources={turnDiff.sources}
+            title={
+              turnDiff.files.length === 1
+                ? (turnDiff.files[0].split("/").pop() ?? "Changes")
+                : `${turnDiff.files.length} files changed`
+            }
+          />
+        </Suspense>
+      )}
 
-        {searchPaletteOpen && (
-          <Suspense fallback={null}>
-            <ChatSearchPalette
-              open={searchPaletteOpen}
-              onOpenChange={setSearchPaletteOpen}
-              messages={session.messages}
-              onJump={(idx) =>
-                window.dispatchEvent(
-                  new CustomEvent("atlas:chat-jump", { detail: { index: idx, tabId } }),
-                )
-              }
-            />
-          </Suspense>
-        )}
-      </div>
+      {searchPaletteOpen && (
+        <Suspense fallback={null}>
+          <ChatSearchPalette
+            open={searchPaletteOpen}
+            onOpenChange={setSearchPaletteOpen}
+            messages={session.messages}
+            onJump={(idx) =>
+              window.dispatchEvent(
+                new CustomEvent("atlas:chat-jump", { detail: { index: idx, tabId } }),
+              )
+            }
+          />
+        </Suspense>
+      )}
     </div>
   );
 });

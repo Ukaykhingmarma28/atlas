@@ -43,7 +43,6 @@ export function LayoutThumbnail({ template }: { template: LayoutTemplate }) {
           </div>
         ))}
       </div>
-      {template.panels.right && <div className="w-1.5 rounded-sm bg-[var(--card)] shrink-0" />}
     </div>
   );
 }

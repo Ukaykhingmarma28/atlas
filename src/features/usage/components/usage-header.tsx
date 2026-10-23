@@ -30,7 +30,6 @@ export function UsageHeader({
   onRefresh,
   loading,
   canExport,
-  inset,
 }: {
   orgName: string | null;
   range: DateRange;
@@ -40,14 +39,9 @@ export function UsageHeader({
   onRefresh: () => void;
   loading: boolean;
   canExport: boolean;
-  /** The card's inset, so the bar's ends line up with the body below it. */
-  inset: number;
 }) {
   return (
-    <div
-      className="flex h-control-lg shrink-0 items-center gap-2"
-      style={{ paddingInline: inset + 6 }}
-    >
+    <div className="flex h-control-lg shrink-0 items-center gap-2 px-3">
       <span className="shrink-0 text-sm font-semibold text-[var(--foreground)]">Usage</span>
       {orgName && (
         <span className="min-w-0 truncate text-xs text-[var(--muted-foreground)]" title={orgName}>

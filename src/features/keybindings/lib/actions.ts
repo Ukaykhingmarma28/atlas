@@ -169,7 +169,7 @@ export const ACTIONS = [
   },
   {
     id: "panels.right",
-    title: "Toggle right panel (Source Control)",
+    title: "Toggle source control",
     category: "Panels",
     when: "global",
     defaults: ["cmd+shift+b"],
@@ -196,13 +196,6 @@ export const ACTIONS = [
     defaults: ["cmd+alt+j"],
   },
   {
-    id: "panels.tabBar",
-    title: "Toggle tab bar",
-    category: "Panels",
-    when: "global",
-    defaults: ["cmd+alt+t"],
-  },
-  {
     id: "panels.knowledge",
     title: "Open Knowledge",
     category: "Panels",
@@ -211,12 +204,22 @@ export const ACTIONS = [
   },
   { id: "panels.zen", title: "Zen mode", category: "Panels", when: "global", defaults: ["alt+z"] },
   // ── Tabs ──
+  // ⌘T opens a surface rather than one fixed kind of tab —
+  // a pane beside a single column, or the focused column's `+` menu once the
+  // window is split — and a bare letter then picks (⌘T A is a new agent).
   {
-    id: "tabs.newChat",
-    title: "New agent chat",
+    id: "tabs.openSurface",
+    title: "Open a surface",
     category: "Tabs",
     when: "global",
     defaults: ["cmd+t"],
+  },
+  {
+    id: "tabs.newChat",
+    title: "New session",
+    category: "Tabs",
+    when: "global",
+    defaults: [],
   },
   {
     id: "tabs.newTerminal",
@@ -310,7 +313,7 @@ export const ACTIONS = [
   },
   {
     id: "chat.find",
-    title: "Find in chat",
+    title: "Find in session",
     category: "Chat",
     when: "chatFocus",
     defaults: ["cmd+f"],

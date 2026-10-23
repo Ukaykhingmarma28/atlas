@@ -30,9 +30,9 @@ export function seedWindow() {
     focusedGroupId: "main",
     activeTabId: "editor:/p/src/App.tsx",
     leftPanel: { visible: true, width: 240, activeSection: "files" },
-    rightPanel: { visible: false, width: 300, activeSection: "changes", mode: "source-control" },
+    rightPanel: { visible: false, width: 300 },
+    sourceControl: { section: "changes" },
     chatSidebar: { visible: true, width: 240 },
-    tabBarVisible: true,
     zen: false,
   });
   useChatStore.setState({

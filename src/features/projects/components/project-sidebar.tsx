@@ -27,6 +27,9 @@ import {
   TerminalSquare,
   Users,
   HelpCircle,
+  Bell,
+  ArrowDownToLine,
+  Info,
   MessageCircle,
   MessageCircleQuestion,
   Keyboard,
@@ -36,10 +39,10 @@ import {
   BookOpen,
   BrainCircuit,
   Ellipsis,
+  Lock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { copyText } from "@/lib/clipboard";
-import { UiScaleControl } from "@/features/settings/components/ui-scale-control";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { DISCORD_URL, DOCS_URL, GITHUB_URL, SITE_URL, X_URL } from "@/lib/atlas-links";
@@ -55,6 +58,12 @@ import { AgentIcons } from "@/components/agent-icons";
 import { useRecentChatsStore, type RecentChat } from "../stores/recent-chats-store";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
+import { AccountButton } from "@/features/auth/components/account-button";
+import { updater } from "@/features/updater/lib/updater-api";
+import {
+  useNotificationsStore,
+  hasUnread,
+} from "@/features/notifications/stores/notifications-store";
 import { useActiveOrgProjects, useActiveOrgGroups } from "../lib/org-scope";
 import { OrgSwitcher } from "@/features/organisations/components/org-switcher";
 import { MembersModal } from "@/features/organisations/components/members-modal";
@@ -66,6 +75,8 @@ import { useFullscreen } from "@/hooks/use-fullscreen";
 import { isMac } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { GitDot, NumStatPill } from "./git-summary";
+import { sourceControlShown, toggleSourceControl } from "@/features/layout/lib/source-control";
+import { unlockHint, useTeamAccess } from "@/features/comms/lib/team-chat-access";
 
 // Slot heights (include the inter-row gap so the virtualizer spaces rows out);
 // the visible card is a few px shorter than its slot.
@@ -637,6 +648,10 @@ type Row =
   | { kind: "recent"; name: string; path: string; key: string }
   | { kind: "chat"; chat: RecentChat; key: string };
 
+/** The rail list's top and bottom fades — see where it is applied. */
+const RAIL_FADE =
+  "linear-gradient(to bottom, transparent, black 16px, black calc(100% - 16px), transparent)";
+
 export function ProjectSidebar() {
   const allProjects = useProjectStore.use.projects();
   // The sidebar shows only the ACTIVE org's projects/groups (strict filter —
@@ -650,12 +665,12 @@ export function ProjectSidebar() {
   const displayActiveId = optimisticActiveId ?? activeProjectId;
   const sidebarPinned = useProjectStore.use.sidebarPinned();
   const { addProject, toggleSidebarPinned } = useProjectStore.use.actions();
-  const { addTab, toggleRightPanelMode } = useLayoutStore.use.actions();
-  // Which occupant the right slot shows, or null when closed — drives the
-  // active state of the Chat / Source control items.
-  const rightMode = useLayoutStore((s) => (s.rightPanel.visible ? s.rightPanel.mode : null));
-  // Source control needs a project (app-layout hides the slot without one), so
-  // the item says so instead of toggling a panel that never appears.
+  const { addTab, toggleTeamChat } = useLayoutStore.use.actions();
+  // Drive the active state of the Chat and Source control items.
+  const teamChatOpen = useLayoutStore((s) => s.rightPanel.visible);
+  const sourceControlOpen = useLayoutStore(sourceControlShown);
+  // Source control needs a project (it opens beside the project's agent), so
+  // the item says so instead of opening a tab that has nothing to show.
   const hasProject = useAppStore((s) => !!s.currentProject);
   // Team chat and the member roster are SERVER features: every route names a
   // server org id, so a local-only organisation has nothing to talk to. Same
@@ -663,7 +678,8 @@ export function ProjectSidebar() {
   const organisations = useOrgStore.use.organisations();
   const activeOrganisationId = useOrgStore.use.activeOrganisationId();
   const activeOrg = organisations.find((o) => o.id === activeOrganisationId) ?? null;
-  const orgSynced = !!(activeOrg?.syncEnabled && activeOrg?.remoteId);
+  // Locked entry points stay visible, greyed, saying what unlocks them.
+  const teamAccess = useTeamAccess();
   const [membersOpen, setMembersOpen] = useState(false);
   const newTabHint = useActionShortcut("nav.newTabPalette")?.label;
   // Mirrors `panels.knowledge` in App.tsx: one Knowledge tab per split column,
@@ -915,7 +931,7 @@ export function ProjectSidebar() {
        *  No rule under it — the org row below is the visual top of the rail. */}
       <div
         className={cn(
-          "h-[30px] shrink-0 flex items-center gap-0.5 px-2",
+          "h-titlebar shrink-0 flex items-center gap-0.5 px-2",
           fullscreen || !isMac ? "justify-start" : "justify-end",
         )}
         data-tauri-drag-region
@@ -940,181 +956,153 @@ export function ProjectSidebar() {
       <OrgSwitcher />
 
       {/* Virtualized list. */}
-      {/* The rail's interface card — the same recipe as team chat's
-          `CommsSurface`: a near-black rounded surface floating on the panel's
-          gradient, inset on the sides and bottom, its edge carried by a
-          hairline ring with a soft shadow behind it. No blur and no transform,
-          so it is safe inside a vibrant panel.
-
-          The card is the SCROLL BOUNDARY too, which is what makes it read as
-          one object: rows disappear under its rounded top edge rather than
-          sliding past a straight seam. */}
-      <div
-        // Same reasoning as CommsSurface: on a near-black panel the shadow has
-        // almost nothing to darken, so the ring carries the edge.
-        //
-        // And NO `shadow-lg`, which is what that reasoning was always heading
-        // towards. In this theme it resolves to two black drop shadows at 82%
-        // and 90%, blurred 36px and 48px and offset 12px and 16px DOWN. The
-        // card's right edge sits six pixels from the rail's divider, so the
-        // blur fell straight across it — barely at the top where the offset
-        // has not taken effect, fully below it. That read as a divider with a
-        // gradient down the window, which is a thing nobody drew. A shadow
-        // with nothing to darken inside the card was only ever darkening what
-        // was outside it.
-        className="relative mx-1.5 mb-1.5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-background ring-1 ring-border"
-      >
+      {/* The rail's body, flat on the rail's own surface. It used to be a
+          rounded near-black card inset on the gradient — a panel inside the
+          rail — and the org row and nav read as two different places. */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
         {/* ONE scroller for everything below the org row (see `RailScroll`).
             The navigation used to be pinned above it, which cost ~200px of
             permanently-frozen height — on a short window the project list was
             reduced to a slot a few rows tall while six fixed rows sat above it.
             Only the titlebar band and the org row are fixed now; the nav is
-            handed to the list as children and scrolls away with it. */}
-        {/* Fades, not a scrollbar: rows enter and leave at the card's rounded
-            edges, and a hard cut there reads as clipping. Anchored to the CARD
-            (its `relative`), so the bottom one sits above the footer row rather
-            than under it. `pointer-events-none` so neither eats a click, and
-            plain gradients — no blur, no transform — so they cost a paint and
-            nothing else. */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 z-panel h-6 rounded-t-lg"
-          style={{
-            background:
-              "linear-gradient(to bottom, var(--background) 20%, color-mix(in srgb, var(--background) 55%, transparent) 60%, transparent)",
-          }}
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 bottom-[30px] z-panel h-6"
-          style={{
-            background:
-              "linear-gradient(to top, var(--background) 20%, color-mix(in srgb, var(--background) 55%, transparent) 60%, transparent)",
-          }}
-        />
-        <RailScroll
-          rows={rows}
-          collapsed={collapsed}
-          summaries={summaries}
-          groups={groups}
-          activeId={displayActiveId}
-          runningKeys={runningChatKeys}
-          onToggle={toggle}
-          onOpenRecent={openRecent}
-          onOpenChat={openChat}
-          onClearSection={clearSection}
-        >
-          {/* Navigation, in three bands. Organisation-wide destinations
-           *  first (Timeline, Chat, Members); then the project-scoped tools under
-           *  their own collapsible "Modules" heading — the same disclosure the
-           *  list below uses, so the rail reads as one outline — ending, as
-           *  Linear's does, in "More", the ⌘⌥N module palette. Logs and Skills left
-           *  the rail: Usage and Settings in the org row already reach them. */}
-          <nav className="pt-1 pb-1 space-y-px">
-            <CaptureControl />
-            <NavItem
-              icon={<MessagesSquare size={14} />}
-              label="Chat"
-              active={rightMode === "chat"}
-              disabled={!orgSynced}
-              title={orgSynced ? undefined : "Sync this organization to use team chat"}
-              onClick={() => toggleRightPanelMode("chat")}
-            />
-            <NavItem
-              icon={<Users size={14} />}
-              label="Members"
-              disabled={!orgSynced}
-              title={orgSynced ? undefined : "Sync this organization to manage members"}
-              onClick={() => setMembersOpen(true)}
-            />
+            handed to the list as children and scrolls away with it.
 
-            <SectionHeaderRow
-              id="sec:tools"
-              label="Modules"
-              collapsed={!!collapsed["sec:tools"]}
-              onToggle={toggle}
-            />
-            {!collapsed["sec:tools"] && (
-              <>
-                <NavItem
-                  icon={<Sparkles size={14} />}
-                  label="Agents"
-                  disabled={!hasProject}
-                  title={hasProject ? undefined : "Open a project to start an agent"}
-                  // Zero-arg wrapper, NOT a bare reference: openNewAgentChat's
-                  // optional parameter would otherwise receive the click event.
-                  onClick={() => openNewAgentChat()}
-                />
-                <NavItem
-                  icon={<BookOpen size={14} />}
-                  label="Knowledge"
-                  disabled={!hasProject}
-                  title={hasProject ? undefined : "Open a project to open its knowledge base"}
-                  onClick={openKnowledge}
-                />
-                <NavItem
-                  icon={<TerminalSquare size={14} />}
-                  label="Terminal"
-                  onClick={() =>
-                    // Mirrors `tabs.newTerminal` in App.tsx: a fresh tab each time.
-                    addTab({
-                      id: `terminal-${Date.now()}`,
-                      type: "terminal",
-                      title: "Terminal",
-                      closable: true,
-                      dirty: false,
-                      data: {},
-                    })
-                  }
-                />
-                <NavItem
-                  icon={<GitBranch size={14} />}
-                  label="Source control"
-                  active={rightMode === "source-control"}
-                  disabled={!hasProject}
-                  title={hasProject ? undefined : "Open a project to see its source control"}
-                  onClick={() => toggleRightPanelMode("source-control")}
-                />
-                <NavItem icon={<BrainCircuit size={14} />} label="Memory" onClick={openMemory} />
-                {/* Usage is a module, not rail chrome. It was up with the pin
-                 *  and collapse-all buttons, which are controls on the SIDEBAR
-                 *  ITSELF — Usage opens a tab, like every row here. Same
-                 *  singleton id either way, so an open Usage tab is focused
-                 *  rather than duplicated. */}
-                <NavItem
-                  icon={<Gauge size={14} />}
-                  label="Usage"
-                  onClick={() =>
-                    addTab({
-                      id: "usage",
-                      type: "usage",
-                      title: "Usage",
-                      closable: true,
-                      dirty: false,
-                      data: {},
-                    })
-                  }
-                />
-                <NavItem
-                  icon={<Ellipsis size={14} />}
-                  label="More"
-                  title={newTabHint ? `Open a module (${newTabHint})` : "Open a module"}
-                  onClick={() => window.dispatchEvent(new CustomEvent("atlas:new-tab-palette"))}
-                />
-              </>
-            )}
-          </nav>
-        </RailScroll>
+            Rows fade at both ends rather than cutting hard. A mask, not a
+            gradient overlay: the rail's surface is a gradient (and glass when
+            floating), so no solid colour would match it — a mask fades the
+            rows themselves and lets whatever is behind them show through. */}
+        <div
+          className="flex min-h-0 flex-1 flex-col"
+          style={{ maskImage: RAIL_FADE, WebkitMaskImage: RAIL_FADE }}
+        >
+          <RailScroll
+            rows={rows}
+            collapsed={collapsed}
+            summaries={summaries}
+            groups={groups}
+            activeId={displayActiveId}
+            runningKeys={runningChatKeys}
+            onToggle={toggle}
+            onOpenRecent={openRecent}
+            onOpenChat={openChat}
+            onClearSection={clearSection}
+          >
+            {/* Navigation, in three bands. Organisation-wide destinations
+             *  first (Timeline, Chat, Members); then the project-scoped tools under
+             *  their own collapsible "Modules" heading — the same disclosure the
+             *  list below uses, so the rail reads as one outline — ending, as
+             *  Linear's does, in "More", the ⌘⌥N module palette. Logs and Skills left
+             *  the rail: Usage and Settings in the org row already reach them. */}
+            <nav className="pt-1 pb-1 space-y-px">
+              <CaptureControl />
+              <NavItem
+                icon={<MessagesSquare size={14} />}
+                label="Chat"
+                active={teamChatOpen}
+                locked={unlockHint(teamAccess, "team chat")}
+                onClick={teamAccess.locked ? (teamAccess.unlock ?? noop) : toggleTeamChat}
+              />
+              <NavItem
+                icon={<Users size={14} />}
+                label="Members"
+                locked={unlockHint(teamAccess, "members")}
+                onClick={
+                  teamAccess.locked ? (teamAccess.unlock ?? noop) : () => setMembersOpen(true)
+                }
+              />
+
+              <SectionHeaderRow
+                id="sec:tools"
+                label="Modules"
+                collapsed={!!collapsed["sec:tools"]}
+                onToggle={toggle}
+              />
+              {!collapsed["sec:tools"] && (
+                <>
+                  <NavItem
+                    icon={<Sparkles size={14} />}
+                    label="Agents"
+                    disabled={!hasProject}
+                    title={hasProject ? undefined : "Open a project to start an agent"}
+                    // Zero-arg wrapper, NOT a bare reference: openNewAgentChat's
+                    // optional parameter would otherwise receive the click event.
+                    onClick={() => openNewAgentChat()}
+                  />
+                  <NavItem
+                    icon={<BookOpen size={14} />}
+                    label="Knowledge"
+                    disabled={!hasProject}
+                    title={hasProject ? undefined : "Open a project to open its knowledge base"}
+                    onClick={openKnowledge}
+                  />
+                  <NavItem
+                    icon={<TerminalSquare size={14} />}
+                    label="Terminal"
+                    onClick={() =>
+                      // Mirrors `tabs.newTerminal` in App.tsx: a fresh tab each time.
+                      addTab({
+                        id: `terminal-${Date.now()}`,
+                        type: "terminal",
+                        title: "Terminal",
+                        closable: true,
+                        dirty: false,
+                        data: {},
+                      })
+                    }
+                  />
+                  <NavItem
+                    icon={<GitBranch size={14} />}
+                    label="Source control"
+                    active={sourceControlOpen}
+                    disabled={!hasProject}
+                    title={hasProject ? undefined : "Open a project to see its source control"}
+                    onClick={toggleSourceControl}
+                  />
+                  <NavItem icon={<BrainCircuit size={14} />} label="Memory" onClick={openMemory} />
+                  {/* Usage is a module, not rail chrome. It was up with the pin
+                   *  and collapse-all buttons, which are controls on the SIDEBAR
+                   *  ITSELF — Usage opens a tab, like every row here. Same
+                   *  singleton id either way, so an open Usage tab is focused
+                   *  rather than duplicated. */}
+                  <NavItem
+                    icon={<Gauge size={14} />}
+                    label="Usage"
+                    onClick={() =>
+                      addTab({
+                        id: "usage",
+                        type: "usage",
+                        title: "Usage",
+                        closable: true,
+                        dirty: false,
+                        data: {},
+                      })
+                    }
+                  />
+                  <NavItem
+                    icon={<Ellipsis size={14} />}
+                    label="More"
+                    title={newTabHint ? `Open a module (${newTabHint})` : "Open a module"}
+                    onClick={() => window.dispatchEvent(new CustomEvent("atlas:new-tab-palette"))}
+                  />
+                </>
+              )}
+            </nav>
+          </RailScroll>
+        </div>
 
         {/* Card footer: help and interface scale on the left, version on the
             right. Outside the scroller so it stays put, inside the card so it
             belongs to it. */}
         <div className="relative z-panel flex h-[30px] shrink-0 items-center justify-between px-2">
+          {/* As the Atlas web app's footer, with help and the account swapped:
+              help on the left, the bell and the account on the right. The
+              version and the update check are in the help menu; interface size
+              is in the account menu, beside the theme. */}
+          <HelpMenu />
           <div className="flex items-center gap-1">
-            <HelpMenu />
-            <UiScaleControl />
+            <NotificationsButton />
+            <AccountButton menuSide="top" />
           </div>
-          <AppVersion />
         </div>
       </div>
       <MembersModal org={activeOrg} open={membersOpen} onOpenChange={setMembersOpen} />
@@ -1132,6 +1120,7 @@ function NavItem({
   active,
   disabled,
   title,
+  locked,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -1139,17 +1128,23 @@ function NavItem({
   active?: boolean;
   disabled?: boolean;
   title?: string;
+  /** What unlocks a feature this item cannot open yet — "Sign in to unlock
+   *  team chat". The item stays clickable (the click is the unlock, where
+   *  there is one), greyed with a lock, and the hint says why. */
+  locked?: string;
 }) {
-  return (
+  const button = (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      title={title}
+      title={locked ? undefined : title}
       aria-pressed={active}
+      aria-disabled={locked ? true : undefined}
       className={cn(
         "group/nav flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-left text-sm leading-none outline-none transition-colors cursor-pointer",
         "disabled:cursor-default disabled:opacity-40",
+        "aria-disabled:opacity-60",
         active
           ? "bg-[var(--atlas-element-active)] text-[var(--foreground)]"
           : "text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]",
@@ -1166,9 +1161,19 @@ function NavItem({
         {icon}
       </span>
       <span className="truncate">{label}</span>
+      {locked && <Lock size={12} className="ml-auto shrink-0 text-muted-foreground" />}
     </button>
   );
+  return locked ? (
+    <Hint label={locked} side="right">
+      {button}
+    </Hint>
+  ) : (
+    button
+  );
 }
+
+const noop = () => {};
 
 // ── The scrolling list ─────────────────────────────────────────────────────
 //
@@ -1436,10 +1441,13 @@ function EmptyRail() {
 function HelpItem({
   icon,
   label,
+  hint,
   onSelect,
 }: {
   icon: React.ReactNode;
   label: string;
+  /** Quiet text at the row's end, saying what the click does. */
+  hint?: string;
   onSelect: () => void;
 }) {
   return (
@@ -1451,14 +1459,40 @@ function HelpItem({
         {icon}
       </span>
       <span className="flex-1 text-left">{label}</span>
+      {hint && <span className="text-2xs text-[var(--muted-foreground)]">{hint}</span>}
     </DropdownMenu.Item>
   );
 }
 
-/** Help, community and the app's own destinations. A dropdown rather than a
- *  row of links: the rail's footer has room for one control, and this is the
- *  drawer everything that is neither a project nor a module lives in. */
+/** Opens the notification drawer; a dot while the active org has unread. */
+function NotificationsButton() {
+  const activeOrgId = useOrgStore.use.activeOrganisationId();
+  const unread = useNotificationsStore((s) => hasUnread(s.items, activeOrgId));
+  const { toggle } = useNotificationsStore.use.actions();
+  return (
+    <Hint label="Notifications" side="top">
+      <span className="relative flex">
+        <IconButton
+          icon={Bell}
+          label="Notifications"
+          size="sm"
+          variant="hairline"
+          shape="round"
+          onClick={() => toggle(activeOrgId)}
+        />
+        {unread && (
+          <span className="pointer-events-none absolute right-0.5 top-0.5 size-1.5 rounded-full bg-foreground" />
+        )}
+      </span>
+    </Hint>
+  );
+}
+
+/** Help, community and the app's own destinations — and, at the foot, the
+ *  running version and the update check, which used to sit in the footer as a
+ *  bare version number taking room it did not earn. */
 function HelpMenu() {
+  const version = useAppVersion();
   return (
     <DropdownMenu.Root>
       <Hint label="Help & community" side="top">
@@ -1521,6 +1555,31 @@ function HelpMenu() {
               label="Our website"
               onSelect={() => void openUrl(SITE_URL)}
             />
+
+            <DropdownMenu.Separator className="my-1 h-px bg-border" />
+
+            <HelpItem
+              icon={<ArrowDownToLine size={12} />}
+              label="Check for updates"
+              onSelect={checkForUpdates}
+            />
+            {version && (
+              <HelpItem
+                icon={<Info size={12} />}
+                label={`Atlas ${version}`}
+                hint="Copy"
+                // The bare number is what a version field or a release tag
+                // wants; the toast repeats it so there is no doubt about what
+                // was copied. `copyText` RESOLVES false on failure rather than
+                // rejecting, so the result has to be read.
+                onSelect={() =>
+                  void copyText(version).then((ok) => {
+                    if (ok) toast.success(`Copied ${version}`);
+                    else toast.error("Could not copy the version.");
+                  })
+                }
+              />
+            )}
           </DropdownMenu.Popup>
         </DropdownMenu.Positioner>
       </DropdownMenu.Portal>
@@ -1541,7 +1600,7 @@ function XIcon() {
 /** The running build's version. Read from Tauri rather than `package.json`:
  *  the bundle carries its own version, and a stale import would claim the
  *  wrong one after an update. Renders nothing until it resolves. */
-function AppVersion() {
+function useAppVersion(): string | null {
   const [version, setVersion] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
@@ -1550,39 +1609,28 @@ function AppVersion() {
         if (live) setVersion(v);
       })
       .catch(() => {
-        // Not worth surfacing: a missing version number costs the reader
-        // nothing, and this runs on every rail mount.
+        // Not worth surfacing: the help menu simply leaves the row out.
       });
     return () => {
       live = false;
     };
   }, []);
-  if (!version) return null;
-  return (
-    // A button, not a span, so the version can be lifted into a bug report
-    // without retyping it. The class list is unchanged except for the hover
-    // colour and the cursor: Tailwind's preflight already strips a button's
-    // padding, border and background, and both elements are flex items of the
-    // footer row, so the box and the alignment are exactly what they were.
-    <button
-      type="button"
-      title="Copy version"
-      onClick={() => {
-        // The bare number is what a version field or a release tag wants; the
-        // toast repeats it so there is no doubt about what was copied.
-        // `copyText` RESOLVES false on failure rather than rejecting, so the
-        // result has to be read — a `.catch()` alone would report success on a
-        // copy that never landed.
-        void copyText(version).then((ok) => {
-          if (ok) toast.success(`Copied ${version}`);
-          else toast.error("Could not copy the version.");
-        });
-      }}
-      className="cursor-pointer select-none pr-1 font-mono text-2xs tabular-nums text-[var(--muted-foreground)] transition-colors hover:text-[var(--secondary-foreground)]"
-    >
-      v{version}
-    </button>
-  );
+  return version;
+}
+
+/** The manual update check the window bar's update icon used to offer when
+ *  idle; that icon now appears only once there is an update to show. */
+function checkForUpdates(): void {
+  void updater
+    .checkNow()
+    .then((status) => {
+      if (!status.available) {
+        toast.success(`You're on the latest version (${status.currentVersion}).`);
+      }
+    })
+    .catch((e) =>
+      toast.error(`Update check failed: ${e instanceof Error ? e.message : String(e)}`),
+    );
 }
 
 /** The rail's small ghost icon buttons (titlebar band). */

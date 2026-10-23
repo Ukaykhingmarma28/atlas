@@ -248,6 +248,9 @@ pub fn run() {
                     system_is_light,
                 );
                 let _ = window.set_background_color(Some(color));
+                // tao leaves `trafficLightPosition` unapplied until the first
+                // resize; see the function.
+                commands::window::apply_traffic_light_inset(&window);
             }
             // The app icon, before the window shows. Later changes arrive
             // through `notify_settings_changed`.

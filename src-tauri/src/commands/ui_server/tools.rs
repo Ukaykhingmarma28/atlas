@@ -86,7 +86,7 @@ pub(super) fn tools() -> Vec<Tool> {
                     "staged": { "type": "boolean" },
                     "commit": { "type": "string" },
                     "section": { "type": "string", "enum": ["general", "appearance", "chat", "memory", "notifications", "source-control", "privacy", "keybindings", "updates", "agents", "skills", "layouts", "about"] },
-                    "type": { "type": "string", "enum": ["canvas", "browser", "tasks", "knowledge", "knowledge-graph", "memory", "settings", "log", "usage", "artifacts"] },
+                    "type": { "type": "string", "enum": ["canvas", "browser", "tasks", "knowledge", "knowledge-graph", "memory", "log", "usage", "artifacts"] },
                     "sessionId": { "type": "string" },
                     "agent": { "type": "string" },
                     "url": { "type": "string" },
@@ -99,18 +99,18 @@ pub(super) fn tools() -> Vec<Tool> {
         ),
         tool(
             "ui_focus",
-            "Activate a tab, show/hide a panel (omit visible to toggle), pick a side panel section or the right panel's mode, \
+            "Activate a tab, show/hide a panel (omit visible to toggle; right is team chat, source_control the source control tab), \
+             pick a section (side left: files/knowledge; side source_control: changes/github/git-graph), \
              focus a split column by its index in ui_state.groups, or reveal a path in the explorer.",
             json!({
                 "type": "object",
                 "properties": {
-                    "target": { "type": "string", "enum": ["tab", "panel", "section", "right_mode", "group", "explorer"] },
+                    "target": { "type": "string", "enum": ["tab", "panel", "section", "group", "explorer"] },
                     "id": { "type": "string" },
-                    "name": { "type": "string", "enum": ["left", "right", "chat_sidebar", "terminal", "timeline_sidebar", "tab_bar"] },
+                    "name": { "type": "string", "enum": ["left", "right", "source_control", "chat_sidebar", "terminal", "timeline_sidebar"] },
                     "visible": { "type": "boolean" },
-                    "side": { "type": "string", "enum": ["left", "right"] },
+                    "side": { "type": "string", "enum": ["left", "source_control"] },
                     "section": { "type": "string", "enum": ["files", "knowledge", "changes", "github", "git-graph"] },
-                    "mode": { "type": "string", "enum": ["source-control", "chat"] },
                     "index": { "type": "integer" },
                     "path": { "type": "string" }
                 },

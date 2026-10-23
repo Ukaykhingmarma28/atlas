@@ -81,11 +81,7 @@ export function UsagePanel() {
   const attribution = attributionLine(data?.ledgerSince ?? null, range);
 
   return (
-    // The tab is a card on a slightly lighter ground, the way the Timeline is:
-    // the page's content sits INSIDE a rounded, ringed panel rather than
-    // bleeding into the window's edges. Same inset constant, so the two tabs
-    // line up when they sit side by side in a split.
-    <div className="flex h-full min-h-0 flex-col bg-[var(--card)]">
+    <div className="flex h-full min-h-0 flex-col bg-[var(--background)]">
       <UsageHeader
         orgName={orgName}
         range={range}
@@ -95,15 +91,8 @@ export function UsagePanel() {
         onRefresh={() => void refresh({ force: true })}
         loading={loading}
         canExport={!!data}
-        inset={CARD_INSET}
       />
-      <div
-        // `ring-1 ring-border` + `shadow-lg`, which is the Timeline's card
-        // exactly: on a near-black panel a shadow has almost nothing to darken,
-        // so the ring carries the edge and the shadow only lifts the card.
-        className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-background shadow-lg ring-1 ring-border"
-        style={{ marginInline: CARD_INSET, marginBottom: CARD_INSET }}
-      >
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden border-t border-border bg-background">
         <div
           className="hide-scrollbar min-h-0 flex-1 overflow-y-auto"
           style={{ paddingTop: data ? FILTER_H : 0 }}
@@ -223,12 +212,6 @@ export function UsagePanel() {
     </div>
   );
 }
-
-/**
- * The card's inset from the tab's edges, in px. Matches the Timeline's, which
- * is what it is measured against — the two tabs sit side by side in a split.
- */
-const CARD_INSET = 4;
 
 /**
  * The floating filter row's geometry.

@@ -15,8 +15,8 @@ import { useGitStore } from "@/features/git/stores/git-store";
 import { FolderPlus, FoldVertical, UnfoldVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { HintGroup, HintItem } from "@/ui/hint-group";
-import { basename } from "@/lib/paths";
 import { PanelSkeleton } from "@/components/panel-skeleton";
+import { PaneHeader } from "@/components/titlebar";
 import { TreeRow } from "./tree-row";
 import { openFile } from "@/lib/open-file";
 import { useFileTreeDragDrop, ROOT_DROP } from "../hooks/use-file-tree-drag-drop";
@@ -652,16 +652,13 @@ export function FileTree() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Panel header. Height + bottom border match the center tab strip
-          (h-[29px] border-b) so the divider reads as one continuous straight
-          line across the file tree and the tab bar. No refresh button — the
-          file-tree updates live off the filesystem watcher. */}
-      <div className="flex items-center justify-between px-3 h-[29px] shrink-0 border-b border-border">
-        <span className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider truncate flex-1">
-          {rootPath ? basename(rootPath) : "Files"}
-        </span>
+      {/* The leftmost slice of the window bar: it carries the window's
+          leading controls — all but `org / project`, which a slice this narrow
+          cannot hold; it heads the first split column instead. No refresh
+          button — the tree updates live off the filesystem watcher. */}
+      <PaneHeader leading breadcrumb={false} className="pl-3">
         <HintGroup>
-          <div className="flex items-center gap-0.5">
+          <div className="ml-auto flex shrink-0 items-center gap-0.5">
             <FoldExpandButton
               tree={tree}
               onCollapseAll={collapseAll}
@@ -670,14 +667,14 @@ export function FileTree() {
             <HintItem label="Open folder">
               <button
                 onClick={handlePickFolder}
-                className="p-1 rounded hover:bg-element-hover text-muted-foreground hover:text-secondary-foreground transition-colors"
+                className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground"
               >
-                <FolderPlus size={11} />
+                <FolderPlus size={14} />
               </button>
             </HintItem>
           </div>
         </HintGroup>
-      </div>
+      </PaneHeader>
 
       <ContextMenu>
         {/* The trigger is a layout-only wrapper; the scroller inside it carries
@@ -852,9 +849,9 @@ function FoldExpandButton({
     <HintItem label={anyExpanded ? "Collapse all" : "Expand all"}>
       <button
         onClick={anyExpanded ? onCollapseAll : onExpandAll}
-        className="p-1 rounded hover:bg-element-hover text-muted-foreground hover:text-secondary-foreground transition-colors"
+        className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-element-hover hover:text-foreground"
       >
-        {anyExpanded ? <FoldVertical size={11} /> : <UnfoldVertical size={11} />}
+        {anyExpanded ? <FoldVertical size={14} /> : <UnfoldVertical size={14} />}
       </button>
     </HintItem>
   );

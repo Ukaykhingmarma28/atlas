@@ -1,5 +1,5 @@
 import { toast } from "sonner";
-import { useChatStore } from "@/features/chat/stores/chat-store";
+import { UNTITLED_SESSION, useChatStore } from "@/features/chat/stores/chat-store";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import {
   NATIVE_AGENT,
@@ -124,7 +124,7 @@ export function switchAgentForTab(
       return;
     }
     if (behavior === "handoff" && sess?.acpSessionId) {
-      const title = sess.title && sess.title !== "New Chat" ? sess.title : "Previous session";
+      const title = sess.title && sess.title !== UNTITLED_SESSION ? sess.title : "Previous session";
       handoff = {
         kind: "past_session",
         id: sess.acpSessionId,
