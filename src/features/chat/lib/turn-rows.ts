@@ -855,6 +855,19 @@ interface UserDerived {
 }
 const userDerivedCache = new WeakMap<ChatMessage, UserDerived>();
 const proseCache = new WeakMap<ChatMessage, string>();
+// A delegating session re-projects every turn, so a settled thought would
+// otherwise be re-read every frame; keyed by message, which immer replaces
+// whenever the thinking changes.
+const headlineCache = new WeakMap<ChatMessage, string | null>();
+
+function headlineOf(m: ChatMessage): string | null {
+  let line = headlineCache.get(m);
+  if (line === undefined) {
+    line = thoughtHeadline(m.thinking ?? "");
+    headlineCache.set(m, line);
+  }
+  return line;
+}
 
 function derivedUser(m: ChatMessage): UserDerived {
   const hit = userDerivedCache.get(m);
@@ -1229,7 +1242,7 @@ function projectSegment(
           turnId,
           firstInTurn: rows.length === rowStart,
           text: opts.expanded.has(`th:${msg.id}`) ? msg.thinking : "",
-          headline: thoughtHeadline(msg.thinking),
+          headline: headlineOf(msg),
           streaming: tail,
           expanded: opts.expanded.has(`th:${msg.id}`),
         });

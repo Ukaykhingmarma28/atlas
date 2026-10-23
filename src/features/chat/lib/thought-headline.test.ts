@@ -31,3 +31,28 @@ describe("thoughtHeadline", () => {
     expect(thoughtHeadline("  \n\n ")).toBeNull();
   });
 });
+
+describe("thoughtHeadline on awkward reasoning", () => {
+  it("keeps the previous thought while a new paragraph has barely begun", () => {
+    expect(thoughtHeadline("Checked the store first.\n\nI")).toBe("Checked the store first.");
+  });
+
+  it("skips code blocks", () => {
+    expect(thoughtHeadline("The cache needs a key.\n\n```ts\nconst a = 1;\n```")).toBe(
+      "The cache needs a key.",
+    );
+  });
+
+  it("does not end a sentence at an abbreviation", () => {
+    expect(thoughtHeadline("Let me look at e.g. the file. Then more.")).toBe(
+      "Let me look at e.g. the file.",
+    );
+  });
+
+  it("stays fast on bracket-heavy text", () => {
+    const nasty = "[".repeat(20_000) + "[a](".repeat(5_000);
+    const t0 = performance.now();
+    thoughtHeadline(nasty);
+    expect(performance.now() - t0).toBeLessThan(20);
+  });
+});
