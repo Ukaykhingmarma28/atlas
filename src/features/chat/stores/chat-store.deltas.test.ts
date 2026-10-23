@@ -479,21 +479,34 @@ describe("applyAgentDelta: turn terminals", () => {
     expect(session().inflightToolIds).toBeUndefined();
   });
 
-  it("turn_finished stamps the turn's wall time, from the user's message, on its last message", () => {
+  it("turn_finished puts Rust's wall time and stop reason on the turn's last message", () => {
     boundTab();
-    const sentAt = Date.parse(messages()[0].timestamp);
-    const now = vi.spyOn(Date, "now").mockReturnValue(sentAt + 457_000);
-    try {
-      apply(
-        d("status", { status: "running", turn_seq: 1 }),
-        d("text_chunk", { message_id: "m", delta: "Done." }),
-        d("turn_finished", { stop_reason: "end_turn", turn_seq: 1 }),
-      );
-    } finally {
-      now.mockRestore();
-    }
+    apply(
+      d("status", { status: "running", turn_seq: 1 }),
+      d("text_chunk", { message_id: "m", delta: "Done." }),
+      d("turn_finished", {
+        stop_reason: "cancelled",
+        turn_seq: 1,
+        started_at_ms: 1_000,
+        ended_at_ms: 458_000,
+      }),
+    );
     expect(messages()[0].role).toBe("user");
-    expect(last()).toMatchObject({ role: "assistant", workedMs: 457_000 });
+    expect(last()).toMatchObject({
+      role: "assistant",
+      workedMs: 457_000,
+      stopReason: "cancelled",
+    });
+  });
+
+  it("turn_finished without times leaves the turn untimed rather than guessing", () => {
+    boundTab();
+    apply(
+      d("text_chunk", { message_id: "m", delta: "Done." }),
+      d("turn_finished", { stop_reason: "end_turn", turn_seq: 1 }),
+    );
+    expect(last().workedMs).toBeUndefined();
+    expect(last().stopReason).toBe("end_turn");
   });
 
   it("turn_finished(cancelled) marks unfinished tool calls failed", () => {
@@ -780,11 +793,34 @@ describe("applyAgentDelta: a whole turn, in wire order", () => {
     expect(messages()[3].toolCalls[0].result).toBe("a.ts\nb.ts\n");
   });
 
-  // `startedAt` is the only field on a tool call the wire does not carry — the
-  // session-delta wire carries no start time today, so the store stamps
-  // one. The live elapsed figure on a running block is read from it, which
-  // makes "stamped once, never restarted" the invariant worth pinning.
-  it("stamps a tool call's start on first sight and keeps it across updates", () => {
+  it("takes a tool call's times from the wire", () => {
+    boundTab();
+    apply(
+      d("tool_call_upserted", {
+        message_id: "t",
+        tool_call: wireTool("tc1", { started_at_ms: 5_000 }),
+      }),
+    );
+    expect(last().toolCalls[0]).toMatchObject({ startedAt: 5_000 });
+    expect(last().toolCalls[0].endedAt).toBeUndefined();
+    apply(
+      d("tool_call_upserted", {
+        message_id: "t",
+        tool_call: wireTool("tc1", {
+          status: "completed",
+          started_at_ms: 5_000,
+          ended_at_ms: 9_000,
+        }),
+      }),
+    );
+    expect(last().toolCalls[0]).toMatchObject({ startedAt: 5_000, endedAt: 9_000 });
+  });
+
+  // A call the wire sent without a start (an older build, a mock) is stamped
+  // at first sight. The live elapsed figure on a running block is read from
+  // it, which makes "stamped once, never restarted" the invariant worth
+  // pinning.
+  it("stamps a tool call's start on first sight when the wire has none, and keeps it", () => {
     boundTab();
     const before = Date.now();
     apply(d("tool_call_upserted", { message_id: "t", tool_call: wireTool("tc1") }));

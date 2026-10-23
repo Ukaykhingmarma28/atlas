@@ -324,6 +324,7 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for AnalyticsMiddleware {
             SessionDelta::TurnFinished {
                 stop_reason,
                 turn_seq,
+                ..
             } => self.flush(
                 envelope,
                 *turn_seq,
@@ -1556,6 +1557,8 @@ fn transcript_to_messages(t: super::agent_transcript::StoredTranscript) -> Vec<M
             plan: None,
             model: m.model,
             images: Vec::new(),
+            worked_ms: None,
+            stop_reason: None,
             timestamp: m
                 .timestamp
                 .parse::<chrono::DateTime<chrono::Utc>>()

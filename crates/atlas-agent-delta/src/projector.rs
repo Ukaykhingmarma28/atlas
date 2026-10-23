@@ -756,9 +756,20 @@ impl SessionProjection {
             }
             AcpThreadEvent::StatusChanged => self.status_deltas(),
             AcpThreadEvent::Stopped(stop_reason) => {
+                // The thread recorded this stop as it announced it, so its
+                // newest record is this turn's timing — the same figure a
+                // snapshot reads back after a reload.
+                let timing = lock_thread(&self.thread).turns().last().map(|turn| {
+                    (
+                        turn.started_at.map(|at| at.timestamp_millis()),
+                        turn.ended_at.timestamp_millis(),
+                    )
+                });
                 let mut deltas = vec![SessionDelta::TurnFinished {
                     stop_reason: project::stop_reason_token(stop_reason),
                     turn_seq: self.turn_seq,
+                    started_at_ms: timing.and_then(|(started, _)| started),
+                    ended_at_ms: timing.map(|(_, ended)| ended),
                 }];
                 deltas.extend(self.status_deltas());
                 // A child launched to run on its own ends with the turn: no
@@ -1420,6 +1431,8 @@ fn tool_call_meta_eq(previous: &ToolCall, current: &ToolCall) -> bool {
         && previous.locations == current.locations
         && previous.raw_output == current.raw_output
         && previous.content_blocks == current.content_blocks
+        && previous.started_at_ms == current.started_at_ms
+        && previous.ended_at_ms == current.ended_at_ms
 }
 
 /// `LoadError`'s own `Display` is the reason text, so the wire carries exactly

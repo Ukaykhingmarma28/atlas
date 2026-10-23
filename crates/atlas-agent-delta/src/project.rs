@@ -184,6 +184,8 @@ pub fn run_message(
         model,
         images: Vec::new(),
         timestamp,
+        worked_ms: None,
+        stop_reason: None,
     }
 }
 
@@ -208,6 +210,8 @@ pub fn tool_message(
         model,
         images: Vec::new(),
         timestamp,
+        worked_ms: None,
+        stop_reason: None,
     }
 }
 
@@ -262,6 +266,8 @@ pub fn tool_call_meta(call: &ThreadToolCall) -> ToolCall {
             .parent_tool_call_id
             .as_ref()
             .map(std::string::ToString::to_string),
+        started_at_ms: Some(call.started_at.timestamp_millis()),
+        ended_at_ms: call.ended_at.map(|at| at.timestamp_millis()),
     }
 }
 
@@ -504,7 +510,11 @@ pub fn snapshot_messages(
     use atlas_acp_thread::AgentThreadEntry;
 
     let mut out = Vec::new();
+    // The entry each message came from, so a turn's timing can find the
+    // message that ends it.
+    let mut entry_of: Vec<usize> = Vec::new();
     for (ix, entry) in thread.entries().iter().enumerate() {
+        let before = out.len();
         // The time the thread learned of the entry, not the time this snapshot
         // was taken. Reading the clock here made two snapshots of an unchanged
         // conversation disagree, and collapsed every historical pause to zero
@@ -525,6 +535,8 @@ pub fn snapshot_messages(
                     model: None,
                     images,
                     timestamp: at,
+                    worked_ms: None,
+                    stop_reason: None,
                 })
             }
             AgentThreadEntry::AssistantMessage(message) => {
@@ -560,8 +572,33 @@ pub fn snapshot_messages(
             | AgentThreadEntry::CompletedPlan(_)
             | AgentThreadEntry::ContextCompaction(_) => {}
         }
+        entry_of.resize(entry_of.len() + (out.len() - before), ix);
     }
+    stamp_turns(&mut out, &entry_of, thread.turns());
     out
+}
+
+/// Put each turn's timing on the message that ends it.
+///
+/// The message is the turn's last one, and only when that is the agent's: a
+/// turn that produced nothing has no message of its own to carry it, and
+/// stamping the one before would credit the previous turn's reply with this
+/// turn's time. This is the snapshot's counterpart of `turn_finished`, which
+/// the live client stamps onto the same message.
+fn stamp_turns(out: &mut [Message], entry_of: &[usize], turns: &[atlas_acp_thread::TurnRecord]) {
+    for turn in turns {
+        let Some(last) = entry_of.iter().rposition(|ix| turn.entries.contains(ix)) else {
+            continue;
+        };
+        let message = &mut out[last];
+        if message.role != MessageRole::Assistant {
+            continue;
+        }
+        message.worked_ms = turn.started_at.map(|started| {
+            u64::try_from((turn.ended_at - started).num_milliseconds()).unwrap_or(0)
+        });
+        message.stop_reason = Some(stop_reason_token(turn.stop_reason));
+    }
 }
 
 // ── Subagents ───────────────────────────────────────────────────────────────

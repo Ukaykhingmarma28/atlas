@@ -153,10 +153,14 @@ export interface MarkerRow extends RowBase {
   /** Only set for edit markers, so the row can show `+n −m` inline. */
   added: number;
   removed: number;
-  /** Epoch ms the call was first seen, client-stamped by the store. `undefined`
-   *  on any call restored from a transcript — see `ToolCallDisplay.startedAt`.
-   *  Feeds the live elapsed figure; nothing settled reads it. */
+  /** Epoch ms the call was first seen (`ToolCallDisplay.startedAt`). Feeds the
+   *  live elapsed figure; nothing settled reads it. */
   startedAt: number | undefined;
+  /** How long the call took, once it settled — set only when both ends were
+   *  stamped. An expanded block shows it in the right gutter for calls that
+   *  took a second or more. Derived from the call, so a segment that holds
+   *  holds this too. */
+  durationMs?: number;
 }
 
 export interface MarkerGroupRow extends RowBase {
@@ -210,8 +214,11 @@ export interface WorkHeaderRow extends RowBase {
   live: boolean;
   /** Epoch ms the live clock counts from — the user's message. */
   startedAt: number | null;
-  /** Settled wall time, when the turn was timed live (`ChatMessage.workedMs`). */
+  /** Settled wall time, when Rust timed the turn (`ChatMessage.workedMs`). */
   workedMs: number | null;
+  /** The user stopped the turn (`ChatMessage.stopReason` is `cancelled`):
+   *  the settled label reads "Stopped after" rather than "Worked for". */
+  stopped: boolean;
   /** There are rows behind the header to fold; without them it is a caption. */
   foldable: boolean;
   open: boolean;
@@ -784,6 +791,9 @@ function markerFor(tc: ToolCallDisplay, turnId: string, first: boolean): MarkerR
     added,
     removed,
     startedAt: tc.startedAt,
+    ...(tc.startedAt !== undefined && tc.endedAt !== undefined
+      ? { durationMs: Math.max(0, tc.endedAt - tc.startedAt) }
+      : {}),
   };
 }
 
@@ -1168,6 +1178,7 @@ function projectSegment(
       markers = [];
     };
     let workedMs: number | null = null;
+    let stopReason: string | null = null;
     let toolCount = 0;
     /** Children this turn delegated to, flushed after its last row. */
     const delegated: SubagentRow[] = [];
@@ -1268,6 +1279,7 @@ function projectSegment(
       // The footer data is frozen onto the trailing message at turn_finished.
       if (msg.turnSummary || msg.suggestions || msg.contextUsage) footerMsg = msg;
       if (msg.workedMs !== undefined) workedMs = msg.workedMs;
+      if (msg.stopReason !== undefined) stopReason = msg.stopReason;
       if (msg.interruption) {
         interruption = msg.interruption;
         interruptedMsgId = msg.id;
@@ -1318,6 +1330,7 @@ function projectSegment(
         live: turnInProgress,
         startedAt: turnInProgress ? turnStartMs(messages, turnFirstIdx) : null,
         workedMs,
+        stopped: stopReason === "cancelled",
         expandedTurns: opts.expandedTurns,
       });
     }
@@ -1446,6 +1459,7 @@ function foldWork(
     live: boolean;
     startedAt: number | null;
     workedMs: number | null;
+    stopped: boolean;
     expandedTurns: ReadonlySet<string>;
   },
 ): void {
@@ -1492,6 +1506,7 @@ function foldWork(
     live: o.live,
     startedAt: o.startedAt,
     workedMs: o.workedMs,
+    stopped: o.stopped,
     foldable,
     open,
   });

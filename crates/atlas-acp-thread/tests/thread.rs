@@ -681,6 +681,58 @@ async fn a_cancelled_turn_still_announces_its_own_stop() {
     );
 }
 
+/// A cancelled turn is still timed: `cancel()` clears the running turn, but
+/// not the start the stop is measured from.
+#[tokio::test]
+async fn a_cancelled_turn_keeps_its_start_for_its_record() {
+    let (mut thread, _events, _conn) = new_thread();
+
+    let turn = thread.begin_turn();
+    thread.cancel();
+    thread.end_turn_unless_superseded(turn, acp::StopReason::Cancelled);
+
+    let [record] = thread.turns() else {
+        panic!("one turn recorded, got {:?}", thread.turns());
+    };
+    assert_eq!(record.stop_reason, acp::StopReason::Cancelled);
+    let started = record.started_at.expect("the start survived the cancel");
+    assert!(started <= record.ended_at);
+}
+
+/// A rewind takes back the turns whose output it removed; their timing would
+/// otherwise land on whatever message ends up at those positions next.
+#[tokio::test]
+async fn a_rewind_drops_the_turns_it_took_back() {
+    let (mut thread, _events, _conn) = new_thread();
+
+    thread
+        .handle_session_update(user_chunk("one", Some("m1")))
+        .unwrap();
+    thread.begin_turn();
+    thread.end_turn(acp::StopReason::EndTurn);
+    thread
+        .handle_session_update(acp::SessionUpdate::AgentMessageChunk(
+            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new(
+                "hi".to_string(),
+            ))),
+        ))
+        .unwrap();
+    thread.begin_turn();
+    thread
+        .handle_session_update(acp::SessionUpdate::AgentMessageChunk(
+            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new(
+                "hi".to_string(),
+            ))),
+        ))
+        .unwrap();
+    thread.end_turn(acp::StopReason::EndTurn);
+    assert_eq!(thread.turns().len(), 2);
+
+    thread.remove_entries_from(1);
+    assert_eq!(thread.turns().len(), 1, "{:?}", thread.turns());
+    assert_eq!(thread.turns()[0].entries, 1..1);
+}
+
 /// The unguarded `end_turn` stays as it is: `atlas-agent-delta` and this
 /// crate's own callers use it as "announce Stopped" with no turn open, which
 /// ATL-218 finding 4 settled deliberately. The guarded pair is an addition, not

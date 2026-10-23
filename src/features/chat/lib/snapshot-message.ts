@@ -25,6 +25,10 @@ export function snapshotMessageToWire(m: SessionMessage) {
     content: m.content,
     timestamp: m.timestamp,
     model: m.model ?? null,
+    // The turn's timing, on the message that ends it — so "Worked for" and
+    // "Stopped after" survive a reload.
+    ...(m.worked_ms !== undefined ? { workedMs: m.worked_ms } : {}),
+    ...(m.stop_reason !== undefined ? { stopReason: m.stop_reason } : {}),
     // Snake-case wire pair → the composer's attachment shape, so a reopened
     // message draws the same tiles it showed when it was sent.
     ...(m.images?.length
@@ -37,6 +41,8 @@ export function snapshotMessageToWire(m: SessionMessage) {
       arguments: (tc.arguments ?? {}) as Record<string, unknown>,
       result: tc.result ?? null,
       status: tc.status,
+      ...(tc.started_at_ms !== undefined ? { startedAt: tc.started_at_ms } : {}),
+      ...(tc.ended_at_ms !== undefined ? { endedAt: tc.ended_at_ms } : {}),
     })),
   };
 }

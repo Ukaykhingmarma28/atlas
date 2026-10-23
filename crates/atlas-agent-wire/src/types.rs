@@ -92,6 +92,20 @@ pub struct ToolCall {
     /// is the only thing that tells them apart (`atlas_acp_thread::subagent`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_tool_call_id: Option<String>,
+    /// When Atlas first saw this call, as epoch milliseconds — the same clock
+    /// and shape as [`Subagent::started_at_ms`]. Stamped once by the thread and
+    /// never moved by later updates, so a reloaded session shows the same
+    /// duration the live one did.
+    ///
+    /// A call rebuilt by an agent's `session/load` replay is stamped at replay
+    /// time (ACP carries no per-call time), so its start and end coincide and
+    /// it reads as having no duration rather than a wrong one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_at_ms: Option<i64>,
+    /// When the call first reached a terminal status (completed, failed,
+    /// rejected or cancelled), as epoch milliseconds. Absent while it runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ended_at_ms: Option<i64>,
 }
 
 /// How far along a subagent is.
@@ -258,6 +272,18 @@ pub struct Message {
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub images: Vec<MessageImage>,
     pub timestamp: DateTime<Utc>,
+    /// Wall time of the turn this message ends, in ms, from the turn's start
+    /// to its stop. Set only on a snapshot's last assistant message of a turn
+    /// the thread saw start and stop; the live stream carries the same figure
+    /// on `turn_finished` instead. Absent for a replayed turn, which has no
+    /// honest start to measure from.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub worked_ms: Option<u64>,
+    /// How the turn this message ends stopped — the protocol's token, as
+    /// `turn_finished.stop_reason` carries it (`end_turn`, `cancelled`, …).
+    /// Set on the same message as [`Self::worked_ms`].
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub stop_reason: Option<String>,
 }
 
 /// One image on a [`Message`]: base64 bytes plus their MIME type, the same
