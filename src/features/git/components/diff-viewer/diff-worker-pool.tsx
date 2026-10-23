@@ -63,6 +63,10 @@ function acquire(): SharedPool {
           // seconds; past this length a line is shown plain.
           tokenizeMaxLineLength: 1_000,
           useTokenTransformer: true,
+          // Whole-line tints with no word-level boxes inside. The workers do
+          // the highlighting, so the viewer's own `lineDiffType` option does
+          // not reach them: it has to be said here.
+          lineDiffType: "none",
         },
       ),
       consumers: 0,

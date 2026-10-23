@@ -24,6 +24,8 @@ const TAB_SURFACE: Partial<Record<TabType, string>> = {
   canvas: "canvasFocus",
   spaces: "canvasFocus",
   browser: "browserFocus",
+  diff: "diffFocus",
+  "session-changes": "diffFocus",
 };
 
 function isTextInput(el: Element | null): boolean {

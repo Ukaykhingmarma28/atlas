@@ -49,6 +49,8 @@ vi.mock("./styled-code-view", () => ({
 const { DiffPanel } = await import("./diff-panel");
 const { useSettingsStore } = await import("@/features/settings/stores/settings-store");
 const { DEFAULT_SETTINGS } = await import("@/features/settings/lib/app-settings");
+const { useLayoutStore } = await import("@/features/layout/stores/layout-store");
+const { isMac } = await import("@/lib/platform");
 
 const updateSettings = vi.fn((partial: Partial<typeof DEFAULT_SETTINGS>) =>
   useSettingsStore.setState((s) => ({ settings: { ...s.settings, ...partial } })),
@@ -100,5 +102,50 @@ describe("DiffPanel word wrap", () => {
     expect(screen.getByRole("button", { name: /word wrap/i }).getAttribute("aria-pressed")).toBe(
       "false",
     );
+  });
+});
+
+describe("DiffPanel find (⌘F)", () => {
+  const press = () => {
+    const event = new KeyboardEvent("keydown", {
+      code: "KeyF",
+      key: "f",
+      metaKey: isMac,
+      ctrlKey: !isMac,
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => {
+      window.dispatchEvent(event);
+    });
+    return event;
+  };
+
+  it("opens the find bar while its tab is the active one", async () => {
+    useLayoutStore.setState({ activeTabId: "review" });
+    renderPanel();
+    await screen.findByTestId("viewer");
+    expect(screen.queryByRole("search")).toBeNull();
+    const event = press();
+    expect(event.defaultPrevented).toBe(true);
+    expect(screen.getByRole("search", { name: "Find in diff" })).toBeTruthy();
+  });
+
+  it("leaves ⌘F to the session when the session's tab has the keyboard", async () => {
+    useLayoutStore.setState({ activeTabId: "session-tab" });
+    renderPanel();
+    await screen.findByTestId("viewer");
+    const event = press();
+    expect(event.defaultPrevented).toBe(false);
+    expect(screen.queryByRole("search")).toBeNull();
+  });
+
+  it("opens from its header button too", async () => {
+    renderPanel();
+    await screen.findByTestId("viewer");
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: /find in diff/i }));
+    });
+    expect(screen.getByRole("search", { name: "Find in diff" })).toBeTruthy();
   });
 });

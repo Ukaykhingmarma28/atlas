@@ -2980,11 +2980,26 @@ html[data-chat-width="full"] {
   --atlas-chat-column: 100%;
 }
 
+/* Two diff colours that are not theme keys, only status colours the theme
+   already has, until the palette below takes those for additions and
+   removals: a changed line's bar in the editor's change gutter
+   (`diff-gutter.ts`), and a modified file's mark in the review diff (its
+   header icon, its tree row). */
+:root {
+  --atlas-diff-changed-bar: var(--atlas-status-info-foreground);
+  --atlas-diff-modified-text: var(--atlas-status-warning-foreground);
+}
+
 /* `diffPalette = "blue-orange"`: the theme's own info blue and warning orange
    in place of green and red, so additions and removals stay apart under
    red-green colour blindness and still follow the theme. The extra attribute
-   outranks the resolved theme's `html:root` block. */
+   outranks the resolved theme's `html:root` block. Additions take the blue
+   a changed line's bar used and removals the orange a modified file's mark
+   used, so both step back to the gutter's neutral: three marks, three
+   colours. */
 html:root[data-diff-palette="blue-orange"] {
+  --atlas-diff-changed-bar: var(--atlas-editor-gutter-foreground);
+  --atlas-diff-modified-text: var(--atlas-editor-gutter-foreground);
   --atlas-diff-added-text: var(--atlas-status-info-foreground);
   --atlas-diff-added-background: color-mix(
     in srgb,

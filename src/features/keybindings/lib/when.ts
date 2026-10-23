@@ -30,6 +30,7 @@ export const SURFACE_FOCUS_VARIABLES = [
   "pdfFocus",
   "canvasFocus",
   "browserFocus",
+  "diffFocus",
 ] as const;
 
 /** Every variable Atlas provides, in the order the editor lists them. */
@@ -56,6 +57,7 @@ export const WHEN_VARIABLE_DESCRIPTIONS: Readonly<Record<string, string>> = {
   pdfFocus: "A PDF is the active tab",
   canvasFocus: "A canvas or space is the active tab",
   browserFocus: "The browser is the active tab",
+  diffFocus: "The review diff is the active tab",
   inputFocus: "You're typing in a text field",
   knowledgeOpen: "Knowledge is open",
   modelPickerOpen: "The model picker has focus",

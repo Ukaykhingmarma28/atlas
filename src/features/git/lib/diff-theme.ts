@@ -121,7 +121,7 @@ export const DIFF_THEME: ThemeRegistration = {
     // file-type icons and line tints derive from.
     "gitDecoration.addedResourceForeground": "var(--atlas-diff-added-text)",
     "gitDecoration.deletedResourceForeground": "var(--atlas-diff-removed-text)",
-    "gitDecoration.modifiedResourceForeground": "var(--atlas-status-warning-foreground)",
+    "gitDecoration.modifiedResourceForeground": "var(--atlas-diff-modified-text)",
   },
   tokenColors: [
     ...SCOPES.map(([name, scope]) => ({
