@@ -41,6 +41,7 @@ import type {
   PrLabelCandidates,
   PrListEntry,
   PrListResult,
+  PrListStat,
   PrProvider,
   PrReaction,
   PrReactionContent,
@@ -586,7 +587,48 @@ function generateCrowd(count: number): FakePull[] {
 /** Give the repository a crowd of pull requests across every group and
  *  state, or take it away. */
 export function crowdPullRequestList(on: boolean): void {
-  crowd = on ? generateCrowd(140) : [];
+  crowd = on ? stackCrowd(generateCrowd(140)) : [];
+}
+
+/** Base the viewer's first three open pull requests on one another, so the
+ *  list shows a stack (`2/3`) derived from their base branches. */
+function stackCrowd(pulls: FakePull[]): FakePull[] {
+  const mine = pulls.filter((p) => p.detail.state === "open" && p.detail.author === VIEWER);
+  for (let i = 1; i < Math.min(3, mine.length); i++) {
+    const base = mine[i - 1]!.detail.headBranch;
+    mine[i]!.detail.baseBranch = base;
+    mine[i]!.entry.baseBranch = base;
+  }
+  return pulls;
+}
+
+/** A pull request's line counts spread over code, tests, test support and a
+ *  lockfile, adding up to its own totals, for the list's breakdown hover. */
+function listStatOf(number: number): PrListStat | null {
+  const entry = allPulls().find((p) => p.detail.number === number)?.entry;
+  if (!entry) return null;
+  const shares: Array<[string, number]> = [
+    [`src/feature-${number}/index.ts`, 0.55],
+    [`src/feature-${number}/view.tsx`, 0.15],
+    [`src/feature-${number}/index.test.ts`, 0.18],
+    [`src/feature-${number}/__fixtures__/rows.json`, 0.04],
+    ...(number % 3 === 0 ? [["bun.lock", 0.08] as [string, number]] : []),
+  ];
+  const sum = shares.reduce((total, [, share]) => total + share, 0);
+  const split = (total: number) => {
+    const parts = shares.map(([, share]) => Math.floor((share / sum) * total));
+    parts[0]! += total - parts.reduce((a, b) => a + b, 0);
+    return parts;
+  };
+  const adds = split(entry.additions);
+  const dels = split(entry.deletions);
+  return {
+    number,
+    additions: entry.additions,
+    deletions: entry.deletions,
+    files: shares.map(([path], i) => ({ path, additions: adds[i]!, deletions: dels[i]! })),
+    filesTruncated: number === 420,
+  };
 }
 
 function allPulls(): FakePull[] {
@@ -1708,6 +1750,7 @@ export function answerGuidePrompt(info: { sessionId: string; text: string }): bo
 export interface PullRequestsResponses {
   pr_provider: PrProvider;
   pr_list: PrListResult;
+  pr_list_stats: PrListStat[];
   pr_detail: PrDetail;
   pr_activity: PrActivity;
   pr_thread_comments: PrThreadCommentsPage;
@@ -1747,7 +1790,14 @@ function listMatches(entry: PrListEntry, args: MockArgs): boolean {
     author?: string | null;
     draft?: string | null;
     labels?: string[] | null;
+    labelGroups?: string[][] | null;
+    excludedLabels?: string[] | null;
   };
+  const held = new Set(entry.labels.map((l) => l.name.toLowerCase()));
+  if (query.labelGroups?.some((group) => !group.some((l) => held.has(l.toLowerCase())))) {
+    return false;
+  }
+  if (query.excludedLabels?.some((l) => held.has(l.toLowerCase()))) return false;
   if (query.author && entry.author?.login.toLowerCase() !== query.author.toLowerCase()) {
     return false;
   }
@@ -1787,6 +1837,10 @@ export const pullRequestsHandlers: TypedHandlers<PullRequestsResponses> = {
       entries: all.slice(start, start + limit),
       nextCursor: start + limit < all.length ? String(start + limit) : null,
     };
+  },
+  pr_list_stats: ({ numbers }) => {
+    guard();
+    return ((numbers ?? []) as number[]).flatMap((number) => listStatOf(Number(number)) ?? []);
   },
   pr_detail: ({ number }) => {
     guard();

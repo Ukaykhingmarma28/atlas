@@ -61,6 +61,10 @@ function page(numbers: number[], nextCursor: string | null): PrListResult {
 }
 
 const listCalls = () => invoke.mock.calls.filter(([name]) => name === "pr_list");
+const lastListQuery = () => {
+  const calls = listCalls();
+  return calls[calls.length - 1]?.[1].query;
+};
 
 function renderPanel() {
   const client = new QueryClient();
@@ -127,5 +131,73 @@ describe("PullRequestListPanel paging", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     await waitFor(() => expect(listCalls()).toHaveLength(AUTO_PAGES_WHILE_FILTERED + 1));
+  });
+});
+
+describe("PullRequestListPanel search qualifiers", () => {
+  it("sends typed labels, exclusions and draft to the host, and the words as the search", async () => {
+    invoke.mockImplementation(async (name: string) => {
+      if (name === "pr_provider") return provider;
+      if (name === "pr_list") return page([1], null);
+      return [];
+    });
+    renderPanel();
+    await screen.findByRole("list", { name: "Pull requests" });
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search pull requests" }), {
+      target: { value: "cart label:bug,ui label:api -label:wip draft:false review:approved" },
+    });
+    await waitFor(
+      () =>
+        expect(lastListQuery()).toMatchObject({
+          search: "cart",
+          labels: ["api"],
+          labelGroups: [["bug", "ui"]],
+          excludedLabels: ["wip"],
+          draft: "hide",
+        }),
+      { timeout: 2000 },
+    );
+    expect(lastListQuery()).not.toHaveProperty("review");
+  });
+
+  it("reads the line-count breakdowns for the rows on screen in one batch", async () => {
+    invoke.mockImplementation(async (name: string) => {
+      if (name === "pr_provider") return provider;
+      if (name === "pr_list") return page([5, 6, 7], null);
+      return [];
+    });
+    renderPanel();
+    await screen.findByRole("list", { name: "Pull requests" });
+    await waitFor(() =>
+      expect(invoke.mock.calls.filter(([name]) => name === "pr_list_stats")).toHaveLength(1),
+    );
+    const [, args] = invoke.mock.calls.find(([name]) => name === "pr_list_stats")!;
+    expect([...args.numbers].sort()).toEqual([5, 6, 7]);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    // Rows that were answered for are not asked about again.
+    expect(invoke.mock.calls.filter(([name]) => name === "pr_list_stats")).toHaveLength(1);
+  });
+
+  it("paints the last list at once on reopen, then asks the host again", async () => {
+    invoke.mockImplementation(async (name: string) => {
+      if (name === "pr_provider") return provider;
+      if (name === "pr_list") return page([41, 42], null);
+      return [];
+    });
+    const first = renderPanel();
+    await screen.findByRole("button", { name: /#41/ });
+    first.unmount();
+
+    let answer: (value: PrListResult) => void = () => {};
+    invoke.mockImplementation(async (name: string) => {
+      if (name === "pr_provider") return provider;
+      if (name === "pr_list") return new Promise<PrListResult>((resolve) => (answer = resolve));
+      return [];
+    });
+    renderPanel();
+    expect(await screen.findByRole("button", { name: /#42/ })).toBeTruthy();
+    await waitFor(() => expect(listCalls().length).toBeGreaterThan(1));
+    answer(page([43], null));
+    expect(await screen.findByRole("button", { name: /#43/ })).toBeTruthy();
   });
 });

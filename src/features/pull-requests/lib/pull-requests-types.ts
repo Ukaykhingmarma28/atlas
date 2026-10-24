@@ -247,11 +247,33 @@ export interface PrListQuery {
   /** `"only"` drafts, `"hide"` drafts, or anything else for both. */
   draft?: string | null;
   labels?: string[] | null;
+  /** Each group ORs its labels; every group must hold (`label:a,b`). */
+  labelGroups?: string[][] | null;
+  /** Labels a pull request must not carry (`-label:x`). */
+  excludedLabels?: string[] | null;
   /** Only pull requests whose head is this branch. */
   head?: string | null;
   cursor?: string | null;
   /** Rows per page, at most 100. */
   limit?: number | null;
+}
+
+/** One changed file's line counts, for the list's change breakdown. */
+export interface PrFileStat {
+  path: string;
+  additions: number;
+  deletions: number;
+}
+
+/** A listed pull request's line counts with the files behind them
+ *  (`pr_list_stats`). */
+export interface PrListStat {
+  number: number;
+  additions: number;
+  deletions: number;
+  files: PrFileStat[];
+  /** More files changed than were read: a split would be partial. */
+  filesTruncated: boolean;
 }
 
 export interface PrListEntry {

@@ -27,6 +27,7 @@ import type {
   PrLabelCandidates,
   PrListQuery,
   PrListResult,
+  PrListStat,
   PrProvider,
   PrReactionContent,
   PrReviewCommentDraft,
@@ -59,6 +60,11 @@ export function prProvider(path: string, refresh = false): Promise<PrProvider> {
 
 export function prList(path: string, query: PrListQuery = {}): Promise<PrListResult> {
   return gated(() => invoke<PrListResult>("pr_list", { path, query }));
+}
+
+/** Line counts and changed files for listed pull requests, batched. */
+export function prListStats(path: string, numbers: number[]): Promise<PrListStat[]> {
+  return gated(() => invoke<PrListStat[]>("pr_list_stats", { path, numbers }));
 }
 
 export function prDetail(path: string, number: number): Promise<PrDetail> {
