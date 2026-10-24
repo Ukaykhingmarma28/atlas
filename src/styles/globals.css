@@ -989,6 +989,49 @@
   line-height: 11px;
   text-align: center;
 }
+/* The parent folders after a base-name label, when two chips in one document
+   would otherwise read alike (`file-chip-hast.ts`). */
+.atlas-file-chip__suffix {
+  margin-left: 0.35em;
+  color: var(--muted-foreground);
+}
+
+/* A table or code block in rendered markdown with its collapse and copy
+   buttons under it (`markdown-block-frame.tsx`). Collapsed, a table's cells
+   keep to one line each and a code block to its first lines. */
+.atlas-md-block {
+  margin: 0.75rem 0;
+}
+.prose-chat .atlas-md-block > table,
+.prose-chat .atlas-md-block > pre,
+.atlas-md-block > table,
+.atlas-md-block > pre {
+  margin: 0;
+}
+.atlas-md-block__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.125rem;
+  user-select: none;
+}
+/* Fixed layout, so the columns share the width and a long cell ends in an
+   ellipsis instead of pushing the table past its pane. */
+.atlas-md-block[data-collapsed="true"] table {
+  table-layout: fixed;
+}
+.atlas-md-block[data-collapsed="true"] th,
+.atlas-md-block[data-collapsed="true"] td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.atlas-md-block[data-kind="code"][data-collapsed="true"] pre {
+  max-height: 192px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent);
+  mask-image: linear-gradient(to bottom, black 70%, transparent);
+}
 
 /* A web link in a session wears its service's mark before its text
    (`markdown-render.ts`, `link-services.ts`). The mark is a mask filled with
@@ -1056,6 +1099,10 @@
 .atlas-link__icon[data-link-service="npm"] {
   -webkit-mask-image: url("../assets/link-services/npm.svg");
   mask-image: url("../assets/link-services/npm.svg");
+}
+.atlas-link__icon[data-link-service="azure-devops"] {
+  -webkit-mask-image: url("../assets/link-services/azure-devops.svg");
+  mask-image: url("../assets/link-services/azure-devops.svg");
 }
 
 @layer base {

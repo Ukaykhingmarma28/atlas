@@ -21,15 +21,8 @@ import remarkRehype from "remark-rehype";
 import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import rehypeStringify from "rehype-stringify";
-import {
-  baseNameOf,
-  fileChipTitle,
-  inlineCodeFileTarget,
-  isAbsolutePath,
-  linkFileTarget,
-  resolveInProject,
-  type FileLinkTarget,
-} from "./file-links";
+import { baseNameOf, isAbsolutePath, resolveInProject } from "./file-links";
+import { applyFileChips, fileChipNode, plainText, type Hast } from "./file-chip-hast";
 import { leadingLinkTextLength, linkFacts, textIsAddress } from "./link-services";
 
 const SANITIZE_SCHEMA = {
@@ -97,14 +90,6 @@ const SANITIZE_SCHEMA = {
 // pills the composer uses. Kind is derived from the prefix; tokens inside
 // `code`/`pre` are left literal. Dependency-free hast walk (also runs in the
 // markdown worker).
-
-type Hast = {
-  type: string;
-  tagName?: string;
-  value?: string;
-  properties?: Record<string, unknown>;
-  children?: Hast[];
-};
 
 const MENTION_PREFIX_KIND: Record<string, string> = {
   "@file": "file",
@@ -358,77 +343,6 @@ const FIXED_LABEL: Record<string, string> = {
   cited_text: "Cited passage",
 };
 
-/**
- * A chip for a file or folder: the icon theme's icon for the path, its base
- * name, and the full path in the tooltip. Clickable when it has a target —
- * `CachedMarkdown` opens it (`open-path-link.ts`).
- *
- * The icon is drawn on the main thread, not here: this runs in the worker, and
- * the theme's icons live in the icon-theme store. The slot is a box of fixed
- * size showing the lucide glyph the composer's own fallback draws, so painting
- * the theme's icon in (`paintFileIcons`) swaps one box's contents and moves
- * nothing.
- */
-function fileChipNode(opts: {
-  /** Where a click goes; none for a mention that cannot be resolved. */
-  target: FileLinkTarget | null;
-  /** The path the icon is chosen by. */
-  iconPath: string;
-  folder: boolean;
-  label: string;
-  title: string;
-  /** The root `target` was resolved under: the session's working directory,
-   *  which for a worktree session is not the open project. A click opens a
-   *  file under it in Atlas (`open-path-link.ts`). */
-  root?: string;
-  /** A path outside every root that the composer attached itself
-   *  (`ParseOptions.trustedPaths`): the only kind a click may hand to an
-   *  editor or the system's app. */
-  trusted?: boolean;
-}): Hast {
-  const kind = opts.folder ? "folder" : "file";
-  const properties: Record<string, unknown> = {
-    className: ["atlas-mention-chip", "atlas-mention-chip--msg", "atlas-file-chip"],
-    dataMentionKind: kind,
-    title: opts.title,
-  };
-  if (opts.target) {
-    properties.dataFilePath = opts.target.path;
-    if (opts.target.line !== undefined) properties.dataFileLine = String(opts.target.line);
-    if (opts.target.column !== undefined) properties.dataFileColumn = String(opts.target.column);
-    if (opts.root) properties.dataFileRoot = opts.root;
-    if (opts.trusted) properties.dataFileTrusted = "true";
-    properties.role = "link";
-    properties.tabIndex = 0;
-  }
-  // Empty: the fallback glyph is drawn by CSS (`.atlas-file-chip__icon:empty`),
-  // so a chip costs four elements, not a dozen of inline SVG per chip.
-  const icon: Hast = {
-    type: "element",
-    tagName: "span",
-    properties: {
-      className: ["atlas-mention-chip__icon", "atlas-file-chip__icon"],
-      dataFileIcon: kind,
-      dataFilePath: opts.iconPath,
-    },
-    children: [],
-  };
-  return {
-    type: "element",
-    tagName: "span",
-    properties,
-    children: [
-      icon,
-      {
-        type: "element",
-        tagName: "span",
-        properties: { className: ["atlas-mention-chip__label"] },
-        children: [{ type: "text", value: opts.label }],
-      },
-    ],
-  };
-}
-
 function chipNode(prefix: string, value: string, data: RenderData): Hast {
   const kind = MENTION_PREFIX_KIND[prefix] ?? "file";
   if (kind === "file" || kind === "folder") {
@@ -556,108 +470,15 @@ export interface ParseOptions {
 
 // ── File paths in prose ───────────────────────────────────────────────────────
 // Inline code and link destinations that name a file in the session's project
-// become the same chips a mention draws (`file-links.ts` decides which). Runs
-// once per rendered string, and the result is cached with the HTML. Fenced
-// code is never touched.
-
-/** The text of an element whose children are all text (or inline code), or
- *  null when it holds anything else. */
-function plainText(node: Hast): string | null {
-  let text = "";
-  for (const child of node.children ?? []) {
-    if (child.type === "text" && typeof child.value === "string") text += child.value;
-    else if (child.type === "element" && child.tagName === "code") {
-      const inner = plainText(child);
-      if (inner === null) return null;
-      text += inner;
-    } else return null;
-  }
-  return text;
-}
-
-/** Whether a link's text just restates where it goes (`[src/a.ts](src/a.ts)`,
- *  `[a.ts](src/a.ts)`), so the chip can stand in for the whole link. */
-function labelRestatesTarget(label: string, href: string): boolean {
-  const clean = (s: string) =>
-    s
-      .trim()
-      .replace(/^\.\//, "")
-      .replace(/(?::\d+){1,2}$|#L\d+(?:C\d+)?$/i, "")
-      .replace(/\/+$/, "");
-  const l = clean(label);
-  const h = clean(href);
-  return l.length > 0 && (h === l || h.endsWith(`/${l}`));
-}
-
-/** A chip for a path found in prose. Its label is the text as written —
- *  `src/a/index.ts` and `src/b/index.ts` must not both read `index.ts`, and
- *  copying the reply keeps the path — and its tooltip the resolved path. */
-function fileTargetChip(target: FileLinkTarget, written: string, root: string): Hast {
-  return fileChipNode({
-    target,
-    iconPath: target.path,
-    folder: target.folder,
-    label: written.trim(),
-    title: fileChipTitle(target),
-    root,
-  });
-}
-
-/** A link destination as a person would read it: `file://` dropped and
- *  percent-escapes decoded. */
-function writtenHref(href: string): string {
-  const bare = href.replace(/^file:\/\//i, "");
-  try {
-    return decodeURIComponent(bare);
-  } catch {
-    return bare;
-  }
-}
+// become the same chips a mention draws (`file-chip-hast.ts`, shared with every
+// other markdown renderer). Runs once per rendered string, and the result is
+// cached with the HTML. Fenced code is never touched.
 
 function rehypeFileChips() {
   return (tree: Hast, file: { data: RenderData }) => {
     const root = file.data.fileRoot;
     if (!root) return;
-    const walk = (node: Hast) => {
-      if (!node.children) return;
-      const next: Hast[] = [];
-      for (const child of node.children) {
-        if (child.type !== "element" || child.tagName === "pre") {
-          next.push(child);
-          continue;
-        }
-        if (child.tagName === "code") {
-          const text = plainText(child);
-          const target = text === null ? null : inlineCodeFileTarget(text, root);
-          next.push(target && text !== null ? fileTargetChip(target, text, root) : child);
-          continue;
-        }
-        const href = child.tagName === "a" ? child.properties?.href : undefined;
-        const target = typeof href === "string" ? linkFileTarget(href, root) : null;
-        if (target && typeof href === "string") {
-          const label = plainText(child);
-          if (label !== null && labelRestatesTarget(label, href)) {
-            next.push(fileTargetChip(target, label, root));
-          } else {
-            // The link's own words stay, as text: an anchor with a relative
-            // href would navigate the webview away. The chip follows them.
-            walk(child);
-            next.push(
-              ...(child.children ?? []),
-              { type: "text", value: " " },
-              fileTargetChip(target, writtenHref(href), root),
-            );
-          }
-          continue;
-        }
-        // A mention chip is already a chip.
-        const cls = child.properties?.className;
-        if (!(Array.isArray(cls) && cls.includes("atlas-mention-chip"))) walk(child);
-        next.push(child);
-      }
-      node.children = next;
-    };
-    walk(tree);
+    applyFileChips(tree, { root, label: "written", stampRoot: true });
   };
 }
 

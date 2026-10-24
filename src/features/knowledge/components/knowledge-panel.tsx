@@ -566,7 +566,10 @@ export function KnowledgePanel({ tabId }: { tabId?: string }) {
               // viewport so long READMEs scroll cleanly.
               <div className="flex-1 min-h-0 overflow-auto">
                 <div className="max-w-3xl mx-auto px-8 py-8">
-                  <ReadmeView source={repoReadme} />
+                  <ReadmeView
+                    source={repoReadme}
+                    root={clonedRepos.find((r) => r.name === activeRepoName)?.path ?? null}
+                  />
                 </div>
               </div>
             ) : (

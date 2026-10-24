@@ -16,7 +16,56 @@ const openOutsideFile = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock("@/features/external-editor/lib/preferred-editor", () => ({ openOutsideFile }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
-import { locateInProject, openPathLink } from "./open-path-link";
+import { locateInProject, openPathLink, openUntrustedPathLink } from "./open-path-link";
+
+describe("opening a chip from text Atlas does not trust", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    project.path = "/p";
+    search.mockResolvedValue([]);
+  });
+
+  const nothingLeftAtlas = () => {
+    expect(revealItemInDir).not.toHaveBeenCalled();
+    expect(openOutsideFile).not.toHaveBeenCalled();
+  };
+
+  it("opens a file inside the surface's root in Atlas, at its line", async () => {
+    expect(await openUntrustedPathLink({ path: "/p/src/a.ts", line: 3 }, "/p")).toBe(true);
+    expect(openInProject).toHaveBeenCalledWith("/p/src/a.ts", undefined, {
+      reveal: { line: 3, column: undefined },
+    });
+    nothingLeftAtlas();
+  });
+
+  it("opens a planted .terminal file inside the root only in Atlas's viewer", async () => {
+    expect(await openUntrustedPathLink({ path: "/p/scripts/setup.terminal" }, "/p")).toBe(true);
+    expect(openInProject).toHaveBeenCalledWith("/p/scripts/setup.terminal", undefined, undefined);
+    nothingLeftAtlas();
+  });
+
+  it("opens nothing outside the root: absolute, climbing, or the open project's sibling", async () => {
+    for (const path of ["/etc/passwd", "/p/../q/x.ts", "/elsewhere/setup.terminal", "/q/a.ts"]) {
+      expect(await openUntrustedPathLink({ path }, "/p")).toBe(false);
+    }
+    // A root narrower than the open project: the project's other files are out.
+    expect(await openUntrustedPathLink({ path: "/p/other/a.ts" }, "/p/docs")).toBe(false);
+    expect(openInProject).not.toHaveBeenCalled();
+    nothingLeftAtlas();
+  });
+
+  it("never reveals or runs a bundle, even inside the root", async () => {
+    expect(await openUntrustedPathLink({ path: "/p/build/Foo.app" }, "/p")).toBe(false);
+    expect(openInProject).not.toHaveBeenCalled();
+    nothingLeftAtlas();
+  });
+
+  it("keeps the index's answer only while it stays inside the root", async () => {
+    search.mockResolvedValue([{ path: "/p/src/deep/a.ts", rel: "src/deep/a.ts" }]);
+    await openUntrustedPathLink({ path: "/p/docs/a.ts" }, "/p/docs");
+    expect(openInProject).toHaveBeenCalledWith("/p/docs/a.ts", undefined, undefined);
+  });
+});
 
 beforeEach(() => {
   vi.clearAllMocks();

@@ -35,6 +35,8 @@ const agentReply = [
   "- Figma: https://www.figma.com/design/AbC123/Session-links",
   "- Vercel: https://vercel.com/acme/web/deployments",
   "- npm: https://www.npmjs.com/package/react-markdown",
+  "- Azure DevOps: https://dev.azure.com/acme/shop/_git/web/pullrequest/42,",
+  "  https://acme.visualstudio.com/shop/_workitems/edit/17 and https://dev.azure.com/acme/shop/_git/web",
   "",
   "These get the plain globe or nothing: https://example.com/docs, http://localhost:5173/,",
   "[the readme](README.md), `https://github.com/acme/web/pull/42` in code, and the bare key ATL-978.",

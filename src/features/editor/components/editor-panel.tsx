@@ -610,7 +610,12 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
       )}
       {rendered && renderedMode === "markdown" && (
         <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
-          <MarkdownFile trusted docPath={path} className="mx-auto max-w-4xl">
+          <MarkdownFile
+            trusted
+            docPath={path}
+            projectRoot={frame?.root ?? (projectPath || null)}
+            className="mx-auto max-w-4xl"
+          >
             {shownText}
           </MarkdownFile>
         </div>

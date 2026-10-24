@@ -209,6 +209,23 @@ export function inlineCodePathCandidate(code: string): {
 }
 
 /**
+ * A bare file name in inline code (`settings.json`, `Makefile`), with no
+ * folder and no position: too loose to be a path on its own, so it is a
+ * candidate only where a list of known files can confirm it (a pull request's
+ * changed files, `file-chip-hast.ts`). Null for anything else.
+ */
+export function bareFileNameCandidate(code: string): { path: string } | null {
+  const text = code.trim();
+  if (!text || text.length > 255 || /[\s`/\\:#]/.test(text) || GLOB_CHARS.test(text)) return null;
+  if (text === "." || text === ".." || looksLikeHost(text)) return null;
+  if (EXTENSIONLESS_FILES.has(text)) return { path: text };
+  if (!FILE_EXTENSION.test(text) || VERSION_SUFFIX.test(text) || NUMERIC_DOTTED.test(text)) {
+    return null;
+  }
+  return { path: text };
+}
+
+/**
  * The file a link destination names, or null when it is a URL, an anchor, or
  * not file-shaped. A link may name a folder (`docs/`), and its text may be
  * anything: `[the helper](src/lib/api.ts#L10)`.
@@ -320,6 +337,21 @@ export function resolveInProject(path: string, root: string): string | null {
   if (!resolved) return null;
   if (resolved !== cleanRoot && !resolved.startsWith(`${cleanRoot}/`)) return null;
   return inRootStyle(resolved, root);
+}
+
+/**
+ * The root a document's file chips resolve in: the open project when the
+ * document is inside it, else the document's own folder. Null without a
+ * document path.
+ */
+export function documentFileRoot(
+  docPath: string | null | undefined,
+  projectPath: string | null | undefined,
+): string | null {
+  if (!docPath || !isAbsolutePath(docPath)) return projectPath ?? null;
+  if (projectPath && isUnderRoot(docPath, projectPath)) return projectPath;
+  const cut = Math.max(docPath.lastIndexOf("/"), docPath.lastIndexOf("\\"));
+  return cut > 0 ? docPath.slice(0, cut) : null;
 }
 
 /** The last segment of a path, either separator. */
