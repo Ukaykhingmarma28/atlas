@@ -40,7 +40,6 @@ import { useChatStore } from "../stores/chat-store";
 import { useFrozenOrder } from "../hooks/use-frozen-order";
 import { bumpLoadToken, isLoadStale } from "../lib/load-tokens";
 import {
-  archiveThread,
   deleteThread,
   onThreadsChanged,
   settleThread,
@@ -762,16 +761,6 @@ export const SessionSidebar = memo(function SessionSidebar({
     }
   };
 
-  const handleArchiveAgent = async (item: SidebarItem) => {
-    try {
-      // Out of the way, not gone. The thread stays in History and comes back
-      // the moment it is opened (ADR-0001: archive is a shelf, not a grave).
-      await archiveThread(item.threadId);
-    } catch (err) {
-      toast.error(`Couldn't archive: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  };
-
   const handleDeleteAgent = async (item: SidebarItem) => {
     if (!(await confirmDeleteChat(item.title))) return;
     try {
@@ -799,7 +788,6 @@ export const SessionSidebar = memo(function SessionSidebar({
     open: handleOpenAgent,
     settle: handleSettleAgent,
     unsettle: handleUnsettleAgent,
-    archive: handleArchiveAgent,
     remove: handleDeleteAgent,
     onOpened,
   });
@@ -807,7 +795,6 @@ export const SessionSidebar = memo(function SessionSidebar({
     open: handleOpenAgent,
     settle: handleSettleAgent,
     unsettle: handleUnsettleAgent,
-    archive: handleArchiveAgent,
     remove: handleDeleteAgent,
     onOpened,
   };
@@ -851,10 +838,6 @@ export const SessionSidebar = memo(function SessionSidebar({
     });
   }, [asDropdown, tabId]);
 
-  const onArchiveCard = useCallback((threadId: string) => {
-    const item = itemsByThreadRef.current.get(threadId);
-    if (item) void handlersRef.current.archive(item);
-  }, []);
   const onDeleteCard = useCallback((threadId: string) => {
     const item = itemsByThreadRef.current.get(threadId);
     if (item) void handlersRef.current.remove(item);
@@ -938,7 +921,6 @@ export const SessionSidebar = memo(function SessionSidebar({
         onOpen={onOpenCard}
         onSettle={onSettleCard}
         onUnsettle={onUnsettleCard}
-        onArchive={onArchiveCard}
         onDelete={onDeleteCard}
       />
     );
@@ -974,9 +956,9 @@ export const SessionSidebar = memo(function SessionSidebar({
           placeholder="Search…"
           className="flex-1 bg-transparent outline-none text-xs text-foreground placeholder:text-muted-foreground min-w-0"
         />
-        {/* Everything ever, archived included — and where import lives. */}
+        {/* Every session, every project — and where import lives. */}
         {!asDropdown && (
-          <Hint label="All history — archived threads, and import">
+          <Hint label="All history — every session, and import">
             <button
               type="button"
               onClick={() => setHistoryOpen(true)}

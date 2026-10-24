@@ -62,7 +62,6 @@ function renderCard(props: Partial<SessionCardProps> = {}) {
     onOpen: vi.fn(),
     onSettle: vi.fn(),
     onUnsettle: vi.fn(),
-    onArchive: vi.fn(),
     onDelete: vi.fn(),
   };
   const view = render(
@@ -236,7 +235,6 @@ describe("SessionCard", () => {
         onOpen={noop}
         onSettle={noop}
         onUnsettle={noop}
-        onArchive={noop}
         onDelete={noop}
       />
     );
@@ -328,12 +326,11 @@ describe("SessionCard", () => {
     expect(onOpen).toHaveBeenCalledWith("thread-1");
   });
 
-  it("archives and deletes without opening", async () => {
+  it("deletes without opening, and offers no Archive", async () => {
     const user = userEvent.setup();
-    const { onOpen, onArchive, onDelete } = renderCard();
-    await user.click(screen.getByRole("button", { name: "Archive session" }));
+    const { onOpen, onDelete } = renderCard();
+    expect(screen.queryByRole("button", { name: "Archive session" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Delete session" }));
-    expect(onArchive).toHaveBeenCalledWith("thread-1");
     expect(onDelete).toHaveBeenCalledWith("thread-1");
     expect(onOpen).not.toHaveBeenCalled();
   });

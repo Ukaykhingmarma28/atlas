@@ -18,7 +18,7 @@
 //! agent forgetting the session afterwards.
 //!
 //! A row is **metadata only** — ids, agent, titles, timestamps, worktree paths,
-//! archived flag. No message, no chunk, no tool call, no token. Replaying a
+//! and the session's lifecycle (settled, pinned, snoozed, last viewed). No message, no chunk, no tool call, no token. Replaying a
 //! conversation is the agent's job, through `session/load`. This is the single
 //! invariant the whole design rests on; anything that would put transcript
 //! content in this crate is a design error, not a feature.
@@ -34,6 +34,16 @@
 //! channel, there are no archived-git-worktree side tables (out of scope), and
 //! the native agent's id has no `NULL` encoding (it would be an agent-identity
 //! branch).
+//!
+//! # Lifecycle
+//!
+//! A session is active, settled (done for now, on the sidebar's Settled
+//! shelf), pinned (kept at the top, never auto-settled) or snoozed (out of the
+//! way until a time, or until it raises its hand). Every rule between those
+//! states lives in [`ThreadMetadataStore`], under its write lock, so the host
+//! and the UI cannot get them subtly different. There is no archived state:
+//! settling replaced it (the `threads_lifecycle` migration moved every
+//! archived row to Settled).
 //!
 //! # Testing
 //!
@@ -52,12 +62,14 @@ mod store;
 
 pub use error::{Error, Result};
 pub use import::{collect_all_sessions, importable_threads};
-pub use model::{ThreadFilter, ThreadId, ThreadMetadata, DEFAULT_THREAD_TITLE};
+pub use model::{ThreadId, ThreadMetadata, DEFAULT_THREAD_TITLE};
 pub use paths::{LengthMismatch, PathList, SerializedPathList, WorktreePaths};
-pub use recorder::{affects_thread_metadata, ThreadRecorder, ThreadSnapshot};
+pub use recorder::{
+    affects_thread_metadata, lifecycle_signal, LifecycleSignal, ThreadRecorder, ThreadSnapshot,
+};
 pub use schema::{LEGACY_MAX, SCHEMA_EPOCH};
 pub use store::{
-    LiveThreadUpdate, ThreadMetadataStore, ThreadProject, ThreadStoreEvent, NEW_ACTIVITY_SLACK,
+    LiveThreadUpdate, MarkUnread, ThreadMetadataStore, ThreadProject, ThreadStoreEvent,
 };
 
 /// Where the store lives: one file beside the rest of Atlas's app-level state.

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog } from "@base-ui/react/dialog";
 import { DialogOverlay } from "@/ui/dialog";
-import { Archive, Download, Search, Trash2, X } from "lucide-react";
+import { Download, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/time-ago";
@@ -19,10 +19,9 @@ const HISTORY_CONFIRM_SCOPE = "thread-history";
 /**
  * Everything the user has ever done in Atlas, bucketed by when it started.
  *
- * The counterpart to the sidebar: the sidebar shows the threads of the projects
- * you are working in, this shows all of them, archived ones included. It is
- * also where import lives, and where a thread that was archived out of the way
- * can be found again — opening one brings it back (ADR-0001).
+ * The counterpart to the sidebar: the sidebar shows the sessions of the project
+ * you are working in, this shows every session in every project, whatever its
+ * state. It is also where import lives.
  *
  * Same Dialog shell, tokens and row rhythm as the other full-screen lists; no
  * new visual pattern.
@@ -34,12 +33,11 @@ export function ThreadHistoryView({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Resume a row. Unarchiving is the backend's job, on open. */
+  /** Resume a row. */
   onOpenThread: (thread: ThreadRow) => void;
 }) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
-  const [archivedOnly, setArchivedOnly] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
 
   const {
@@ -48,8 +46,8 @@ export function ThreadHistoryView({
     isError,
     error,
   } = useQuery({
-    queryKey: ["thread-history", archivedOnly],
-    queryFn: () => threadHistory(archivedOnly),
+    queryKey: ["thread-history"],
+    queryFn: () => threadHistory(),
     enabled: open,
     staleTime: 30_000,
     // A history store that failed to open fails the same way on a retry.
@@ -66,12 +64,6 @@ export function ThreadHistoryView({
       unlisten.then((u) => u());
     };
   }, [open, queryClient]);
-
-  // Filtering to archived when nothing is archived strands the user with an
-  // empty list and a toggle that looks broken.
-  useEffect(() => {
-    if (archivedOnly && threads.length === 0) setArchivedOnly(false);
-  }, [archivedOnly, threads.length]);
 
   const buckets = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -111,21 +103,8 @@ export function ThreadHistoryView({
             </span>
             <button
               type="button"
-              onClick={() => setArchivedOnly((on) => !on)}
-              className={cn(
-                "ml-auto flex items-center gap-1 rounded px-2 py-1 text-2xs transition-colors cursor-pointer",
-                archivedOnly
-                  ? "bg-element-selected text-foreground"
-                  : "text-muted-foreground hover:bg-element-hover hover:text-foreground",
-              )}
-            >
-              <Archive size={10} />
-              Archived only
-            </button>
-            <button
-              type="button"
               onClick={() => setImportOpen(true)}
-              className="flex items-center gap-1 rounded px-2 py-1 text-2xs text-muted-foreground hover:bg-element-hover hover:text-foreground transition-colors cursor-pointer"
+              className="ml-auto flex items-center gap-1 rounded px-2 py-1 text-2xs text-muted-foreground hover:bg-element-hover hover:text-foreground transition-colors cursor-pointer"
             >
               <Download size={10} />
               Import
@@ -185,9 +164,6 @@ export function ThreadHistoryView({
                           {timeAgo(thread.updatedAt, { suffix: true })}
                         </span>
                       </span>
-                      {thread.archived && (
-                        <Archive size={10} className="shrink-0 text-muted-foreground" />
-                      )}
                       <Hint label="Delete thread">
                         <button
                           type="button"

@@ -7,7 +7,7 @@ export async function confirmDeleteChat(title: string, scope?: string): Promise<
   if (!useSettingsStore.getState().settings.confirmDeleteChat) return true;
   return confirm({
     title: "Delete this session?",
-    body: `“${title || "Untitled session"}” leaves your sidebar and history. Archive it instead to keep it out of the way.`,
+    body: `“${title || "Untitled session"}” leaves your sidebar and history. Settle it instead to keep it out of the way.`,
     confirmLabel: "Delete",
     destructive: true,
     scope,

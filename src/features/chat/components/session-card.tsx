@@ -20,7 +20,7 @@
 // no PR lookup until the card has been on screen.
 //
 // Structure: the card's open target is a real <button> stretched over the
-// card; the PR link and the settle/archive/delete actions are its siblings,
+// card; the PR link and the settle/delete actions are its siblings,
 // painted above it, so no control is nested inside another. The same actions
 // are on the card's context menu.
 //
@@ -30,7 +30,6 @@
 
 import { memo, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import {
-  Archive,
   CircleCheck,
   GitMerge,
   GitPullRequest,
@@ -476,7 +475,6 @@ export interface SessionCardProps {
   onOpen: (threadId: string) => void;
   onSettle: (threadId: string) => void;
   onUnsettle: (threadId: string) => void;
-  onArchive: (threadId: string) => void;
   onDelete: (threadId: string) => void;
 }
 
@@ -497,7 +495,6 @@ export const SessionCard = memo(function SessionCard({
   onOpen,
   onSettle,
   onUnsettle,
-  onArchive,
   onDelete,
 }: SessionCardProps) {
   const ref = useRef<HTMLDivElement>(null);
@@ -630,7 +627,7 @@ export const SessionCard = memo(function SessionCard({
             </span>
           </div>
 
-          {/* Hover actions (settle, archive, delete), as a floating pill over the
+          {/* Hover actions (settle, delete), as a floating pill over the
           title's right end — the same 24px dock the titlebar and the GitHub
           panel's rows use. Opaque, so the title tail it covers does not show
           through. All work for every agent: the row is Atlas's, so none
@@ -644,16 +641,6 @@ export const SessionCard = memo(function SessionCard({
                 className="flex size-control-xs items-center justify-center rounded-full text-muted-foreground hover:bg-element-active hover:text-foreground"
               >
                 {settled ? <Undo2 size={11} /> : <CircleCheck size={11} />}
-              </button>
-            </Hint>
-            <Hint label="Archive — keeps it in History">
-              <button
-                type="button"
-                onClick={() => onArchive(threadId)}
-                aria-label="Archive session"
-                className="flex size-control-xs items-center justify-center rounded-full text-muted-foreground hover:bg-element-active hover:text-foreground"
-              >
-                <Archive size={11} />
               </button>
             </Hint>
             <Hint label="Delete session">
@@ -675,7 +662,6 @@ export const SessionCard = memo(function SessionCard({
           {settleAction.label}
           {settleKeys && <ContextMenuShortcut>{settleKeys}</ContextMenuShortcut>}
         </ContextMenuItem>
-        <ContextMenuItem onClick={() => onArchive(threadId)}>Archive</ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem variant="destructive" onClick={() => onDelete(threadId)}>
           Delete…

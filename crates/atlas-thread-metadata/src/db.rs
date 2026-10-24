@@ -16,18 +16,26 @@ use crate::model::{ThreadId, ThreadMetadata};
 use crate::paths::{PathList, SerializedPathList, WorktreePaths};
 use crate::schema;
 
+/// `archived` is not read: archiving was retired, and the column is left in the
+/// table only so older builds at this epoch can still write (see `schema`).
 const LIST_QUERY: &str = "SELECT thread_id, session_id, agent_id, title, title_override, \
      updated_at, created_at, interacted_at, folder_paths, folder_paths_order, \
-     main_worktree_paths, main_worktree_paths_order, remote_connection, archived, \
-     branch, settled_at, unsettled_at \
+     main_worktree_paths, main_worktree_paths_order, remote_connection, \
+     branch, settled_at, unsettled_at, pinned_at, pin_order, snoozed_until, snoozed_at, \
+     last_snooze_wake_at, last_viewed_at, last_turn_completed_at \
      FROM threads \
      ORDER BY updated_at DESC";
 
+/// `archived` is never named, so a new row takes its default (`0`) and an
+/// existing one keeps whatever an older build wrote.
 const UPSERT: &str = "INSERT INTO threads(thread_id, session_id, agent_id, title, \
          title_override, updated_at, created_at, interacted_at, folder_paths, \
          folder_paths_order, main_worktree_paths, main_worktree_paths_order, \
-         remote_connection, archived, branch, settled_at, unsettled_at) \
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17) \
+         remote_connection, branch, settled_at, unsettled_at, pinned_at, pin_order, \
+         snoozed_until, snoozed_at, last_snooze_wake_at, last_viewed_at, \
+         last_turn_completed_at) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
+         ?18, ?19, ?20, ?21, ?22, ?23) \
      ON CONFLICT(thread_id) DO UPDATE SET \
          session_id = excluded.session_id, \
          agent_id = excluded.agent_id, \
@@ -41,10 +49,16 @@ const UPSERT: &str = "INSERT INTO threads(thread_id, session_id, agent_id, title
          main_worktree_paths = excluded.main_worktree_paths, \
          main_worktree_paths_order = excluded.main_worktree_paths_order, \
          remote_connection = excluded.remote_connection, \
-         archived = excluded.archived, \
          branch = excluded.branch, \
          settled_at = excluded.settled_at, \
-         unsettled_at = excluded.unsettled_at";
+         unsettled_at = excluded.unsettled_at, \
+         pinned_at = excluded.pinned_at, \
+         pin_order = excluded.pin_order, \
+         snoozed_until = excluded.snoozed_until, \
+         snoozed_at = excluded.snoozed_at, \
+         last_snooze_wake_at = excluded.last_snooze_wake_at, \
+         last_viewed_at = excluded.last_viewed_at, \
+         last_turn_completed_at = excluded.last_turn_completed_at";
 
 /// The durable half of the store.
 pub(crate) struct Db {
@@ -111,10 +125,16 @@ impl Db {
                 mains.as_ref().map(|s| &s.paths),
                 mains.as_ref().map(|s| &s.order),
                 remote,
-                row.archived,
                 row.branch.as_deref(),
-                row.settled_at.map(|dt| dt.to_rfc3339()),
-                row.unsettled_at.map(|dt| dt.to_rfc3339()),
+                rfc3339(row.settled_at),
+                rfc3339(row.unsettled_at),
+                rfc3339(row.pinned_at),
+                row.pin_order.as_deref(),
+                rfc3339(row.snoozed_until),
+                rfc3339(row.snoozed_at),
+                rfc3339(row.last_snooze_wake_at),
+                rfc3339(row.last_viewed_at),
+                rfc3339(row.last_turn_completed_at),
             ],
         )?;
         Ok(())
@@ -285,10 +305,11 @@ fn decode(row: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMetadata> {
     let main_paths: Option<String> = row.get(10)?;
     let main_paths_order: Option<String> = row.get(11)?;
     let remote_connection: Option<String> = row.get(12)?;
-    let archived: bool = row.get(13)?;
-    let branch: Option<String> = row.get(14)?;
-    let settled_at: Option<String> = row.get(15)?;
-    let unsettled_at: Option<String> = row.get(16)?;
+    let branch: Option<String> = row.get(13)?;
+    let time = |index: usize| -> rusqlite::Result<Option<DateTime<Utc>>> {
+        Ok(timestamp(row.get::<_, Option<String>>(index)?))
+    };
+    let pin_order: Option<String> = row.get(17)?;
 
     let folder_paths = path_list(serialized(folder_paths, folder_paths_order));
     let main_paths = path_list(serialized(main_paths, main_paths_order));
@@ -318,9 +339,17 @@ fn decode(row: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMetadata> {
         branch: branch
             .filter(|b| !b.trim().is_empty())
             .map(|b| Arc::from(b.as_str())),
-        archived,
-        settled_at: timestamp(settled_at),
-        unsettled_at: timestamp(unsettled_at),
+        settled_at: time(14)?,
+        unsettled_at: time(15)?,
+        pinned_at: time(16)?,
+        pin_order: pin_order
+            .filter(|key| !key.is_empty())
+            .map(|key| Arc::from(key.as_str())),
+        snoozed_until: time(18)?,
+        snoozed_at: time(19)?,
+        last_snooze_wake_at: time(20)?,
+        last_viewed_at: time(21)?,
+        last_turn_completed_at: time(22)?,
     })
 }
 
@@ -344,6 +373,10 @@ fn name(value: Option<String>) -> Option<Arc<str>> {
     value
         .filter(|t| !t.trim().is_empty() && t != crate::model::DEFAULT_THREAD_TITLE)
         .map(|t| Arc::from(t.as_str()))
+}
+
+fn rfc3339(value: Option<DateTime<Utc>>) -> Option<String> {
+    value.map(|dt| dt.to_rfc3339())
 }
 
 fn timestamp(value: Option<String>) -> Option<DateTime<Utc>> {

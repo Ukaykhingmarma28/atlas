@@ -42,13 +42,35 @@ export interface ThreadRow {
   title: string;
   updatedAt: string;
   createdAt: string | null;
-  archived: boolean;
   /**
    * When the session was settled — moved to the sidebar's Settled shelf, still
    * listed and resumable — as RFC 3339. `null` while it is active. Set by the
    * user or by the idle sweep (`autoSettleAfterDays`); a send clears it.
+   * Settling replaced archiving: there is no archived state.
    */
   settledAt: string | null;
+  /** When the session was pinned (RFC 3339); `null` when it is not. Pinned
+   *  sessions are never auto-settled. */
+  pinnedAt: string | null;
+  /** Its place among the pinned: a fractional key compared as a plain string
+   *  (`pin-order.ts`). `null` sorts after every keyed pin. */
+  pinOrder: string | null;
+  /** When a snoozed session wakes on its own (RFC 3339); `null` when it is not
+   *  snoozed. Rust clears it at that time, or earlier when the session raises
+   *  its hand (a permission, a question, a failure). */
+  snoozedUntil: string | null;
+  snoozedAt: string | null;
+  /** When it last woke from a snooze. */
+  lastSnoozeWakeAt: string | null;
+  /** When the user last opened or focused it. */
+  lastViewedAt: string | null;
+  /** When its latest turn completed, as Atlas saw it end. */
+  lastTurnCompletedAt: string | null;
+  /** Its latest turn completed after it was last viewed. Decided in Rust. */
+  unread: boolean;
+  /** It woke from a snooze and has not been viewed since ("Woke"). Decided in
+   *  Rust. */
+  woke: boolean;
   projectName: string;
   folderPaths: string[];
   /** Another process (typically `claude` in a terminal) wrote this session
@@ -101,9 +123,9 @@ export function syncProjectThreads(cwd: string): Promise<number> {
   return invoke<number>("threads_sync_project", { cwd });
 }
 
-/** Every thread, archived or not, newest-started first — the history view. */
-export function threadHistory(archivedOnly = false): Promise<ThreadRow[]> {
-  return invoke<ThreadRow[]>("threads_history", { archivedOnly });
+/** Every session, newest-started first — the history view. */
+export function threadHistory(): Promise<ThreadRow[]> {
+  return invoke<ThreadRow[]>("threads_history");
 }
 
 /** A history row, now live. */
@@ -130,11 +152,6 @@ export function deleteThread(threadId: string): Promise<void> {
   return invoke<void>("threads_delete", { threadId });
 }
 
-/** Take a thread out of the active list, keeping it in history. */
-export function archiveThread(threadId: string): Promise<void> {
-  return invoke<void>("threads_archive", { threadId });
-}
-
 /**
  * Move a session to the Settled shelf: done for now, still in the sidebar.
  * Rejects while a turn is running in it. Resolves whether anything changed —
@@ -147,6 +164,53 @@ export function settleThread(threadId: string): Promise<boolean> {
 /** Take a session back off the Settled shelf. Resolves whether it was on it. */
 export function unsettleThread(threadId: string): Promise<boolean> {
   return invoke<boolean>("threads_unsettle", { threadId });
+}
+
+/**
+ * Pin a session. `orderKey` places it among the pinned (`pin-order.ts` mints
+ * it); omitted, it sorts after every keyed pin. Pinning a settled or snoozed
+ * session brings it back. Resolves whether anything changed.
+ */
+export function pinSession(threadId: string, orderKey?: string): Promise<boolean> {
+  return invoke<boolean>("threads_pin", { threadId, orderKey: orderKey ?? null });
+}
+
+/** Unpin a session. Resolves whether it was pinned. */
+export function unpinSession(threadId: string): Promise<boolean> {
+  return invoke<boolean>("threads_unpin", { threadId });
+}
+
+/** Move a pinned session to `orderKey`. Resolves `false` for one not pinned. */
+export function reorderPinnedSession(threadId: string, orderKey: string): Promise<boolean> {
+  return invoke<boolean>("threads_reorder_pin", { threadId, orderKey });
+}
+
+/**
+ * Snooze a session until `until` (an ISO time; `session-snooze.ts` has the
+ * presets). Rejects for a time not in the future, and for a session with a
+ * pending permission or question.
+ */
+export function snoozeSession(threadId: string, until: string): Promise<boolean> {
+  return invoke<boolean>("threads_snooze", { threadId, until });
+}
+
+/** Wake a snoozed session now. Resolves whether it was snoozed. */
+export function wakeSession(threadId: string): Promise<boolean> {
+  return invoke<boolean>("threads_wake", { threadId });
+}
+
+/**
+ * The chat tab running `sessionId` was opened or focused. Keyed by the live
+ * session, which is what a tab knows. Debounced by the caller
+ * (`useMarkActiveSessionViewed`); resolves whether a row was marked.
+ */
+export function markSessionViewed(sessionId: string): Promise<boolean> {
+  return invoke<boolean>("threads_mark_viewed", { sessionId });
+}
+
+/** Make a session read as unread again. Rejects for one with no finished turn. */
+export function markSessionUnread(threadId: string): Promise<boolean> {
+  return invoke<boolean>("threads_mark_unread", { threadId });
 }
 
 /**

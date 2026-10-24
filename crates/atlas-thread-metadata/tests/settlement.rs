@@ -2,7 +2,8 @@
 //! sidebar's Settled shelf. It stays listed and resumable; a user send brings
 //! it back, and nothing else does — not agent output, not a terminal writing
 //! the transcript. An un-settle holds off the sweep until something new
-//! happens in the session.
+//! happens in the session, and the sweep never touches a pinned or snoozed
+//! session.
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -119,7 +120,7 @@ fn a_user_send_unsettles_but_agent_and_outside_activity_do_not() {
     assert!(store.thread(id).unwrap().is_settled(), "agent output");
 
     // A terminal writes the transcript.
-    store.touch_sessions(&[(session, Utc::now() + Duration::minutes(1))], None);
+    store.touch_sessions(&[(session, Utc::now() + Duration::minutes(1))]);
     assert!(store.thread(id).unwrap().is_settled(), "outside activity");
 
     // The user sends.
@@ -156,12 +157,15 @@ fn the_idle_sweep_settles_old_sessions_at_their_last_activity() {
 }
 
 #[test]
-fn the_idle_sweep_skips_archived_busy_and_unsettled_sessions() {
+fn the_idle_sweep_skips_pinned_snoozed_busy_and_unsettled_sessions() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(&dir);
 
-    let mut archived = thread(Duration::days(5));
-    archived.archived = true;
+    let mut pinned = thread(Duration::days(5));
+    pinned.pinned_at = Some(Utc::now() - Duration::days(5));
+    let mut snoozed = thread(Duration::days(5));
+    snoozed.snoozed_until = Some(Utc::now() + Duration::hours(1));
+    snoozed.snoozed_at = Some(Utc::now() - Duration::days(5));
     let busy = thread(Duration::days(5));
     let mut unsettled = thread(Duration::days(5));
     unsettled.unsettled_at = Some(Utc::now() - Duration::days(4));
@@ -173,12 +177,13 @@ fn the_idle_sweep_skips_archived_busy_and_unsettled_sessions() {
 
     let busy_ids = HashSet::from([busy.session_id.clone().unwrap()]);
     let ids = [
-        archived.thread_id,
+        pinned.thread_id,
+        snoozed.thread_id,
         busy.thread_id,
         unsettled.thread_id,
         stale_hold.thread_id,
     ];
-    store.save_all(vec![archived, busy, unsettled, stale_hold, draft]);
+    store.save_all(vec![pinned, snoozed, busy, unsettled, stale_hold, draft]);
 
     let cutoff = Utc::now() - Duration::days(3);
     assert_eq!(store.auto_settle_idle(cutoff, &busy_ids), 1);
@@ -186,7 +191,30 @@ fn the_idle_sweep_skips_archived_busy_and_unsettled_sessions() {
         .iter()
         .map(|id| store.thread(*id).unwrap().is_settled())
         .collect();
-    assert_eq!(settled, [false, false, false, true]);
+    assert_eq!(settled, [false, false, false, false, true]);
+}
+
+#[test]
+fn settling_clears_a_pin_and_a_snooze() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(&dir);
+    let mut row = thread(Duration::hours(1));
+    row.pinned_at = Some(Utc::now() - Duration::minutes(30));
+    row.pin_order = Some("m".into());
+    row.snoozed_until = Some(Utc::now() + Duration::hours(1));
+    row.snoozed_at = Some(Utc::now() - Duration::minutes(5));
+    let id = row.thread_id;
+    store.save_all(vec![row]);
+
+    assert!(store.settle(id));
+    let row = store.thread(id).unwrap();
+    assert!(row.is_settled());
+    assert!(!row.is_pinned() && row.pin_order.is_none(), "the pin goes");
+    assert!(
+        !row.is_snoozed() && row.snoozed_at.is_none(),
+        "so does the snooze"
+    );
+    assert!(!row.is_woke(), "settling is not a wake");
 }
 
 #[test]

@@ -22,7 +22,7 @@ const invokeMock = vi.hoisted(() =>
               title: "Older chat",
               updatedAt: "",
               createdAt: null,
-              archived: false,
+              ...RESTING_LIFECYCLE,
               projectName: "atlas",
               folderPaths: ["/p"],
             },
@@ -74,6 +74,7 @@ import { useSpacesStore } from "@/features/spaces/stores/spaces-store";
 import { performUiAction } from "./ui-actions";
 import { seedWindow, tab, uiRequest } from "./test-fixtures";
 import type { UiActionReply } from "./types";
+import { RESTING_LIFECYCLE } from "@/features/chat/lib/session-lifecycle";
 
 const layout = () => useLayoutStore.getState();
 const result = (reply: UiActionReply) => {
