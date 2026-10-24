@@ -990,6 +990,74 @@
   text-align: center;
 }
 
+/* A web link in a session wears its service's mark before its text
+   (`markdown-render.ts`, `link-services.ts`). The mark is a mask filled with
+   the link's own colour, so it follows the theme and the hover state like the
+   text does. The SVGs are bundled: nothing is fetched from the service. The
+   lead span keeps the icon and the first characters together across a wrap. */
+.atlas-link__lead {
+  white-space: nowrap;
+}
+.atlas-link__icon {
+  display: inline-block;
+  width: 0.95em;
+  height: 0.95em;
+  margin-inline: 0.1em 0.25em;
+  vertical-align: -0.13em;
+  background-color: currentColor;
+  -webkit-mask: center / contain no-repeat;
+  mask: center / contain no-repeat;
+}
+.atlas-link--mono {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+.atlas-link__icon[data-link-service="web"] {
+  -webkit-mask-image: url("../assets/link-services/web.svg");
+  mask-image: url("../assets/link-services/web.svg");
+  opacity: 0.8;
+}
+.atlas-link__icon[data-link-service="github"] {
+  -webkit-mask-image: url("../assets/link-services/github.svg");
+  mask-image: url("../assets/link-services/github.svg");
+}
+.atlas-link__icon[data-link-service="gitlab"] {
+  -webkit-mask-image: url("../assets/link-services/gitlab.svg");
+  mask-image: url("../assets/link-services/gitlab.svg");
+}
+.atlas-link__icon[data-link-service="bitbucket"] {
+  -webkit-mask-image: url("../assets/link-services/bitbucket.svg");
+  mask-image: url("../assets/link-services/bitbucket.svg");
+}
+.atlas-link__icon[data-link-service="forgejo"] {
+  -webkit-mask-image: url("../assets/link-services/forgejo.svg");
+  mask-image: url("../assets/link-services/forgejo.svg");
+}
+.atlas-link__icon[data-link-service="linear"] {
+  -webkit-mask-image: url("../assets/link-services/linear.svg");
+  mask-image: url("../assets/link-services/linear.svg");
+}
+.atlas-link__icon[data-link-service="slack"] {
+  -webkit-mask-image: url("../assets/link-services/slack.svg");
+  mask-image: url("../assets/link-services/slack.svg");
+}
+.atlas-link__icon[data-link-service="notion"] {
+  -webkit-mask-image: url("../assets/link-services/notion.svg");
+  mask-image: url("../assets/link-services/notion.svg");
+}
+.atlas-link__icon[data-link-service="figma"] {
+  -webkit-mask-image: url("../assets/link-services/figma.svg");
+  mask-image: url("../assets/link-services/figma.svg");
+}
+.atlas-link__icon[data-link-service="vercel"] {
+  -webkit-mask-image: url("../assets/link-services/vercel.svg");
+  mask-image: url("../assets/link-services/vercel.svg");
+}
+.atlas-link__icon[data-link-service="npm"] {
+  -webkit-mask-image: url("../assets/link-services/npm.svg");
+  mask-image: url("../assets/link-services/npm.svg");
+}
+
 @layer base {
   *,
   ::after,

@@ -30,6 +30,7 @@ import {
   resolveInProject,
   type FileLinkTarget,
 } from "./file-links";
+import { leadingLinkTextLength, linkFacts, textIsAddress } from "./link-services";
 
 const SANITIZE_SCHEMA = {
   ...defaultSchema,
@@ -38,6 +39,19 @@ const SANITIZE_SCHEMA = {
   attributes: {
     ...defaultSchema.attributes,
     code: [...(defaultSchema.attributes?.code ?? []), ["className"]],
+    // A web link's service, for its icon, and the address a copy carries
+    // when its text was shortened (`rehypeLinkIcons`).
+    // The first definition of a property wins, so the default's own
+    // `className` (footnotes only) is replaced, not added to.
+    a: [
+      ...(defaultSchema.attributes?.a ?? []).filter(
+        (d) => !(Array.isArray(d) && d[0] === "className"),
+      ),
+      ["className", "data-footnote-backref", "atlas-link", "atlas-link--mono"],
+      "title",
+      "dataLinkService",
+      "dataLinkCopy",
+    ],
     pre: [...(defaultSchema.attributes?.pre ?? []), ["className"]],
     // `span` also carries our mention-chip pills (class + kind + title), and a
     // file chip's target and icon slot (`fileChipNode`).
@@ -50,6 +64,8 @@ const SANITIZE_SCHEMA = {
       "dataFileLine",
       "dataFileColumn",
       "dataFileIcon",
+      "dataLinkService",
+      "ariaHidden",
       "role",
       "tabIndex",
     ],
@@ -625,6 +641,91 @@ function rehypeFileChips() {
   };
 }
 
+// ── Web links ─────────────────────────────────────────────────────────────────
+// An http(s) link wears its service's icon before its text, and the full
+// address as its tooltip; written bare, a pull request, issue, commit,
+// repository or Linear issue reads short ("PR #42", "ATL-978"). Which service
+// and which label is `link-services.ts`. The icon is an empty span painted by
+// CSS (`.atlas-link__icon`, a mask in the link's own colour), so it follows
+// the theme and costs one element per link. One `URL` parse per anchor, so the
+// streaming tail can run it on every tick.
+
+/** Whether any text under a node is more than whitespace. */
+function hasWords(node: Hast): boolean {
+  for (const child of node.children ?? []) {
+    if (child.type === "text" && child.value?.trim()) return true;
+    if (child.type === "element" && hasWords(child)) return true;
+  }
+  return false;
+}
+
+/** The icon, with the first characters of the link's text kept on its line. */
+function linkLead(service: string, lead: Hast[]): Hast {
+  return {
+    type: "element",
+    tagName: "span",
+    properties: { className: ["atlas-link__lead"] },
+    children: [
+      {
+        type: "element",
+        tagName: "span",
+        properties: {
+          className: ["atlas-link__icon"],
+          dataLinkService: service,
+          ariaHidden: "true",
+        },
+        children: [],
+      },
+      ...lead,
+    ],
+  };
+}
+
+function decorateLink(anchor: Hast, href: string): void {
+  const facts = linkFacts(href);
+  if (!facts) return;
+  // An image link, or one with no words, gets no icon.
+  if (!hasWords(anchor)) return;
+  const text = plainText(anchor);
+  const props = (anchor.properties ??= {});
+  props.title = href;
+  props.dataLinkService = facts.service;
+  const className = ["atlas-link"];
+  let children = anchor.children ?? [];
+  if (facts.short && text !== null && textIsAddress(text, href)) {
+    children = [{ type: "text", value: facts.short }];
+    props.dataLinkCopy = href;
+    if (facts.commit) className.push("atlas-link--mono");
+  }
+  props.className = className;
+  const [first, ...rest] = children;
+  if (first?.type === "text" && typeof first.value === "string") {
+    const n = leadingLinkTextLength(first.value);
+    const tail = first.value.slice(n);
+    anchor.children = [
+      linkLead(facts.service, [{ type: "text", value: first.value.slice(0, n) }]),
+      ...(tail ? [{ type: "text", value: tail }] : []),
+      ...rest,
+    ];
+  } else {
+    anchor.children = [linkLead(facts.service, first ? [first] : []), ...rest];
+  }
+}
+
+function rehypeLinkIcons() {
+  return (tree: Hast) => {
+    const walk = (node: Hast) => {
+      for (const child of node.children ?? []) {
+        if (child.type !== "element" || child.tagName === "pre") continue;
+        const href = child.tagName === "a" ? child.properties?.href : undefined;
+        if (typeof href === "string") decorateLink(child, href);
+        else walk(child);
+      }
+    };
+    walk(tree);
+  };
+}
+
 let processor: Processor | null = null;
 function getProcessor(): Processor {
   if (!processor) {
@@ -636,6 +737,8 @@ function getProcessor(): Processor {
       .use(rehypeMentionChips as any)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .use(rehypeFileChips as any)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .use(rehypeLinkIcons as any)
       // `detect: false`: only highlight fenced blocks with an explicit language
       // tag. Auto-detection ran highlight.js across ~37 languages for EVERY
       // un-tagged code block — the dominant per-parse cost. Agents almost always

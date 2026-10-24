@@ -4,7 +4,8 @@
 //
 //   - a file chip (`markdown-render.ts`) opens the file (`open-path-link.ts`);
 //   - an http(s) link opens in the system browser, rather than navigating the
-//     WKWebView away from Atlas.
+//     WKWebView away from Atlas;
+//   - a copy keeps a shortened link's full address (`onMarkdownCopy`).
 
 /** The chip a click landed on, if it carries a target. */
 function fileChipAt(target: EventTarget | null): HTMLElement | null {
@@ -41,6 +42,34 @@ export function onMarkdownClick(e: MouseEvent): boolean {
     return true;
   }
   return false;
+}
+
+/**
+ * A copy out of rendered markdown that takes in a shortened web link ("PR #42",
+ * `markdown-render.ts`) carries the link's full address in its place, as the
+ * plain text and in the HTML. A selection without one is left to the browser.
+ */
+export function onMarkdownCopy(e: ClipboardEvent): void {
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || !e.clipboardData) return;
+  const container = document.createElement("div");
+  for (let i = 0; i < selection.rangeCount; i++) {
+    container.appendChild(selection.getRangeAt(i).cloneContents());
+  }
+  const shortened = container.querySelectorAll<HTMLElement>("a[data-link-copy]");
+  if (shortened.length === 0) return;
+  for (const anchor of shortened) anchor.textContent = anchor.dataset.linkCopy ?? "";
+  // `innerText` keeps the line breaks a reader sees, which `textContent` does
+  // not, and it needs the fragment laid out: briefly, off screen.
+  container.style.position = "fixed";
+  container.style.left = "-10000px";
+  container.style.whiteSpace = "pre-wrap";
+  document.body.appendChild(container);
+  const text = container.innerText;
+  container.remove();
+  e.preventDefault();
+  e.clipboardData.setData("text/plain", text);
+  e.clipboardData.setData("text/html", container.innerHTML);
 }
 
 /** Enter or Space on a focused file chip opens it, as a click would. */
