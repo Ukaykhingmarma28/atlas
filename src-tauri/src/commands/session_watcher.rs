@@ -11,8 +11,7 @@
 //!
 //! - **known** to the history store and newer than last seen: their
 //!   `updated_at` is bumped (forward only), so ongoing terminal activity moves
-//!   the row to the top, and an archived row with new activity inside the
-//!   sync window comes back to the sidebar (`touch_sessions`). A write Atlas's
+//!   the row to the top of its section (`touch_sessions`). A write Atlas's
 //!   own turn explains is skipped: Atlas's Claude adapter writes the very
 //!   same transcript, and touching on it would be a SQLite write and a full
 //!   sidebar refetch per [`DEBOUNCE`] for every turn Atlas runs — the live
@@ -57,7 +56,7 @@ use notify_debouncer_full::new_debouncer;
 use parking_lot::Mutex;
 use tauri::{AppHandle, Emitter};
 
-use super::agent_host::{explained_by_atlas, live_elsewhere, sync_unarchive_cutoff, AgentHost};
+use super::agent_host::{explained_by_atlas, live_elsewhere, AgentHost};
 use super::agents::THREADS_CHANGED_EVENT;
 
 /// A terminal session writes its transcript in bursts; this folds a burst into
@@ -463,7 +462,7 @@ impl SessionWatcher {
 
         if !touches.is_empty() {
             self.tried.lock().forget(touches.iter().map(|(id, _)| id));
-            store.touch_sessions(&touches, Some(sync_unarchive_cutoff(Utc::now())));
+            store.touch_sessions(&touches);
         }
         if self.tried.lock().due(&unknown, &revoked, Instant::now()) {
             let host = self.host.clone();

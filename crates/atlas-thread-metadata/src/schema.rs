@@ -75,6 +75,22 @@
 //! un-settled again. Every existing row reads `NULL` for both — active, and
 //! never un-settled — which is what it was.
 //!
+//! `threads_lifecycle` adds the rest of a session's lifecycle — `pinned_at`,
+//! `pin_order`, `snoozed_until`, `snoozed_at`, `last_snooze_wake_at`,
+//! `last_viewed_at` and `last_turn_completed_at`, all nullable — and retires
+//! archiving, which Settled replaced. Every archived row is settled, at its
+//! `updated_at` (the store never recorded an archive time; `updated_at` is
+//! what it always stood in for one with, and it is the last-activity time the
+//! idle sweep settles at too), and its `archived` flag is cleared.
+//!
+//! The `archived` column itself stays in the table, and nothing in this build
+//! reads or writes it. Dropping it would be a non-additive change: an older
+//! build at this epoch names it in every upsert, so dropping it means bumping
+//! [`SCHEMA_EPOCH`], and a bumped epoch makes the installed app refuse the
+//! database a dev build opened — the empty sidebar the ledger exists to
+//! prevent. A row an older build archives afterwards reads as active here,
+//! which is the one cost, and a harmless one.
+//!
 //! Every migration first leaves a copy behind (`Db::open`, via
 //! [`needs_migration`]), so no build is ever the only holder of a history.
 
@@ -132,6 +148,10 @@ const MIGRATIONS: &[Migration] = &[
     Migration {
         name: "threads_settlement",
         apply: add_settlement_columns,
+    },
+    Migration {
+        name: "threads_lifecycle",
+        apply: add_lifecycle_columns,
     },
 ];
 
@@ -267,6 +287,38 @@ fn add_settlement_columns(conn: &Connection) -> Result<()> {
     }
     Ok(())
 }
+
+/// The lifecycle columns this build reads and writes beyond settling.
+pub(crate) const LIFECYCLE_COLUMNS: [&str; 7] = [
+    "pinned_at",
+    "pin_order",
+    "snoozed_until",
+    "snoozed_at",
+    "last_snooze_wake_at",
+    "last_viewed_at",
+    "last_turn_completed_at",
+];
+
+/// The lifecycle columns, each added only when absent, then archived rows
+/// moved to Settled. The data step is idempotent: after it no row has
+/// `archived = 1`, and a row already settled keeps its own time.
+fn add_lifecycle_columns(conn: &Connection) -> Result<()> {
+    for column in LIFECYCLE_COLUMNS {
+        if !has_column(conn, "threads", column)? {
+            conn.execute_batch(&format!("ALTER TABLE threads ADD COLUMN {column} TEXT;"))?;
+        }
+    }
+    conn.execute_batch(ARCHIVED_TO_SETTLED)?;
+    Ok(())
+}
+
+/// Archive is retired: every archived row becomes a settled one. See the
+/// module docs for why `updated_at` is its settled time and why the column
+/// stays.
+const ARCHIVED_TO_SETTLED: &str = "
+UPDATE threads SET settled_at = COALESCE(settled_at, updated_at), archived = 0
+    WHERE archived <> 0;
+";
 
 fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool> {
     Ok(conn
@@ -489,12 +541,16 @@ mod tests {
                 &PathList::new(&[PathBuf::from("/work/b"), PathBuf::from("/work/a")]),
                 "folder order survives"
             );
-            assert!(!sent.archived);
+            assert!(!sent.is_settled());
 
             let archived = &threads[1];
             assert_eq!(archived.agent_id.as_str(), "claude-code");
             assert_eq!(archived.title, None);
-            assert!(archived.archived);
+            assert_eq!(
+                archived.settled_at,
+                Some(archived.updated_at),
+                "the archived row is settled now, at its last activity"
+            );
 
             assert!(!store.has_backfilled(&agent));
             store.mark_backfilled(&agent);
@@ -720,6 +776,88 @@ mod tests {
             .threads()
             .iter()
             .all(|t| t.settled_at.is_none() && t.unsettled_at.is_none()));
+    }
+
+    /// Archive is retired: the lifecycle migration settles every archived row
+    /// at its `updated_at`, keeps an already-settled row's own time, clears
+    /// the flag, and adds the lifecycle columns empty. Running it again
+    /// changes nothing.
+    #[test]
+    fn the_lifecycle_migration_moves_archived_rows_to_settled() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("threads.db");
+        seed_v1(&path);
+        let earlier_settle = "2026-04-01T00:00:00+00:00";
+        {
+            let conn = Connection::open(&path).unwrap();
+            migrate(&conn).unwrap();
+            // Back to the state before the lifecycle migration: the flag set
+            // again on two rows, one of them already settled, and the
+            // lifecycle columns gone.
+            for column in LIFECYCLE_COLUMNS {
+                conn.execute_batch(&format!("ALTER TABLE threads DROP COLUMN {column};"))
+                    .unwrap();
+            }
+            conn.execute_batch("DELETE FROM schema_migrations WHERE name = 'threads_lifecycle';")
+                .unwrap();
+            conn.execute(
+                "UPDATE threads SET archived = 1 WHERE thread_id = ?1",
+                [SENT.as_slice()],
+            )
+            .unwrap();
+            conn.execute(
+                "UPDATE threads SET archived = 1, settled_at = ?2 WHERE thread_id = ?1",
+                rusqlite::params![ARCHIVED.as_slice(), earlier_settle],
+            )
+            .unwrap();
+        }
+        {
+            let conn = Connection::open(&path).unwrap();
+            assert!(needs_migration(&conn).unwrap());
+            migrate(&conn).unwrap();
+            assert_eq!(ledger(&conn), known_names());
+            let still_archived: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM threads WHERE archived <> 0",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(still_archived, 0, "no row is archived any more");
+            let settled_of = |id: [u8; 16]| -> Option<String> {
+                conn.query_row(
+                    "SELECT settled_at FROM threads WHERE thread_id = ?1",
+                    [id.as_slice()],
+                    |r| r.get(0),
+                )
+                .unwrap()
+            };
+            assert_eq!(
+                settled_of(SENT).as_deref(),
+                Some("2026-05-02T00:00:00+00:00"),
+                "settled at its updated_at"
+            );
+            assert_eq!(
+                settled_of(ARCHIVED).as_deref(),
+                Some(earlier_settle),
+                "an already-settled row keeps its own time"
+            );
+            assert_eq!(settled_of(DRAFT), None, "an unarchived row is untouched");
+            // Idempotent: a second application is a no-op.
+            add_lifecycle_columns(&conn).unwrap();
+            assert_eq!(
+                settled_of(SENT).as_deref(),
+                Some("2026-05-02T00:00:00+00:00")
+            );
+        }
+        let store = ThreadMetadataStore::open(&path).unwrap();
+        for thread in store.threads() {
+            assert!(thread.is_settled());
+            assert!(thread.pinned_at.is_none() && thread.pin_order.is_none());
+            assert!(thread.snoozed_until.is_none() && thread.last_viewed_at.is_none());
+            assert!(thread.last_turn_completed_at.is_none());
+            assert!(!thread.is_unread(), "a migrated row is never unread");
+        }
     }
 
     /// A newer build at the same epoch recorded a migration this one has never

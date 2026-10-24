@@ -9,9 +9,7 @@ use std::sync::Arc;
 
 use agent_client_protocol::schema::v1 as acp;
 use atlas_acp_thread::thread::AcpThreadEvent;
-use atlas_thread_metadata::{
-    PathList, ThreadFilter, ThreadMetadataStore, ThreadRecorder, ThreadSnapshot,
-};
+use atlas_thread_metadata::{ThreadMetadataStore, ThreadRecorder, ThreadSnapshot};
 use chrono::TimeZone;
 
 fn store(dir: &tempfile::TempDir) -> ThreadMetadataStore {
@@ -162,7 +160,7 @@ fn a_resumed_history_row_keeps_writing_to_itself() {
 }
 
 #[test]
-fn opening_an_archived_thread_and_working_in_it_leaves_it_archived_until_someone_unarchives_it() {
+fn agent_work_in_a_settled_session_leaves_it_settled() {
     let dir = tempfile::tempdir().unwrap();
     let store = store(&dir);
     let recorder = ThreadRecorder::new(store.clone());
@@ -174,9 +172,10 @@ fn opening_an_archived_thread_and_working_in_it_leaves_it_archived_until_someone
         &AcpThreadEvent::NewEntry,
         snapshot(false, None, &["/tmp/atlas"]),
     );
-    store.flush().unwrap();
     let thread_id = store.threads()[0].thread_id;
-    store.archive(thread_id);
+    let mut row = store.thread(thread_id).unwrap();
+    row.settled_at = Some(chrono::Utc::now());
+    store.save_all(vec![row]);
 
     recorder.record(
         &"atlas-agent".into(),
@@ -186,14 +185,9 @@ fn opening_an_archived_thread_and_working_in_it_leaves_it_archived_until_someone
     );
     store.flush().unwrap();
 
-    assert_eq!(store.history(ThreadFilter::ArchivedOnly).len(), 1);
-    store.unarchive(thread_id);
-    assert_eq!(
-        store
-            .threads_for_path(&PathList::new(&[PathBuf::from("/tmp/atlas")]))
-            .len(),
-        1
-    );
+    let row = store.thread(thread_id).unwrap();
+    assert!(row.is_settled(), "the live feed does not own the lifecycle");
+    assert_eq!(row.display_title().as_ref(), "More work");
 }
 
 #[test]
@@ -230,8 +224,11 @@ fn a_chat_opened_with_no_project_is_kept_in_history_rather_than_lost() {
     );
     store.flush().unwrap();
 
-    assert!(store.threads()[0].archived);
-    assert_eq!(store.history(ThreadFilter::All).len(), 1);
+    assert_eq!(store.history().len(), 1, "it is in History");
+    assert!(
+        store.projects().is_empty(),
+        "and in no project, since it belongs to none"
+    );
 }
 
 #[test]

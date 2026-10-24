@@ -103,6 +103,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useChatStore } from "../stores/chat-store";
 import { useLiveElsewhereStore } from "../stores/live-elsewhere-store";
 import { MessageInput } from "./message-input";
+import { RESTING_LIFECYCLE } from "@/features/chat/lib/session-lifecycle";
 
 const TAB = "tab-1";
 const SESSION = "sess-live";
@@ -115,7 +116,7 @@ function row(sessionId: string, liveElsewhere: boolean, extra: Record<string, un
     title: sessionId,
     updatedAt: "2026-10-05T00:00:00Z",
     createdAt: null,
-    archived: false,
+    ...RESTING_LIFECYCLE,
     projectName: "atlas",
     folderPaths: ["/p/atlas"],
     liveElsewhere,
@@ -222,12 +223,16 @@ describe("composer guard for a session another process is writing", () => {
     await waitFor(() => expect(bar()).toBeNull());
   });
 
-  it("guards a session no sidebar lists: archived, from another project", async () => {
-    // Opened from the History view: archived and in a project that is not
+  it("guards a session no sidebar lists: settled, from another project", async () => {
+    // Opened from the History view: settled and in a project that is not
     // open, so the open project's sidebar never had a row for it.
     backend.rows = [
       row("someone-else", false),
-      row(SESSION, true, { archived: true, projectName: "other", folderPaths: ["/p/other"] }),
+      row(SESSION, true, {
+        settledAt: "2026-10-01T00:00:00Z",
+        projectName: "other",
+        folderPaths: ["/p/other"],
+      }),
     ];
     const { onSend, input } = await mount();
     await waitFor(() => expect(bar()).not.toBeNull());

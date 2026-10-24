@@ -40,6 +40,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SessionSidebar } from "./session-sidebar";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useChatStore } from "../stores/chat-store";
+import { RESTING_LIFECYCLE } from "@/features/chat/lib/session-lifecycle";
 
 function thread(
   id: string,
@@ -54,7 +55,7 @@ function thread(
     title: `chat ${id}`,
     updatedAt,
     createdAt: null,
-    archived: false,
+    ...RESTING_LIFECYCLE,
     settledAt,
     projectName: "atlas",
     folderPaths: ["/p/atlas"],

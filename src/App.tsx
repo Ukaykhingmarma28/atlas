@@ -115,6 +115,7 @@ import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { useSettingsNav } from "@/features/settings/stores/settings-nav-store";
 import { closeSettings, openSettingsSection } from "@/features/settings/lib/open-settings";
 import { onSessionsAutoSettled } from "@/features/chat/lib/history-api";
+import { SessionViewedTracker } from "@/features/chat/hooks/use-mark-session-viewed";
 import { commsActions, pruneTyping } from "@/features/comms/stores/comms-store";
 import { useUpdaterStore } from "@/features/updater/stores/updater-store";
 import {
@@ -1486,6 +1487,7 @@ export function App() {
           arrive before the agent has any session to route them by. */}
       <AgentElicitationHost />
       <UiActionBridge />
+      <SessionViewedTracker />
       <OrgActionLogBridge />
       <NotificationPanel />
       <FeedbackPanel />

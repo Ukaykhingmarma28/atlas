@@ -50,7 +50,7 @@ use atlas_agent_wire::{
 };
 use atlas_native_agent::ATLAS_AGENT_ID;
 use atlas_thread_metadata::{
-    affects_thread_metadata, collect_all_sessions, importable_threads, PathList, ThreadFilter,
+    affects_thread_metadata, collect_all_sessions, importable_threads, MarkUnread, PathList,
     ThreadId, ThreadMetadata, ThreadMetadataStore, ThreadRecorder, ThreadSnapshot,
 };
 use chrono::{DateTime, Utc};
@@ -329,16 +329,15 @@ struct SyncBackoff {
 /// a terminal is picked up by the next alt-tab back.
 const SYNC_DEBOUNCE: std::time::Duration = std::time::Duration::from_secs(30);
 
-/// How recent an agent-listed session must be to land in the sidebar rather
-/// than History.
-const SYNC_UNARCHIVE_DAYS: i64 = 7;
+/// How recent an agent-listed session must be to land active rather than on
+/// the Settled shelf.
+const SYNC_ACTIVE_DAYS: i64 = 7;
 
-/// The recency window of ADR-0001 amendment Rule 5, as an instant: activity at
-/// or after it lands a session in the sidebar (and brings an archived one
-/// back); anything older stays in History. The project sync and the session
-/// watcher both ask this, so they cannot disagree about what "recent" is.
-pub(crate) fn sync_unarchive_cutoff(now: DateTime<Utc>) -> DateTime<Utc> {
-    now - chrono::Duration::days(SYNC_UNARCHIVE_DAYS)
+/// The recency window of ADR-0001 amendment Rule 5, as an instant: a session
+/// the project sync lists with activity at or after it lands active; anything
+/// older lands settled.
+pub(crate) fn sync_active_cutoff(now: DateTime<Utc>) -> DateTime<Utc> {
+    now - chrono::Duration::days(SYNC_ACTIVE_DAYS)
 }
 
 /// How long after one of Atlas's own turns ends a write to that session's
@@ -1635,6 +1634,10 @@ impl AgentHost {
                 }
                 let message = format!("{e:#}");
                 let class = classify_message(&message);
+                // A failure is a raised hand: a snoozed session wakes for it.
+                if let Some(history) = this.history() {
+                    history.note_failure(&session_id, Utc::now());
+                }
                 this.projector.note_turn_failed(
                     &session_id,
                     message,
@@ -2164,12 +2167,14 @@ impl AgentHost {
     ///
     /// One action: the agent is started if it is not running, the
     /// session is reopened through whichever of `session/load` /
-    /// `session/resume` the agent advertised, and the row is unarchived. A row
+    /// `session/resume` the agent advertised. Opening moves the session
+    /// between no lifecycle states — a settled one stays settled until the
+    /// user sends — and marking it viewed is the frontend's, on focus. A row
     /// whose thread never got a session id is a draft, and opens as a new
     /// conversation.
     ///
-    /// A failure leaves the row exactly as it was, archived flag included:
-    /// nothing here runs before the session is open. Atlas never deletes a
+    /// A failure leaves the row exactly as it was: nothing here writes it
+    /// before the session is open. Atlas never deletes a
     /// history row because an agent could not reopen it — the user's record is
     /// theirs to remove.
     ///
@@ -2188,7 +2193,6 @@ impl AgentHost {
         // reopening would be a second session for one conversation.
         if let Some(session_id) = thread.session_id.clone() {
             if lock(&self.sessions).contains_key(session_id.0.as_ref()) {
-                history.store().unarchive(thread_id);
                 return Ok(ResumedThread {
                     key: SessionKey {
                         agent_id: self.handle_for(&self.agent_for(thread.agent_id.as_str())?),
@@ -2245,10 +2249,6 @@ impl AgentHost {
         };
 
         let init = self.bind(agent.agent_id, &record, cwd, opened);
-        // After the session is open, and after `bind` — the live feed preserves
-        // whatever `archived` it finds, so unarchiving first would be undone by
-        // the row it writes (`agent_panel.rs:4382-4386` unarchives on open).
-        history.store().unarchive(thread_id);
         Ok(ResumedThread {
             key: init.key,
             resumed_without_history,
@@ -2267,7 +2267,7 @@ impl AgentHost {
     /// now, and its next message puts it back under the same thread id — the
     /// live feed keeps its binding on purpose. That is the honest
     /// behaviour: history records conversations, and this one has not
-    /// finished. Archive is the action for "out of my way but keep it".
+    /// finished. Settle is the action for "out of my way but keep it".
     ///
     /// Deleting a session that is **live elsewhere** (Rule 7 — another
     /// process, typically `claude` in a terminal, is writing it now) is
@@ -2395,22 +2395,16 @@ impl AgentHost {
             .collect())
     }
 
-    /// Every thread, archived or not, newest-started first — the history view.
+    /// Every thread, newest-started first — the history view.
     pub fn thread_history(
         &self,
-        archived_only: bool,
         modified: &HashMap<String, DateTime<Utc>>,
     ) -> Result<Vec<ThreadRow>> {
         let live = self.live_context(modified);
-        let filter = if archived_only {
-            ThreadFilter::ArchivedOnly
-        } else {
-            ThreadFilter::All
-        };
         Ok(self
             .history_or_err()?
             .store()
-            .history(filter)
+            .history()
             .iter()
             .map(|t| thread_row(t, &live))
             .collect())
@@ -2426,12 +2420,6 @@ impl AgentHost {
             activity: self.atlas_activity(),
             now: Utc::now(),
         }
-    }
-
-    /// Take a thread out of the active list, keeping it in history.
-    pub fn archive_thread(&self, thread_id: ThreadId) -> Result<()> {
-        self.history_or_err()?.store().archive(thread_id);
-        Ok(())
     }
 
     /// Move a session to the sidebar's Settled shelf.
@@ -2487,6 +2475,85 @@ impl AgentHost {
         Ok(self.history_or_err()?.store().unsettle(thread_id))
     }
 
+    /// Pin a session, placed among the pinned by `order_key` (minted by the
+    /// frontend). Brings a settled or snoozed one back. Answers whether
+    /// anything changed.
+    pub fn pin_thread(&self, thread_id: ThreadId, order_key: Option<String>) -> Result<bool> {
+        Ok(self
+            .history_or_err()?
+            .store()
+            .pin(thread_id, order_key.map(Arc::from)))
+    }
+
+    pub fn unpin_thread(&self, thread_id: ThreadId) -> Result<bool> {
+        Ok(self.history_or_err()?.store().unpin(thread_id))
+    }
+
+    /// Move a pinned session to `order_key`. `false` for one not pinned.
+    pub fn reorder_pinned_thread(&self, thread_id: ThreadId, order_key: String) -> Result<bool> {
+        Ok(self
+            .history_or_err()?
+            .store()
+            .reorder_pin(thread_id, Arc::from(order_key)))
+    }
+
+    /// Snooze a session until `until`.
+    ///
+    /// Refused while the session has a pending request — a permission or a
+    /// question the user has not answered: snoozing would hide the very thing
+    /// waiting on them, and it would wake straight away regardless. Refused
+    /// too for a time not in the future. Answers whether it snoozed (`false`
+    /// for a session that no longer exists).
+    pub fn snooze_thread(&self, thread_id: ThreadId, until: DateTime<Utc>) -> Result<bool> {
+        let history = self.history_or_err()?;
+        let Some(thread) = history.store().thread(thread_id) else {
+            return Ok(false);
+        };
+        if until <= Utc::now() {
+            return Err(HostError::new(
+                "Pick a time in the future to snooze until.",
+                ErrorClass::Fatal,
+            ));
+        }
+        if thread
+            .session_id
+            .as_ref()
+            .is_some_and(|id| self.session_has_pending_request(id.0.as_ref()))
+        {
+            return Err(HostError::new(
+                "This session is waiting for you; answer it before snoozing.",
+                ErrorClass::Fatal,
+            ));
+        }
+        Ok(history.store().snooze(thread_id, until))
+    }
+
+    /// Wake a snoozed session by hand. Answers whether it was snoozed.
+    pub fn wake_thread(&self, thread_id: ThreadId) -> Result<bool> {
+        Ok(self.history_or_err()?.store().wake(thread_id))
+    }
+
+    /// The user opened or focused the session the tab `session_id` runs.
+    /// Answers whether a row was marked (a draft has none).
+    pub fn mark_session_viewed(&self, session_id: &str) -> Result<bool> {
+        Ok(self
+            .history_or_err()?
+            .note_viewed(&acp::SessionId::new(session_id), Utc::now()))
+    }
+
+    /// Make a session read as unread again. Refused for one with no
+    /// completed turn — there is nothing to be unread.
+    pub fn mark_thread_unread(&self, thread_id: ThreadId) -> Result<bool> {
+        match self.history_or_err()?.store().mark_unread(thread_id) {
+            MarkUnread::Marked => Ok(true),
+            MarkUnread::AlreadyUnread | MarkUnread::Missing => Ok(false),
+            MarkUnread::NoCompletedTurn => Err(HostError::new(
+                "This session has no finished turn to mark unread.",
+                ErrorClass::Fatal,
+            )),
+        }
+    }
+
     /// Whether Atlas has work in flight in this session: a turn it sent that
     /// has not come back, a turn the thread reports running, or a permission
     /// or elicitation the user has not answered.
@@ -2497,31 +2564,40 @@ impl AgentHost {
         let Ok(handle) = self.thread(session_id) else {
             return false;
         };
+        let generating = lock_thread(&handle).is_generating();
+        generating || self.session_has_pending_request(session_id)
+    }
+
+    /// Whether the session is waiting on the user: a permission request or a
+    /// question (elicitation) not yet answered. A session Atlas is not
+    /// hosting has none it could know of.
+    fn session_has_pending_request(&self, session_id: &str) -> bool {
+        let Ok(handle) = self.thread(session_id) else {
+            return false;
+        };
         let thread = lock_thread(&handle);
-        thread.is_generating()
-            || thread.elicitations().elicitations().iter().any(|e| {
-                matches!(
-                    e.status,
-                    atlas_acp_thread::ElicitationStatus::Pending { .. }
-                )
-            })
-            || thread.entries().iter().any(|entry| {
-                matches!(
-                    entry,
-                    atlas_acp_thread::AgentThreadEntry::ToolCall(call)
-                        if matches!(
-                            call.status,
-                            atlas_acp_thread::ToolCallStatus::WaitingForConfirmation { .. }
-                        )
-                )
-            })
+        thread.elicitations().elicitations().iter().any(|e| {
+            matches!(
+                e.status,
+                atlas_acp_thread::ElicitationStatus::Pending { .. }
+            )
+        }) || thread.entries().iter().any(|entry| {
+            matches!(
+                entry,
+                atlas_acp_thread::AgentThreadEntry::ToolCall(call)
+                    if matches!(
+                        call.status,
+                        atlas_acp_thread::ToolCallStatus::WaitingForConfirmation { .. }
+                    )
+            )
+        })
     }
 
     /// Settle every session idle for longer than `idle`, skipping any that is
-    /// busy in Atlas ([`Self::session_is_busy`]) or live in another process.
-    /// The store applies the rest of the rule (archived, already settled,
-    /// un-settled since its last activity) under its own lock. Answers how
-    /// many were settled.
+    /// busy in Atlas ([`Self::session_is_busy`]: a running turn or a pending
+    /// request) or live in another process. The store applies the rest of
+    /// the rule (already settled, pinned, snoozed, un-settled since its last
+    /// activity) under its own lock. Answers how many were settled.
     ///
     /// Liveness elsewhere is judged per candidate from its own folders'
     /// transcripts ([`ActivityIn`]), asked once per folder. The sweep covers
@@ -2778,7 +2854,7 @@ impl AgentHost {
     /// agent's storage, but "imported once, at boot" no longer holds. The agent
     /// is asked over ACP `session/list`, filtered to `cwd`, whenever the
     /// sidebar is shown for that project. Rows whose `updated_at` is within the
-    /// last week land unarchived; older ones land in History, as an import does.
+    /// last week land active; older ones land settled, as an import does.
     ///
     /// Only agents that already have a row in the store are asked. The sync is
     /// automatic, and an automatic action must not be the reason an installed
@@ -2792,13 +2868,11 @@ impl AgentHost {
     /// unless `force` (the session watcher saw an unknown transcript appear):
     /// that skips the check but still records the time.
     ///
-    /// Sessions the store already knows are not skipped outright. The
-    /// first-run backfill lands every session archived, so a session from
-    /// before that, picked up again in a terminal, would otherwise never reach
-    /// the sidebar. Their agent-reported `updated_at` goes through
-    /// [`ThreadMetadataStore::touch_sessions`] with the same cutoff: new
-    /// activity inside the window unarchives the row, and nothing else touches
-    /// an archived one.
+    /// Sessions the store already knows are not skipped outright: their
+    /// agent-reported `updated_at` goes through
+    /// [`ThreadMetadataStore::touch_sessions`], so a session picked up again
+    /// in a terminal moves up its section. It does not leave the Settled
+    /// shelf for that — only the user sending does.
     ///
     /// `cwd` must already be canonical (`threads_sync_project` does that): it
     /// is the debounce key and the `session/list` filter, and two spellings of
@@ -2826,7 +2900,7 @@ impl AgentHost {
             .into_iter()
             .map(|thread| thread.agent_id.as_str().to_owned())
             .collect();
-        let cutoff = sync_unarchive_cutoff(Utc::now());
+        let cutoff = sync_active_cutoff(Utc::now());
 
         let mut added = 0;
         for plugin_id in self.store.external_agents() {
@@ -2890,7 +2964,7 @@ impl AgentHost {
                 .filter(|s| known.contains(&s.session_id))
                 .filter_map(|s| Some((s.session_id.clone(), s.updated_at?)))
                 .collect();
-            history.store().touch_sessions(&activity, Some(cutoff));
+            history.store().touch_sessions(&activity);
             let rows =
                 importable_threads(sessions, &plugin_id.as_str().into(), &known, Some(cutoff));
             added += history.store().insert_new_sessions(rows);
@@ -3106,10 +3180,30 @@ pub struct ThreadRow {
     pub title: String,
     pub updated_at: String,
     pub created_at: Option<String>,
-    pub archived: bool,
     /// When the session was settled — on the sidebar's Settled shelf — as
     /// RFC 3339; `None` while it is active.
     pub settled_at: Option<String>,
+    /// When the session was pinned (RFC 3339); `None` when it is not.
+    pub pinned_at: Option<String>,
+    /// Its place among the pinned: a fractional key compared as a plain
+    /// string. `None` sorts after every keyed pin.
+    pub pin_order: Option<String>,
+    /// When a snoozed session wakes on its own (RFC 3339); `None` when it is
+    /// not snoozed.
+    pub snoozed_until: Option<String>,
+    pub snoozed_at: Option<String>,
+    /// When it last woke from a snooze — on time, early because it raised its
+    /// hand, or by hand.
+    pub last_snooze_wake_at: Option<String>,
+    /// When the user last opened or focused it.
+    pub last_viewed_at: Option<String>,
+    /// When its latest turn completed, as Atlas saw it end.
+    pub last_turn_completed_at: Option<String>,
+    /// Its latest turn completed after the user last viewed it. Decided here
+    /// so every surface agrees.
+    pub unread: bool,
+    /// It woke from a snooze and the user has not viewed it since.
+    pub woke: bool,
     /// The project this thread belongs to, for a history row that is shown
     /// outside its project's group.
     pub project_name: String,
@@ -3280,13 +3374,25 @@ fn thread_row(thread: &ThreadMetadata, live: &LiveContext<'_>) -> ThreadRow {
         title: display_title(thread),
         updated_at: thread.updated_at.to_rfc3339(),
         created_at: thread.created_at.map(|at| at.to_rfc3339()),
-        archived: thread.archived,
-        settled_at: thread.settled_at.map(|at| at.to_rfc3339()),
+        settled_at: rfc3339(thread.settled_at),
+        pinned_at: rfc3339(thread.pinned_at),
+        pin_order: thread.pin_order.as_deref().map(str::to_string),
+        snoozed_until: rfc3339(thread.snoozed_until),
+        snoozed_at: rfc3339(thread.snoozed_at),
+        last_snooze_wake_at: rfc3339(thread.last_snooze_wake_at),
+        last_viewed_at: rfc3339(thread.last_viewed_at),
+        last_turn_completed_at: rfc3339(thread.last_turn_completed_at),
+        unread: thread.is_unread(),
+        woke: thread.is_woke(),
         project_name: project_name(thread.main_worktree_paths()),
         folder_paths: paths_of(thread.folder_paths()),
         live_elsewhere,
         branch: thread.branch.as_deref().map(str::to_string),
     }
+}
+
+fn rfc3339(at: Option<DateTime<Utc>>) -> Option<String> {
+    at.map(|at| at.to_rfc3339())
 }
 
 /// The row's title with any Atlas memory block taken out.
@@ -4537,13 +4643,16 @@ mod tests {
 
     /// A history row is the user's record. An agent that cannot be reached,
     /// cannot be started, or has forgotten the conversation must leave it
-    /// exactly as it found it — archived flag included.
+    /// exactly as it found it — its lifecycle included.
     #[tokio::test]
     async fn a_resume_that_fails_changes_nothing_about_the_row() {
         let (host, dir) = fresh_host();
         let history = host.history().expect("a fresh host has history");
         let thread = atlas_thread_metadata::ThreadMetadata {
             session_id: Some(acp::SessionId::new("ses-1")),
+            // Settled where the user left it (a fresh row is inside the
+            // settle grace, so the store's `settle` would refuse it).
+            settled_at: Some(chrono::Utc::now()),
             ..atlas_thread_metadata::ThreadMetadata::new(
                 atlas_thread_metadata::ThreadId::new(),
                 // Not installed: `spawn` will refuse, which is the most basic
@@ -4554,7 +4663,6 @@ mod tests {
         };
         let thread_id = thread.thread_id;
         history.store().save_all(vec![thread]);
-        history.store().archive(thread_id);
 
         let error = host
             .resume_thread(thread_id)
@@ -4563,7 +4671,7 @@ mod tests {
         assert_eq!(error.class, ErrorClass::Fatal);
 
         let after = history.store().thread(thread_id).expect("the row survives");
-        assert!(after.archived, "and it is still where the user left it");
+        assert!(after.is_settled(), "and it is still where the user left it");
         assert_eq!(after.session_id, Some(acp::SessionId::new("ses-1")));
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -4693,7 +4801,7 @@ mod tests {
             .unwrap();
         assert_eq!(settled, 1, "the sweep settles the other once it is quiet");
 
-        let rows = host.thread_history(false, &HashMap::new()).unwrap();
+        let rows = host.thread_history(&HashMap::new()).unwrap();
         for id in [running_id, elsewhere_id] {
             let row = rows
                 .iter()
@@ -4752,6 +4860,53 @@ mod tests {
 
         let quiet = |_: &Path| Some(HashMap::new());
         assert_eq!(host.auto_settle_idle(idle, &quiet).unwrap(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Snoozing goes through the host's checks: a time in the past is refused
+    /// with a reason, and the wire row carries the snooze and, once woken,
+    /// the woke mark.
+    #[tokio::test]
+    async fn a_snooze_is_checked_and_reaches_the_wire() {
+        let (host, dir) = fresh_host();
+        let history = host.history().expect("a fresh host has history");
+        let mut thread = atlas_thread_metadata::ThreadMetadata::new(
+            atlas_thread_metadata::ThreadId::new(),
+            "an-uninstalled-agent".into(),
+            atlas_thread_metadata::PathList::new(&[PathBuf::from("/tmp/atlas")]),
+        );
+        thread.session_id = Some(acp::SessionId::new("ses-snooze"));
+        let id = thread.thread_id;
+        history.store().save_all(vec![thread]);
+
+        let err = host
+            .snooze_thread(id, Utc::now() - chrono::Duration::minutes(1))
+            .expect_err("the past is not a snooze");
+        assert!(err.message.contains("future"));
+
+        let until = Utc::now() + chrono::Duration::hours(1);
+        assert!(host.snooze_thread(id, until).unwrap());
+        let row_of = |host: &AgentHost| {
+            host.thread_history(&HashMap::new())
+                .unwrap()
+                .into_iter()
+                .find(|r| r.thread_id == id.to_key_string())
+                .unwrap()
+        };
+        let row = row_of(&host);
+        assert_eq!(row.snoozed_until, Some(until.to_rfc3339()));
+        assert!(!row.woke);
+
+        assert!(host.wake_thread(id).unwrap());
+        let row = row_of(&host);
+        assert!(row.snoozed_until.is_none() && row.woke);
+
+        assert!(host.mark_session_viewed("ses-snooze").unwrap());
+        assert!(!row_of(&host).woke, "viewing clears it");
+        assert!(
+            host.mark_thread_unread(id).is_err(),
+            "no finished turn to be unread"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

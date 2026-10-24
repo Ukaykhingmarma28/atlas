@@ -34,6 +34,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SessionSidebar } from "./session-sidebar";
+import { RESTING_LIFECYCLE } from "@/features/chat/lib/session-lifecycle";
 
 function thread(id: string, updatedAt: string, title = `chat ${id}`, liveElsewhere = false) {
   return {
@@ -43,7 +44,7 @@ function thread(id: string, updatedAt: string, title = `chat ${id}`, liveElsewhe
     title,
     updatedAt,
     createdAt: null,
-    archived: false,
+    ...RESTING_LIFECYCLE,
     projectName: "atlas",
     folderPaths: ["/p/atlas"],
     liveElsewhere,

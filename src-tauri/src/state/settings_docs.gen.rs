@@ -187,7 +187,7 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
     ),
     (
         "confirmDeleteChat",
-        "# Ask before deleting a session from the sidebar or the history. A deleted\n# session's transcript stays with its agent, but Atlas forgets the session.\n# Archiving never asks, because it can be undone. (default: true)",
+        "# Ask before deleting a session from the sidebar or the history. A deleted\n# session's transcript stays with its agent, but Atlas forgets the session.\n# Settling never asks, because it can be undone. (default: true)",
     ),
     (
         "confirmQuitWhileRunning",
@@ -211,7 +211,7 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
     ),
     (
         "autoSettleAfterDays",
-        "# Days a session may sit idle before Atlas settles it: moves it to the Settled\n# shelf at the bottom of the session sidebar, where it stays listed and\n# resumable. A session that is running, waiting for you, archived, or that you\n# un-settled since its last activity is left alone, and sending to a settled\n# session brings it back. 0 turns auto-settling off; settling by hand still\n# works. Must be between 0 and 90. (default: 3)",
+        "# Days a session may sit idle before Atlas settles it: moves it to the Settled\n# shelf at the bottom of the session sidebar, where it stays listed and\n# resumable. A session that is running, waiting for you, pinned, snoozed, or\n# that you un-settled since its last activity is left alone, and sending to a\n# settled session brings it back. 0 turns auto-settling off; settling by hand\n# still works. Must be between 0 and 90. (default: 3)",
     ),
     (
         "timeFormat",

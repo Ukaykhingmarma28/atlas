@@ -62,20 +62,6 @@ impl FromStr for ThreadId {
     }
 }
 
-/// Which slice of the store a query wants.
-///
-/// There is no
-/// `ActiveOnly` because the sidebar's active list is a *path-grouped* query,
-/// not a flat one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ThreadFilter {
-    /// Everything, archived or not — what the history view shows.
-    #[default]
-    All,
-    /// Only archived threads.
-    ArchivedOnly,
-}
-
 /// One thread, as the sidebar and the history view need to know it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ThreadMetadata {
@@ -105,16 +91,39 @@ pub struct ThreadMetadata {
     /// `None` is "not known": a detached HEAD, a folder outside any
     /// repository, or a row older than the column. Never guessed.
     pub branch: Option<Arc<str>>,
-    pub archived: bool,
     /// When the session was settled: done for now, moved to the sidebar's
     /// Settled shelf, still listed and still resumable. `None` is active.
-    /// Settling is not archiving — an archived row leaves the sidebar, a
-    /// settled one only sinks to the bottom of it.
+    /// Settled replaced archiving: there is no state that takes a session off
+    /// the sidebar short of deleting it.
     pub settled_at: Option<DateTime<Utc>>,
     /// When the user last un-settled the session. Auto-settle leaves a row
     /// alone while this is after its last activity: the user said "not done",
     /// and nothing has happened since that could change their mind.
     pub unsettled_at: Option<DateTime<Utc>>,
+    /// When the session was pinned; `None` when it is not. A pinned session
+    /// sits in the sidebar's Pinned section and is never auto-settled.
+    pub pinned_at: Option<DateTime<Utc>>,
+    /// Where the session sits among the pinned ones: a fractional key that
+    /// sorts as a plain string, so moving one session rewrites only its own
+    /// key. Minted by the frontend; the store only keeps it. `None` sorts
+    /// after every keyed pin.
+    pub pin_order: Option<Arc<str>>,
+    /// When the snoozed session wakes on its own. `None` when it is not
+    /// snoozed. Cleared — the session woken — when the time comes, when it
+    /// raises its hand ([`ThreadMetadata::raises_hand`]), or when the user
+    /// sends, settles, pins or wakes it.
+    pub snoozed_until: Option<DateTime<Utc>>,
+    /// When the user snoozed it; `None` with `snoozed_until`.
+    pub snoozed_at: Option<DateTime<Utc>>,
+    /// When the session last woke from a snooze. It reads as "woke" until
+    /// the user views it after this.
+    pub last_snooze_wake_at: Option<DateTime<Utc>>,
+    /// When the user last opened or focused the session.
+    pub last_viewed_at: Option<DateTime<Utc>>,
+    /// When the session's latest turn completed, as Atlas saw it end. What
+    /// "unread" is measured against. `None` for a session Atlas never ran a
+    /// turn in (an import), which is never unread.
+    pub last_turn_completed_at: Option<DateTime<Utc>>,
 }
 
 impl ThreadMetadata {
@@ -136,9 +145,15 @@ impl ThreadMetadata {
             worktree_paths: WorktreePaths::from_folder_paths(&folder_paths),
             remote_connection: None,
             branch: None,
-            archived: false,
             settled_at: None,
             unsettled_at: None,
+            pinned_at: None,
+            pin_order: None,
+            snoozed_until: None,
+            snoozed_at: None,
+            last_snooze_wake_at: None,
+            last_viewed_at: None,
+            last_turn_completed_at: None,
         }
     }
 
@@ -158,6 +173,34 @@ impl ThreadMetadata {
     /// Whether the session sits on the Settled shelf.
     pub fn is_settled(&self) -> bool {
         self.settled_at.is_some()
+    }
+
+    pub fn is_pinned(&self) -> bool {
+        self.pinned_at.is_some()
+    }
+
+    /// Whether the session is snoozed. A snooze whose time has passed is
+    /// cleared by the store's wake timer, so a set `snoozed_until` is a
+    /// snooze still running.
+    pub fn is_snoozed(&self) -> bool {
+        self.snoozed_until.is_some()
+    }
+
+    /// The latest turn completed after the user last looked. A session with
+    /// no recorded completion is never unread.
+    pub fn is_unread(&self) -> bool {
+        self.last_turn_completed_at
+            .is_some_and(|done| self.last_viewed_at.is_none_or(|seen| seen < done))
+    }
+
+    /// The session woke from a snooze and the user has not viewed it since.
+    /// A settled or re-snoozed session is not "woke".
+    pub fn is_woke(&self) -> bool {
+        !self.is_settled()
+            && !self.is_snoozed()
+            && self
+                .last_snooze_wake_at
+                .is_some_and(|woke| self.last_viewed_at.is_none_or(|seen| seen < woke))
     }
 
     /// The last thing that happened in the session: agent or outside activity
