@@ -11,11 +11,8 @@
 import type { MouseEvent } from "react";
 import { GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  openPullRequest,
-  useBranchPullRequest,
-  type BranchPullRequest,
-} from "@/features/git/lib/git-pr-api";
+import { useBranchPullRequest, type BranchPullRequest } from "@/features/git/lib/git-pr-api";
+import { openPullRequestTab } from "@/features/pull-requests/lib/open-pull-request-tab";
 
 const PR_STATE: Record<
   BranchPullRequest["state"],
@@ -76,12 +73,12 @@ export function SessionPullRequestBadge({
   return (
     <button
       type="button"
-      aria-label={`${label} — open on GitHub`}
+      aria-label={`${label} — open`}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event: MouseEvent) => {
         event.preventDefault();
         event.stopPropagation();
-        openPullRequest(first.url);
+        openPullRequestTab({ repoPath: cwd, number: first.number, title: first.title });
       }}
       className={cn(
         "inline-flex shrink-0 cursor-pointer items-center gap-0.5 rounded-sm text-xs tabular-nums hover:underline",
@@ -94,7 +91,7 @@ export function SessionPullRequestBadge({
   );
 }
 
-/** The hover card's pull-request lines. */
+/** The hover card's pull-request lines; each opens its pull request's tab. */
 export function SessionPullRequestLines({ cwd, branch }: { cwd: string; branch: string | null }) {
   const prs = useSessionPullRequests(cwd, branch, true);
   if (prs.length === 0) return null;
@@ -103,15 +100,23 @@ export function SessionPullRequestLines({ cwd, branch }: { cwd: string; branch: 
       {prs.map((pr) => {
         const presentation = present(pr);
         return (
-          <div key={pr.number} className="flex min-w-0 items-center gap-2">
+          <button
+            key={pr.number}
+            type="button"
+            aria-label={`${presentation.label} — open`}
+            onClick={() =>
+              openPullRequestTab({ repoPath: cwd, number: pr.number, title: pr.title })
+            }
+            className="flex min-w-0 cursor-pointer items-center gap-2 rounded-sm text-left hover:text-foreground"
+          >
             <presentation.Icon
               aria-hidden
               className={cn("size-3 shrink-0", presentation.toneClassName)}
             />
-            <div className="min-w-0 truncate text-secondary-foreground">
+            <span className="min-w-0 truncate text-secondary-foreground hover:text-foreground">
               #{pr.number} {pr.title}
-            </div>
-          </div>
+            </span>
+          </button>
         );
       })}
     </>

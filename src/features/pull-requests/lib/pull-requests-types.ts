@@ -470,6 +470,37 @@ export interface PrImage {
   data: string;
 }
 
+/** Someone who may be asked to review: a person by login, or a team by slug
+ *  (`id`, what a request names). */
+export interface PrReviewerCandidate {
+  id: string;
+  kind: PrReviewerKind;
+  actor: PrActor;
+  /** Asked already, and not yet answered. */
+  isRequested: boolean;
+}
+
+export interface PrReviewerCandidates {
+  candidates: PrReviewerCandidate[];
+  /** The repository has more people with access than were listed. */
+  truncated: boolean;
+}
+
+/** A label the repository defines, and whether this pull request carries it. */
+export interface PrLabelCandidate {
+  name: string;
+  /** Six hex digits, no `#`. */
+  color: string | null;
+  description: string | null;
+  isApplied: boolean;
+}
+
+export interface PrLabelCandidates {
+  candidates: PrLabelCandidate[];
+  /** The repository has more labels than were listed. */
+  truncated: boolean;
+}
+
 // ── writes ──────────────────────────────────────────────────────────────
 
 export interface PrFileViewedChange {

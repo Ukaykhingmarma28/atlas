@@ -524,7 +524,7 @@ pub(crate) fn capabilities() -> PrCapabilities {
         },
         reviewers: PrReviewerCapabilities {
             request: true,
-            list_candidates: false,
+            list_candidates: true,
         },
         edit: PrEditCapabilities {
             change_request: true,
@@ -1835,6 +1835,109 @@ pub(crate) fn build_reviewer_request(reviewers: &[PrReviewerRef]) -> Value {
         .map(|r| r.id.as_str())
         .collect();
     serde_json::json!({ "reviewers": users, "team_reviewers": teams })
+}
+
+/// The reviewer picker's rows: the people with write access (less the
+/// author, whom GitHub refuses), then any team already asked. Those already
+/// asked are marked, so a press takes the request back.
+pub(crate) fn to_reviewer_candidates(data: &Value) -> Option<PrReviewerCandidates> {
+    let repository = data.get("repository").filter(|r| !r.is_null())?;
+    let pull = repository.get("pullRequest").filter(|p| !p.is_null())?;
+    let author =
+        trimmed(pull.get("author").and_then(|a| a.get("login"))).map(|login| login.to_lowercase());
+    let mut requested_users = HashSet::new();
+    let mut teams = Vec::new();
+    for request in nodes(pull.get("reviewRequests")) {
+        let Some(reviewer) = request.get("requestedReviewer") else {
+            continue;
+        };
+        match reviewer.get("__typename").and_then(Value::as_str) {
+            Some("Team") => {
+                if let (Some(slug), Some(actor)) =
+                    (text(reviewer, "slug"), to_requested_team(Some(reviewer)))
+                {
+                    teams.push(PrReviewerCandidate {
+                        id: slug,
+                        kind: PrReviewerKind::Team,
+                        actor,
+                        is_requested: true,
+                    });
+                }
+            }
+            _ => {
+                if let Some(login) = text(reviewer, "login") {
+                    requested_users.insert(login.to_lowercase());
+                }
+            }
+        }
+    }
+    let users = repository.get("assignableUsers");
+    let mut candidates: Vec<PrReviewerCandidate> = nodes(users)
+        .into_iter()
+        .filter_map(|user| {
+            let actor = to_actor(Some(user))?;
+            let key = actor.login.to_lowercase();
+            if author.as_deref() == Some(key.as_str()) {
+                return None;
+            }
+            Some(PrReviewerCandidate {
+                id: actor.login.clone(),
+                kind: PrReviewerKind::User,
+                is_requested: requested_users.contains(&key),
+                actor,
+            })
+        })
+        .collect();
+    // Asked first, then by login, so the picker opens on who is pending.
+    candidates.sort_by(|a, b| {
+        b.is_requested.cmp(&a.is_requested).then_with(|| {
+            a.actor
+                .login
+                .to_lowercase()
+                .cmp(&b.actor.login.to_lowercase())
+        })
+    });
+    candidates.extend(teams);
+    let truncated = users
+        .and_then(|u| u.get("pageInfo"))
+        .and_then(|p| boolean(p, "hasNextPage"))
+        == Some(true);
+    Some(PrReviewerCandidates {
+        candidates,
+        truncated,
+    })
+}
+
+/// The label picker's rows, in the repository's name order, each marked when
+/// the pull request carries it.
+pub(crate) fn to_label_candidates(data: &Value) -> Option<PrLabelCandidates> {
+    let repository = data.get("repository").filter(|r| !r.is_null())?;
+    let pull = repository.get("pullRequest").filter(|p| !p.is_null())?;
+    let applied: HashSet<String> = nodes(pull.get("labels"))
+        .into_iter()
+        .filter_map(|label| text(label, "name"))
+        .collect();
+    let labels = repository.get("labels");
+    let candidates = nodes(labels)
+        .into_iter()
+        .filter_map(|label| {
+            let name = text(label, "name")?;
+            Some(PrLabelCandidate {
+                is_applied: applied.contains(&name),
+                color: text(label, "color"),
+                description: text(label, "description"),
+                name,
+            })
+        })
+        .collect();
+    let truncated = labels
+        .and_then(|l| l.get("pageInfo"))
+        .and_then(|p| boolean(p, "hasNextPage"))
+        == Some(true);
+    Some(PrLabelCandidates {
+        candidates,
+        truncated,
+    })
 }
 
 /// Which file names belong to which revisions, from `GET …/pulls/{n}` (base

@@ -11,7 +11,9 @@
 //  - #398 — merged, approved, every check green, a timeline to page through;
 //  - #405 — a draft, no checks yet, a team asked to review;
 //  - #401 — open with a merge conflict and a failing required check;
-//  - #377 — closed without merging.
+//  - #377 — closed without merging;
+//  - #420 — open and long: 300 comments and 100 checks, for the Summary's
+//    paging and the checks list at scale.
 //
 // Writes are real for the life of the page: ticking a file viewed, resolving
 // a thread, reacting, commenting and merging all change the next read. Like
@@ -35,11 +37,13 @@ import type {
   PrFilesViewed,
   PrFileViewed,
   PrImage,
+  PrLabelCandidates,
   PrListEntry,
   PrListResult,
   PrProvider,
   PrReaction,
   PrReactionContent,
+  PrReviewerCandidates,
   PrReviewThread,
   PrThreadComment,
   PrThreadCommentsPage,
@@ -101,7 +105,7 @@ const CAPABILITIES: PrCapabilities = {
     resolve: true,
     verdicts: ["comment", "approve", "request-changes"],
   },
-  reviewers: { request: true, listCandidates: false },
+  reviewers: { request: true, listCandidates: true },
   edit: { changeRequest: true, comment: false },
   labels: true,
   fileContents: true,
@@ -417,6 +421,68 @@ const PULLS: FakePull[] = [
     autoMergeEnabled: null,
     autoMergeMethod: null,
   }),
+  pull({
+    number: 420,
+    title: "Catalogue: move every product page onto the new design tokens",
+    body: [
+      "Moves all 214 product page components onto the token scale. No visual change is intended;",
+      "the screenshots in each check's artifacts compare before and after.",
+      "",
+      "<details><summary>Components touched</summary>",
+      "",
+      "- `ProductCard`, `ProductGallery`, `PriceTag`",
+      "- `ReviewStars`, `StockBadge`, `ShippingNote`",
+      "",
+      "</details>",
+      "",
+      "Follows #412. See 9f2c4e7a1b3d5f60718293a4b5c6d7e8f9012345 for the token map.",
+    ].join("\n"),
+    author: REVIEWER,
+    state: "open",
+    isDraft: false,
+    mergeability: "mergeable",
+    mergeStateStatus: "UNSTABLE",
+    reviewDecision: "review-required",
+    additions: 18_402,
+    deletions: 16_977,
+    changedFiles: 214,
+    commitCount: 61,
+    headBranch: "ines/catalogue-tokens",
+    headRepository: REPOSITORY,
+    headSha: "aa2c4e7a1b3d5f60718293a4b5c6d7e8f9012345",
+    baseBranch: "main",
+    baseSha: "1a2b3c4d5e6f708192a3b4c5d6e7f80912345678",
+    isCrossRepository: false,
+    createdAt: iso(200),
+    updatedAt: iso(0.5),
+    mergedAt: null,
+    closedAt: null,
+    reviewers: [
+      { actor: VIEWER, kind: "user", state: "requested" },
+      { actor: DEV, kind: "user", state: "commented" },
+    ],
+    labels: [
+      { name: "design-system", color: "5319e7" },
+      { name: "large", color: "b60205" },
+      { name: "catalogue", color: "0e8a16" },
+    ],
+    assignees: [REVIEWER],
+    checks: Array.from({ length: 100 }, (_, i) =>
+      check(
+        `visual / product-page-${String(i + 1).padStart(3, "0")}`,
+        i === 7 || i === 41 ? "failure" : i > 94 ? "pending" : i % 23 === 5 ? "skipped" : "success",
+        i > 94 ? null : 2 + (i % 9),
+        { workflow: "Visual regression" },
+      ),
+    ),
+    checksState: "failing",
+    checksTruncated: true,
+    viewerPermissions: permissions(true, false),
+    baseComparison: "up-to-date",
+    behindBy: 0,
+    autoMergeEnabled: false,
+    autoMergeMethod: null,
+  }),
 ];
 
 function find(number: unknown): FakePull {
@@ -584,6 +650,36 @@ const remarks = new Map<number, PrComment[]>([
     ],
   ],
 ]);
+
+const BIG_REMARKS = [
+  "Looks right in the gallery. The `PriceTag` spacing moved by a pixel though.",
+  "Rebased on main.",
+  "```ts\nconst gap = token('space.2'); // was 6px\n```\nThis is the one I am unsure of.",
+  "Checked the dark theme too — fine.",
+  "Can we land the card first and the gallery after?",
+];
+
+remarks.set(
+  420,
+  Array.from({ length: 300 }, (_, i): PrComment => {
+    const author = i % 7 === 3 ? BOT : [DEV, REVIEWER, VIEWER][i % 3];
+    return {
+      id: `IC_420_${i}`,
+      kind: "issue-comment",
+      author,
+      body:
+        author === BOT
+          ? `<!-- visual-bot -->\nVisual run ${i}: **${i % 2 ? "no" : "2"} changes** against main.`
+          : BIG_REMARKS[i % BIG_REMARKS.length],
+      createdAt: iso(199 - i * 0.6),
+      editedAt: null,
+      url: `${URL_BASE}/420#issuecomment-${i}`,
+      path: null,
+      reviewState: null,
+      reactions: [],
+    };
+  }),
+);
 
 function commitsOf(number: number): PrCommit[] {
   const count = find(number).detail.commitCount;
@@ -793,6 +889,61 @@ const PIXEL =
 
 // ── handlers ────────────────────────────────────────────────────────────────
 
+/** Set by a scenario to make every read fail the way `gh` would. */
+let readFailure: PrError | null = null;
+
+export function failPullRequestReads(error: PrError | null): void {
+  readFailure = error;
+}
+
+function guard(): void {
+  if (readFailure) fail(readFailure);
+}
+
+const PEOPLE: PrActor[] = [
+  VIEWER,
+  DEV,
+  REVIEWER,
+  actor("sam-o", "Sam Okafor", 1005),
+  actor("lena-w", "Lena Weiß", 1006),
+  actor("yuki-t", "Yuki Tanaka", 1007),
+];
+
+const LABELS: Array<{ name: string; color: string; description: string | null }> = [
+  { name: "checkout", color: "0e8a16", description: "The checkout flow" },
+  { name: "cart", color: "fbca04", description: null },
+  { name: "catalogue", color: "0e8a16", description: "Product and category pages" },
+  { name: "design-system", color: "5319e7", description: "Tokens and primitives" },
+  { name: "large", color: "b60205", description: "Review in more than one sitting" },
+  { name: "needs-tests", color: "d93f0b", description: null },
+  { name: "orders", color: "5319e7", description: null },
+  { name: "search", color: "1d76db", description: null },
+];
+
+function reviewerCandidates(number: number): PrReviewerCandidates {
+  const detail = find(number).detail;
+  const asked = new Set(
+    detail.reviewers.filter((r) => r.state === "requested").map((r) => r.actor.login),
+  );
+  return {
+    candidates: PEOPLE.filter((p) => p.login !== detail.author?.login).map((p) => ({
+      id: p.login,
+      kind: "user" as const,
+      actor: p,
+      isRequested: asked.has(p.login),
+    })),
+    truncated: false,
+  };
+}
+
+function labelCandidates(number: number): PrLabelCandidates {
+  const applied = new Set(find(number).detail.labels.map((l) => l.name));
+  return {
+    candidates: LABELS.map((l) => ({ ...l, isApplied: applied.has(l.name) })),
+    truncated: false,
+  };
+}
+
 const nothing = (): null => null;
 
 function setReaction(id: string, content: PrReactionContent, reacted: boolean): void {
@@ -828,6 +979,8 @@ export interface PullRequestsResponses {
   pr_request_reviewers: Unit;
   pr_set_labels: Unit;
   pr_image: PrImage;
+  pr_reviewer_candidates: PrReviewerCandidates;
+  pr_label_candidates: PrLabelCandidates;
   pr_create_draft: PrCreateDraft;
   pr_create: PrCreated;
 }
@@ -857,8 +1010,16 @@ export const pullRequestsHandlers: TypedHandlers<PullRequestsResponses> = {
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     nextCursor: null,
   }),
-  pr_detail: ({ number }) => find(number).detail,
-  pr_activity: ({ number }) => activity(Number(number)),
+  pr_detail: ({ number }) => {
+    guard();
+    return find(number).detail;
+  },
+  pr_activity: ({ number }) => {
+    guard();
+    return activity(Number(number));
+  },
+  pr_reviewer_candidates: ({ number }) => reviewerCandidates(Number(number)),
+  pr_label_candidates: ({ number }) => labelCandidates(Number(number)),
   pr_thread_comments: ({ number, threadId }) => {
     const thread = (threads.get(Number(number)) ?? []).find((t) => t.id === threadId);
     if (!thread)
@@ -976,7 +1137,18 @@ export const pullRequestsHandlers: TypedHandlers<PullRequestsResponses> = {
     if (typeof body === "string") target.detail.body = body;
     return null;
   },
-  pr_request_reviewers: nothing,
+  pr_request_reviewers: ({ number, reviewers, requested }) => {
+    const target = find(number);
+    for (const ref of (reviewers ?? []) as Array<{ id: string }>) {
+      const person = PEOPLE.find((p) => p.login === ref.id);
+      if (!person) continue;
+      const rest = target.detail.reviewers.filter((r) => r.actor.login !== ref.id);
+      target.detail.reviewers = requested
+        ? [...rest, { actor: person, kind: "user", state: "requested" }]
+        : rest;
+    }
+    return null;
+  },
   pr_set_labels: ({ number, labels, applied }) => {
     const target = find(number);
     const names = (labels ?? []) as string[];
@@ -999,9 +1171,37 @@ export const pullRequestsHandlers: TypedHandlers<PullRequestsResponses> = {
       commitCount: 2,
     };
   },
-  pr_create: (): PrCreated => {
+  pr_create: ({ input }): PrCreated => {
     const number = 500 + created++;
-    return { number, url: `${URL_BASE}/${number}` };
+    const confirmed = (input ?? {}) as {
+      title?: string;
+      body?: string;
+      base?: string | null;
+      draft?: boolean;
+    };
+    // The new pull request is real for the page's life, so its tab renders.
+    const opened = pull({
+      ...find(405).detail,
+      number,
+      title: confirmed.title || mockCurrentBranchName(),
+      body: confirmed.body ?? "",
+      author: VIEWER,
+      isDraft: confirmed.draft === true,
+      mergeability: "mergeable",
+      mergeStateStatus: "CLEAN",
+      headBranch: mockCurrentBranchName(),
+      baseBranch: confirmed.base ?? "main",
+      reviewers: [],
+      labels: [],
+      checks: [check("lint", "pending", null), check("unit", "pending", null)],
+      checksState: "pending",
+      commitCount: 2,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      viewerPermissions: permissions(true, true),
+    });
+    PULLS.push(opened);
+    return { number, url: opened.detail.url };
   },
 };
 

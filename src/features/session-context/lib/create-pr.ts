@@ -11,6 +11,7 @@ import { useQuery, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { openPullRequest } from "@/features/git/lib/git-pr-api";
+import { openPullRequestTab } from "@/features/pull-requests/lib/open-pull-request-tab";
 import { useGitStore } from "@/features/git/stores/git-store";
 import { prErrorMessage, classifyPrError } from "@/features/pull-requests/lib/pr-errors";
 import { prCreate, prCreateDraft } from "@/features/pull-requests/lib/pull-requests-api";
@@ -58,7 +59,8 @@ export async function startCreatePr(projectPath: string, draft: boolean): Promis
   }
 }
 
-/** Open the pull request the dialog confirmed, and say where it is. */
+/** Open the pull request the dialog confirmed, show it in its own tab, and
+ *  say where it is on the host. */
 export async function submitCreatePr(
   client: QueryClient,
   projectPath: string,
@@ -66,8 +68,9 @@ export async function submitCreatePr(
 ): Promise<PrCreated> {
   const created = await prCreate(projectPath, input);
   await invalidatePullRequestQueries(client, projectPath);
+  openPullRequestTab({ repoPath: projectPath, number: created.number, title: input.title });
   toast.success(`Opened ${input.draft ? "draft " : ""}pull request #${created.number}`, {
-    action: { label: "Open", onClick: () => openPullRequest(created.url) },
+    action: { label: "Open on GitHub", onClick: () => openPullRequest(created.url) },
   });
   return created;
 }

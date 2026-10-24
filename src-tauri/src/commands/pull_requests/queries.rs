@@ -668,6 +668,49 @@ pub const PULL_REQUEST_NODE_ID: &str = r#"query PullRequestNodeId($owner: String
   }
 }"#;
 
+/// Who may be asked for a review, and who already has been. `assignableUsers`
+/// is everyone with write access, which is who GitHub accepts a request for;
+/// the pull request's own requests mark the ones already asked, teams
+/// included, so a request to a team can be taken back from the same list.
+pub const PULL_REQUEST_REVIEWER_CANDIDATES: &str = r#"query PullRequestReviewerCandidates($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    assignableUsers(first: 100) {
+      pageInfo { hasNextPage }
+      nodes { login name avatarUrl }
+    }
+    pullRequest(number: $number) {
+      author { login }
+      reviewRequests(first: 50) {
+        nodes {
+          requestedReviewer {
+            __typename
+            ... on User { login name avatarUrl }
+            ... on Team {
+              slug
+              combinedSlug
+              teamName: name
+              teamAvatarUrl: avatarUrl
+            }
+          }
+        }
+      }
+    }
+  }
+}"#;
+
+/// The repository's labels, by name, and which the pull request carries.
+pub const PULL_REQUEST_LABEL_CANDIDATES: &str = r#"query PullRequestLabelCandidates($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    labels(first: 100, orderBy: { field: NAME, direction: ASC }) {
+      pageInfo { hasNextPage }
+      nodes { name color description }
+    }
+    pullRequest(number: $number) {
+      labels(first: 100) { nodes { name } }
+    }
+  }
+}"#;
+
 /// Where a client-given subject actually hangs: the pull request itself, or
 /// the pull request a comment, line comment or review belongs to. Read
 /// before a reaction reaches it, so a subject named for one pull request
@@ -887,6 +930,8 @@ mod tests {
             pull_request_search(),
             PULL_REQUEST_NODE_ID.to_string(),
             PULL_REQUEST_SUBJECT.to_string(),
+            PULL_REQUEST_REVIEWER_CANDIDATES.to_string(),
+            PULL_REQUEST_LABEL_CANDIDATES.to_string(),
             PULL_REQUEST_ACTION_STATE.to_string(),
             PULL_REQUEST_BRANCH_TO_DELETE.to_string(),
             PULL_REQUEST_SOURCE_BRANCH.to_string(),

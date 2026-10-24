@@ -23,11 +23,13 @@ import type {
   PrFilesViewed,
   PrFileViewedChange,
   PrImage,
+  PrLabelCandidates,
   PrListQuery,
   PrListResult,
   PrProvider,
   PrReactionContent,
   PrReviewCommentDraft,
+  PrReviewerCandidates,
   PrReviewerRef,
   PrReviewVerdict,
   PrThreadCommentsPage,
@@ -126,6 +128,16 @@ export function prDiffFileContents(
 
 export function prFilesViewed(path: string, number: number): Promise<PrFilesViewed> {
   return gated(() => invoke<PrFilesViewed>("pr_files_viewed", { path, number }));
+}
+
+/** Who the reviewer picker offers, those already asked marked. */
+export function prReviewerCandidates(path: string, number: number): Promise<PrReviewerCandidates> {
+  return gated(() => invoke<PrReviewerCandidates>("pr_reviewer_candidates", { path, number }));
+}
+
+/** The repository's labels, those on this pull request marked. */
+export function prLabelCandidates(path: string, number: number): Promise<PrLabelCandidates> {
+  return gated(() => invoke<PrLabelCandidates>("pr_label_candidates", { path, number }));
 }
 
 // ── writes ──────────────────────────────────────────────────────────────

@@ -653,6 +653,29 @@ impl GitHub {
         })
     }
 
+    /// Who the reviewer picker offers. Read when the picker opens, never
+    /// with the detail: most readers never open it.
+    pub async fn reviewer_candidates(&self, number: u64) -> Result<PrReviewerCandidates, PrError> {
+        let data = self
+            .read(
+                q::PULL_REQUEST_REVIEWER_CANDIDATES,
+                self.vars(number, json!({})),
+            )
+            .await?;
+        not_found_or(parse::to_reviewer_candidates(&data))
+    }
+
+    /// What the label picker offers.
+    pub async fn label_candidates(&self, number: u64) -> Result<PrLabelCandidates, PrError> {
+        let data = self
+            .read(
+                q::PULL_REQUEST_LABEL_CANDIDATES,
+                self.vars(number, json!({})),
+            )
+            .await?;
+        not_found_or(parse::to_label_candidates(&data))
+    }
+
     // ── writes ───────────────────────────────────────────────────────────
 
     /// The pull request's own node id, which mutations on it are addressed

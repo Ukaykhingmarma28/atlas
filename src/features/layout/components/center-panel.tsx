@@ -65,6 +65,12 @@ const NotebookViewer = lazy(() =>
 const CommitView = lazy(() =>
   import("@/features/git/components/commit-view").then((m) => ({ default: m.CommitView })),
 );
+// One pull request (`pull-request:<checkout>:<number>`); its own chunk.
+const PullRequestPanel = lazy(() =>
+  import("@/features/pull-requests/components/pull-request-panel").then((m) => ({
+    default: m.PullRequestPanel,
+  })),
+);
 // The review diff (`diff`, `session-changes`). Its own chunk, which is the only
 // thing that imports the diff viewer, Shiki and their workers.
 const ReviewPanel = lazy(() =>
@@ -124,7 +130,9 @@ import {
   Minimize2,
   MessagesSquare,
   FolderTree,
+  GitPullRequestArrow,
 } from "lucide-react";
+import { readPullRequestTabData } from "@/features/pull-requests/lib/open-pull-request-tab";
 import { PROJECTLESS_TYPES, surfaceMinWidth, type TabType } from "@/lib/constants";
 import { teamChatShown, toggleTeamChat } from "../lib/team-chat";
 import { SessionContextButton } from "@/features/session-context/components/session-context-button";
@@ -147,6 +155,7 @@ const tabIcons: Record<TabType, FallbackIcon> = {
   terminal: Terminal,
   diff: GitCompare,
   commit: GitCommitHorizontal,
+  "pull-request": GitPullRequestArrow,
   "session-changes": FileDiff,
   "source-control": GitBranch,
   log: ScrollText,
@@ -1056,6 +1065,14 @@ function TabContent({ tab, projectId = null }: { tab: Tab; projectId?: string | 
       return <ReviewPanel tabId={tab.id} repoPath={tab.data.repoPath as string} />;
     case "commit":
       return <CommitView repoPath={tab.data.repoPath as string} sha={tab.data.sha as string} />;
+    case "pull-request": {
+      const pr = readPullRequestTabData(tab.data);
+      return pr ? (
+        <PullRequestPanel tabId={tab.id} repoPath={pr.repoPath} number={pr.number} />
+      ) : (
+        <PlaceholderContent tab={tab} />
+      );
+    }
     case "session-changes":
       return (
         <ReviewPanel
