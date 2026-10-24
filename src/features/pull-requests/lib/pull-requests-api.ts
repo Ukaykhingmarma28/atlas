@@ -9,6 +9,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import { classifyPrError, ghGate, noteGhOutcome } from "./pr-errors";
+import type { GuideCheckout } from "./pull-request-guide-types";
 import type {
   PrActionInput,
   PrActivity,
@@ -248,4 +249,68 @@ export function prImage(path: string, url: string): Promise<PrImage> {
   return invoke<PrImage>("pr_image", { path, url }).catch((raw: unknown) => {
     throw classifyPrError(raw);
   });
+}
+
+// ── agent actions ───────────────────────────────────────────────────────
+
+/** Where a "Fix" session runs: the checkout already on the pull request's
+ *  branch, or a new worktree with it checked out. Never switches the main
+ *  checkout (`commands/pull_requests/checkout.rs`). */
+export interface PrCheckout {
+  branch: string;
+  /** `null` when the main checkout is already on the branch. */
+  worktreePath: string | null;
+  cwd: string;
+  isOnPullRequestHead: boolean;
+  reused: boolean;
+}
+
+export function prPrepareCheckout(
+  path: string,
+  detail: Pick<PrDetail, "number" | "headBranch" | "headSha" | "isCrossRepository">,
+): Promise<PrCheckout> {
+  return gated(() =>
+    invoke<PrCheckout>("pr_prepare_checkout", {
+      path,
+      number: detail.number,
+      headBranch: detail.headBranch,
+      headSha: detail.headSha,
+      isCrossRepository: detail.isCrossRepository,
+    }),
+  );
+}
+
+/** The guide last kept for a pull request, as stored (checked by the caller).
+ *  Not gated: it reads Atlas's own data, never GitHub. */
+export function prGuideRead(repository: string, number: number): Promise<unknown> {
+  return invoke<unknown>("pr_guide_read", { repository, number }).catch((raw: unknown) => {
+    throw classifyPrError(raw);
+  });
+}
+
+export function prGuideWrite(repository: string, number: number, guide: unknown): Promise<void> {
+  return invoke<void>("pr_guide_write", { repository, number, guide }).catch((raw: unknown) => {
+    throw classifyPrError(raw);
+  });
+}
+
+/** A detached checkout of the head for a guide run, and the change it makes. */
+export function prGuidePrepare(
+  path: string,
+  detail: Pick<PrDetail, "number" | "headSha" | "headBranch" | "baseBranch">,
+): Promise<GuideCheckout> {
+  return invoke<GuideCheckout>("pr_guide_prepare", {
+    path,
+    number: detail.number,
+    headSha: detail.headSha ?? "",
+    headBranch: detail.headBranch,
+    baseBranch: detail.baseBranch,
+  }).catch((raw: unknown) => {
+    throw classifyPrError(raw);
+  });
+}
+
+/** Remove a guide run's checkout. Best-effort. */
+export function prGuideFinish(path: string, runId: string): Promise<void> {
+  return invoke<void>("pr_guide_finish", { path, runId }).catch(() => undefined);
 }

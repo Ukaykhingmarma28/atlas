@@ -10,16 +10,22 @@
 //! - [`gh`] — the transport: one bounded `gh api -i` process per request,
 //!   with rate-limit, conditional-read and concurrency policy;
 //! - [`images`] — the image proxy for bodies and comments;
-//! - [`create`] — opening a pull request with `gh pr create`.
+//! - [`create`] — opening a pull request with `gh pr create`;
+//! - [`checkout`] — the pull request's head checked out for a "Fix" session,
+//!   never by switching the main checkout;
+//! - [`guide`] — the Guide tab's read-only head checkout, the change it is
+//!   measured against, and the guide kept per pull request.
 //!
 //! Every command answers `Result<T, PrError>`; [`PrError`] serializes as
 //! `{ kind, message?, retryAt? }` so the frontend can tell "install gh" from
 //! "sign in" from "wait until" from "try again". Nothing here logs a
 //! repository, title, branch or URL.
 
+pub mod checkout;
 pub mod create;
 mod gh;
 mod github;
+pub mod guide;
 mod images;
 mod model;
 mod parse;

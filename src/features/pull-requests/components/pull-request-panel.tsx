@@ -46,14 +46,16 @@ import {
 } from "./pull-request-header";
 import { resolveStatePresentation } from "./pull-request-presentation";
 import { PullRequestDetailGhost, PullRequestUnavailableState } from "./pull-request-states";
+import { PullRequestGuideTab } from "./pull-request-guide-tab";
 import { PullRequestSummaryTab } from "./pull-request-summary-tab";
 import { PullRequestCodeTab } from "./pull-request-code-tab";
 import { PullRequestTimelineTab } from "./pull-request-timeline-tab";
 
-type InnerTab = "summary" | "timeline" | "code";
+type InnerTab = "summary" | "guide" | "timeline" | "code";
 
 const INNER_TABS = [
   { value: "summary", label: "Summary" },
+  { value: "guide", label: "Guide" },
   { value: "timeline", label: "Timeline" },
   { value: "code", label: "Code" },
 ] as const;
@@ -77,7 +79,7 @@ export function PullRequestPanel({
   const detail = detailQuery.data ?? null;
   const activity = activityQuery.data ?? null;
   const { pendingAction, perform, commentThen } = usePullRequestActions(repoPath, number);
-  const agent = usePullRequestAgentActions({ repoPath, number });
+  const agent = usePullRequestAgentActions({ repoPath, number, detail, activity });
   const scopeKey = `${repoPath}:${number}`;
 
   // The tab strip names the pull request once its title is known.
@@ -152,6 +154,7 @@ export function PullRequestPanel({
     repoPath,
     number,
     repositoryUrl: detail ? repositoryUrlOf(detail.url) : null,
+    agent,
   };
 
   if (!detail) {
@@ -252,6 +255,11 @@ export function PullRequestPanel({
               showsDeleteBranch={canDeleteBranch(detail)}
               pendingAction={pendingAction}
               perform={perform}
+              agent={agent}
+              onWriteGuide={() => {
+                agent.guide.write();
+                setTab("guide");
+              }}
             />
           </div>
 
@@ -329,6 +337,10 @@ export function PullRequestPanel({
                 checks={detail.checks}
                 checksState={checksState}
                 truncated={detail.checksTruncated}
+                onFix={
+                  agent.fixFinding ? (check) => agent.fixFinding?.({ kind: "check", check }) : null
+                }
+                fixing={agent.pending !== null}
               />
             ) : null}
           </nav>
@@ -345,6 +357,14 @@ export function PullRequestPanel({
               activityError={activityError}
               onRetryActivity={() => void activityQuery.refetch()}
               agent={agent}
+            />
+          ) : tab === "guide" ? (
+            <PullRequestGuideTab
+              scrollerRef={setScroller}
+              repoPath={repoPath}
+              number={number}
+              agent={agent}
+              active
             />
           ) : tab === "timeline" ? (
             <PullRequestTimelineTab
