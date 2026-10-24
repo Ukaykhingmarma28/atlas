@@ -3661,6 +3661,10 @@ pub struct ThreadRow {
     /// in Atlas. The session context overlay's Lineage reads it both ways:
     /// this row's parent, and the rows that name this one.
     pub forked_from_session_id: Option<String>,
+    /// The pull requests linked to the session — opened from it, found on
+    /// its branch, linked by the user or the agent — each with the host's
+    /// last reported state. Tombstones (unlinked ones) are left out.
+    pub pull_requests: Vec<super::session_pull_requests::PullRequestLinkWire>,
 }
 
 /// One project attached to a session, as every surface reads it.
@@ -3983,6 +3987,7 @@ fn thread_row(thread: &ThreadMetadata, live: &LiveContext<'_>) -> ThreadRow {
             .map(AttachedProjectWire::from)
             .collect(),
         forked_from_session_id,
+        pull_requests: super::session_pull_requests::links_wire(&thread.pull_requests),
     }
 }
 

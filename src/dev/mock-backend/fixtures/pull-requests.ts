@@ -210,6 +210,7 @@ function pull(
       labels: full.labels,
       reviewDecision: full.reviewDecision,
       checksState: full.checksState,
+      commentCount: full.number % 7,
     },
   };
 }

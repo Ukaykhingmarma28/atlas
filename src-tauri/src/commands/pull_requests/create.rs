@@ -68,9 +68,15 @@ pub async fn pr_create_draft(path: String) -> Result<PrCreateDraft, PrError> {
 }
 
 /// Open a pull request for the current branch. The branch must already be on
-/// the remote; the overlay pushes it first.
+/// the remote; the overlay pushes it first. `sessionId`, the live session the
+/// overlay belongs to, has the new pull request linked to it as `created`.
 #[tauri::command]
-pub async fn pr_create(path: String, input: PrCreateInput) -> Result<PrCreated, PrError> {
+pub async fn pr_create(
+    path: String,
+    input: PrCreateInput,
+    session_id: Option<String>,
+    host: tauri::State<'_, std::sync::Arc<crate::commands::agent_host::AgentHost>>,
+) -> Result<PrCreated, PrError> {
     let cwd = super::checkout(&path)?.to_string();
     let title = input.title.trim();
     if title.is_empty() {
@@ -89,8 +95,23 @@ pub async fn pr_create(path: String, input: PrCreateInput) -> Result<PrCreated, 
         .await
         .map_err(|e| PrError::failed(e.to_string()))?;
     let out = run_gh(OsStr::new("gh"), &cwd, &args, input.body.as_bytes()).await?;
-    parse_created(&out)
-        .ok_or_else(|| PrError::failed("gh opened the pull request but did not say where it is."))
+    let created = parse_created(&out).ok_or_else(|| {
+        PrError::failed("gh opened the pull request but did not say where it is.")
+    })?;
+    // Opened from a session: it is that session's pull request from now on.
+    if let Some(session_id) = session_id.as_deref().filter(|s| !s.is_empty()) {
+        crate::commands::session_pull_requests::record_created(
+            host.inner(),
+            session_id,
+            &created.url,
+            created.number,
+            title,
+            &head,
+            input.base.as_deref(),
+            input.draft,
+        );
+    }
+    Ok(created)
 }
 
 /// `gh pr create`'s arguments. The body goes on stdin (`--body-file -`), so

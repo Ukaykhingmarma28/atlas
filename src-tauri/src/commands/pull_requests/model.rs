@@ -528,6 +528,10 @@ pub struct PrListEntry {
     pub labels: Vec<PrLabel>,
     pub review_decision: Option<PrReviewDecision>,
     pub checks_state: Option<PrChecksState>,
+    /// Conversation comments, the count the list row shows. Line comments
+    /// inside review threads are not among them.
+    #[serde(default)]
+    pub comment_count: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

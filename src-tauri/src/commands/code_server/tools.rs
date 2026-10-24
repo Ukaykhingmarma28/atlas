@@ -29,6 +29,7 @@ use serde_json::{json, Value};
 use super::{CodeToolsGate, CODE_PATH};
 use crate::commands::memory_server::{Grant, TOOLS_LIST_TTL_MS};
 use crate::commands::session_projects::ProjectAccessBroker;
+use crate::commands::session_pull_requests::{repository_of_url, PullRequestLinkBroker};
 use atlas_thread_metadata::ProjectAccess;
 
 /// What the server tells the agent about itself. The engine shows it as the
@@ -43,7 +44,8 @@ output, so follow next_offset instead of re-running a broader search. Paths are 
 Those two are the whole search surface: there is no symbol, semantic or impact tool here (ADR-0021). \
 When you need a folder outside your working directory and the session's attached projects (another \
 repository, say), call request_project_access: the user approves or denies it in the session, and \
-an approved folder is attached at the access granted.";
+an approved folder is attached at the access granted. When you open a pull request (or start \
+work on one that already exists), call link_pull_request so the user sees it beside this session.";
 
 /// How long one call may search before it answers with what it has.
 pub(crate) const DEADLINE: Duration = Duration::from_secs(15);
@@ -58,6 +60,10 @@ const FIND_DESCRIPTION: &str = "Find files by path. A glob (contains * ? [ {) ma
 const ACCESS_DESCRIPTION: &str = "Ask the user to attach a folder outside your working directory to this session — another project or repository you need to read or change. The user approves or denies it in the session; approved, it is attached at the access granted (read_only by default) and your sandbox includes it from your next turn. Not for system folders, the home folder or anything above it. Blocks up to 45 s for the answer; if it is still pending, carry on and call again later.";
 
 const NO_ACCESS_NOTE: &str = "Project access requests are not available in this session.";
+
+const LINK_PR_DESCRIPTION: &str = "Link a pull request to this session, so Atlas shows its state and checks beside the session and keeps them current. Call it for every pull request you open (gh pr create) or work on. Pass the URL, or the number in this session's repository. Linking one already linked succeeds and says so.";
+
+const NO_LINK_NOTE: &str = "Linking pull requests is not available in this session.";
 
 fn schema(value: Value) -> Arc<JsonObject> {
     match value {
@@ -139,7 +145,58 @@ pub(super) fn tools() -> Vec<Tool> {
             })),
         )
         .with_annotations(ToolAnnotations::new().read_only(false)),
+        // Not read-only (it writes the session's links), but linking twice
+        // is linking once.
+        Tool::new(
+            Cow::Borrowed(LINK_PR_TOOL),
+            Cow::Borrowed(LINK_PR_DESCRIPTION),
+            schema(json!({
+                "type": "object",
+                "properties": {
+                    "url": { "type": "string", "description": "The pull request's URL." },
+                    "number": { "type": "integer", "minimum": 1, "description": "Its number in this session's repository, when no URL is given." }
+                }
+            })),
+        )
+        .with_annotations(ToolAnnotations::new().read_only(false)),
     ]
+}
+
+/// The tool an agent links a pull request to its session with.
+pub(crate) const LINK_PR_TOOL: &str = "link_pull_request";
+
+#[derive(Debug, Deserialize)]
+struct LinkArgs {
+    url: Option<String>,
+    number: Option<u64>,
+}
+
+/// The pull request the arguments name: `(repository, number)` from a URL,
+/// or `(None, number)`.
+pub(super) fn link_target(
+    url: Option<&str>,
+    number: Option<u64>,
+) -> Result<(Option<String>, u64), String> {
+    if let Some(url) = url.map(str::trim).filter(|u| !u.is_empty()) {
+        let parsed = url
+            .split(['#', '?'])
+            .next()
+            .unwrap_or(url)
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .and_then(|n| n.parse::<u64>().ok());
+        return match (repository_of_url(url), parsed) {
+            (Some(repository), Some(n)) if n > 0 => Ok((Some(repository), n)),
+            _ => Err(format!("{LINK_PR_TOOL}: {url:?} is not a pull request URL")),
+        };
+    }
+    match number {
+        Some(n) if n > 0 => Ok((None, n)),
+        _ => Err(format!(
+            "{LINK_PR_TOOL}: pass the pull request's url or number"
+        )),
+    }
 }
 
 /// The tool an agent asks for a folder with.
@@ -311,11 +368,46 @@ pub struct CodeTools {
     /// Where `request_project_access` goes; `None` answers that it is not
     /// available (the tests that need no host).
     access: Option<Arc<dyn ProjectAccessBroker>>,
+    /// Where `link_pull_request` goes; `None` as for `access`.
+    pull_requests: Option<Arc<dyn PullRequestLinkBroker>>,
 }
 
 impl CodeTools {
     pub fn new(gate: CodeToolsGate) -> Self {
-        Self { gate, access: None }
+        Self {
+            gate,
+            access: None,
+            pull_requests: None,
+        }
+    }
+
+    /// Route `link_pull_request` to `broker`.
+    pub fn with_pull_requests(mut self, broker: Arc<dyn PullRequestLinkBroker>) -> Self {
+        self.pull_requests = Some(broker);
+        self
+    }
+
+    /// `link_pull_request`: the target read off the arguments, linked by the
+    /// broker against the session's checkout.
+    async fn link_pull_request(&self, grant: Grant, args: Value) -> CallToolResult {
+        let Some(broker) = self.pull_requests.clone() else {
+            return tool_error(NO_LINK_NOTE);
+        };
+        let args: LinkArgs = match serde_json::from_value(args) {
+            Ok(args) => args,
+            Err(e) => return tool_error(format!("{LINK_PR_TOOL}: {e}")),
+        };
+        let (repository, number) = match link_target(args.url.as_deref(), args.number) {
+            Ok(target) => target,
+            Err(e) => return tool_error(e),
+        };
+        match broker
+            .link(grant.session_id, grant.cwd, repository, number)
+            .await
+        {
+            Ok(text) => CallToolResult::success(vec![Content::text(text)]),
+            Err(e) => tool_error(e),
+        }
     }
 
     /// Route `request_project_access` to `broker`.
@@ -370,6 +462,9 @@ impl CodeTools {
         let args = Value::Object(request.arguments.unwrap_or_default());
         if name == REQUEST_ACCESS_TOOL {
             return self.request_access(grant, args).await;
+        }
+        if name == LINK_PR_TOOL {
+            return self.link_pull_request(grant, args).await;
         }
         let root = PathBuf::from(&grant.cwd);
         let job: Job = match name.as_str() {

@@ -1435,7 +1435,30 @@ fn to_list_entry(node: &Value, viewer: Option<&str>) -> Option<PrListEntry> {
         labels: to_labels(node.get("labels")),
         review_decision: to_review_decision_with_reviews(node.get("reviewDecision"), &latest),
         checks_state: rollup_checks_state(&rollup_refs),
+        comment_count: node
+            .get("comments")
+            .and_then(|c| c.get("totalCount"))
+            .and_then(Value::as_u64)
+            .map_or(0, |n| u32::try_from(n).unwrap_or(u32::MAX)),
     })
+}
+
+/// The rows a [`pull_requests_by_number`](super::queries::pull_requests_by_number)
+/// answer holds, in the order the numbers were asked. A number the
+/// repository does not have is left out.
+pub(crate) fn to_entries_by_alias(
+    data: &Value,
+    count: usize,
+    viewer: Option<&str>,
+) -> Vec<PrListEntry> {
+    let Some(repository) = data.get("repository") else {
+        return Vec::new();
+    };
+    (0..count)
+        .filter_map(|ix| repository.get(format!("p{ix}")))
+        .filter(|node| !node.is_null())
+        .filter_map(|node| to_list_entry(node, viewer))
+        .collect()
 }
 
 /// A search page's rows, each read on its own: a node that is not a pull

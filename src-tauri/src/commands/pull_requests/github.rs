@@ -36,6 +36,9 @@ const DIFF_MAX_BYTES: usize = 8 * 1024 * 1024;
 /// A file shown whole in a diff, past which it is refused rather than read.
 const FILE_CONTENTS_MAX_BYTES: usize = 1024 * 1024;
 const LIST_DEFAULT_ROWS: u32 = 50;
+/// Aliased pull requests in one by-number read; GraphQL's node limit is far
+/// above it, and a session never links this many.
+const ENTRIES_PER_REQUEST: usize = 50;
 const EMPTY_OID: &str = "0000000000000000000000000000000000000000";
 
 static REPO_CONTEXTS: LazyLock<Mutex<HashMap<String, (RepoContext, i64)>>> =
@@ -196,6 +199,45 @@ impl GitHub {
             entries,
             next_cursor,
         })
+    }
+
+    /// Pull requests by number, as listing rows, in one request per hundred.
+    /// A number the repository does not have is left out of the answer
+    /// rather than failing it: GitHub fails the whole document for one
+    /// missing pull request, so such a batch is read again one by one.
+    pub async fn entries(&self, numbers: &[u64]) -> Result<Vec<PrListEntry>, PrError> {
+        let mut out = Vec::with_capacity(numbers.len());
+        for chunk in numbers.chunks(ENTRIES_PER_REQUEST) {
+            match self.entries_chunk(chunk).await {
+                Ok(rows) => out.extend(rows),
+                Err(PrError::NotFound) if chunk.len() > 1 => {
+                    for number in chunk {
+                        match self.entries_chunk(std::slice::from_ref(number)).await {
+                            Ok(rows) => out.extend(rows),
+                            Err(PrError::NotFound) => {}
+                            Err(e) => return Err(e),
+                        }
+                    }
+                }
+                Err(PrError::NotFound) => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(out)
+    }
+
+    async fn entries_chunk(&self, numbers: &[u64]) -> Result<Vec<PrListEntry>, PrError> {
+        let data = self
+            .read(
+                &q::pull_requests_by_number(numbers),
+                json!({ "owner": self.ctx.owner, "name": self.ctx.name }),
+            )
+            .await?;
+        Ok(parse::to_entries_by_alias(
+            &data,
+            numbers.len(),
+            self.ctx.viewer.as_deref(),
+        ))
     }
 
     pub async fn detail(&self, number: u64) -> Result<PrDetail, PrError> {

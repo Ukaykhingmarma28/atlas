@@ -1040,9 +1040,15 @@ pub fn install_manager(app: &AppHandle) {
         // gets the code tools can ask for a folder, and the host puts the
         // request on the session's approval card.
         let code_router = super::code_server::router(
-            super::code_server::CodeTools::new(code_tools.clone()).with_access(Arc::new(
-                super::session_projects::HostAccessBroker(Arc::downgrade(&host)),
-            )),
+            super::code_server::CodeTools::new(code_tools.clone())
+                .with_access(Arc::new(super::session_projects::HostAccessBroker(
+                    Arc::downgrade(&host),
+                )))
+                // `link_pull_request` too: the agent ties the pull requests it
+                // opens to its session.
+                .with_pull_requests(Arc::new(
+                    super::session_pull_requests::HostPullRequestBroker(Arc::downgrade(&host)),
+                )),
         );
         // Every agent that can take the server is handed it on each session
         // request, with a token of its own. It is the only way memory reaches

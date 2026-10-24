@@ -651,6 +651,7 @@ const PULL_REQUEST_ROW: &str = r#"fragment PullRequestRow on PullRequest {
   labels(first: 20) {
     nodes { name color }
   }
+  comments { totalCount }
   commits(last: 1) {
     nodes {
       commit {
@@ -670,6 +671,26 @@ pub fn pull_request_search() -> String {
     pageInfo {{ hasNextPage endCursor }}
     nodes {{ ...PullRequestRow }}
   }}
+}}
+{PULL_REQUEST_ROW}"#
+    )
+}
+
+/// Pull requests by number, as listing rows: one aliased field per number
+/// (`p0`, `p1`, …), so a sweep over a session's links is one request. A
+/// number the repository does not have answers `null` under its alias.
+pub fn pull_requests_by_number(numbers: &[u64]) -> String {
+    let fields: String = numbers
+        .iter()
+        .enumerate()
+        .map(|(ix, number)| {
+            format!("    p{ix}: pullRequest(number: {number}) {{ ...PullRequestRow }}\n")
+        })
+        .collect();
+    format!(
+        r#"query PullRequestsByNumber($owner: String!, $name: String!) {{
+  repository(owner: $owner, name: $name) {{
+{fields}  }}
 }}
 {PULL_REQUEST_ROW}"#
     )
@@ -951,9 +972,18 @@ mod tests {
             PULL_REQUEST_SOURCE_BRANCH.to_string(),
             UPDATE_PULL_REQUEST_BRANCH.to_string(),
             set_files_viewed(&[true, false]),
+            pull_requests_by_number(&[12, 7]),
         ] {
             well_formed(&doc);
         }
+    }
+
+    #[test]
+    fn pull_requests_by_number_aliases_each_number_in_order() {
+        let doc = pull_requests_by_number(&[12, 7]);
+        assert!(doc.contains("p0: pullRequest(number: 12) { ...PullRequestRow }"));
+        assert!(doc.contains("p1: pullRequest(number: 7) { ...PullRequestRow }"));
+        assert!(doc.contains("comments { totalCount }"));
     }
 
     #[test]

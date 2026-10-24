@@ -53,6 +53,7 @@ function pr(
     labels: [],
     reviewDecision: null,
     checksState,
+    commentCount: 0,
   };
 }
 
@@ -74,6 +75,7 @@ function thread(sessionId: string, title: string, hours: number, parent: string 
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
+    pullRequests: [],
     forkedFromSessionId: parent,
     attachedProjects: [],
     model: "Claude Sonnet 4.5",

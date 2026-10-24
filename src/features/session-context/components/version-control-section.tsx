@@ -24,6 +24,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { useChatStore } from "@/features/chat/stores/chat-store";
 import { openSessionChanges } from "@/features/git/lib/open-session-changes";
 import { openPullRequestTab } from "@/features/pull-requests/lib/open-pull-request-tab";
 import { useGitStore } from "@/features/git/stores/git-store";
@@ -75,12 +76,13 @@ export function VersionControlSection({
 
 function VersionControlRows({ tabId, projectPath }: { tabId: string | null; projectPath: string }) {
   const branch = useGitStore.use.branch();
+  const sessionId = useChatStore((s) => (tabId ? (s.sessions[tabId]?.acpSessionId ?? null) : null));
   const prs = useSessionPullRequests(projectPath, branch || null);
   return (
     <ContextSection title="Version control" showHeading={false}>
       <BranchPicker />
       <PullRequestRows projectPath={projectPath} prs={prs} />
-      <QuickActionRow projectPath={projectPath} prs={prs} />
+      <QuickActionRow projectPath={projectPath} sessionId={sessionId} prs={prs} />
       <ChangesRow tabId={tabId} projectPath={projectPath} />
     </ContextSection>
   );
@@ -153,7 +155,7 @@ const QUICK_ICON: Record<QuickAction["kind"], LucideIcon> = {
   hint: CloudUpload,
 };
 
-function runQuickAction(action: QuickAction, projectPath: string): void {
+function runQuickAction(action: QuickAction, projectPath: string, sessionId: string | null): void {
   switch (action.kind) {
     case "push":
       void pushBranch();
@@ -165,7 +167,7 @@ function runQuickAction(action: QuickAction, projectPath: string): void {
       void pullBranch();
       return;
     case "create-pr":
-      void startCreatePr(projectPath, false);
+      void startCreatePr(projectPath, false, sessionId);
       return;
     case "open-changes":
       revealSourceControl();
@@ -175,7 +177,15 @@ function runQuickAction(action: QuickAction, projectPath: string): void {
   }
 }
 
-function QuickActionRow({ projectPath, prs }: { projectPath: string; prs: SessionPullRequests }) {
+function QuickActionRow({
+  projectPath,
+  sessionId,
+  prs,
+}: {
+  projectPath: string;
+  sessionId: string | null;
+  prs: SessionPullRequests;
+}) {
   const isRepo = useGitStore.use.isRepo();
   const branch = useGitStore.use.branch();
   const branches = useGitStore.use.branchesFull();
@@ -206,7 +216,7 @@ function QuickActionRow({ projectPath, prs }: { projectPath: string; prs: Sessio
   const offersPr = action.kind === "create-pr";
   return (
     <ContextSplitRow
-      onClick={() => runQuickAction(action, projectPath)}
+      onClick={() => runQuickAction(action, projectPath, sessionId)}
       disabled={action.kind === "hint"}
       title={action.kind === "hint" ? action.hint : undefined}
       menuLabel="More git actions"
@@ -214,7 +224,7 @@ function QuickActionRow({ projectPath, prs }: { projectPath: string; prs: Sessio
         <>
           {offersPr && (
             <>
-              <DropdownMenuItem onClick={() => void startCreatePr(projectPath, true)}>
+              <DropdownMenuItem onClick={() => void startCreatePr(projectPath, true, sessionId)}>
                 <GitPullRequestDraft />
                 {hasUpstream && ahead === 0 ? "Create draft PR" : "Push & create draft PR"}
               </DropdownMenuItem>

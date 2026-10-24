@@ -32,8 +32,13 @@ export function useCreatePrDraft(projectPath: string | null, branch: string | nu
   });
 }
 
-/** Push what needs pushing, then open the Create PR dialog. */
-export async function startCreatePr(projectPath: string, draft: boolean): Promise<void> {
+/** Push what needs pushing, then open the Create PR dialog. `sessionId` is
+ *  the session it is opened from; the pull request is linked to it. */
+export async function startCreatePr(
+  projectPath: string,
+  draft: boolean,
+  sessionId: string | null,
+): Promise<void> {
   const { branchesFull, ahead } = useGitStore.getState();
   const current = branchesFull.find((b) => b.isCurrent && !b.isRemote);
   if (!current) {
@@ -51,7 +56,12 @@ export async function startCreatePr(projectPath: string, draft: boolean): Promis
       toast.error("A pull request cannot be opened from a detached HEAD.");
       return;
     }
-    useSessionContextStore.getState().actions.requestCreatePr({ projectPath, draft, prefill });
+    useSessionContextStore.getState().actions.requestCreatePr({
+      projectPath,
+      draft,
+      prefill,
+      sessionId,
+    });
   } catch (raw) {
     toast.error("Could not prepare the pull request", {
       description: prErrorMessage(classifyPrError(raw)),
@@ -59,14 +69,15 @@ export async function startCreatePr(projectPath: string, draft: boolean): Promis
   }
 }
 
-/** Open the pull request the dialog confirmed, show it in its own tab, and
- *  say where it is on the host. */
+/** Open the pull request the dialog confirmed, link it to `sessionId`, show
+ *  it in its own tab, and say where it is on the host. */
 export async function submitCreatePr(
   client: QueryClient,
   projectPath: string,
   input: PrCreateInput,
+  sessionId: string | null,
 ): Promise<PrCreated> {
-  const created = await prCreate(projectPath, input);
+  const created = await prCreate(projectPath, input, sessionId);
   await invalidatePullRequestQueries(client, projectPath);
   openPullRequestTab({ repoPath: projectPath, number: created.number, title: input.title });
   toast.success(`Opened ${input.draft ? "draft " : ""}pull request #${created.number}`, {
