@@ -113,6 +113,8 @@ fn remark(login: &str, created_at: &str, body: &str) -> PrComment {
         path: Some("src/index.ts".into()),
         review_state: None,
         reactions: vec![],
+        can_edit: false,
+        can_delete: false,
     }
 }
 

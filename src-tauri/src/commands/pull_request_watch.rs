@@ -749,6 +749,8 @@ async fn read_remarks(
                         path: Some(thread.path.clone()),
                         review_state: None,
                         reactions: c.reactions,
+                        can_edit: c.can_edit,
+                        can_delete: c.can_delete,
                     },
                 );
             }
@@ -1349,6 +1351,8 @@ mod fake {
                         path: r.path,
                         review_state: None,
                         reactions: Vec::new(),
+                        can_edit: false,
+                        can_delete: false,
                     })
                     .collect();
                 let state = match pr.state.as_str() {
