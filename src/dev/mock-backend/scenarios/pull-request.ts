@@ -1,6 +1,8 @@
 // The pull-request surface tab, opened beside the session on load.
 //
-//  - `pull-request` — number 420: 300 comments and 100 checks, for paging and scale;
+//  - `pull-request` — number 420: 300 comments, 100 checks and a long history
+//    (label runs, review requests, a draft round trip, force-pushes, a close and
+//    reopen, a dismissed review), for paging and scale;
 //  - `pull-request-review` — number 412: changes requested, threads, behind its base;
 //  - `pull-request-merged` — number 398; `pull-request-draft` — number 405;
 //    `pull-request-conflict` — number 401, conflicting with a failing check;
@@ -38,7 +40,7 @@ function pullRequestScenario(
 
 export const pullRequest = pullRequestScenario(
   "pull-request",
-  "A pull request tab on a long one: 300 comments, 100 checks.",
+  "A pull request tab on a long one: 300 comments, 100 checks, a long timeline.",
   420,
 );
 export const pullRequestReview = pullRequestScenario(

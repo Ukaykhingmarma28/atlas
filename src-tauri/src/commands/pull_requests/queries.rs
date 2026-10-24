@@ -485,6 +485,8 @@ pub const PULL_REQUEST_TIMELINE: &str = r#"query PullRequestTimeline($owner: Str
           CONVERT_TO_DRAFT_EVENT
           REVIEW_REQUESTED_EVENT
           HEAD_REF_DELETED_EVENT
+          LABELED_EVENT
+          UNLABELED_EVENT
         ]
       ) {
         pageInfo { hasNextPage endCursor }
@@ -545,6 +547,18 @@ pub const PULL_REQUEST_TIMELINE: &str = r#"query PullRequestTimeline($owner: Str
             }
           }
           ... on HeadRefDeletedEvent { id createdAt actor { __typename login avatarUrl } }
+          ... on LabeledEvent {
+            id
+            createdAt
+            actor { __typename login avatarUrl }
+            label { name color }
+          }
+          ... on UnlabeledEvent {
+            id
+            createdAt
+            actor { __typename login avatarUrl }
+            label { name color }
+          }
         }
       }
     }

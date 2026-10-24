@@ -16,6 +16,7 @@ fn fixture(name: &str) -> Value {
         "thread-comments" => include_str!("../fixtures/thread-comments.json"),
         "subject" => include_str!("../fixtures/subject.json"),
         "timeline" => include_str!("../fixtures/timeline.json"),
+        "timeline-labels" => include_str!("../fixtures/timeline-labels.json"),
         "commits" => include_str!("../fixtures/commits.json"),
         "search" => include_str!("../fixtures/search.json"),
         "files-viewed" => include_str!("../fixtures/files-viewed.json"),
@@ -190,6 +191,109 @@ fn the_timeline_opens_with_the_pull_request_itself() {
     assert_eq!(page.next_cursor, None);
     let later = to_timeline_page(&fixture("timeline"), false).unwrap();
     assert_eq!(later.items.len(), 34);
+}
+
+#[test]
+fn the_timeline_reads_labels_added_and_taken_off() {
+    let page = to_timeline_page(&fixture("timeline-labels"), true).unwrap();
+    let labeled: Vec<_> = page
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            PrTimelineItem::Labeled { label, actor, .. } => Some((label, actor)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(labeled.len(), 3);
+    assert_eq!(
+        labeled[0].0,
+        &PrLabel {
+            name: "external".into(),
+            color: Some("2700AF".into())
+        }
+    );
+    assert!(labeled[0].1.as_ref().is_some_and(|a| a.is_bot));
+    let unlabeled: Vec<_> = page
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            PrTimelineItem::Unlabeled { label, .. } => Some(label.name.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(unlabeled, ["needs-triage"]);
+}
+
+/// An item type asked for but not read would arrive and vanish; one read
+/// but not asked for would never arrive.
+#[test]
+fn the_timeline_reads_every_item_type_it_asks_for() {
+    let doc = super::super::queries::PULL_REQUEST_TIMELINE;
+    let list = doc
+        .split("itemTypes: [")
+        .nth(1)
+        .and_then(|rest| rest.split(']').next())
+        .unwrap();
+    let asked: Vec<String> = list
+        .split_whitespace()
+        .map(|item| {
+            item.split('_')
+                .map(|word| {
+                    let lower = word.to_lowercase();
+                    let mut chars = lower.chars();
+                    chars
+                        .next()
+                        .map(|c| c.to_uppercase().collect::<String>() + chars.as_str())
+                        .unwrap_or_default()
+                })
+                .collect()
+        })
+        .collect();
+    assert!(asked.len() > 10);
+    let source = include_str!("../parse.rs");
+    for typename in &asked {
+        assert!(
+            source.contains(&format!("\"{typename}\" =>")),
+            "{typename} is asked for but never read"
+        );
+        assert!(
+            doc.contains(&format!("... on {typename}")),
+            "{typename} is asked for with no fields"
+        );
+    }
+}
+
+#[test]
+fn a_label_event_whose_label_is_gone_is_left_out() {
+    let data = json!({
+        "repository": { "pullRequest": {
+            "createdAt": "2026-10-17T15:00:00Z",
+            "author": null,
+            "timelineItems": {
+                "pageInfo": { "hasNextPage": false, "endCursor": null },
+                "nodes": [
+                    { "__typename": "LabeledEvent", "id": "LE_1",
+                      "createdAt": "2026-10-17T15:22:08Z", "actor": null, "label": null },
+                    { "__typename": "UnlabeledEvent", "id": "UNLE_1",
+                      "createdAt": "2026-10-17T15:22:09Z", "actor": null,
+                      "label": { "name": "bug", "color": null } }
+                ]
+            }
+        } }
+    });
+    let page = to_timeline_page(&data, false).unwrap();
+    assert_eq!(
+        page.items,
+        [PrTimelineItem::Unlabeled {
+            id: "UNLE_1".into(),
+            actor: None,
+            label: PrLabel {
+                name: "bug".into(),
+                color: None
+            },
+            at: "2026-10-17T15:22:09Z".into(),
+        }]
+    );
 }
 
 #[test]

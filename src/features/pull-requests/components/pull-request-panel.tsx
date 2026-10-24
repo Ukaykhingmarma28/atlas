@@ -9,7 +9,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { GitCommitHorizontal, MessageSquare } from "lucide-react";
+import { MessageSquare } from "lucide-react";
 
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { cn } from "@/lib/utils";
@@ -48,6 +48,7 @@ import {
 import { resolveStatePresentation } from "./pull-request-presentation";
 import { PullRequestDetailGhost, PullRequestUnavailableState } from "./pull-request-states";
 import { PullRequestSummaryTab } from "./pull-request-summary-tab";
+import { PullRequestTimelineTab } from "./pull-request-timeline-tab";
 
 type InnerTab = "summary" | "timeline" | "code";
 
@@ -348,10 +349,11 @@ export function PullRequestPanel({
               agent={agent}
             />
           ) : tab === "timeline" ? (
-            <NotYet
-              icon={<GitCommitHorizontal aria-hidden className="size-6 text-muted-foreground" />}
-              title="The timeline is on its way"
-              body="Commits, reviews and state changes in order will land here. The Summary has the conversation for now."
+            <PullRequestTimelineTab
+              scrollerRef={setScroller}
+              repoPath={repoPath}
+              detail={detail}
+              activity={activity}
             />
           ) : (
             <NotYet

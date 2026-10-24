@@ -698,6 +698,20 @@ pub enum PrTimelineItem {
         actor: Option<PrActor>,
         at: String,
     },
+    #[serde(rename_all = "camelCase")]
+    Labeled {
+        id: String,
+        actor: Option<PrActor>,
+        label: PrLabel,
+        at: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    Unlabeled {
+        id: String,
+        actor: Option<PrActor>,
+        label: PrLabel,
+        at: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1001,6 +1015,22 @@ mod tests {
             serde_json::json!({
                 "kind": "force-pushed", "id": "e", "actor": null,
                 "beforeOid": "a", "afterOid": "b", "at": "t"
+            })
+        );
+        let label = PrTimelineItem::Unlabeled {
+            id: "e".into(),
+            actor: None,
+            label: PrLabel {
+                name: "bug".into(),
+                color: Some("d73a4a".into()),
+            },
+            at: "t".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(label).unwrap(),
+            serde_json::json!({
+                "kind": "unlabeled", "id": "e", "actor": null,
+                "label": { "name": "bug", "color": "d73a4a" }, "at": "t"
             })
         );
     }
