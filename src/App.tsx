@@ -1148,7 +1148,9 @@ export function App() {
     };
   }, []);
 
-  // Auto-save editor state when tabs change
+  // Auto-save editor state when tabs change. Keyed on the tabs' order, not
+  // just their count, so a tab dragged to a new place in its strip is saved.
+  const tabOrder = useMemo(() => tabs.map((t) => t.id).join("\n"), [tabs]);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => {
     if (!currentProject) return;
@@ -1157,7 +1159,7 @@ export function App() {
       useLayoutStore.getState().actions.saveEditorState(currentProject.path);
     }, 1000);
     return () => clearTimeout(saveTimerRef.current);
-  }, [tabs.length, activeTabId, groupOrder, focusedGroupId, currentProject]);
+  }, [tabOrder, activeTabId, groupOrder, focusedGroupId, currentProject]);
 
   // Maintain the chat-mention picker's "recent files" queue. Push whenever
   // an editor/media/unsupported tab appears whose data.filePath we haven't

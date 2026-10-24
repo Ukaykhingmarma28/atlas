@@ -17,12 +17,12 @@ export function isFileTab(type: string): boolean {
 }
 
 /**
- * The docked tree's width beside a file: 46% of the column, held between
- * 16rem and 22rem. `cqw` is the column's own width (its content box is an
+ * The docked tree's width beside a file: 38% of the column, held between
+ * 14rem and 20rem, so a narrow panel still gives the file most of its width. `cqw` is the column's own width (its content box is an
  * inline-size container), so the tree and the room the file leaves for it
  * resolve to the same length without either measuring the other.
  */
-export const FILE_DOCK_WIDTH = "clamp(16rem, 46cqw, 22rem)";
+export const FILE_DOCK_WIDTH = "clamp(14rem, 38cqw, 20rem)";
 
 /** The CSS variable a file tab's frame sets to the room its body leaves for
  *  the docked tree: {@link FILE_DOCK_WIDTH} while the tree is beside it, 0
