@@ -26,6 +26,7 @@ import type { Window as TauriWindow } from "@tauri-apps/api/window";
 import { useUpdaterStore } from "@/features/updater/stores/updater-store";
 import { updater } from "@/features/updater/lib/updater-api";
 import { AccountButton } from "@/features/auth/components/account-button";
+import { HelpSubmenu } from "./help-submenu";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 import { CapturePopover } from "@/features/capture/components/capture-popover";
 import { StatusDot } from "@/features/capture/components/capture-status";
@@ -255,17 +256,19 @@ export function ProjectBreadcrumb() {
 }
 
 /**
- * The bar's right end. The account button sits outside the `currentProject`
- * guard on purpose: a fresh install has no project open, and sign-in must be
- * reachable from that empty state rather than hidden behind opening a folder.
- * Without a project there are no app-level actions to gather, so the account
- * stands alone.
+ * The bar's right end: the dock while a project is open, then the account,
+ * always — it is the one place the avatar lives (the sidebar footer has none).
+ * It sits outside the `currentProject` guard on purpose: a fresh install has
+ * no project open, and sign-in must be reachable from that empty state.
  */
 function TopbarTrailing() {
   const currentProject = useAppStore.use.currentProject();
   return (
-    <div className={cn("ml-auto flex shrink-0 items-center", !(isWindows || isLinux) && "pr-2")}>
-      {currentProject ? <ActionDock /> : <AccountButton />}
+    <div
+      className={cn("ml-auto flex shrink-0 items-center gap-1", !(isWindows || isLinux) && "pr-2")}
+    >
+      {currentProject ? <ActionDock /> : null}
+      <AccountButton menuExtra={<HelpSubmenu />} />
       {(isWindows || isLinux) && <WindowControls />}
     </div>
   );
@@ -353,8 +356,8 @@ function ActionDock() {
   const update = useUpdateItem();
   const notifications = useNotificationItem();
   // The bar's resting state is layout controls only. Update and notifications
-  // step in only while they have something to say; both live permanently in
-  // the sidebar's footer, with the account.
+  // step in only while they have something to say; the bell lives
+  // permanently in the sidebar's footer.
   const items = [update, notifications].filter((i): i is DockItem => i !== null);
   return <TitlebarDock items={items} />;
 }

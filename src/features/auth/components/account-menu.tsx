@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { LogIn, LogOut, Moon, Settings, Shield, Type } from "lucide-react";
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { toast } from "sonner";
@@ -60,6 +60,7 @@ const RESIDUAL_SESSION =
 export function AccountMenu({
   account,
   side = "top",
+  extra,
   children,
 }: {
   /**
@@ -77,6 +78,9 @@ export function AccountMenu({
   account: SignedIn | SignedOut;
   /** Which way the menu opens from the avatar. */
   side?: "top" | "bottom";
+  /** Rows a host folds in after Privacy (the title bar's Help), so they sit
+   *  with the other places this menu goes. */
+  extra?: ReactNode;
   children: ReactElement;
 }) {
   const { signOut, beginSignIn } = useAuthStore.use.actions();
@@ -126,6 +130,7 @@ export function AccountMenu({
           <Shield />
           Privacy
         </DropdownMenuItem>
+        {extra}
 
         <DropdownMenuSeparator />
 
