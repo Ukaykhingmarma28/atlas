@@ -1888,6 +1888,17 @@ pub fn threads_snooze(
         .map_err(CmdError::from)
 }
 
+/// Rename a session. An empty title clears the rename.
+#[tauri::command(async)]
+pub fn threads_rename(
+    thread_id: String,
+    title: String,
+    host: State<'_, Arc<AgentHost>>,
+) -> Result<(), CmdError> {
+    host.rename_thread(parse_thread_id(&thread_id)?, &title)
+        .map_err(CmdError::from)
+}
+
 /// Wake a snoozed session now. Answers whether it was snoozed.
 #[tauri::command(async)]
 pub fn threads_wake(thread_id: String, host: State<'_, Arc<AgentHost>>) -> Result<bool, CmdError> {

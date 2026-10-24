@@ -57,9 +57,9 @@ function freshTabId(): string {
 /**
  * Open the agent chat focused on a specific ACP session, reloading its
  * transcript from disk. Assumes the target project is already active (the
- * caller switches projects first). Mirrors `session-sidebar.handleOpenAgent`'s
- * load flow (focus-if-open, reuse-idle-tab-else-new) so it can be invoked from
- * anywhere (e.g. the project switcher's Chats section).
+ * caller switches projects first). Mirrors `openThread`'s load flow
+ * (`open-thread.ts`: focus-if-open, reuse-idle-tab-else-new) so it can be
+ * invoked from anywhere.
  */
 export async function openAgentSession({
   acpSessionId,

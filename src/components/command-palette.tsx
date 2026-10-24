@@ -6,6 +6,8 @@ import { Dialog } from "@base-ui/react/dialog";
 import { cn } from "@/lib/utils";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useAppStore } from "@/features/app/stores/app-store";
+import { useProjectStore } from "@/features/projects/stores/project-store";
+import { findSession } from "@/features/sidebar/lib/find-session";
 import { AtlasIcon } from "@/components/atlas-icon";
 import {
   Globe,
@@ -63,7 +65,7 @@ export function CommandPalette({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const { addTab, toggleChatSidebar, toggleZenMode, addGroup, focusAdjacentGroup, closeGroup } =
+  const { addTab, toggleZenMode, addGroup, focusAdjacentGroup, closeGroup } =
     useLayoutStore.use.actions();
   const { openProject } = useAppStore.use.actions();
 
@@ -250,12 +252,19 @@ export function CommandPalette({
         action: toggleTeamChat,
       },
       {
-        id: "toggle-chat-sidebar",
-        label: "Toggle Chat Sidebar",
-        actionId: "panels.agentSidebar",
+        id: "toggle-sidebar",
+        label: "Toggle Sidebar",
+        actionId: "workspace.toggleSidebar",
         icon: Sidebar,
         category: "Layout",
-        action: toggleChatSidebar,
+        action: () => useProjectStore.getState().actions.toggleSidebar(),
+      },
+      {
+        id: "find-session",
+        label: "Find Session…",
+        icon: Search,
+        category: "Layout",
+        action: findSession,
       },
       {
         id: "toggle-zen",
@@ -341,7 +350,7 @@ export function CommandPalette({
         action: () => window.dispatchEvent(new CustomEvent("atlas:open-capture")),
       },
     ],
-    [addTab, toggleChatSidebar, toggleZenMode, addGroup, focusAdjacentGroup, closeGroup],
+    [addTab, toggleZenMode, addGroup, focusAdjacentGroup, closeGroup],
   );
   const commands = [...baseCommands.slice(0, 1), ...editorCommands, ...baseCommands.slice(1)];
 

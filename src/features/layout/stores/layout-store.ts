@@ -59,12 +59,6 @@ interface LayoutState {
     sidebarWidth: number;
     inspectorWidth: number;
   };
-  chatSidebar: {
-    visible: boolean;
-    width: number;
-    /** The session list's Settled shelf is open. Collapsed by default. */
-    settledExpanded: boolean;
-  };
   bashPanel: {
     width: number;
   };
@@ -134,13 +128,10 @@ interface LayoutActions {
   actions: {
     /** Show, hide or expand the surfaces pane (see `surfaces`). */
     setSurfaces: (mode: SurfacesMode) => void;
-    toggleChatSidebar: () => void;
     toggleKnowledgeSidebar: () => void;
     toggleKnowledgeInspector: () => void;
     setKnowledgeSidebarWidth: (width: number) => void;
     setKnowledgeInspectorWidth: (width: number) => void;
-    setChatSidebarWidth: (width: number) => void;
-    setChatSidebarSettledExpanded: (expanded: boolean) => void;
     setBashPanelWidth: (width: number) => void;
     setPlansPanelWidth: (width: number) => void;
     toggleTimelineSidebar: () => void;
@@ -197,11 +188,6 @@ const initialState: LayoutState = {
     showInspector: true,
     sidebarWidth: 240,
     inspectorWidth: 280,
-  },
-  chatSidebar: {
-    visible: true,
-    width: 220,
-    settledExpanded: false,
   },
   bashPanel: {
     width: 260,
@@ -529,10 +515,6 @@ export const useLayoutStore = createSelectors(
       immer((set) => ({
         ...initialState,
         actions: {
-          toggleChatSidebar: () =>
-            set((s) => {
-              s.chatSidebar.visible = !s.chatSidebar.visible;
-            }),
           toggleKnowledgeSidebar: () =>
             set((s) => {
               s.knowledgePanel.showSidebar = !s.knowledgePanel.showSidebar;
@@ -556,14 +538,6 @@ export const useLayoutStore = createSelectors(
           setKnowledgeInspectorWidth: (width) =>
             set((s) => {
               s.knowledgePanel.inspectorWidth = Math.max(220, Math.min(width, 520));
-            }),
-          setChatSidebarWidth: (width) =>
-            set((s) => {
-              s.chatSidebar.width = Math.max(160, Math.min(width, 420));
-            }),
-          setChatSidebarSettledExpanded: (expanded) =>
-            set((s) => {
-              s.chatSidebar.settledExpanded = expanded;
             }),
           setBashPanelWidth: (width) =>
             set((s) => {
@@ -1127,7 +1101,6 @@ export const useLayoutStore = createSelectors(
           teamChat: { open: s.tabs.some((t) => t.type === "team-chat") },
           sourceControl: s.sourceControl,
           knowledgePanel: s.knowledgePanel,
-          chatSidebar: s.chatSidebar,
           bashPanel: s.bashPanel,
           plansPanel: s.plansPanel,
           timelinePanel: s.timelinePanel,
@@ -1183,13 +1156,17 @@ export const useLayoutStore = createSelectors(
           if (activeTabId !== null && !tabs.some((t) => t.id === activeTabId)) {
             activeTabId = tabs[0]?.id ?? null;
           }
+          // `chatSidebar` is the per-chat session column the app sidebar
+          // replaced; a save from before carries it, and nothing reads it.
           const {
             rightPanel: _legacy,
             teamChat: _derived,
+            chatSidebar: _retired,
             ...rest
           } = p as Partial<LayoutState> & {
             rightPanel?: unknown;
             teamChat?: unknown;
+            chatSidebar?: unknown;
           };
           return {
             ...current,
@@ -1198,7 +1175,6 @@ export const useLayoutStore = createSelectors(
             activeTabId,
             sourceControl,
             knowledgePanel: { ...current.knowledgePanel, ...p.knowledgePanel },
-            chatSidebar: { ...current.chatSidebar, ...p.chatSidebar },
             bashPanel: { ...current.bashPanel, ...p.bashPanel },
             plansPanel: { ...current.plansPanel, ...p.plansPanel },
           };

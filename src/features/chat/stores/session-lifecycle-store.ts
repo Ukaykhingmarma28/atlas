@@ -20,6 +20,7 @@ import {
   markSessionUnread,
   markSessionViewed,
   pinSession,
+  renameThread,
   reorderPinnedSession,
   settleThread,
   snoozeSession,
@@ -48,6 +49,8 @@ interface SessionLifecycleState {
     settle: (threadId: string) => Promise<boolean>;
     unsettle: (threadId: string) => Promise<boolean>;
     markUnread: (threadId: string) => Promise<boolean>;
+    /** Rename; an empty title clears the rename. */
+    rename: (threadId: string, title: string) => Promise<boolean>;
     /** The chat tab running `sessionId` was opened or focused. Debounced. */
     noteViewed: (sessionId: string) => void;
     /** Drop a pending "viewed" — the tab lost focus before it counted. */
@@ -103,6 +106,11 @@ export const useSessionLifecycleStore = createSelectors(
           settle: (threadId) => run(threadId, "settle", () => settleThread(threadId)),
           unsettle: (threadId) => run(threadId, "un-settle", () => unsettleThread(threadId)),
           markUnread: (threadId) => run(threadId, "mark unread", () => markSessionUnread(threadId)),
+          rename: (threadId, title) =>
+            run(threadId, "rename", async () => {
+              await renameThread(threadId, title);
+              return true;
+            }),
           noteViewed: (sessionId) => {
             const previous = viewedTimers.get(sessionId);
             if (previous !== undefined) clearTimeout(previous);

@@ -99,7 +99,7 @@ export const ACTIONS = [
   },
   {
     id: "workspace.toggleSidebar",
-    title: "Toggle project sidebar",
+    title: "Toggle sidebar",
     category: "Project",
     when: "global",
     defaults: ["cmd+shift+."],
@@ -192,13 +192,6 @@ export const ACTIONS = [
     category: "Panels",
     when: "global",
     defaults: ["cmd+j"],
-  },
-  {
-    id: "panels.agentSidebar",
-    title: "Toggle agent sidebar",
-    category: "Panels",
-    when: "global",
-    defaults: ["cmd+alt+j"],
   },
   {
     id: "panels.knowledge",

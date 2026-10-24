@@ -152,6 +152,13 @@ export function sessionLifecycleHandlers(list: ThreadList): MockHandlers {
           ? null
           : { ...row, snoozedUntil: null, snoozedAt: null, lastSnoozeWakeAt: now() },
       ),
+    threads_rename: ({ threadId, title }): null => {
+      update(threadId, (row) => {
+        const next = String(title ?? "").trim();
+        return next && next !== row.title ? { ...row, title: next } : null;
+      });
+      return null;
+    },
     threads_mark_viewed: ({ sessionId }): boolean => {
       const row = list.get().find((candidate) => candidate.sessionId === String(sessionId));
       if (!row) return false;

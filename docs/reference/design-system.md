@@ -212,7 +212,7 @@ z-index — not a class, not an inline style.
 |---|---|---|
 | `z-panel` | 10 | in-panel stacking: sticky headers, resize handles |
 | `z-titlebar` | 40 | the titlebar and its dock |
-| `z-drawer` | 60 | a panel that slides over the chrome: the project rail, the notification drawer |
+| `z-drawer` | 60 | a panel that slides over the chrome: the app sidebar, the notification drawer |
 | `z-overlay` | 100 | a dialog's scrim |
 | `z-modal` | 110 | the dialog itself |
 | `z-popover` | 200 | menus, popovers, comboboxes |

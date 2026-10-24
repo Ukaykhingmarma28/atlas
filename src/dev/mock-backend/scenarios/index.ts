@@ -40,6 +40,7 @@ import { keymapFirstRun } from "./keymap-first-run";
 import { knowledge } from "./knowledge";
 import { memorySetup } from "./memory-setup";
 import { northwind } from "./northwind";
+import { sidebar } from "./sidebar";
 import { timelineEmpty } from "./timeline-empty";
 
 /** Every variant `permission-modal.tsx` renders, callable from any chat
@@ -94,6 +95,7 @@ const all: Scenario[] = [
   collab,
   northwind,
   memorySetup,
+  sidebar,
   timelineEmpty,
   keymapFirstRun,
   designSystem,

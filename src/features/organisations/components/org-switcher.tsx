@@ -25,7 +25,6 @@ import { useAuthStore } from "@/features/auth/stores/auth-store";
 import { auth } from "@/features/auth/lib/auth-api";
 import { useOrgStore } from "../stores/org-store";
 import { switchOrg, deleteOrgAndData } from "../lib/org-switch";
-import { AddProjectMenu } from "@/features/projects/components/add-project-menu";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { CreateOrgDialog } from "./create-org-dialog";
 import { MembersModal } from "./members-modal";
@@ -270,15 +269,12 @@ export function OrgSwitcher({ variant = "rail" }: { variant?: "rail" | "breadcru
           }
         />
 
-        {/* Quick actions — the org row has spare width to its right, so the two
-         *  things you reach for constantly (add a project, search everything)
-         *  live here as icons instead of eating two full rows in the header
-         *  list below. Usage moved up to the titlebar band with the rest of
-         *  the rail chrome; Settings is reachable from the account menu and
-         *  the command palette, so it no longer spends a slot here. */}
+        {/* Quick action — the org row has spare width to its right, so the
+         *  command palette (search everything) lives here as an icon. Adding a
+         *  project is in the session header below, beside the project filter;
+         *  Settings is the footer's last icon. */}
         {variant === "rail" && (
           <div className="ml-auto flex items-center gap-0.5 shrink-0">
-            <AddProjectMenu />
             <Hint label="Search" shortcut={paletteHint}>
               <button
                 onClick={() => window.dispatchEvent(new CustomEvent("atlas:command-palette"))}

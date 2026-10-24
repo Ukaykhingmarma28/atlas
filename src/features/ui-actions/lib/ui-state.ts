@@ -6,6 +6,7 @@
 
 import { useAppStore } from "@/features/app/stores/app-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
+import { useProjectStore } from "@/features/projects/stores/project-store";
 import { useChatStore, findTabByAcpSession } from "@/features/chat/stores/chat-store";
 import {
   editorPosition,
@@ -110,7 +111,8 @@ export function buildUiState(request: UiActionRequest): UiState {
         visible: sourceControlShown(layout),
         section: layout.sourceControl.section,
       },
-      chatSidebar: layout.chatSidebar.visible,
+      // The app sidebar, which holds the sessions (the field keeps its name).
+      chatSidebar: useProjectStore.getState().sidebarOpen,
       terminalVisible: tabs.some((t) => t.active && t.type === "terminal"),
       zen: layout.zen,
     },

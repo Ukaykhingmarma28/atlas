@@ -36,7 +36,6 @@ vi.mock("../lib/agents-api", async (importOriginal) => {
 });
 const Null = vi.hoisted(() => () => null);
 vi.mock("./message-input", () => ({ MessageInput: Null }));
-vi.mock("./session-sidebar", () => ({ SessionSidebar: Null }));
 vi.mock("./chat-header", () => ({ ChatHeader: Null }));
 vi.mock("./agent-update-bar", () => ({ AgentUpdateBar: Null }));
 vi.mock("./permission-modal", () => ({ PermissionModal: Null }));

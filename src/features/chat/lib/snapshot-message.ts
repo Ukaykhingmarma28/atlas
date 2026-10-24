@@ -4,7 +4,7 @@ import type { SessionMessage } from "@/types/agents";
  * Map an atlas-agents `SessionMessage` (the rich Rust snapshot state returned by
  * `agents.snapshot()`) onto the wire shape `chat-store.replaceMessages` expects.
  *
- * Shared by the history sidebar (`session-sidebar.tsx`) and `openAgentSession`
+ * Shared by the sidebar's resume (`open-thread.ts`) and `openAgentSession`
  * (`open-agent-session.ts`) so the two resume/hydrate paths stay byte-identical —
  * previously each kept its own copy and they could drift.
  *
