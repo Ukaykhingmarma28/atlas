@@ -386,7 +386,7 @@ export default defineConfig(() => ({
         "./src/features/chat/stores/chat-store.ts",
         "./src/features/chat/lib/agents-api.ts",
         "./src/components/titlebar.tsx",
-        "./src/components/command-palette.tsx",
+        "./src/features/command-palette/components/command-palette.tsx",
         "./src/components/atlas-icon.tsx",
       ],
     },

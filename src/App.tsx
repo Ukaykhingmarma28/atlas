@@ -3,7 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { AppLayout } from "@/features/layout/components/app-layout";
 import { AppContextMenu } from "@/components/app-context-menu";
 import { TooltipProvider } from "@/ui/tooltip";
-import { CommandPalette } from "@/components/command-palette";
+import { CommandPalette } from "@/features/command-palette/components/command-palette";
+import { useCommandPaletteStore } from "@/features/command-palette/stores/command-palette-store";
 import { NewTabPalette } from "@/components/new-tab-palette";
 import { LayoutSwitcher } from "@/features/layout/components/layout-switcher";
 import { SearchOverlay } from "@/components/search-overlay";
@@ -31,7 +32,6 @@ import {
 import type { PendingPermission } from "@/types/acp";
 import type { AgentDelta } from "@/types/agents";
 import { cycleChatAgent } from "@/features/chat/lib/switch-agent";
-import { FilePicker } from "@/features/file-picker/components/file-picker";
 import { HintOverlay } from "@/features/hint-nav/components/hint-overlay";
 import { BrowserOverlayWatcher } from "@/features/browser/components/browser-overlay-watcher";
 import {
@@ -593,7 +593,6 @@ export function App() {
     };
   }, []);
 
-  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [newTabPaletteOpen, setNewTabPaletteOpen] = useState(false);
   // The project rail's "Open module" row opens the same palette ⌘⌥N does.
   // The palette's state lives here, so the rail asks for it by event rather
@@ -603,17 +602,15 @@ export function App() {
     window.addEventListener("atlas:new-tab-palette", open);
     return () => window.removeEventListener("atlas:new-tab-palette", open);
   }, []);
-  // Same arrangement for ⌘K: the rail's org-row search button asks for the
-  // command palette by event, because the palette's open state lives here and
-  // one caller does not justify lifting it into a store.
+  // ⌘K's overlay keeps its state in its own store (it shares the overlay
+  // with ⌘P); the rail's org-row search button still asks for it by event.
   useEffect(() => {
-    const open = () => setCommandPaletteOpen(true);
+    const open = () => useCommandPaletteStore.getState().actions.setOpen(true);
     window.addEventListener("atlas:command-palette", open);
     return () => window.removeEventListener("atlas:command-palette", open);
   }, []);
   const [layoutSwitcherOpen, setLayoutSwitcherOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [filePickerOpen, setFilePickerOpen] = useState(false);
   const {
     addTab,
     setActiveTab,
@@ -1289,9 +1286,16 @@ export function App() {
     // ⌘⇧. — toggle the Arc-like project sidebar. (⌘. alone is the macOS
     // system "Cancel" chord and gets swallowed before reaching the webview.)
     "workspace.toggleSidebar": () => useProjectStore.getState().actions.toggleSidebar(),
-    "nav.commandPalette": () => setCommandPaletteOpen(true),
-    "nav.filePicker": () => setFilePickerOpen(true),
-    "nav.search": () => setSearchOpen(true),
+    // ⌘K and ⌘P share one overlay: each chord opens its mode, switches to it
+    // from the other, or closes it when it is the one on screen.
+    "nav.commandPalette": () => useCommandPaletteStore.getState().actions.toggleCommands(),
+    "nav.filePicker": () => useCommandPaletteStore.getState().actions.toggleFiles(),
+    // ⇧⌘F, also the palette's "Search project contents": the overlay closes
+    // first, so the two dialogs never stack.
+    "nav.search": () => {
+      useCommandPaletteStore.getState().actions.setOpen(false);
+      setSearchOpen(true);
+    },
     // ⌘B — the project tree, a surface tab beside the agent. The id keeps its
     // old name (it toggled the left file panel) so a rebinding still applies.
     "panels.left": toggleFiles,
@@ -1422,11 +1426,10 @@ export function App() {
           <AppLayout />
         </div>
       </AppContextMenu>
-      <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
+      <CommandPalette />
       <NewTabPalette open={newTabPaletteOpen} onOpenChange={setNewTabPaletteOpen} />
       <LayoutSwitcher open={layoutSwitcherOpen} onOpenChange={setLayoutSwitcherOpen} />
       <SearchOverlay open={searchOpen} onOpenChange={setSearchOpen} />
-      <FilePicker open={filePickerOpen} onOpenChange={setFilePickerOpen} />
       <HintOverlay />
       <AgentOAuthModalHost />
       {/* Sign-in asks questions of its own (device codes, login URLs), and they
