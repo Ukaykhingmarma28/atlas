@@ -190,3 +190,18 @@ export function formatDiffCount(value: number): string {
   if (value < 999_500) return scaled(value / 1000, "k");
   return scaled(value / 1_000_000, "m");
 }
+
+const MIDDLE_TAIL = 10;
+
+/**
+ * Where a long name breaks for a middle ellipsis: the head truncates and the
+ * tail stays whole, so two long siblings still read apart by their endings.
+ * A name too short to gain from it is `null`. Split by code point, not UTF-16
+ * unit: a cut inside a surrogate pair would leave two broken glyphs.
+ */
+export function splitForMiddleTruncate(value: string): { head: string; tail: string } | null {
+  const chars = Array.from(value);
+  if (chars.length <= MIDDLE_TAIL + 4) return null;
+  const cut = chars.length - MIDDLE_TAIL;
+  return { head: chars.slice(0, cut).join(""), tail: chars.slice(cut).join("") };
+}

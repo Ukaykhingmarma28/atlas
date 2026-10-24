@@ -11,14 +11,12 @@ import {
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
-  ChevronUp,
   Columns2,
   FolderTree,
   Info,
   Pilcrow,
   RefreshCw,
   Rows3,
-  Search,
   Settings2,
   WrapText,
 } from "lucide-react";
@@ -27,7 +25,6 @@ import { Button } from "@/ui/button";
 import { IconButton } from "@/ui/icon-button";
 import { Segmented } from "@/ui/segmented";
 import { useScopedHotkeys } from "@/features/keybindings/lib/use-scoped-hotkeys";
-import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { Hint } from "@/ui/tooltip";
 import {
   DropdownMenu,
@@ -136,35 +133,54 @@ const itemIdOf = (file: ReviewFile) => `${file.stat.oldPath ?? ""}\0${file.stat.
 /** The tree beside the diff: its width is saved under this. */
 const TREE_LAYOUT_ID = "git-review-diff-tree";
 
-interface ChangeTarget {
-  id: string;
-  lineNumber: number;
-  side: "additions" | "deletions";
-}
+/** A file header's counts, written the way the viewer writes its own: removals
+ *  first, and a side with nothing in it left out (`-8`, `-36 +1`, `+12`). The
+ *  viewer's own are hidden ({@link HIDE_VIEWER_COUNTS}) because they count
+ *  only what has loaded; these are the backend's numstat. */
+const HeaderStat = memo(function HeaderStat({
+  additions,
+  deletions,
+}: {
+  additions: number;
+  deletions: number;
+}) {
+  const showDeletions = deletions > 0 || additions === 0;
+  const showAdditions = additions > 0 || deletions === 0;
+  return (
+    <span
+      role="group"
+      aria-label={`${additions} additions, ${deletions} deletions`}
+      className="inline-flex items-center gap-1 font-mono text-xs tabular-nums"
+    >
+      {showDeletions && (
+        <span aria-hidden className="text-[var(--atlas-diff-removed-text)]">
+          -{formatCompactCount(deletions)}
+        </span>
+      )}
+      {showAdditions && (
+        <span aria-hidden className="text-[var(--atlas-diff-added-text)]">
+          +{formatCompactCount(additions)}
+        </span>
+      )}
+    </span>
+  );
+});
 
-/** The first line of each run of changed lines in a file: what previous/next
- *  change steps through. On the new side when the run adds anything. */
-function changeTargetsOf(id: string, fileDiff: FileDiffMetadata): ChangeTarget[] {
-  const out: ChangeTarget[] = [];
-  for (const hunk of fileDiff.hunks) {
-    for (const block of hunk.hunkContent) {
-      if (block.type !== "change") continue;
-      out.push(
-        block.additions > 0
-          ? {
-              id,
-              side: "additions",
-              lineNumber: hunk.additionStart + block.additionLineIndex - hunk.additionLineIndex,
-            }
-          : {
-              id,
-              side: "deletions",
-              lineNumber: hunk.deletionStart + block.deletionLineIndex - hunk.deletionLineIndex,
-            },
-      );
-    }
+/** The fold chevron takes the colour of the change, as the round icon beside
+ *  it does: added, removed, or modified (a rename included). */
+function chevronToneOf(fileDiff: FileDiffMetadata): string {
+  switch (fileDiff.type) {
+    case "new":
+      return "text-[var(--atlas-diff-added-text)]";
+    case "deleted":
+      return "text-[var(--atlas-diff-removed-text)]";
+    case "change":
+    case "rename-pure":
+    case "rename-changed":
+      return "text-[var(--atlas-diff-modified-text)]";
+    default:
+      return "text-muted-foreground";
   }
-  return out;
 }
 
 /** Per-object memo of the content hash: re-hashing every line of every file on
@@ -213,11 +229,24 @@ export interface DiffPanelProps {
   sessionId?: string | null;
   /** Source-control actions (commit, push, branch) go here when they land. */
   actions?: ReactNode;
-  /** Heads the header: the review panel's view switch. */
+  /** Heads the header. */
   leading?: ReactNode;
+  /**
+   * A "Viewed" box on every file header and an "X / N viewed" count: a pull
+   * request's review, where the reader works through the files. Off beside a
+   * session, whose diff is read, not signed off.
+   */
+  viewedMarks?: boolean;
 }
 
-export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading }: DiffPanelProps) {
+export function DiffPanel({
+  tabId,
+  repoPath,
+  sessionId = null,
+  actions,
+  leading,
+  viewedMarks: viewedMarksOn = false,
+}: DiffPanelProps) {
   // The git scopes the menu lists as items; `turn` has its own entries.
   const scopes: DiffScope[] = sessionId
     ? ["session", "working-tree", "branch-range"]
@@ -362,8 +391,12 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
   const fileById = useMemo(() => new Map(files.map((f) => [itemIdOf(f), f])), [files]);
   const fileByPath = useMemo(() => new Map(files.map((f) => [f.stat.path, f])), [files]);
 
-  // ── Viewed: per scope and path, remembered across relaunches ──
-  const viewedMarks = useDiffPanelStore((s) => s.viewed[collapseScopeKey] ?? NO_VIEWED);
+  // ── Viewed: per scope and path, remembered across relaunches. Only where
+  // the panel offers it (`viewedMarks`): elsewhere no mark is read, so none
+  // reaches a header or an item's version. ──
+  const viewedMarks = useDiffPanelStore((s) =>
+    viewedMarksOn ? (s.viewed[collapseScopeKey] ?? NO_VIEWED) : NO_VIEWED,
+  );
   const isViewed = useCallback((path: string) => path in viewedMarks, [viewedMarks]);
   const isStale = useCallback(
     (path: string) => isStaleMark(viewedMarks[path], fileByPath.get(path), ignoreWhitespace),
@@ -502,7 +535,6 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
     setFind((f) => ({ ...f, open: false }));
     rootRef.current?.focus({ preventScroll: true });
   }, []);
-  const findShortcut = useActionShortcut("diff.find")?.label;
   const canFind = files.length > 0;
   const unloaded = useMemo(() => files.filter((f) => f.state === "pending").length, [files]);
   useScopedHotkeys({
@@ -554,38 +586,11 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
   // The tree's width, remembered across sessions.
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({ id: TREE_LAYOUT_ID });
 
-  // ── Previous / next change, across every open file ──
-  const changes = useMemo(() => {
-    const out: ChangeTarget[] = [];
-    for (const file of files) {
-      const id = itemIdOf(file);
-      if (file.state === "ready" && !collapsed.has(id))
-        out.push(...changeTargetsOf(id, file.fileDiff));
-    }
-    return out;
-  }, [files, collapsed]);
-  const changeCursor = useRef(-1);
-  useEffect(() => {
-    changeCursor.current = -1;
-  }, [changes]);
-  const jumpChange = (dir: 1 | -1) => {
-    if (!viewer || changes.length === 0) return;
-    const next =
-      changeCursor.current < 0 && dir < 0
-        ? changes.length - 1
-        : (changeCursor.current + dir + changes.length) % changes.length;
-    changeCursor.current = next;
-    const target = changes[next];
-    viewer.scrollTo({
-      type: "line",
-      id: target.id,
-      lineNumber: target.lineNumber,
-      side: target.side,
-      align: "center",
-    });
-  };
-
   const headRef = branches?.find((b) => b.isCurrent)?.name ?? "HEAD";
+  // One row: what is shown on the left (scope or turn, and the refs a branch
+  // diff compares), how it is shown on the right. Layout, wrap and whitespace
+  // sit inline while the panel has room and fold into one menu when it does
+  // not.
   const header = (
     <div className="@container flex h-control-lg shrink-0 items-center gap-2 border-b border-border-subtle px-2">
       {leading}
@@ -599,7 +604,7 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
               </Button>
             }
           />
-          <DropdownMenuContent align="start" sideOffset={4} className="w-48">
+          <DropdownMenuContent align="start" sideOffset={4}>
             <DropdownMenuRadioGroup
               value={
                 scope !== "turn" ? scope : selectedTurn === latestTurn ? turnValue(LATEST_TURN) : ""
@@ -611,12 +616,16 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
               }}
             >
               {scopes.map((s) => (
-                <DropdownMenuRadioItem key={s} value={s}>
+                <DropdownMenuRadioItem key={s} value={s} closeOnClick>
                   {SCOPE_LABEL[s]}
                 </DropdownMenuRadioItem>
               ))}
               {sessionId && (
-                <DropdownMenuRadioItem value={turnValue(LATEST_TURN)} disabled={!latestTurn}>
+                <DropdownMenuRadioItem
+                  value={turnValue(LATEST_TURN)}
+                  disabled={!latestTurn}
+                  closeOnClick
+                >
                   {SCOPE_LABEL.turn}
                 </DropdownMenuRadioItem>
               )}
@@ -624,23 +633,15 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
             {sessionId && (
               <TurnSubmenu
                 turns={turns}
-                selected={scope === "turn" && selectedTurn !== latestTurn ? selectedTurn : null}
+                selected={scope === "turn" ? selectedTurn : null}
                 onPick={(turnId) => actionsApi.setTurn(tabId, turnId)}
               />
             )}
           </DropdownMenuContent>
         </DropdownMenu>
-        {files.length > 0 && (
-          <span className="flex min-w-0 shrink items-center gap-1.5 truncate text-xs text-muted-foreground tabular-nums">
-            <span className="shrink-0">
-              {files.length} {files.length === 1 ? "file" : "files"}
-            </span>
-            <span aria-hidden className="shrink-0 opacity-50">
-              ·
-            </span>
-            <span className="truncate">
-              {viewedCount} / {files.length} viewed
-            </span>
+        {viewedMarksOn && files.length > 0 && (
+          <span className="min-w-0 shrink truncate text-xs text-muted-foreground tabular-nums">
+            {viewedCount} / {files.length} viewed
           </span>
         )}
         {scope === "branch-range" && (
@@ -664,40 +665,12 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
           <DiffStat
             additions={totals.additions}
             deletions={totals.deletions}
-            className="mr-1 hidden @2xl:inline-flex"
+            className="mr-1 hidden @sm:inline-flex"
           />
         )}
-        <Hint label="Previous change">
-          <IconButton
-            size="sm"
-            icon={ChevronUp}
-            label="Previous change"
-            disabled={changes.length === 0}
-            onClick={() => jumpChange(-1)}
-          />
-        </Hint>
-        <Hint label="Next change">
-          <IconButton
-            size="sm"
-            icon={ChevronDown}
-            label="Next change"
-            disabled={changes.length === 0}
-            onClick={() => jumpChange(1)}
-          />
-        </Hint>
-        <Hint label={findShortcut ? `Find in diff (${findShortcut})` : "Find in diff"}>
-          <IconButton
-            size="sm"
-            icon={Search}
-            label="Find in diff"
-            aria-pressed={find.open}
-            disabled={!canFind}
-            onClick={() => (find.open ? closeFind() : openFind())}
-          />
-        </Hint>
         {/* A turn's edits are a record, not the disk: nothing to refresh. */}
         {scope !== "turn" && (
-          <Hint label="Refresh">
+          <Hint label="Refresh diff">
             <IconButton
               size="sm"
               icon={RefreshCw}
@@ -707,8 +680,16 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
             />
           </Hint>
         )}
-        {/* Whitespace, layout and wrap: inline when the panel is wide, one
-            options menu when it is not. */}
+        {files.length > 0 && (
+          <Hint label={allCollapsed ? "Expand all files" : "Collapse all files"}>
+            <IconButton
+              size="sm"
+              icon={allCollapsed ? ChevronsUpDown : ChevronsDownUp}
+              label={allCollapsed ? "Expand all files" : "Collapse all files"}
+              onClick={toggleAll}
+            />
+          </Hint>
+        )}
         <DropdownMenu>
           <Hint label="Diff options">
             <DropdownMenuTrigger
@@ -717,22 +698,12 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
                   size="sm"
                   icon={Settings2}
                   label="Diff options"
-                  className="@3xl:hidden"
+                  className="@md:hidden"
                 />
               }
             />
           </Hint>
           <DropdownMenuContent align="end" sideOffset={4} className="w-48">
-            <DropdownMenuCheckboxItem
-              checked={ignoreWhitespace}
-              onCheckedChange={(checked) => actionsApi.setIgnoreWhitespace(checked)}
-            >
-              Hide whitespace changes
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem checked={wordWrap} onCheckedChange={toggleWordWrap}>
-              Wrap lines
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuSeparator />
             <DropdownMenuRadioGroup
               value={layout}
               onValueChange={(value) => actionsApi.setLayout(value as DiffLayout)}
@@ -744,18 +715,19 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
                 Split
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem checked={wordWrap} onCheckedChange={toggleWordWrap}>
+              Wrap lines
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={ignoreWhitespace}
+              onCheckedChange={(checked) => actionsApi.setIgnoreWhitespace(checked)}
+            >
+              Hide whitespace changes
+            </DropdownMenuCheckboxItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <div className="hidden items-center gap-1 @3xl:flex">
-          <Hint label={ignoreWhitespace ? "Show whitespace changes" : "Hide whitespace changes"}>
-            <IconButton
-              size="sm"
-              icon={Pilcrow}
-              label="Hide whitespace changes"
-              aria-pressed={ignoreWhitespace}
-              onClick={() => actionsApi.setIgnoreWhitespace(!ignoreWhitespace)}
-            />
-          </Hint>
+        <div className="hidden items-center gap-1 @md:flex">
           <Segmented
             size="sm"
             aria-label="Diff layout"
@@ -772,26 +744,27 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
               onClick={toggleWordWrap}
             />
           </Hint>
-        </div>
-        {files.length > 1 && (
-          <Hint label={allCollapsed ? "Expand all files" : "Collapse all files"}>
+          <Hint label={ignoreWhitespace ? "Show whitespace changes" : "Hide whitespace changes"}>
             <IconButton
               size="sm"
-              icon={allCollapsed ? ChevronsUpDown : ChevronsDownUp}
-              label={allCollapsed ? "Expand all files" : "Collapse all files"}
-              onClick={toggleAll}
+              icon={Pilcrow}
+              label="Hide whitespace changes"
+              aria-pressed={ignoreWhitespace}
+              onClick={() => actionsApi.setIgnoreWhitespace(!ignoreWhitespace)}
+            />
+          </Hint>
+        </div>
+        {files.length > 0 && (
+          <Hint label={fileTreeOpen ? "Hide file tree" : "Show file tree"}>
+            <IconButton
+              size="sm"
+              icon={FolderTree}
+              label="Show file tree"
+              aria-pressed={fileTreeOpen}
+              onClick={() => actionsApi.setFileTreeOpen(!fileTreeOpen)}
             />
           </Hint>
         )}
-        <Hint label={fileTreeOpen ? "Hide file tree" : "Show file tree"}>
-          <IconButton
-            size="sm"
-            icon={FolderTree}
-            label="Show file tree"
-            aria-pressed={fileTreeOpen}
-            onClick={() => actionsApi.setFileTreeOpen(!fileTreeOpen)}
-          />
-        </Hint>
         {actions}
       </div>
     </div>
@@ -844,8 +817,10 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
           <div
             className="relative h-full min-h-0 min-w-0"
             onClickCapture={(event) => {
-              // A click on a file's header row or its name (not on one of its
-              // buttons) opens the file.
+              // A file's name opens the file; the rest of its header row folds
+              // it. Its buttons keep their own actions: the chevron in
+              // particular must not also reach the row, or the two folds
+              // cancel out.
               const path = event.nativeEvent.composedPath();
               for (const node of path) {
                 if (node instanceof HTMLButtonElement || node instanceof HTMLAnchorElement) return;
@@ -862,17 +837,21 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
               );
               if (!header) return;
               const name = (title ?? header.querySelector("[data-title]"))?.textContent?.trim();
-              const file = name ? files.find((f) => f.stat.path === name) : undefined;
+              const file = name ? fileByPath.get(name) : undefined;
+              if (!file) return;
+              if (!title) {
+                if (file.state === "ready") toggleFile(itemIdOf(file));
+                return;
+              }
               // A deleted file has nothing on disk to open; its diff is all
               // there is of it.
-              if (!file || file.stat.status === "deleted") return;
-              // Header or name alike open the file, as a right-panel file tab
-              // (or the system editor for a file outside the project). The
-              // chevron, a button, still folds.
+              if (file.stat.status === "deleted") return;
+              // As a right-panel file tab, or the system editor for a file
+              // outside the project.
               void openReviewFile(`${repoPath}/${file.stat.path}`);
             }}
           >
-            <FileViewedContext value={viewedState}>
+            <FileViewedContext value={viewedMarksOn ? viewedState : null}>
               <StyledCodeView
                 // Remounted only when what it shows is a different diff (another
                 // scope or base). A refresh after an edit updates items in place,
@@ -904,6 +883,7 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
                       path={file.stat.path}
                       collapsed={item.collapsed === true}
                       disabled={file.state !== "ready"}
+                      tone={chevronToneOf(file.fileDiff)}
                       onToggle={toggleFile}
                     />
                   );
@@ -924,7 +904,7 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
                       path={stat.path}
                       stat={
                         stat.additions === null ? null : (
-                          <DiffStat additions={stat.additions} deletions={stat.deletions ?? 0} />
+                          <HeaderStat additions={stat.additions} deletions={stat.deletions ?? 0} />
                         )
                       }
                     />
@@ -977,7 +957,6 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
       className="flex h-full min-h-0 flex-col bg-[var(--atlas-editor-background)] outline-none"
     >
       {header}
-      {!git && selectedTurn && <TurnNote turn={selectedTurn} />}
       {body}
     </div>
   );
@@ -996,26 +975,39 @@ const CollapseToggle = memo(function CollapseToggle({
   path,
   collapsed,
   disabled,
+  tone,
   onToggle,
 }: {
   id: string;
   path: string;
   collapsed: boolean;
   disabled: boolean;
+  /** The change's colour (`chevronToneOf`). */
+  tone: string;
   onToggle: (id: string) => void;
 }) {
+  // A plain button rather than `IconButton`: the glyph wears the change's
+  // colour, which the primitive's ghost look would override.
+  const Chevron = collapsed ? ChevronRight : ChevronDown;
   return (
-    <IconButton
-      size="xs"
-      icon={collapsed ? ChevronRight : ChevronDown}
-      label={collapsed ? `Expand ${path}` : `Collapse ${path}`}
-      aria-expanded={!collapsed}
-      disabled={disabled}
-      onClick={(event) => {
-        event.stopPropagation();
-        onToggle(id);
-      }}
-    />
+    <Hint label={collapsed ? "Expand diff" : "Collapse diff"}>
+      <button
+        type="button"
+        aria-label={collapsed ? `Expand ${path}` : `Collapse ${path}`}
+        aria-expanded={!collapsed}
+        disabled={disabled}
+        onClick={(event) => {
+          event.stopPropagation();
+          onToggle(id);
+        }}
+        className={cn(
+          "-ms-0.5 inline-flex size-control-xs shrink-0 cursor-pointer items-center justify-center rounded transition-colors duration-fast hover:bg-element-hover disabled:cursor-not-allowed disabled:opacity-50",
+          tone,
+        )}
+      >
+        <Chevron size={16} aria-hidden />
+      </button>
+    </Hint>
   );
 });
 
@@ -1083,52 +1075,44 @@ function FileStatus({
   );
 }
 
-/** Under the header in the turn scope: which turn, and what these diffs are.
- *  They are rebuilt from the agent's own edit calls, so a change a command
- *  made (a formatter, a codegen step, `git mv`) is not in them. */
-function TurnNote({ turn }: { turn: EditTurn }) {
-  return (
-    <div className="flex shrink-0 flex-col gap-0.5 border-b border-border px-3 py-1.5 text-2xs text-muted-foreground">
-      <span className="min-w-0 truncate">
-        <span className="text-secondary-foreground">Turn {turn.number}</span>
-        {turn.prompt && <> · {turn.prompt}</>}
-      </span>
-      <span>The agent's own edits. Changes made by commands aren't included.</span>
-    </div>
-  );
-}
-
-/** "Turn ▸": every turn of the session that changed files, newest first. */
+/** "Turn ▸": every turn of the session that changed files, newest first, one
+ *  line each: its number and when it ended. The prompt that started it is the
+ *  row's tooltip. A turn's diff is rebuilt from the agent's own edit calls,
+ *  so a change a command made (a formatter, a codegen step, `git mv`) is not
+ *  in it; the menu says so once, above the turns. */
 function TurnSubmenu({
   turns,
   selected,
   onPick,
 }: {
   turns: readonly EditTurn[];
-  /** The pinned turn, when it is not simply the latest. */
+  /** The turn on show, if the scope is a turn. */
   selected: EditTurn | null;
   onPick: (turnId: string) => void;
 }) {
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger disabled={turns.length === 0}>Turn</DropdownMenuSubTrigger>
-      <DropdownMenuSubContent className="max-h-80 w-72 overflow-auto">
+      <DropdownMenuSubContent className="max-h-80 overflow-auto">
+        <p className="max-w-56 px-2 py-1 text-2xs text-muted-foreground">
+          The agent's own edits. Changes made by commands aren't included.
+        </p>
         <DropdownMenuRadioGroup
           value={selected ? selected.turnId : ""}
           onValueChange={(value) => onPick(String(value))}
         >
           {turns.map((turn) => (
-            <DropdownMenuRadioItem key={turn.turnId} value={turn.turnId}>
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="flex items-baseline gap-2">
-                  <span>Turn {turn.number}</span>
-                  <span className="ml-auto text-2xs text-muted-foreground tabular-nums">
-                    {formatTime(turn.timestamp)}
-                  </span>
+            <DropdownMenuRadioItem
+              key={turn.turnId}
+              value={turn.turnId}
+              title={turn.prompt || undefined}
+              closeOnClick
+            >
+              <span className="flex flex-1 items-center gap-2">
+                <span>Turn {turn.number}</span>
+                <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+                  {formatTime(turn.timestamp)}
                 </span>
-                {turn.prompt && (
-                  <span className="truncate text-2xs text-muted-foreground">{turn.prompt}</span>
-                )}
               </span>
             </DropdownMenuRadioItem>
           ))}

@@ -5,6 +5,7 @@ import {
   changedFilesOf,
   folderPaths,
   formatDiffCount,
+  splitForMiddleTruncate,
   sumStats,
   visibleRows,
   type ChangedDirNode,
@@ -156,5 +157,23 @@ describe("formatDiffCount", () => {
     [3_400_000, "3.4m"],
   ])("%d reads as %s", (value, expected) => {
     expect(formatDiffCount(value)).toBe(expected);
+  });
+});
+
+describe("splitForMiddleTruncate", () => {
+  it("leaves a short name whole", () => {
+    expect(splitForMiddleTruncate("session.ts")).toBeNull();
+  });
+
+  it("keeps the last ten characters of a long one", () => {
+    expect(splitForMiddleTruncate("use-turn-review-files.test.tsx")).toEqual({
+      head: "use-turn-review-file",
+      tail: "s.test.tsx",
+    });
+  });
+
+  it("never cuts inside a surrogate pair", () => {
+    const split = splitForMiddleTruncate(`${"a".repeat(10)}😀${"b".repeat(9)}`);
+    expect(split?.tail).toBe(`😀${"b".repeat(9)}`);
   });
 });
