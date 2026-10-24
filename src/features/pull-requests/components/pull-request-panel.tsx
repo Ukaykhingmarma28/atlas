@@ -7,7 +7,7 @@
 // tab works for any pull request `gh` can see from there. What may be done
 // is asked of the detail's capabilities and permissions, never assumed.
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
@@ -32,13 +32,18 @@ import { pullRequestKeys, usePrActivity, usePrDetail } from "../lib/pull-request
 import type { PrAction, PrMergeMethod } from "../lib/pull-requests-types";
 import { usePullRequestActions } from "../lib/use-pull-request-actions";
 import { usePullRequestAgentActions } from "../lib/use-pull-request-agent-actions";
+import { watchPullRequestTabDrafts } from "../lib/pull-request-tab-drafts";
+import {
+  patchPullRequestTabDraft,
+  readPullRequestTabDraft,
+} from "../stores/pull-request-tab-draft-store";
 import {
   PullRequestActionsMenu,
   PullRequestChecksStatus,
   PullRequestPrimaryAction,
 } from "./pull-request-actions";
 import { PullRequestComposer } from "./pull-request-composer";
-import { PullRequestScopeContext } from "./pull-request-context";
+import { PullRequestScopeContext, type PullRequestScope } from "./pull-request-context";
 import {
   PullRequestCondensedRow,
   PullRequestCrumbs,
@@ -90,8 +95,18 @@ export function PullRequestPanel({
 
   const [tab, setTab] = useState<InnerTab>("summary");
   // The Code tab's commit: `null` for all of them. Set from outside by the
-  // Timeline's "view this commit".
-  const [codeCommit, setCodeCommit] = useState<string | null>(null);
+  // Timeline's "view this commit". Kept per tab, so a tab switch keeps it.
+  useEffect(() => watchPullRequestTabDrafts(), []);
+  const [codeCommit, setCodeCommitState] = useState<string | null>(
+    () => readPullRequestTabDraft(tabId).commit ?? null,
+  );
+  const setCodeCommit = useCallback(
+    (oid: string | null) => {
+      setCodeCommitState(oid);
+      patchPullRequestTabDraft(tabId, { commit: oid });
+    },
+    [tabId],
+  );
 
   // ── the fold ──────────────────────────────────────────────────────────
   const [condensed, setCondensed] = useState(false);
@@ -150,12 +165,26 @@ export function PullRequestPanel({
   };
   const refreshing = detailQuery.isFetching || activityQuery.isFetching;
 
-  const scope = {
-    repoPath,
-    number,
-    repositoryUrl: detail ? repositoryUrlOf(detail.url) : null,
-    agent,
-  };
+  // One scope object while what it names holds still: every markdown block
+  // and review card below reads it, so a new one each render would re-render
+  // them all. `fixFinding` is a new closure each render; the scope holds a
+  // stable stand-in that calls the latest.
+  const repositoryUrl = detail ? repositoryUrlOf(detail.url) : null;
+  const fixFindingRef = useRef(agent.fixFinding);
+  fixFindingRef.current = agent.fixFinding;
+  const canFix = agent.fixFinding !== null;
+  const scope = useMemo<PullRequestScope>(
+    () => ({
+      repoPath,
+      number,
+      repositoryUrl,
+      agent: {
+        fixFinding: canFix ? (finding) => fixFindingRef.current?.(finding) : null,
+        pending: agent.pending,
+      },
+    }),
+    [repoPath, number, repositoryUrl, canFix, agent.pending],
+  );
 
   if (!detail) {
     if (detailQuery.error) {
@@ -389,6 +418,7 @@ export function PullRequestPanel({
 
         <div className="absolute right-4 bottom-3 z-20">
           <PullRequestComposer
+            tabId={tabId}
             repoPath={repoPath}
             detail={detail}
             pendingAction={pendingAction}

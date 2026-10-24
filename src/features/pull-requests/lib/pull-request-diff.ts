@@ -173,6 +173,36 @@ export function isLineInFileDiff(file: FileDiffMetadata, side: PrDiffSide, line:
   );
 }
 
+/** Where a line comment of the review in progress stands against the diff
+ *  as loaded: on a line it shows; off it (its line left the change, or its
+ *  file did), so GitHub would refuse the whole review; or not known yet (its
+ *  file is on a page not read, or its hunks were withheld). */
+export type PendingPlacement = "on" | "off" | "unknown";
+
+export function pendingCommentPlacement(
+  comment: { path: string; position: PrReviewPosition },
+  filesByPath: ReadonlyMap<string, PrReviewFile>,
+  /** Every page of the diff has been read. */
+  complete: boolean,
+): PendingPlacement {
+  const file = filesByPath.get(comment.path);
+  if (!file) return complete ? "off" : "unknown";
+  if (file.state !== "ready") return "unknown";
+  const { side, line } = positionAnchor(comment.position);
+  return isLineInFileDiff(file.source, side, line) ? "on" : "off";
+}
+
+/** The comments `pendingCommentPlacement` puts off the diff. */
+export function offDiffPendingComments<T extends { path: string; position: PrReviewPosition }>(
+  comments: readonly T[],
+  files: readonly PrReviewFile[],
+  complete: boolean,
+): T[] {
+  if (comments.length === 0) return [];
+  const byPath = new Map(files.map((f) => [f.stat.path, f]));
+  return comments.filter((c) => pendingCommentPlacement(c, byPath, complete) === "off");
+}
+
 /** The viewer's name for a side. */
 export function viewerSideOf(side: PrDiffSide): "deletions" | "additions" {
   return side === "left" ? "deletions" : "additions";

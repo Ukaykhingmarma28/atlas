@@ -4,8 +4,8 @@
 // a private repository's attachment needs the user's credential anyway, so
 // the bytes come from the native proxy (`pr_image`) and are handed to an
 // `<img>` as a `blob:` URL. One URL per image address, shared by every
-// renderer; the oldest are revoked past a bound so a long session does not
-// hold every screenshot it ever showed.
+// renderer; past a bound the oldest no `<img>` is showing are revoked, so a
+// long session does not hold every screenshot it ever showed.
 
 import { useEffect, useState } from "react";
 
@@ -41,6 +41,9 @@ export const IMAGE_CACHE_CAPACITY = 64;
 /** Address → object URL, oldest first; and the reads still in flight. */
 const urls = new Map<string, string>();
 const pending = new Map<string, Promise<string>>();
+/** Address → how many mounted `<img>`s show it. A URL still on screen is
+ *  never revoked, whatever its age: the image would break in place. */
+const refs = new Map<string, number>();
 
 function decode(base64: string): Uint8Array<ArrayBuffer> {
   const binary = atob(base64);
@@ -49,13 +52,35 @@ function decode(base64: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
-function remember(address: string, objectUrl: string): void {
-  urls.set(address, objectUrl);
-  while (urls.size > IMAGE_CACHE_CAPACITY) {
-    const [oldest, url] = urls.entries().next().value as [string, string];
-    urls.delete(oldest);
+/** Past the bound, revoke the oldest URLs nothing shows; `keep` (the one
+ *  just read, not yet mounted) is spared. The cache may stay over its bound
+ *  while more than that many images are on screen. */
+function trim(keep: string | null = null): void {
+  if (urls.size <= IMAGE_CACHE_CAPACITY) return;
+  for (const [address, url] of urls) {
+    if (urls.size <= IMAGE_CACHE_CAPACITY) break;
+    if (address === keep || (refs.get(address) ?? 0) > 0) continue;
+    urls.delete(address);
     URL.revokeObjectURL(url);
   }
+}
+
+function remember(address: string, objectUrl: string): void {
+  urls.set(address, objectUrl);
+  trim(address);
+}
+
+/** An `<img>` started showing `address`. */
+export function retainPrImage(address: string): void {
+  refs.set(address, (refs.get(address) ?? 0) + 1);
+}
+
+/** An `<img>` stopped showing `address`; once nothing does, it may go. */
+export function releasePrImage(address: string): void {
+  const count = (refs.get(address) ?? 0) - 1;
+  if (count > 0) refs.set(address, count);
+  else refs.delete(address);
+  trim();
 }
 
 /** An object URL for the image at `address`, fetched through the checkout's
@@ -96,12 +121,19 @@ export function usePrImage(cwd: string | null, address: string | null): string |
       return;
     }
     let live = true;
+    let retained = false;
     loadPrImage(cwd, address).then(
-      (url) => live && setSrc(url),
+      (url) => {
+        if (!live) return;
+        retainPrImage(address);
+        retained = true;
+        setSrc(url);
+      },
       () => live && setSrc(null),
     );
     return () => {
       live = false;
+      if (retained) releasePrImage(address);
     };
   }, [cwd, address]);
   return src;
@@ -112,4 +144,5 @@ export function resetPrImagesForTests(): void {
   for (const url of urls.values()) URL.revokeObjectURL(url);
   urls.clear();
   pending.clear();
+  refs.clear();
 }

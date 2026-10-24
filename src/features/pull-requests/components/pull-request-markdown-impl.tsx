@@ -9,7 +9,7 @@
 // Images go through the `gh` image proxy, since the webview may load none
 // from the network; links open in the system browser.
 
-import { useMemo, type ComponentProps } from "react";
+import { memo, useMemo, type ComponentProps } from "react";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import rehypeRaw from "rehype-raw";
@@ -99,6 +99,12 @@ const COMPONENTS: Components = {
   ),
 };
 
+const REHYPE_PLUGINS: NonNullable<Options["rehypePlugins"]> = [
+  rehypeRaw,
+  [rehypeSanitize, SANITIZE_SCHEMA],
+  rehypeHighlight,
+];
+
 function AttachmentLink({ url }: { url: string }) {
   return (
     <button
@@ -113,7 +119,7 @@ function AttachmentLink({ url }: { url: string }) {
   );
 }
 
-export default function PullRequestMarkdownImpl({
+export default memo(function PullRequestMarkdownImpl({
   text,
   className,
 }: {
@@ -126,28 +132,34 @@ export default function PullRequestMarkdownImpl({
       repositoryUrl ? [remarkGfm, [remarkPullRequestAutolinks, { repositoryUrl }]] : [remarkGfm],
     [repositoryUrl],
   );
-  const segments = splitPullRequestBody(text);
-  return (
-    <div
-      className={cn(
-        "prose-chat min-w-0 text-sm leading-relaxed break-words text-foreground select-text",
-        className,
-      )}
-    >
-      {segments.map((segment) =>
-        segment.kind === "markdown" || segment.media === "image" ? (
-          <ReactMarkdown
-            key={segment.id}
-            remarkPlugins={remarkPlugins}
-            rehypePlugins={[rehypeRaw, [rehypeSanitize, SANITIZE_SCHEMA], rehypeHighlight]}
-            components={COMPONENTS}
-          >
-            {segment.kind === "markdown" ? segment.text : `![](<${segment.url}>)`}
-          </ReactMarkdown>
-        ) : (
-          <AttachmentLink key={segment.id} url={segment.url} />
-        ),
-      )}
-    </div>
+  // Parsed and drawn once per text and repository: the scope above changes
+  // for reasons of its own (an agent action starting), and every block on
+  // the page would otherwise re-run the whole remark/rehype pipeline. The
+  // same element tree back lets React skip the subtree.
+  return useMemo(
+    () => (
+      <div
+        className={cn(
+          "prose-chat min-w-0 text-sm leading-relaxed break-words text-foreground select-text",
+          className,
+        )}
+      >
+        {splitPullRequestBody(text).map((segment) =>
+          segment.kind === "markdown" || segment.media === "image" ? (
+            <ReactMarkdown
+              key={segment.id}
+              remarkPlugins={remarkPlugins}
+              rehypePlugins={REHYPE_PLUGINS}
+              components={COMPONENTS}
+            >
+              {segment.kind === "markdown" ? segment.text : `![](<${segment.url}>)`}
+            </ReactMarkdown>
+          ) : (
+            <AttachmentLink key={segment.id} url={segment.url} />
+          ),
+        )}
+      </div>
+    ),
+    [text, className, remarkPlugins],
   );
-}
+});

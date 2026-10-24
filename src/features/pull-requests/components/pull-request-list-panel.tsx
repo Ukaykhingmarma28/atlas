@@ -36,6 +36,7 @@ import {
 } from "../lib/pull-request-list-preferences";
 import { usePrListPages, usePrProvider } from "../lib/pull-requests-queries";
 import type { PrListEntry } from "../lib/pull-requests-types";
+import { useAutoNextPage } from "../lib/use-auto-next-page";
 import { PullRequestScopeContext } from "./pull-request-context";
 import {
   CompactFilterMenu,
@@ -51,6 +52,10 @@ import { PullRequestListGhost, PullRequestsUnavailableState } from "./pull-reque
 const PAGE = 50;
 /** Within this many rows of the end, the next page is asked for. */
 const PREFETCH_ROWS = 8;
+/** With a review or checks filter on, the pages read without asking: past
+ *  this, a filter that matches little would page through the whole
+ *  repository on its own, so the reader asks for more instead. */
+export const AUTO_PAGES_WHILE_FILTERED = 3;
 const GROUP_HEADER_HEIGHT = 28;
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -161,12 +166,15 @@ export function PullRequestListPanel({ repoPath }: { repoPath: string }) {
 
   const virtualItems = virtualizer.getVirtualItems();
   const lastIndex = virtualItems[virtualItems.length - 1]?.index ?? -1;
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = list;
-  useEffect(() => {
-    if (hasNextPage && !isFetchingNextPage && lastIndex >= items.length - PREFETCH_ROWS) {
-      void fetchNextPage();
-    }
-  }, [lastIndex, items.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
+  const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = list;
+  const pagesLoaded = list.data?.pages.length ?? 0;
+  // Review and checks narrow only what has loaded (the host narrows the
+  // rest), so a sparse match keeps the end of the list in view and would
+  // page on forever: cap it.
+  const narrowsLoaded = filters.review !== undefined || filters.checks !== undefined;
+  const autoPagingCapped = narrowsLoaded && pagesLoaded >= AUTO_PAGES_WHILE_FILTERED;
+  useAutoNextPage(list, !autoPagingCapped && lastIndex >= items.length - PREFETCH_ROWS);
+  const loadMore = useCallback(() => void fetchNextPage(), [fetchNextPage]);
 
   // Back to the top when what is asked for changes.
   useEffect(() => {
@@ -288,7 +296,8 @@ export function PullRequestListPanel({ repoPath }: { repoPath: string }) {
               refreshing={refreshing}
               onClearQuery={() => setSearch("")}
               onClearFilters={() => update({ filters: {}, state: "open", involvement: "all" })}
-              onLoadMore={() => void fetchNextPage()}
+              loadFailed={isFetchNextPageError}
+              onLoadMore={loadMore}
               onRefresh={refresh}
             />
           ) : (
@@ -323,9 +332,12 @@ export function PullRequestListPanel({ repoPath }: { repoPath: string }) {
                         onOpen={open}
                       />
                     ) : (
-                      <p className="flex h-full items-center justify-center text-2xs text-muted-foreground">
-                        {isFetchingNextPage ? "Loading more pull requests…" : ""}
-                      </p>
+                      <MoreRow
+                        loading={isFetchingNextPage}
+                        failed={isFetchNextPageError}
+                        capped={autoPagingCapped}
+                        onLoad={loadMore}
+                      />
                     )}
                   </div>
                 );
@@ -335,6 +347,39 @@ export function PullRequestListPanel({ repoPath }: { repoPath: string }) {
         </div>
       </div>
     </PullRequestScopeContext.Provider>
+  );
+}
+
+/** The list's last row while more pages exist: what the next read is doing,
+ *  or the button that asks for it when it is not asked for on its own. */
+function MoreRow({
+  loading,
+  failed,
+  capped,
+  onLoad,
+}: {
+  loading: boolean;
+  failed: boolean;
+  capped: boolean;
+  onLoad: () => void;
+}) {
+  return (
+    <div className="flex h-full items-center justify-center gap-2 text-2xs text-muted-foreground">
+      {loading ? (
+        "Loading more pull requests…"
+      ) : failed ? (
+        <>
+          <span>More pull requests could not be loaded.</span>
+          <Button size="xs" variant="outline" onClick={onLoad}>
+            Retry
+          </Button>
+        </>
+      ) : capped ? (
+        <Button size="xs" variant="ghost" onClick={onLoad}>
+          Load more
+        </Button>
+      ) : null}
+    </div>
   );
 }
 
@@ -380,6 +425,7 @@ function PullRequestListEmptyState({
   filtered,
   canLoadMore,
   loadingMore,
+  loadFailed,
   refreshing,
   onClearQuery,
   onClearFilters,
@@ -390,6 +436,7 @@ function PullRequestListEmptyState({
   filtered: boolean;
   canLoadMore: boolean;
   loadingMore: boolean;
+  loadFailed: boolean;
   refreshing: boolean;
   onClearQuery: () => void;
   onClearFilters: () => void;
@@ -427,7 +474,7 @@ function PullRequestListEmptyState({
         ) : null}
         {canLoadMore ? (
           <Button size="sm" variant="outline" disabled={loadingMore} onClick={onLoadMore}>
-            {loadingMore ? "Loading…" : "Load more"}
+            {loadingMore ? "Loading…" : loadFailed ? "Retry loading more" : "Load more"}
           </Button>
         ) : null}
         <Button size="sm" variant="outline" disabled={refreshing} onClick={onRefresh}>

@@ -8,7 +8,9 @@ import {
   IMAGE_CACHE_CAPACITY,
   isProxiedImageUrl,
   loadPrImage,
+  releasePrImage,
   resetPrImagesForTests,
+  retainPrImage,
 } from "./pr-image";
 
 let created = 0;
@@ -61,6 +63,26 @@ describe("pr-image", () => {
       await loadPrImage("/repo", `https://camo.githubusercontent.com/${i}`);
     }
     expect(revoked).toEqual(["blob:fake/1"]);
+  });
+
+  it("never revokes a URL an image still shows", async () => {
+    const first = "https://camo.githubusercontent.com/0";
+    await loadPrImage("/repo", first);
+    retainPrImage(first);
+    for (let i = 1; i <= IMAGE_CACHE_CAPACITY; i++) {
+      await loadPrImage("/repo", `https://camo.githubusercontent.com/${i}`);
+    }
+    // The oldest is on screen, so the next-oldest goes instead.
+    expect(revoked).toEqual(["blob:fake/2"]);
+
+    await loadPrImage("/repo", "https://camo.githubusercontent.com/extra");
+    expect(revoked).toEqual(["blob:fake/2", "blob:fake/3"]);
+
+    // Once nothing shows it, it is the oldest, and goes as the cache trims.
+    releasePrImage(first);
+    expect(revoked).toEqual(["blob:fake/2", "blob:fake/3"]);
+    await loadPrImage("/repo", "https://camo.githubusercontent.com/extra-2");
+    expect(revoked).toContain("blob:fake/1");
   });
 
   it("does not cache a failed fetch", async () => {
