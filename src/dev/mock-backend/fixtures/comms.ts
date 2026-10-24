@@ -278,7 +278,7 @@ const DESKTOP_SEEDS: Seed[] = [
   {
     by: SAM,
     gap: 4,
-    body: "That's `atEndRef`, isn't it. It gets re-armed from the resize observer, so any content growth counts as \"the reader is at the end\".",
+    body: "That's `atEndRef` in `src/lib/api.ts:12`, isn't it. It gets re-armed from the resize observer, so any content growth counts as \"the reader is at the end\". (Not `/Users/sam/scratch/notes.md` — that's my machine.)",
     reactions: [
       [EMOJI.eyes, [PRIYA, MIRA]],
       [EMOJI.thinking, [TOBI]],

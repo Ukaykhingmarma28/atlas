@@ -161,6 +161,44 @@ describe("textIsAddress", () => {
   });
 });
 
+describe("Azure DevOps", () => {
+  it.each([
+    ["dev.azure.com", "azure-devops"],
+    ["acme.visualstudio.com", "azure-devops"],
+    // All of Azure is not Azure DevOps, nor the product site, nor a look-alike.
+    ["portal.azure.com", "web"],
+    ["azure.com", "web"],
+    ["visualstudio.com", "web"],
+    ["dev.azure.com.evil.io", "web"],
+    ["visualstudio.com.evil.io", "web"],
+    ["evilvisualstudio.com", "web"],
+  ])("%s → %s", (host, service) => {
+    expect(linkServiceOfHost(host)).toBe(service);
+  });
+
+  it.each([
+    ["https://dev.azure.com/acme/shop/_git/web/pullrequest/42", "PR #42"],
+    ["https://acme.visualstudio.com/shop/_git/web/pullrequest/42", "PR #42"],
+    ["https://dev.azure.com/acme/shop/_workitems/edit/17", "#17"],
+    ["https://acme.visualstudio.com/shop/_workitems/edit/17/", "#17"],
+    ["https://dev.azure.com/acme/shop/_git/web", "shop/web"],
+    ["https://acme.visualstudio.com/shop/_git/web", "shop/web"],
+    ["https://dev.azure.com/acme/My%20Project/_git/web", "My Project/web"],
+    ["https://dev.azure.com/acme/shop/_boards", null],
+    ["https://dev.azure.com/acme/shop/_git/web?path=/a.ts", null],
+  ])("%s reads %s", (href, short) => {
+    expect(linkFacts(href)).toEqual({ service: "azure-devops", short, commit: false });
+  });
+
+  it("keeps the host in front of a look-alike's pull request", () => {
+    expect(linkFacts("https://dev.azure.com.evil.io/a/b/_git/c/pullrequest/1")).toEqual({
+      service: "web",
+      short: "dev.azure.com.evil.io · a/b/_git/c PR #1",
+      commit: false,
+    });
+  });
+});
+
 describe("leadingLinkTextLength", () => {
   it("keeps the protocol, or one character, beside the icon", () => {
     expect(leadingLinkTextLength("https://example.com")).toBe(8);

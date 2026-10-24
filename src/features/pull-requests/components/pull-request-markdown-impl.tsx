@@ -8,8 +8,16 @@
 // own allowlist (`rehype-sanitize`) before anything is highlighted or drawn.
 // Images go through the `gh` image proxy, since the webview may load none
 // from the network; links open in the system browser.
+//
+// File names become chips (`file-chip-hast.ts`), after the sanitiser, so
+// nothing the body writes can forge one. One that names a changed file opens
+// the Code tab at it (`pull-request-code-request.ts`); any other file in the
+// checkout opens in Atlas's viewer. Nothing outside the checkout gets a chip,
+// and no click reaches the system's opener, the file manager or an external
+// editor (`openUntrustedPathLink`). Tables and code blocks wear collapse and
+// copy buttons (`markdown-block-frame.tsx`).
 
-import { memo, useMemo, type ComponentProps } from "react";
+import { memo, useCallback, useMemo, type ComponentProps } from "react";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import rehypeRaw from "rehype-raw";
@@ -18,10 +26,15 @@ import remarkGfm from "remark-gfm";
 import { ExternalLink, ImageOff, Paperclip } from "lucide-react";
 import "@/styles/hljs.css";
 
-import { openPullRequest } from "@/features/git/lib/git-pr-api";
+import { MarkdownBlockFrame } from "@/components/markdown-block-frame";
+import { isWebUrl, openPullRequest } from "@/features/git/lib/git-pr-api";
+import { rehypeFileChips, type FileChipPolicy } from "@/lib/file-chip-hast";
+import { openFileChipUnder, useFileChipHost, type FileChipTarget } from "@/lib/file-chip-host";
 import { cn } from "@/lib/utils";
 
 import { usePrImage } from "../lib/pr-image";
+import { usePullRequestChangedFiles } from "../lib/pull-request-changed-files";
+import { requestPullRequestCodeFile } from "../lib/pull-request-code-request";
 import { remarkPullRequestAutolinks, splitPullRequestBody } from "../lib/pull-request-markdown";
 import { usePullRequestScope } from "./pull-request-context";
 
@@ -46,7 +59,9 @@ function ProxiedImage({ src, alt, width, height }: ComponentProps<"img">) {
     return (
       <button
         type="button"
-        onClick={() => openPullRequest(address)}
+        onClick={() => {
+          if (isWebUrl(address)) openPullRequest(address);
+        }}
         className="inline-flex max-w-full items-center gap-1.5 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-element-hover hover:text-foreground"
       >
         <ImageOff aria-hidden className="size-3.5 shrink-0" />
@@ -76,7 +91,9 @@ const COMPONENTS: Components = {
         href={href}
         onClick={(event) => {
           event.preventDefault();
-          if (href) openPullRequest(href);
+          // A web page only: a relative or `file:` destination in text anyone
+          // can write must never reach the system opener.
+          if (href && isWebUrl(href)) openPullRequest(href);
         }}
       >
         {children}
@@ -97,19 +114,40 @@ const COMPONENTS: Components = {
     // Task-list boxes: GitHub ticks them by editing the body, so here they only read.
     <input type="checkbox" checked={props.checked} readOnly disabled />
   ),
+  table: ({ node: _node, ...props }) => (
+    <MarkdownBlockFrame kind="table">
+      <table {...props} />
+    </MarkdownBlockFrame>
+  ),
+  pre: ({ node: _node, ...props }) => (
+    <MarkdownBlockFrame kind="code">
+      <pre {...props} />
+    </MarkdownBlockFrame>
+  ),
 };
 
-const REHYPE_PLUGINS: NonNullable<Options["rehypePlugins"]> = [
-  rehypeRaw,
-  [rehypeSanitize, SANITIZE_SCHEMA],
-  rehypeHighlight,
-];
+/** The chips' rules for a pull request: its checkout is the one root, its
+ *  changed files are matched first, and a chip reads as the file's name. */
+export function pullRequestChipPolicy(
+  repoPath: string,
+  changedFiles: readonly string[] | null,
+): FileChipPolicy | null {
+  if (!repoPath) return null;
+  return {
+    root: repoPath,
+    label: "basename",
+    folders: false,
+    ...(changedFiles?.length ? { changedFiles } : {}),
+  };
+}
 
 function AttachmentLink({ url }: { url: string }) {
   return (
     <button
       type="button"
-      onClick={() => openPullRequest(url)}
+      onClick={() => {
+        if (isWebUrl(url)) openPullRequest(url);
+      }}
       className="flex w-full items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left text-xs hover:bg-element-hover"
     >
       <Paperclip aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
@@ -126,19 +164,48 @@ export default memo(function PullRequestMarkdownImpl({
   text: string;
   className?: string;
 }) {
-  const { repositoryUrl } = usePullRequestScope();
+  const { repositoryUrl, repoPath, number } = usePullRequestScope();
+  const changedFiles = usePullRequestChangedFiles(repoPath, number);
   const remarkPlugins = useMemo<NonNullable<Options["remarkPlugins"]>>(
     () =>
       repositoryUrl ? [remarkGfm, [remarkPullRequestAutolinks, { repositoryUrl }]] : [remarkGfm],
     [repositoryUrl],
   );
-  // Parsed and drawn once per text and repository: the scope above changes
-  // for reasons of its own (an agent action starting), and every block on
-  // the page would otherwise re-run the whole remark/rehype pipeline. The
-  // same element tree back lets React skip the subtree.
+  // The chips run after the sanitiser: they are Atlas's own markup, and
+  // nothing the body writes reaches them.
+  const rehypePlugins = useMemo<NonNullable<Options["rehypePlugins"]>>(
+    () => [
+      rehypeRaw,
+      [rehypeSanitize, SANITIZE_SCHEMA],
+      [rehypeFileChips, pullRequestChipPolicy(repoPath, changedFiles)],
+      rehypeHighlight,
+    ],
+    [repoPath, changedFiles],
+  );
+  const openChip = useCallback(
+    (target: FileChipTarget) => {
+      if (
+        target.prFile &&
+        requestPullRequestCodeFile(repoPath, number, target.prFile, target.line)
+      ) {
+        return;
+      }
+      openFileChipUnder(repoPath)(target);
+    },
+    [repoPath, number],
+  );
+  const { ref, onClick, onKeyDown } = useFileChipHost(openChip);
+  // Parsed and drawn once per text, repository and changed-file list: the
+  // scope above changes for reasons of its own (an agent action starting),
+  // and every block on the page would otherwise re-run the whole
+  // remark/rehype pipeline. The same element tree back lets React skip the
+  // subtree.
   return useMemo(
     () => (
       <div
+        ref={ref}
+        onClick={onClick}
+        onKeyDown={onKeyDown}
         className={cn(
           "prose-chat min-w-0 text-sm leading-relaxed break-words text-foreground select-text",
           className,
@@ -149,7 +216,7 @@ export default memo(function PullRequestMarkdownImpl({
             <ReactMarkdown
               key={segment.id}
               remarkPlugins={remarkPlugins}
-              rehypePlugins={REHYPE_PLUGINS}
+              rehypePlugins={rehypePlugins}
               components={COMPONENTS}
             >
               {segment.kind === "markdown" ? segment.text : `![](<${segment.url}>)`}
@@ -160,6 +227,6 @@ export default memo(function PullRequestMarkdownImpl({
         )}
       </div>
     ),
-    [text, className, remarkPlugins],
+    [text, className, remarkPlugins, rehypePlugins, ref, onClick, onKeyDown],
   );
 });

@@ -25,7 +25,13 @@ import { toast } from "sonner";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { openOutsideFile } from "@/features/external-editor/lib/preferred-editor";
 import { fileIndex } from "@/features/file-picker/lib/file-picker-api";
-import { baseNameOf, isBundleName, isUnderRoot, normalisePath } from "@/lib/file-links";
+import {
+  baseNameOf,
+  isBundleName,
+  isUnderRoot,
+  normalisePath,
+  resolveInProject,
+} from "@/lib/file-links";
 import { openInProject } from "./open-in-project";
 
 /** What a chip carries. */
@@ -110,4 +116,46 @@ export async function openPathLink(link: PathLink): Promise<void> {
     return;
   }
   await revealInFileManager(link.path);
+}
+
+/** What a chip in text another person wrote carries. */
+export interface UntrustedPathLink {
+  /** Absolute, as the chip carries it. */
+  path: string;
+  line?: number;
+  column?: number;
+}
+
+/**
+ * Open a chip from text Atlas does not trust (a pull request's body and
+ * comments, a plan, a note, a markdown file, a README, a team-chat message):
+ * a file inside `root` becomes an Atlas tab, and nothing else happens. Never
+ * the external editor, never the system's opener, never the file manager —
+ * not even for a folder or a bundle — so a planted `setup.terminal` or
+ * `Foo.app` cannot be launched from a click. A file Atlas cannot draw opens
+ * as its "unsupported" tab, which runs nothing either.
+ *
+ * `root` is the surface's own (the checkout, the document's project), handed
+ * in by the renderer, not read off the chip: whatever the DOM says, the path
+ * is resolved again here and must land inside it. Resolves true when a tab
+ * was opened.
+ */
+export async function openUntrustedPathLink(
+  link: UntrustedPathLink,
+  root: string,
+): Promise<boolean> {
+  const resolved = resolveInProject(link.path, root);
+  if (!resolved || isBundleName(baseNameOf(resolved))) return false;
+  const reveal =
+    link.line === undefined ? undefined : { reveal: { line: link.line, column: link.column } };
+  const project = useAppStore.getState().currentProject?.path ?? null;
+  let path = resolved;
+  if (project && isUnderRoot(resolved, project)) {
+    const located = await locateInProject(resolved, project);
+    // The index answers for the whole project; keep its answer only inside
+    // the surface's root.
+    if (isUnderRoot(located, root)) path = located;
+  }
+  await openInProject(path, undefined, reveal);
+  return true;
 }

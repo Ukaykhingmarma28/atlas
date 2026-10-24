@@ -221,6 +221,46 @@ function pull(
 
 const BIG_FILES = 140;
 
+/** #431's changed files: named in its body, so its chips open the Code tab. */
+const FILE_CHIPS_CHANGED = [
+  "config.default.toml",
+  "crates/atlas-settings/settings-registry.toml",
+  "crates/atlas-settings/src/settings_docs.gen.rs",
+  "docs/reference/configuration.md",
+  "docs/settings.json",
+  "src/features/settings/lib/settings-registry.gen.ts",
+];
+
+/** #431's body: file names in prose, in a table, in a code block, and the
+ *  paths a hostile body would try, which must stay plain code. */
+const FILE_CHIPS_BODY = [
+  "## What?",
+  "",
+  "`crates/atlas-settings/settings-registry.toml` is now the one hand-edited description of every key under `[settings]` in `config.toml`: type, default, bounds or values, status (`live` / `elsewhere` / `file-only` / `internal` / `legacy`), and the page, section, title and summary the Settings UI will render. `bun run settings:gen` writes everything derived from it:",
+  "",
+  "| Output | What it is |",
+  "| --- | --- |",
+  "| `crates/atlas-settings/src/settings_docs.gen.rs` | `SETTINGS_DOCS`, the comment above each key in a generated `config.toml` |",
+  "| `src/features/settings/lib/settings-registry.gen.ts` | TS `AppSettings`, `DEFAULT_SETTINGS`, and per-key metadata; `app-settings.ts` re-exports them instead of a hand-written mirror |",
+  "| `settings.json` | the same metadata for the docs site (`bun run sync:settings` in docs-atlas) |",
+  "| `docs/reference/configuration.md` | the schema table, between `generated:settings` markers |",
+  "",
+  "The whole file a fresh install gets is committed as `config.default.toml`, so a change to what users see is a reviewable diff.",
+  "",
+  "Also:",
+  "",
+  "- the request helper in `src/lib/api.ts:12` reads the registry, not a copy;",
+  "- tracked in https://dev.azure.com/acme/shop/_workitems/edit/17 and mirrored in https://dev.azure.com/acme/shop/_git/web/pullrequest/42.",
+  "",
+  "```ts",
+  'export const SETTINGS = loadRegistry("crates/atlas-settings/settings-registry.toml");',
+  "```",
+  "",
+  "## These stay code",
+  "",
+  "`/etc/passwd`, `../outside/x.ts`, `~/Desktop/setup.terminal`, `Calculator.app` and [a script](../../Desktop/setup.terminal).",
+].join("\n");
+
 const PULLS: FakePull[] = [
   pull({
     number: 412,
@@ -496,6 +536,42 @@ const PULLS: FakePull[] = [
     autoMergeEnabled: false,
     autoMergeMethod: null,
   }),
+  pull({
+    number: 431,
+    title: "feat(settings): one registry generates every copy of the settings schema",
+    body: FILE_CHIPS_BODY,
+    author: VIEWER,
+    state: "merged",
+    isDraft: false,
+    mergeability: "unknown",
+    mergeStateStatus: null,
+    reviewDecision: null,
+    additions: 4110,
+    deletions: 588,
+    changedFiles: FILE_CHIPS_CHANGED.length,
+    commitCount: 6,
+    headBranch: "settings-registry",
+    headRepository: REPOSITORY,
+    headSha: "b1c2d3e4f5a60718293a4b5c6d7e8f9012345678",
+    baseBranch: "main",
+    baseSha: "1a2b3c4d5e6f708192a3b4c5d6e7f80912345678",
+    isCrossRepository: false,
+    createdAt: iso(60),
+    updatedAt: iso(48),
+    mergedAt: iso(48),
+    closedAt: iso(48),
+    reviewers: [],
+    labels: [],
+    assignees: [],
+    checks: [check("unit", "success", 4), check("lint", "success", 1)],
+    checksState: "passing",
+    checksTruncated: false,
+    viewerPermissions: permissions(true, false),
+    baseComparison: "unknown",
+    behindBy: null,
+    autoMergeEnabled: null,
+    autoMergeMethod: null,
+  }),
 ];
 
 function find(number: unknown): FakePull {
@@ -610,6 +686,20 @@ function stackCrowd(pulls: FakePull[]): FakePull[] {
 function listStatOf(number: number): PrListStat | null {
   const entry = allPulls().find((p) => p.detail.number === number)?.entry;
   if (!entry) return null;
+  if (number === 431) {
+    const files = filesOf(number).map((f) => ({
+      path: f.path,
+      additions: f.additions,
+      deletions: f.deletions,
+    }));
+    return {
+      number,
+      additions: entry.additions,
+      deletions: entry.deletions,
+      files,
+      filesTruncated: false,
+    };
+  }
   const shares: Array<[string, number]> = [
     [`src/feature-${number}/index.ts`, 0.55],
     [`src/feature-${number}/view.tsx`, 0.15],
@@ -1206,7 +1296,18 @@ function filesOf(number: number): PrDiffFile[] {
   const dels = big
     ? spread(detail.deletions, n, 13, (i) => statusOf(i) === "added")
     : Array.from({ length: n }, (_, i) => (statusOf(i) === "added" ? 0 : i % 6));
+  const named = number === 431 ? FILE_CHIPS_CHANGED : null;
   const files = Array.from({ length: n }, (_, i): PrDiffFile => {
+    if (named) {
+      return {
+        path: named[i]!,
+        previousPath: null,
+        status: "modified",
+        additions: adds[i]!,
+        deletions: dels[i]!,
+        hasPatch: true,
+      };
+    }
     const status = statusOf(i);
     const dir = big ? CATALOGUE_DIRS[i % CATALOGUE_DIRS.length] : DIRS[i % DIRS.length];
     const name = big

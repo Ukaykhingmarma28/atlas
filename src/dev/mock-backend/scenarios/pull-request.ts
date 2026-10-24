@@ -6,6 +6,8 @@
 //  - `pull-request-review` — number 412: changes requested, threads, behind its base;
 //  - `pull-request-merged` — number 398; `pull-request-draft` — number 405;
 //    `pull-request-conflict` — number 401, conflicting with a failing check;
+//  - `pull-request-file-chips` — number 431: a body that names files in a
+//    table, in code spans and in a code block, with hostile paths beside them;
 //  - `pull-request-not-installed`, `-signed-out`, `-rate-limited`, `-offline`
 //    — every read fails the way `gh` would, for the unavailable states;
 //  - `pull-request-list` — the repository's list tab over about 150 pull
@@ -78,6 +80,11 @@ export const pullRequestConflict = pullRequestScenario(
   "A pull request that conflicts with its base.",
   401,
 );
+export const pullRequestFileChips = pullRequestScenario(
+  "pull-request-file-chips",
+  "A body naming files in a table and code spans: chips for the changed files and the checkout, collapse and copy on blocks, and hostile paths left as code.",
+  431,
+);
 export const pullRequestNotInstalled = pullRequestScenario(
   "pull-request-not-installed",
   "The pull request tab without the GitHub CLI.",
@@ -144,6 +151,7 @@ export const pullRequestScenarios: Scenario[] = [
   pullRequestMerged,
   pullRequestDraft,
   pullRequestConflict,
+  pullRequestFileChips,
   pullRequestNotInstalled,
   pullRequestSignedOut,
   pullRequestRateLimited,

@@ -8,6 +8,9 @@
 //   https://github.com/acme/web/commit/3f9c2d1e8b…          → github  "3f9c2d1" (monospace)
 //   https://github.com/acme/web                             → github  "acme/web"
 //   https://linear.app/atlas/issue/ATL-978/browser-goes-…   → linear  "ATL-978"
+//   https://dev.azure.com/acme/shop/_git/web/pullrequest/42 → azure-devops "PR #42"
+//   https://acme.visualstudio.com/shop/_workitems/edit/17   → azure-devops "#17"
+//   https://dev.azure.com/acme/shop/_git/web                → azure-devops "shop/web"
 //   https://example.com/docs                                → web     (the globe, no label)
 //   https://git.acme.dev/acme/web/pulls/42                  → web     "git.acme.dev · acme/web PR #42"
 //
@@ -39,6 +42,7 @@ export type LinkService =
   | "figma"
   | "vercel"
   | "npm"
+  | "azure-devops"
   | "web";
 
 export interface LinkFacts {
@@ -83,7 +87,15 @@ export function linkServiceOfHost(hostname: string): LinkService {
   if (isHostOf(host, "figma.com")) return "figma";
   if (isHostOf(host, "vercel.com") || isHostOf(host, "vercel.app")) return "vercel";
   if (isHostOf(host, "npmjs.com")) return "npm";
+  if (isAzureDevOpsHost(host)) return "azure-devops";
   return "web";
+}
+
+/** Azure DevOps' own hosts: `dev.azure.com` exactly (not any `*.azure.com`,
+ *  which is all of Azure), and an organisation's `<org>.visualstudio.com`
+ *  (a real subdomain; the bare `visualstudio.com` is the product site). */
+function isAzureDevOpsHost(hostname: string): boolean {
+  return hostname === "dev.azure.com" || hostname.endsWith(".visualstudio.com");
 }
 
 // ── Change requests ───────────────────────────────────────────────────────────
@@ -197,6 +209,39 @@ function githubShort(url: URL): Pick<LinkFacts, "short" | "commit"> | null {
   return null;
 }
 
+/**
+ * Azure DevOps' own routes. On `dev.azure.com` the organisation is the first
+ * path segment; on `<org>.visualstudio.com` it is the subdomain, so the path
+ * starts at the project.
+ *
+ *   …/{project}/_git/{repo}/pullrequest/{id}   → "PR #id"
+ *   …/{project}/_workitems/edit/{id}           → "#id"
+ *   …/{project}/_git/{repo}                    → "project/repo"
+ */
+function azureDevOpsShort(url: URL): Pick<LinkFacts, "short" | "commit"> | null {
+  const pull = parseChangeRequestUrl(url);
+  if (pull) return { short: `PR #${pull.number}`, commit: false };
+  const segments = url.pathname.split("/").filter(Boolean).map(safeDecode);
+  const rest = url.hostname.toLowerCase() === "dev.azure.com" ? segments.slice(1) : segments;
+  const [project, area, third, fourth] = rest;
+  if (!project) return null;
+  if (area === "_workitems" && third === "edit" && fourth && /^[1-9]\d*$/.test(fourth)) {
+    return { short: `#${fourth}`, commit: false };
+  }
+  if (area === "_git" && third && rest.length === 3 && !url.search && !url.hash) {
+    return { short: `${project}/${third}`, commit: false };
+  }
+  return null;
+}
+
+function safeDecode(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
 /** `ATL-978` from `/atlas/issue/ATL-978/browser-goes-agent-driven`. */
 const LINEAR_ISSUE = /^\/[^/]+\/issue\/([A-Za-z][A-Za-z0-9]*-[1-9]\d*)(?:\/|$)/u;
 
@@ -205,6 +250,8 @@ function shortLabel(service: LinkService, url: URL): Pick<LinkFacts, "short" | "
   switch (service) {
     case "github":
       return githubShort(url) ?? none;
+    case "azure-devops":
+      return azureDevOpsShort(url) ?? none;
     case "linear": {
       const issue = LINEAR_ISSUE.exec(url.pathname);
       return issue ? { short: issue[1].toUpperCase(), commit: false } : none;
