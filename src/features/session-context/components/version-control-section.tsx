@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 
 import { openSessionChanges } from "@/features/git/lib/open-session-changes";
-import { openPullRequest } from "@/features/git/lib/git-pr-api";
+import { openPullRequestTab } from "@/features/pull-requests/lib/open-pull-request-tab";
 import { useGitStore } from "@/features/git/stores/git-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import type { PrChecksState, PrListEntry } from "@/features/pull-requests/lib/pull-requests-types";
@@ -79,7 +79,7 @@ function VersionControlRows({ tabId, projectPath }: { tabId: string | null; proj
   return (
     <ContextSection title="Version control" showHeading={false}>
       <BranchPicker />
-      <PullRequestRows prs={prs} />
+      <PullRequestRows projectPath={projectPath} prs={prs} />
       <QuickActionRow projectPath={projectPath} prs={prs} />
       <ChangesRow tabId={tabId} projectPath={projectPath} />
     </ContextSection>
@@ -101,15 +101,17 @@ const CHECKS: Record<PrChecksState, { icon: LucideIcon; className: string; label
 
 /**
  * The branch's pull requests (`useSessionPullRequests`): the one that matters
- * now, then the rest behind "Show N more". Each opens on the host.
+ * now, then the rest behind "Show N more". Each opens in its own surface tab
+ * (`openPullRequestTab`).
  */
-function PullRequestRows({ prs }: { prs: SessionPullRequests }) {
+function PullRequestRows({ projectPath, prs }: { projectPath: string; prs: SessionPullRequests }) {
   const [expanded, setExpanded] = useState(false);
   if (!prs.current) return null;
   return (
     <>
-      <PullRequestRow pr={prs.current} />
-      {expanded && prs.rest.map((pr) => <PullRequestRow key={pr.number} pr={pr} />)}
+      <PullRequestRow projectPath={projectPath} pr={prs.current} />
+      {expanded &&
+        prs.rest.map((pr) => <PullRequestRow key={pr.number} projectPath={projectPath} pr={pr} />)}
       {!expanded && prs.rest.length > 0 && (
         <ContextRow onClick={() => setExpanded(true)} className="text-muted-foreground">
           <Plus size={14} className="shrink-0" aria-hidden />
@@ -120,11 +122,16 @@ function PullRequestRows({ prs }: { prs: SessionPullRequests }) {
   );
 }
 
-function PullRequestRow({ pr }: { pr: PrListEntry }) {
+function PullRequestRow({ projectPath, pr }: { projectPath: string; pr: PrListEntry }) {
   const { icon, className } = prIcon(pr);
   const checks = pr.state === "open" && pr.checksState ? CHECKS[pr.checksState] : null;
   return (
-    <ContextRow onClick={() => openPullRequest(pr.url)} title={`${pr.title} — ${pr.url}`}>
+    <ContextRow
+      onClick={() =>
+        openPullRequestTab({ repoPath: projectPath, number: pr.number, title: pr.title })
+      }
+      title={`${pr.title} — ${pr.url}`}
+    >
       <RowIcon icon={icon} className={className} />
       <RowLabel>{pr.title}</RowLabel>
       {checks && (

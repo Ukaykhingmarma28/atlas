@@ -12,6 +12,7 @@ export const TAB_TYPES = [
   "diff",
   "commit",
   "session-changes",
+  "pull-request",
   "source-control",
   "log",
   "media",
@@ -110,6 +111,9 @@ export const TAB_PLACEMENT = {
   diff: { kind: "surface", minWidth: 360 },
   commit: { kind: "surface", minWidth: 360 },
   "session-changes": { kind: "surface", minWidth: 320 },
+  // One pull request: read and acted on while the session that opened it
+  // works, and its header, Summary and composer are built for a column.
+  "pull-request": { kind: "surface", minWidth: 360 },
   "source-control": { kind: "surface", minWidth: 300 },
   "team-chat": { kind: "surface", minWidth: 320 },
   "comms-draft": { kind: "surface", minWidth: 320 },

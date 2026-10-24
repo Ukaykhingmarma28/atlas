@@ -143,6 +143,8 @@ interface LayoutActions {
     /** Back to the session from a destination; it stays mounted, hidden. */
     hideDestination: () => void;
     setTabDirty: (id: string, dirty: boolean) => void;
+    /** Rename a tab, e.g. once a pull request's title has loaded. */
+    setTabTitle: (id: string, title: string) => void;
     navigateTabBack: () => void;
     navigateTabForward: () => void;
     activateTabByIndex: (i: number) => void;
@@ -599,6 +601,8 @@ export const useLayoutStore = createSelectors(
                 tab.type === "commit" ||
                 // One per AGENT SESSION (id is `session-changes:{sessionId}`).
                 tab.type === "session-changes" ||
+                // One per PULL REQUEST (id is `pull-request:{repoPath}:{number}`).
+                tab.type === "pull-request" ||
                 tab.type === "chat" ||
                 tab.type === "media" ||
                 tab.type === "svg" ||
@@ -955,6 +959,11 @@ export const useLayoutStore = createSelectors(
             set((s) => {
               const tab = s.tabs.find((t) => t.id === id);
               if (tab) tab.dirty = dirty;
+            }),
+          setTabTitle: (id, title) =>
+            set((s) => {
+              const tab = s.tabs.find((t) => t.id === id);
+              if (tab && tab.title !== title) tab.title = title;
             }),
           // Persist the whole project layout (split columns + their tabs) per
           // project so the AKB arrangement comes back on reopen. The Rust

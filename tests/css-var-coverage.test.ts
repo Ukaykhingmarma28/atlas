@@ -42,6 +42,7 @@ const CSS_VAR_ALLOWLIST: Record<string, string> = {
   "--atlas-pulse-color": "component-local animation colour",
   "--atlas-ants-color": "component-local animation colour",
   "--atlas-beam-travel": "component-local animation distance",
+  "--pr-label": "component-local pull request label colour, from the host",
   // Set on <html> by `features/settings/lib/display-settings.ts` from the
   // user's settings; the two fonts only when set, so every reader carries its
   // own fallback.
