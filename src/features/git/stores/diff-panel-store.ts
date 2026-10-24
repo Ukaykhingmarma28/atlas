@@ -9,9 +9,9 @@
 //  - Which files are folded lives for the run only. It is keyed by the scope
 //    being reviewed, so it survives switching tabs, scopes and panels, but a
 //    fold from yesterday's diff has no business closing today's file.
-//  - Which files were marked viewed persists, per review scope, with the
-//    signature of the diff the reader saw: a file that changes afterwards
-//    reads as changed, not as still viewed.
+//
+// Which files were marked viewed is not kept here: only a pull request's
+// review marks files, and GitHub keeps those marks (`use-pull-request-files-viewed.ts`).
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
@@ -27,13 +27,29 @@ export const LATEST_TURN = "latest";
 
 export type DiffLayout = "unified" | "split";
 
-/** A file marked viewed: the signature of the diff it showed then, and the
- *  whitespace mode it was read in (another mode diffs differently, so its
- *  signature says nothing about whether the file moved). `sig` is `null` when
- *  the file was marked before its diff had loaded. */
-export interface ViewedMark {
-  sig: number | null;
-  ws: boolean;
+/** What "collapse all" or "expand all" last said; `null` until either is pressed. */
+export type FoldOverride = "folded" | "expanded" | null;
+
+/**
+ * A scope's folds, kept as the reader's departures from a default rather than
+ * as the set of folded files: a diff can arrive a page at a time, and a file
+ * that has not loaded yet cannot be in a set. Kept as a set, it would land
+ * open moments after the reader folded everything.
+ */
+export interface FoldState {
+  /** The last "collapse all" / "expand all"; `null` follows each file's default. */
+  override: FoldOverride;
+  /** Files the reader toggled since, by item id. */
+  toggled: Record<string, true>;
+}
+
+export const NO_FOLDS: FoldState = { override: null, toggled: {} };
+
+/** Whether one file is folded: its default (or the last fold-all), flipped if
+ *  the reader toggled it since. */
+export function isFolded(state: FoldState, id: string, foldedByDefault: boolean): boolean {
+  const base = state.override === null ? foldedByDefault : state.override === "folded";
+  return id in state.toggled ? !base : base;
 }
 
 interface DiffPanelState {
@@ -52,11 +68,9 @@ interface DiffPanelState {
   /** The tree beside the diff. Closed until asked for: the diff's own file
    *  rows already name every file. */
   fileTreeOpen: boolean;
-  /** Folded files per review scope key (`collapseScopeKey`), as a set of
-   *  file keys. Absent: nothing touched yet, the default applies. */
-  collapsed: Record<string, Record<string, true>>;
-  /** Viewed files per review scope key, by path. */
-  viewed: Record<string, Record<string, ViewedMark>>;
+  /** Folds per review scope key. Absent: nothing touched yet, every file at
+   *  its default. */
+  folds: Record<string, FoldState>;
   actions: {
     setScope: (panel: string, scope: DiffScope) => void;
     /** Show one turn (or {@link LATEST_TURN}): the `turn` scope, on it. */
@@ -65,18 +79,15 @@ interface DiffPanelState {
     setLayout: (layout: DiffLayout) => void;
     setIgnoreWhitespace: (ignore: boolean) => void;
     setFileTreeOpen: (open: boolean) => void;
-    /** Replace a scope's folded set; `defaults` stands in when it has none. */
-    updateCollapsed: (
-      scopeKey: string,
-      defaults: ReadonlySet<string>,
-      update: (current: ReadonlySet<string>) => ReadonlySet<string>,
-    ) => void;
-    /** Mark (or, with `null`, unmark) one file of a scope viewed. */
-    setViewed: (scopeKey: string, path: string, mark: ViewedMark | null) => void;
+    /** Fold an open file, open a folded one. */
+    toggleFold: (scopeKey: string, id: string) => void;
+    /** Fold or open one file, whichever it is now; `foldedByDefault` is what
+     *  it would be untouched. */
+    setFolded: (scopeKey: string, id: string, folded: boolean, foldedByDefault: boolean) => void;
+    /** Collapse or expand every file, including those still to load. */
+    foldAll: (scopeKey: string, override: "folded" | "expanded") => void;
   };
 }
-
-const EMPTY: Record<string, true> = {};
 
 /** Panels whose chosen scope is remembered. A tab id outlives its tab in the
  *  persisted map, so the oldest choices are dropped past this. */
@@ -90,11 +101,11 @@ export function withRecent<T>(record: Record<string, T>, key: string, value: T):
   return Object.fromEntries(entries.slice(-MAX_REMEMBERED_SCOPES));
 }
 
-export function collapsedSetOf(
-  record: Record<string, true> | undefined,
-  defaults: ReadonlySet<string>,
-): ReadonlySet<string> {
-  return record ? new Set(Object.keys(record)) : defaults;
+function toggled(state: FoldState, id: string): FoldState {
+  const next = { ...state.toggled };
+  if (id in next) delete next[id];
+  else next[id] = true;
+  return { override: state.override, toggled: next };
 }
 
 export const useDiffPanelStore = createSelectors(
@@ -107,8 +118,7 @@ export const useDiffPanelStore = createSelectors(
         layout: "unified",
         ignoreWhitespace: null,
         fileTreeOpen: false,
-        collapsed: {},
-        viewed: {},
+        folds: {},
         actions: {
           setScope: (panel, scope) => set((s) => ({ scope: withRecent(s.scope, panel, scope) })),
           setTurn: (panel, turn) =>
@@ -121,24 +131,18 @@ export const useDiffPanelStore = createSelectors(
           setLayout: (layout) => set({ layout }),
           setIgnoreWhitespace: (ignoreWhitespace) => set({ ignoreWhitespace }),
           setFileTreeOpen: (fileTreeOpen) => set({ fileTreeOpen }),
-          updateCollapsed: (scopeKey, defaults, update) =>
+          toggleFold: (scopeKey, id) =>
+            set((s) => ({
+              folds: { ...s.folds, [scopeKey]: toggled(s.folds[scopeKey] ?? NO_FOLDS, id) },
+            })),
+          setFolded: (scopeKey, id, folded, foldedByDefault) =>
             set((s) => {
-              const current = collapsedSetOf(s.collapsed[scopeKey], defaults);
-              const next = update(current);
-              if (next === current) return s;
-              const record: Record<string, true> = next.size === 0 ? EMPTY : {};
-              for (const key of next) record[key] = true;
-              return { collapsed: { ...s.collapsed, [scopeKey]: record } };
+              const current = s.folds[scopeKey] ?? NO_FOLDS;
+              if (isFolded(current, id, foldedByDefault) === folded) return s;
+              return { folds: { ...s.folds, [scopeKey]: toggled(current, id) } };
             }),
-          setViewed: (scopeKey, path, mark) =>
-            set((s) => {
-              const current = s.viewed[scopeKey] ?? {};
-              if (!mark && !(path in current)) return s;
-              const next = { ...current };
-              if (mark) next[path] = mark;
-              else delete next[path];
-              return { viewed: withRecent(s.viewed, scopeKey, next) };
-            }),
+          foldAll: (scopeKey, override) =>
+            set((s) => ({ folds: { ...s.folds, [scopeKey]: { override, toggled: {} } } })),
         },
       }),
       {
@@ -150,7 +154,6 @@ export const useDiffPanelStore = createSelectors(
           layout: s.layout,
           ignoreWhitespace: s.ignoreWhitespace,
           fileTreeOpen: s.fileTreeOpen,
-          viewed: s.viewed,
         }),
       },
     ),

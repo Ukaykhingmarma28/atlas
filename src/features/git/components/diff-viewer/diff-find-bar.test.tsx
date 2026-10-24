@@ -21,7 +21,7 @@ diff --git a/b.ts b/b.ts
 `;
 
 const files = parsePatchFiles(PATCH)[0]!.files;
-const itemsWith = (collapsed: Record<string, boolean>): CodeViewDiffItem[] =>
+const itemsWith = (collapsed: Record<string, boolean>): CodeViewDiffItem<unknown>[] =>
   files.map((fileDiff, i) => ({
     id: `f${i}`,
     type: "diff",
@@ -39,7 +39,7 @@ function fakeViewer() {
       getScrollTop: () => 0,
       getTopForItem: () => 0,
     }),
-  } as unknown as CodeViewHandle<undefined, undefined>;
+  } as unknown as CodeViewHandle<unknown, undefined>;
   return { viewer, scrollTo };
 }
 

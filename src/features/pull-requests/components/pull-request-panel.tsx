@@ -9,7 +9,6 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { MessageSquare } from "lucide-react";
 
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { cn } from "@/lib/utils";
@@ -48,6 +47,7 @@ import {
 import { resolveStatePresentation } from "./pull-request-presentation";
 import { PullRequestDetailGhost, PullRequestUnavailableState } from "./pull-request-states";
 import { PullRequestSummaryTab } from "./pull-request-summary-tab";
+import { PullRequestCodeTab } from "./pull-request-code-tab";
 import { PullRequestTimelineTab } from "./pull-request-timeline-tab";
 
 type InnerTab = "summary" | "timeline" | "code";
@@ -61,16 +61,6 @@ const INNER_TABS = [
 /** Scrolled this far past the fold, the header condenses; back near the top it opens. */
 const CONDENSE_SLACK_PX = 32;
 const EXPAND_AT_PX = 4;
-
-function NotYet({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-      {icon}
-      <p className="text-sm font-medium text-foreground">{title}</p>
-      <p className="max-w-sm text-xs text-muted-foreground">{body}</p>
-    </div>
-  );
-}
 
 export function PullRequestPanel({
   tabId,
@@ -97,9 +87,17 @@ export function PullRequestPanel({
   }, [detail?.title, number, tabId, setTabTitle, detail]);
 
   const [tab, setTab] = useState<InnerTab>("summary");
+  // The Code tab's commit: `null` for all of them. Set from outside by the
+  // Timeline's "view this commit".
+  const [codeCommit, setCodeCommit] = useState<string | null>(null);
 
   // ── the fold ──────────────────────────────────────────────────────────
   const [condensed, setCondensed] = useState(false);
+  const viewCommit = (oid: string) => {
+    setCodeCommit(oid);
+    setTab("code");
+    setCondensed(false);
+  };
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const foldRef = useRef<HTMLDivElement | null>(null);
   const condensedRowRef = useRef<HTMLDivElement | null>(null);
@@ -354,12 +352,17 @@ export function PullRequestPanel({
               repoPath={repoPath}
               detail={detail}
               activity={activity}
+              onViewCommit={detail.capabilities.diff ? viewCommit : undefined}
             />
           ) : (
-            <NotYet
-              icon={<MessageSquare aria-hidden className="size-6 text-muted-foreground" />}
-              title="The diff is on its way"
-              body="Reading and commenting on the change will land here. Open it on GitHub from the ⋯ menu meanwhile."
+            <PullRequestCodeTab
+              tabId={tabId}
+              scrollerRef={setScroller}
+              repoPath={repoPath}
+              detail={detail}
+              activity={activity}
+              commit={codeCommit}
+              onCommitChange={setCodeCommit}
             />
           )}
         </div>

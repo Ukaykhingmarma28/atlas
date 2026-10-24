@@ -4,7 +4,7 @@
 // Everything here runs on the main thread, so none of it tokenizes: parsing a
 // patch into hunks is linear and cheap, and highlighting is the worker pool's.
 
-import { parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs";
+import { parseDiffFromFile, parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs";
 
 const FNV_OFFSET_BASIS_32 = 0x811c9dc5;
 const FNV_PRIME_32 = 0x01000193;
@@ -75,6 +75,70 @@ function compactPartialHunkOffsets(file: FileDiffMetadata): FileDiffMetadata {
     splitLineCount: splitLineStart,
     unifiedLineCount: unifiedLineStart,
     ...(file.cacheKey ? { cacheKey: `${file.cacheKey}:compact-partial` } : {}),
+  };
+}
+
+/**
+ * The file with its whitespace-only changes shown as context: each hunk is
+ * rediffed with every line's whitespace taken out, so a line that only moved
+ * its indentation reads as unchanged. For a patch that cannot be asked for
+ * again with `-w` (a pull request's, which GitHub hands over as is). Line
+ * numbers are untouched: a hunk keeps its ranges, only what in it counts as a
+ * change moves.
+ */
+export function withoutWhitespaceChanges(file: FileDiffMetadata): FileDiffMetadata {
+  let splitDelta = 0;
+  let unifiedDelta = 0;
+  const strip = (lines: readonly string[], from: number, count: number) =>
+    lines
+      .slice(from, from + count)
+      .map((line) => `${line.replace(/\s/g, "")}\n`)
+      .join("");
+  const hunks = file.hunks.map((hunk) => {
+    const filtered = parseDiffFromFile(
+      {
+        name: file.name,
+        contents: strip(file.deletionLines, hunk.deletionLineIndex, hunk.deletionCount),
+      },
+      {
+        name: file.name,
+        contents: strip(file.additionLines, hunk.additionLineIndex, hunk.additionCount),
+      },
+      { context: Infinity },
+    ).hunks[0];
+    const next = {
+      ...hunk,
+      additionLines: filtered?.additionLines ?? 0,
+      deletionLines: filtered?.deletionLines ?? 0,
+      hunkContent: filtered
+        ? filtered.hunkContent.map((content) => ({
+            ...content,
+            additionLineIndex: content.additionLineIndex + hunk.additionLineIndex,
+            deletionLineIndex: content.deletionLineIndex + hunk.deletionLineIndex,
+          }))
+        : [
+            {
+              type: "context" as const,
+              lines: hunk.additionCount,
+              additionLineIndex: hunk.additionLineIndex,
+              deletionLineIndex: hunk.deletionLineIndex,
+            },
+          ],
+      splitLineStart: hunk.splitLineStart + splitDelta,
+      unifiedLineStart: hunk.unifiedLineStart + unifiedDelta,
+      splitLineCount: filtered?.splitLineCount ?? hunk.additionCount,
+      unifiedLineCount: filtered?.unifiedLineCount ?? hunk.additionCount,
+    };
+    splitDelta += next.splitLineCount - hunk.splitLineCount;
+    unifiedDelta += next.unifiedLineCount - hunk.unifiedLineCount;
+    return next;
+  });
+  return {
+    ...file,
+    hunks,
+    splitLineCount: file.splitLineCount + splitDelta,
+    unifiedLineCount: file.unifiedLineCount + unifiedDelta,
+    ...(file.cacheKey ? { cacheKey: `${file.cacheKey}:ignore-whitespace` } : {}),
   };
 }
 
