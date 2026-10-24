@@ -266,4 +266,271 @@ mod tests {
         assert_eq!(merged.text, "a\n\nb");
         assert_eq!(merged.summary, "#1: a; #1: b");
     }
+
+    /// The host end to end, over a native agent whose turns run until the
+    /// test lets them end: a wake during a turn, a wake into a session that
+    /// is not open, and Stop racing a wake.
+    mod host {
+        use std::path::PathBuf;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        use agent_client_protocol::schema::v1 as acp;
+        use atlas_acp_thread::{AcpThread, AcpThreadHandle, AgentConnection};
+        use atlas_agent_servers::{AgentServer, AgentServerDelegate, ConnectOptions};
+        use atlas_thread_metadata::{PathList, ThreadMetadata};
+        use futures::future::BoxFuture;
+        use futures::FutureExt;
+        use tokio::sync::Notify;
+
+        use super::super::super::test_support::fresh_host_with_native;
+        use super::super::super::ATLAS_AGENT_ID;
+        use super::*;
+
+        /// Every turn waits here until released; a cancel releases it.
+        #[derive(Default)]
+        struct Gate {
+            open: Notify,
+            prompts: AtomicUsize,
+        }
+
+        struct GatedNative {
+            session_id: &'static str,
+            gate: Arc<Gate>,
+        }
+
+        impl GatedNative {
+            fn thread(self: &Arc<Self>, work_dirs: Vec<PathBuf>) -> AcpThreadHandle {
+                Arc::new(std::sync::Mutex::new(AcpThread::new(
+                    acp::SessionId::new(self.session_id),
+                    self.clone() as Arc<dyn AgentConnection>,
+                    work_dirs,
+                    None,
+                    atlas_acp_thread::event_channel().0,
+                )))
+            }
+        }
+
+        impl AgentConnection for GatedNative {
+            fn agent_id(&self) -> atlas_acp_thread::AgentId {
+                atlas_acp_thread::AgentId::new(ATLAS_AGENT_ID)
+            }
+
+            fn telemetry_id(&self) -> Arc<str> {
+                ATLAS_AGENT_ID.into()
+            }
+
+            fn new_session(
+                self: Arc<Self>,
+                work_dirs: Vec<PathBuf>,
+            ) -> BoxFuture<'static, anyhow::Result<AcpThreadHandle>> {
+                let thread = self.thread(work_dirs);
+                async move { Ok(thread) }.boxed()
+            }
+
+            fn supports_load_session(&self) -> bool {
+                true
+            }
+
+            fn load_session(
+                self: Arc<Self>,
+                _session_id: acp::SessionId,
+                work_dirs: Vec<PathBuf>,
+                _title: Option<Arc<str>>,
+            ) -> BoxFuture<'static, anyhow::Result<AcpThreadHandle>> {
+                let thread = self.thread(work_dirs);
+                async move { Ok(thread) }.boxed()
+            }
+
+            fn auth_methods(&self) -> &[acp::AuthMethod] {
+                &[]
+            }
+
+            fn authenticate(
+                &self,
+                _method: acp::AuthMethodId,
+            ) -> BoxFuture<'static, anyhow::Result<()>> {
+                async { Ok(()) }.boxed()
+            }
+
+            fn prompt(
+                &self,
+                _params: acp::PromptRequest,
+            ) -> BoxFuture<'static, anyhow::Result<acp::PromptResponse>> {
+                let gate = self.gate.clone();
+                gate.prompts.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    gate.open.notified().await;
+                    Ok(acp::PromptResponse::new(acp::StopReason::EndTurn))
+                }
+                .boxed()
+            }
+
+            fn cancel(&self, _session_id: &acp::SessionId) {
+                self.gate.open.notify_one();
+            }
+
+            fn into_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+                self
+            }
+        }
+
+        impl AgentServer for GatedNative {
+            fn agent_id(&self) -> atlas_acp_thread::AgentId {
+                atlas_acp_thread::AgentId::new(ATLAS_AGENT_ID)
+            }
+
+            fn connect(
+                &self,
+                _delegate: AgentServerDelegate,
+                _options: ConnectOptions,
+            ) -> BoxFuture<'static, anyhow::Result<Arc<dyn AgentConnection>>> {
+                let connection = Arc::new(GatedNative {
+                    session_id: self.session_id,
+                    gate: self.gate.clone(),
+                });
+                async move { Ok(connection as Arc<dyn AgentConnection>) }.boxed()
+            }
+
+            fn into_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+                self
+            }
+        }
+
+        type Delivered = Arc<Mutex<Vec<(String, String)>>>;
+
+        /// A host over a gated native agent, recording each wake it delivers
+        /// as `(session id, text)`.
+        fn gated_host(session_id: &'static str) -> (Arc<AgentHost>, Arc<Gate>, Delivered, PathBuf) {
+            let gate = Arc::new(Gate::default());
+            let (host, dir) = fresh_host_with_native(Arc::new(GatedNative {
+                session_id,
+                gate: gate.clone(),
+            }));
+            let delivered: Delivered = Arc::default();
+            let record = delivered.clone();
+            host.set_wake_delivery(Arc::new(move |key: &SessionKey, wake: &PendingWake| {
+                lock(&record).push((key.session_id.clone(), wake.text.clone()));
+                Ok(())
+            }));
+            (host, gate, delivered, dir)
+        }
+
+        async fn open_session(host: &Arc<AgentHost>, dir: &std::path::Path) -> SessionKey {
+            let agent_id = host.spawn(ATLAS_AGENT_ID).await.expect("spawn").agent_id;
+            let project = dir.join("project");
+            std::fs::create_dir_all(&project).unwrap();
+            host.new_session(agent_id, project, Vec::new())
+                .await
+                .expect("a session opens")
+                .key
+        }
+
+        async fn until(mut done: impl FnMut() -> bool, within: Duration) -> bool {
+            let deadline = std::time::Instant::now() + within;
+            while std::time::Instant::now() < deadline {
+                if done() {
+                    return true;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            done()
+        }
+
+        #[tokio::test]
+        async fn a_wake_during_a_turn_waits_for_it_to_end_then_goes() {
+            let (host, gate, delivered, dir) = gated_host("s-busy");
+            let key = open_session(&host, &dir).await;
+            host.send(&key, Vec::new()).expect("send");
+            assert!(
+                until(
+                    || gate.prompts.load(Ordering::SeqCst) == 1,
+                    Duration::from_secs(5)
+                )
+                .await
+            );
+
+            let outcome = host.offer_wake(&key, wake("checks failed")).expect("offer");
+            assert_eq!(
+                outcome,
+                WakeOutcome::Held,
+                "a running turn is never cut into"
+            );
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            assert!(lock(&delivered).is_empty());
+
+            gate.open.notify_one();
+            // Not the instant the turn ends: the grace lets a queued message
+            // of the user's go first.
+            tokio::time::sleep(WAKE_GRACE / 2).await;
+            assert!(lock(&delivered).is_empty(), "held through the grace");
+            assert!(until(|| !lock(&delivered).is_empty(), Duration::from_secs(5)).await);
+            assert_eq!(
+                lock(&delivered).clone(),
+                vec![("s-busy".to_string(), "checks failed".to_string())]
+            );
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        #[tokio::test]
+        async fn a_wake_into_a_session_that_is_not_open_opens_it_and_goes() {
+            let (host, _gate, delivered, dir) = gated_host("s-closed");
+            let project = dir.join("project");
+            std::fs::create_dir_all(&project).unwrap();
+            let mut row = ThreadMetadata::new(
+                ThreadId::new(),
+                ATLAS_AGENT_ID.into(),
+                PathList::new(&[project]),
+            );
+            row.session_id = Some(acp::SessionId::new("s-closed"));
+            let thread_id = row.thread_id;
+            host.history().expect("history").store().save_all(vec![row]);
+
+            let mut w = wake("new comments");
+            w.thread_id = thread_id;
+            assert_eq!(host.wake(w).await.expect("wake"), WakeOutcome::Sent);
+            assert_eq!(
+                lock(&delivered).clone(),
+                vec![("s-closed".to_string(), "new comments".to_string())]
+            );
+            assert!(
+                lock(&host.sessions).contains_key("s-closed"),
+                "the session is open now"
+            );
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        #[tokio::test]
+        async fn stop_drops_a_wake_held_for_the_turn_it_cancels() {
+            let (host, gate, delivered, dir) = gated_host("s-stop");
+            let key = open_session(&host, &dir).await;
+            host.send(&key, Vec::new()).expect("send");
+            assert!(
+                until(
+                    || gate.prompts.load(Ordering::SeqCst) == 1,
+                    Duration::from_secs(5)
+                )
+                .await
+            );
+            assert_eq!(
+                host.offer_wake(&key, wake("checks passed")).expect("offer"),
+                WakeOutcome::Held
+            );
+
+            host.stop(&key).expect("stop");
+            assert!(
+                until(
+                    || !host.session_is_busy("s-stop", &host.atlas_activity()),
+                    Duration::from_secs(5)
+                )
+                .await,
+                "the cancelled turn ends"
+            );
+            tokio::time::sleep(WAKE_GRACE + Duration::from_millis(500)).await;
+            assert!(
+                lock(&delivered).is_empty(),
+                "the stopped turn hands over to nothing"
+            );
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
 }
