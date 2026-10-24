@@ -320,3 +320,9 @@ diffPalette = "theme"
 # background. Applies to every theme, the terminal and charts included.
 # (default: 100)
 interfaceContrast = 100
+
+# The turn rail: a column of short ticks down the left edge of a session's
+# transcript, one per turn. Hovering a tick previews the prompt and the start
+# of the reply; clicking it jumps to that turn. Off hides the rail. (default:
+# true)
+showTurnRail = true
