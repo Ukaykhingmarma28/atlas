@@ -17,6 +17,7 @@ import { ScrollFade, useScrollEdges } from "@/ui/scroll-fade";
 import { isBusyAgentStatus, agentTypeFromPluginId } from "@/types/agent";
 import { pluginIdForAgent } from "@/types/agent";
 import { repoPullRequestsKey } from "@/features/git/lib/git-pr-api";
+import { invalidatePullRequestQueries } from "@/features/pull-requests/lib/pull-requests-queries";
 import { ThreadHistoryView } from "./thread-history-view";
 import { SessionCard } from "./session-card";
 import {
@@ -464,7 +465,8 @@ export const SessionSidebar = memo(function SessionSidebar({
   }, [tabSummaries]);
 
   // A turn that just ended may have pushed a branch or opened a PR: refresh
-  // that repository's pull requests, the one query every card in it shares.
+  // that repository's pull requests, the one query every card in it shares,
+  // and any pull-request surface reads open for it.
   const busyDirsRef = useRef(new Map<string, string>());
   useEffect(() => {
     const busyNow = new Map<string, string>();
@@ -474,6 +476,7 @@ export const SessionSidebar = memo(function SessionSidebar({
     for (const [tid, dir] of busyDirsRef.current) {
       if (!busyNow.has(tid) && dir) {
         void queryClient.invalidateQueries({ queryKey: repoPullRequestsKey(dir) });
+        void invalidatePullRequestQueries(queryClient, dir);
       }
     }
     busyDirsRef.current = busyNow;

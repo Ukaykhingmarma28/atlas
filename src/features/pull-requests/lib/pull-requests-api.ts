@@ -1,0 +1,222 @@
+// Bridge to the native pull-request commands (`commands/pull_requests`).
+// Every call goes through the user's own `gh` login; Atlas holds no token.
+//
+// Each wrapper rejects with a `PrError` (see `pr-errors.ts`). Calls pass the
+// gh gate first: while `gh` is known missing, signed out or rate limited, a
+// read rejects at once with that reason instead of spawning a `gh` that would
+// fail the same way.
+
+import { invoke } from "@tauri-apps/api/core";
+
+import { classifyPrError, ghGate, noteGhOutcome } from "./pr-errors";
+import type {
+  PrActionInput,
+  PrActivity,
+  PrCommitsPage,
+  PrDetail,
+  PrDiffFileContents,
+  PrDiffResult,
+  PrFileChangeType,
+  PrFilesViewed,
+  PrFileViewedChange,
+  PrImage,
+  PrListQuery,
+  PrListResult,
+  PrProvider,
+  PrReactionContent,
+  PrReviewCommentDraft,
+  PrReviewerRef,
+  PrReviewVerdict,
+  PrThreadCommentsPage,
+  PrTimelinePage,
+} from "./pull-requests-types";
+
+async function gated<T>(run: () => Promise<T>): Promise<T> {
+  const held = ghGate();
+  if (held) throw held;
+  try {
+    const value = await run();
+    noteGhOutcome(null);
+    return value;
+  } catch (raw) {
+    const error = classifyPrError(raw);
+    noteGhOutcome(error);
+    throw error;
+  }
+}
+
+// ── reads ───────────────────────────────────────────────────────────────
+
+export function prProvider(path: string, refresh = false): Promise<PrProvider> {
+  return gated(() => invoke<PrProvider>("pr_provider", { path, refresh }));
+}
+
+export function prList(path: string, query: PrListQuery = {}): Promise<PrListResult> {
+  return gated(() => invoke<PrListResult>("pr_list", { path, query }));
+}
+
+export function prDetail(path: string, number: number): Promise<PrDetail> {
+  return gated(() => invoke<PrDetail>("pr_detail", { path, number }));
+}
+
+export function prActivity(path: string, number: number): Promise<PrActivity> {
+  return gated(() => invoke<PrActivity>("pr_activity", { path, number }));
+}
+
+export function prThreadComments(
+  path: string,
+  number: number,
+  threadId: string,
+  cursor: string | null = null,
+): Promise<PrThreadCommentsPage> {
+  return gated(() =>
+    invoke<PrThreadCommentsPage>("pr_thread_comments", { path, number, threadId, cursor }),
+  );
+}
+
+export function prTimeline(
+  path: string,
+  number: number,
+  cursor: string | null = null,
+): Promise<PrTimelinePage> {
+  return gated(() => invoke<PrTimelinePage>("pr_timeline", { path, number, cursor }));
+}
+
+export function prCommits(
+  path: string,
+  number: number,
+  cursor: string | null = null,
+): Promise<PrCommitsPage> {
+  return gated(() => invoke<PrCommitsPage>("pr_commits", { path, number, cursor }));
+}
+
+/** The patch: whole on the first call, or a page of files from `cursor`;
+ *  `commit` narrows it to one commit. */
+export function prDiff(
+  path: string,
+  number: number,
+  cursor: string | null = null,
+  commit: string | null = null,
+): Promise<PrDiffResult> {
+  return gated(() => invoke<PrDiffResult>("pr_diff", { path, number, cursor, commit }));
+}
+
+export function prDiffFileContents(
+  path: string,
+  number: number,
+  changeType: PrFileChangeType,
+  oldPath: string,
+  newPath: string,
+  commit: string | null = null,
+): Promise<PrDiffFileContents> {
+  return gated(() =>
+    invoke<PrDiffFileContents>("pr_diff_file_contents", {
+      path,
+      number,
+      commit,
+      changeType,
+      oldPath,
+      newPath,
+    }),
+  );
+}
+
+export function prFilesViewed(path: string, number: number): Promise<PrFilesViewed> {
+  return gated(() => invoke<PrFilesViewed>("pr_files_viewed", { path, number }));
+}
+
+// ── writes ──────────────────────────────────────────────────────────────
+
+export function prSetFilesViewed(
+  path: string,
+  number: number,
+  files: PrFileViewedChange[],
+): Promise<void> {
+  return gated(() => invoke<void>("pr_set_files_viewed", { path, number, files }));
+}
+
+export function prComment(path: string, number: number, body: string): Promise<void> {
+  return gated(() => invoke<void>("pr_comment", { path, number, body }));
+}
+
+export function prReplyToThread(
+  path: string,
+  number: number,
+  threadId: string,
+  body: string,
+): Promise<void> {
+  return gated(() => invoke<void>("pr_reply_to_thread", { path, number, threadId, body }));
+}
+
+export function prResolveThread(
+  path: string,
+  number: number,
+  threadId: string,
+  resolved: boolean,
+): Promise<void> {
+  return gated(() => invoke<void>("pr_resolve_thread", { path, number, threadId, resolved }));
+}
+
+/** React to the pull request (`subjectId` null) or one of its comments or reviews. */
+export function prReact(
+  path: string,
+  number: number,
+  subjectId: string | null,
+  content: PrReactionContent,
+  reacted: boolean,
+): Promise<void> {
+  return gated(() => invoke<void>("pr_react", { path, number, subjectId, content, reacted }));
+}
+
+/** Send a review whole: the verdict, its summary and every drafted line comment. */
+export function prSubmitReview(
+  path: string,
+  number: number,
+  verdict: PrReviewVerdict,
+  body: string,
+  comments: PrReviewCommentDraft[],
+): Promise<void> {
+  return gated(() => invoke<void>("pr_submit_review", { path, number, verdict, body, comments }));
+}
+
+export function prAction(path: string, number: number, input: PrActionInput): Promise<void> {
+  return gated(() => invoke<void>("pr_action", { path, number, input }));
+}
+
+/** Rewrite the title or description; a field left `null` is left as it is. */
+export function prUpdate(
+  path: string,
+  number: number,
+  title: string | null,
+  body: string | null,
+): Promise<void> {
+  return gated(() => invoke<void>("pr_update", { path, number, title, body }));
+}
+
+export function prRequestReviewers(
+  path: string,
+  number: number,
+  reviewers: PrReviewerRef[],
+  requested: boolean,
+): Promise<void> {
+  return gated(() => invoke<void>("pr_request_reviewers", { path, number, reviewers, requested }));
+}
+
+export function prSetLabels(
+  path: string,
+  number: number,
+  labels: string[],
+  applied: boolean,
+): Promise<void> {
+  return gated(() => invoke<void>("pr_set_labels", { path, number, labels, applied }));
+}
+
+// ── images ──────────────────────────────────────────────────────────────
+
+/** An image from a body or comment, fetched natively with the gh credential.
+ *  Not gated: an image is not a GitHub API read. */
+export function prImage(path: string, url: string): Promise<PrImage> {
+  return invoke<PrImage>("pr_image", { path, url }).catch((raw: unknown) => {
+    throw classifyPrError(raw);
+  });
+}
