@@ -833,3 +833,59 @@ describe("a marker's duration", () => {
     expect(markers(turn(toolCall({ endedAt: 4_500 })))[0].durationMs).toBeUndefined();
   });
 });
+
+describe("the response footer at the end of a turn", () => {
+  // The last response's hover footer is drawn after the changed-files card,
+  // by the turn footer row, so it ends the whole response.
+  function editedTurn(): ChatMessage[] {
+    return [
+      {
+        id: "m1",
+        role: "assistant",
+        content: "Done.",
+        toolCalls: [toolCall({ id: "tc1" })],
+        fileChanges: [],
+        plan: null,
+        timestamp: "2026-08-23T00:00:05Z",
+        mode: "tool",
+        turnSummary: {
+          turnSeq: 1,
+          files: [{ path: "a.ts", kind: "edit", added: 1, removed: 0 }],
+          repoAtTurn: true,
+        },
+      } as ChatMessage,
+    ];
+  }
+
+  it("moves the last response's footer onto the turn footer row", () => {
+    const rows = projectRows(editedTurn(), OPTS).rows;
+    const prose = rows.find((r) => r.kind === RowKind.Prose);
+    const footer = rows.find((r) => r.kind === RowKind.TurnFooter);
+    expect(prose?.kind === RowKind.Prose && prose.footerBelow).toBe(true);
+    expect(footer).toMatchObject({
+      responseRowId: "p:m1",
+      responseText: "Done.",
+      responseTimestamp: "2026-08-23T00:00:05Z",
+    });
+    expect(rows[rows.length - 1]).toBe(footer);
+  });
+
+  it("shows no clock for a replayed response", () => {
+    const messages = editedTurn();
+    messages[0].timestampApproximate = true;
+    const rows = projectRows(messages, OPTS).rows;
+    const prose = rows.find((r) => r.kind === RowKind.Prose);
+    expect(prose?.kind === RowKind.Prose && prose.timestampApproximate).toBe(true);
+    const footer = rows.find((r) => r.kind === RowKind.TurnFooter);
+    expect(footer).toMatchObject({ responseShowTimestamp: false });
+  });
+
+  it("leaves a turn without a footer row alone", () => {
+    const messages = editedTurn();
+    delete messages[0].turnSummary;
+    const rows = projectRows(messages, OPTS).rows;
+    const prose = rows.find((r) => r.kind === RowKind.Prose);
+    expect(prose?.kind === RowKind.Prose && prose.footerBelow).toBeFalsy();
+    expect(rows.some((r) => r.kind === RowKind.TurnFooter)).toBe(false);
+  });
+});

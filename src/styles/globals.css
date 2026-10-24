@@ -2399,6 +2399,16 @@ html[data-word-wrap="off"] .prose-chat pre {
      Strictly worse than the blanking it was meant to fix. */
 }
 
+/* A turn's last response and its changed-files card are separate rows, but
+   one response: its hover footer sits after the card, in the turn footer row
+   (`TurnFooterRowView`), and hovering the response's text reveals it as
+   hovering the card does. An attribute on the row wrapper and a sibling
+   combinator, not `:has()`, so a hover invalidates only the next row. */
+.atlas-row[data-footer-below]:hover + .atlas-row [data-response-footer] {
+  pointer-events: auto;
+  opacity: 1;
+}
+
 /* The workspace rail. One monochrome gradient — brighter at the top, falling
    to the theme's sidebar surface by the fold — so the rail reads as a distinct
    surface beside the editor without a coloured tint or a hard edge; a 1px inner

@@ -175,6 +175,7 @@ export const UserRowView = memo(function UserRowView({
           canRetry={canRetry}
           messageId={userRowMessageId(row.id)}
           timestamp={row.timestamp}
+          timestampApproximate={row.timestampApproximate === true}
           pinScopeKey={pinScopeKey}
           toggleAbove={overflows}
         />
@@ -305,7 +306,9 @@ export const ProseRowView = memo(function ProseRowView({
     // `prose-row-actions.tsx`); the streaming tail does not — nothing here
     // works on a response that is still arriving, and the one reflow happens
     // when the turn ends, deliberately.
-    <Column className={cn("py-2", !row.streaming && "relative pb-7")}>
+    // A response whose footer sits below its turn's changed-files card
+    // (`footerBelow`) reserves nothing here; the footer row does.
+    <Column className={cn("py-2", !row.streaming && !row.footerBelow && "relative pb-7")}>
       {/* One left-aligned group: model, dot, time. The timestamp used to be
           pushed to the far right with `ml-auto`, which left a long empty span
           across a 760px column and read as two unrelated headers rather than
@@ -324,12 +327,18 @@ export const ProseRowView = memo(function ProseRowView({
           <span className="min-w-0 truncate font-mono text-2xs text-[var(--muted-foreground)]">
             {row.model || agentLabel}
           </span>
-          <span aria-hidden className="shrink-0 text-2xs text-[var(--atlas-text-disabled)]">
-            ·
-          </span>
-          <span className="shrink-0 font-mono text-2xs text-[var(--muted-foreground)]">
-            {formatTime(row.timestamp, { hour: "2-digit", minute: "2-digit" })}
-          </span>
+          {/* A replayed response's time is when Atlas replayed it, not when
+              it was said: no clock rather than a wrong one. */}
+          {!row.timestampApproximate && (
+            <>
+              <span aria-hidden className="shrink-0 text-2xs text-[var(--atlas-text-disabled)]">
+                ·
+              </span>
+              <span className="shrink-0 font-mono text-2xs text-[var(--muted-foreground)]">
+                {formatTime(row.timestamp, { hour: "2-digit", minute: "2-digit" })}
+              </span>
+            </>
+          )}
         </div>
       )}
       {/* Settled prose goes through the plain cached renderer: its root IS
@@ -357,7 +366,7 @@ export const ProseRowView = memo(function ProseRowView({
           />
         </div>
       )}
-      {!row.streaming && (
+      {!row.streaming && !row.footerBelow && (
         <ProseRowActions
           tabId={tabId}
           messageId={row.id.slice(2)}
@@ -365,7 +374,7 @@ export const ProseRowView = memo(function ProseRowView({
           text={row.text}
           pinScopeKey={pinScopeKey}
           canBranch={canBranch}
-          showTimestamp={!row.showHeader}
+          showTimestamp={!row.showHeader && !row.timestampApproximate}
         />
       )}
     </Column>
@@ -910,28 +919,61 @@ export const SeparatorRowView = memo(function SeparatorRowView({ row }: { row: S
 
 // ── Turn footer ────────────────────────────────────────────────────────────
 
-export const TurnFooterRowView = memo(function TurnFooterRowView({ row }: { row: TurnFooterRow }) {
+/**
+ * The end of a turn: its changed-files card (or the quiet "N files read"
+ * line), then the hover footer of the turn's last response. The footer is the
+ * response's (`ProseRowActions`: copy, branch, pin, time), drawn here so it
+ * comes after the card, at the end of the whole response, rather than between
+ * the text and the card. It reveals on hovering this row or the response row
+ * just above it (`[data-footer-below]` in `globals.css`).
+ */
+export const TurnFooterRowView = memo(function TurnFooterRowView({
+  row,
+  tabId,
+  pinScopeKey,
+  canBranch = false,
+}: {
+  row: TurnFooterRow;
+  tabId: string;
+  pinScopeKey: string;
+  /** True when the response this footer belongs to may branch (the
+   *  transcript's `canBranchRowId`, matched against `row.responseRowId`). */
+  canBranch?: boolean;
+}) {
   // A turn that changed files ends on its changed-files card. One that only
   // read keeps a single quiet line: there is no diff to open, and a card for
   // a list of reads would be the loudest thing under the turn.
   const edited = row.files.some((f) => f.kind === "edit");
-  if (edited) {
-    return (
-      <Column className="pt-1 pb-4">
-        <ChangedFilesCard turnKey={row.turnKey} files={row.files} />
-      </Column>
-    );
-  }
+  const responseRowId = row.responseRowId;
   return (
-    <Column className="pt-1 pb-4">
-      <div className="atlas-marker w-full text-base text-[var(--muted-foreground)]">
-        <span className="flex w-4 shrink-0 justify-center">
-          <Files size={ICON_PX} strokeWidth={ICON_STROKE} />
-        </span>
-        <span className="min-w-0 truncate">
-          {row.files.length} file{row.files.length === 1 ? "" : "s"} read
-        </span>
-      </div>
+    // With a footer, `pb-11` is the old 16px gap plus the footer's 28px band
+    // (`ProseRowActions`, placed `bottom-4`): reserved whether hovered or not,
+    // so revealing it never moves anything.
+    <Column className={cn("pt-1", responseRowId ? "relative pb-11" : "pb-4")}>
+      {edited ? (
+        <ChangedFilesCard turnKey={row.turnKey} files={row.files} />
+      ) : (
+        <div className="atlas-marker w-full text-base text-[var(--muted-foreground)]">
+          <span className="flex w-4 shrink-0 justify-center">
+            <Files size={ICON_PX} strokeWidth={ICON_STROKE} />
+          </span>
+          <span className="min-w-0 truncate">
+            {row.files.length} file{row.files.length === 1 ? "" : "s"} read
+          </span>
+        </div>
+      )}
+      {responseRowId && (
+        <ProseRowActions
+          tabId={tabId}
+          messageId={responseRowId.slice(2)}
+          timestamp={row.responseTimestamp ?? ""}
+          text={row.responseText ?? ""}
+          pinScopeKey={pinScopeKey}
+          canBranch={canBranch}
+          showTimestamp={row.responseShowTimestamp ?? true}
+          className="bottom-4"
+        />
+      )}
     </Column>
   );
 });
