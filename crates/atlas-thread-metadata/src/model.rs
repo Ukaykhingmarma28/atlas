@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::paths::{PathList, WorktreePaths};
 use crate::projects::AttachedProject;
+use crate::pull_requests::PullRequestLink;
 
 /// The default shown for a thread nobody has titled yet.
 pub const DEFAULT_THREAD_TITLE: &str = "New Thread";
@@ -134,6 +135,10 @@ pub struct ThreadMetadata {
     /// order they were attached ([`crate::AttachedProject`]). Empty for most
     /// sessions, and for every row older than the column.
     pub attached_projects: Vec<AttachedProject>,
+    /// The pull requests linked to the session, in the order they were
+    /// linked, tombstones included ([`crate::PullRequestLink`]). Empty for
+    /// most sessions, and for every row older than the column.
+    pub pull_requests: Vec<PullRequestLink>,
 }
 
 impl ThreadMetadata {
@@ -166,6 +171,7 @@ impl ThreadMetadata {
             last_viewed_at: None,
             last_turn_completed_at: None,
             attached_projects: Vec::new(),
+            pull_requests: Vec::new(),
         }
     }
 

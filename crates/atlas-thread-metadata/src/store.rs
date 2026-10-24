@@ -38,6 +38,7 @@ use crate::error::{Error, Result};
 use crate::model::{ThreadId, ThreadMetadata};
 use crate::paths::{PathList, WorktreePaths};
 use crate::projects::{self, AttachedProject, ProjectAccess};
+use crate::pull_requests::{self, PullRequestLink, PullRequestSnapshot};
 
 /// How many change events a slow subscriber may fall behind before it is told
 /// it lagged. The payload carries no data, so a subscriber that lags simply
@@ -861,6 +862,89 @@ impl ThreadMetadataStore {
             entry.access = access;
             true
         })
+    }
+
+    /// The pull requests linked to the session, tombstones included, in the
+    /// order they were linked. Empty for a row that does not exist.
+    pub fn pull_requests(&self, thread_id: ThreadId) -> Vec<PullRequestLink> {
+        read(&self.inner.cache)
+            .threads
+            .get(&thread_id)
+            .map(|thread| thread.pull_requests.clone())
+            .unwrap_or_default()
+    }
+
+    /// Link `link` to the session, or revive or strengthen the link already
+    /// there (see [`PullRequestLink`]'s module). Answers whether anything
+    /// changed. Linking is not activity: `updated_at` stays.
+    pub fn link_pull_request(&self, thread_id: ThreadId, link: PullRequestLink) -> bool {
+        self.update(thread_id, |thread| {
+            pull_requests::link(&mut thread.pull_requests, link)
+        })
+    }
+
+    /// Link every pull request in `found` that the session does not already
+    /// hold — a tombstone counts as held, so a dismissed link stays dismissed.
+    /// One write and one event for the lot. Answers whether any was added.
+    pub fn link_detected_pull_requests(
+        &self,
+        thread_id: ThreadId,
+        found: Vec<PullRequestLink>,
+    ) -> bool {
+        self.update(thread_id, |thread| {
+            let mut changed = false;
+            for link in found {
+                if pull_requests::position(&thread.pull_requests, &link.repository, link.number)
+                    .is_none()
+                {
+                    thread.pull_requests.push(link);
+                    changed = true;
+                }
+            }
+            changed
+        })
+    }
+
+    /// Unlink `repository#number`: tombstoned, so the branch sweep does not
+    /// bring it back. Answers whether a visible link was there.
+    pub fn unlink_pull_request(&self, thread_id: ThreadId, repository: &str, number: u32) -> bool {
+        self.update(thread_id, |thread| {
+            pull_requests::unlink(&mut thread.pull_requests, repository, number)
+        })
+    }
+
+    /// Record what the host just said about `repository#number` on every
+    /// session linked to it. One event for the lot; none when no snapshot
+    /// changed. Answers how many sessions changed.
+    pub fn sync_pull_request(
+        &self,
+        repository: &str,
+        number: u32,
+        snapshot: &PullRequestSnapshot,
+    ) -> usize {
+        let holders: Vec<ThreadId> = read(&self.inner.cache)
+            .threads
+            .values()
+            .filter(|t| t.pull_requests.iter().any(|l| l.is(repository, number)))
+            .map(|t| t.thread_id)
+            .collect();
+        let changed = holders
+            .into_iter()
+            .filter(|id| {
+                self.update_silently(*id, |thread| {
+                    pull_requests::sync(
+                        &mut thread.pull_requests,
+                        repository,
+                        number,
+                        snapshot.clone(),
+                    )
+                })
+            })
+            .count();
+        if changed > 0 {
+            self.notify(ThreadStoreEvent::Changed);
+        }
+        changed
     }
 
     /// Move the session to the Settled shelf: done for now, still listed,
