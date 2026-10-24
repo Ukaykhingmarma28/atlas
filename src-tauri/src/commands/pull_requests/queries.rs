@@ -11,6 +11,7 @@ pub const REPOSITORY_CONTEXT: &str = r#"query RepositoryContext($owner: String!,
   repository(owner: $owner, name: $name) {
     nameWithOwner
     url
+    defaultBranchRef { name }
   }
 }"#;
 
@@ -625,6 +626,8 @@ const PULL_REQUEST_ROW: &str = r#"fragment PullRequestRow on PullRequest {
   }
   headRefName
   baseRefName
+  isCrossRepository
+  headRepository { nameWithOwner }
   state
   isDraft
   mergeable
@@ -984,6 +987,9 @@ mod tests {
         assert!(doc.contains("p0: pullRequest(number: 12) { ...PullRequestRow }"));
         assert!(doc.contains("p1: pullRequest(number: 7) { ...PullRequestRow }"));
         assert!(doc.contains("comments { totalCount }"));
+        // What the branch sweep tells a fork's same-named branch apart by.
+        assert!(doc.contains("isCrossRepository"));
+        assert!(doc.contains("headRepository { nameWithOwner }"));
     }
 
     #[test]

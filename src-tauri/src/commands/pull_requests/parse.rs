@@ -452,6 +452,8 @@ pub(crate) struct RepoContext {
     pub name: String,
     pub host: String,
     pub viewer: Option<String>,
+    /// The repository's default branch, when GitHub named one.
+    pub default_branch: Option<String>,
 }
 
 impl RepoContext {
@@ -485,6 +487,11 @@ pub(crate) fn to_repo_context(data: &Value) -> Option<RepoContext> {
         name: name.to_string(),
         host,
         viewer: trimmed(data.get("viewer").and_then(|v| v.get("login"))),
+        default_branch: trimmed(
+            repository
+                .get("defaultBranchRef")
+                .and_then(|d| d.get("name")),
+        ),
     })
 }
 
@@ -1440,6 +1447,11 @@ fn to_list_entry(node: &Value, viewer: Option<&str>) -> Option<PrListEntry> {
             .and_then(|c| c.get("totalCount"))
             .and_then(Value::as_u64)
             .map_or(0, |n| u32::try_from(n).unwrap_or(u32::MAX)),
+        head_repository: trimmed(
+            node.get("headRepository")
+                .and_then(|r| r.get("nameWithOwner")),
+        ),
+        is_cross_repository: boolean(node, "isCrossRepository").unwrap_or(false),
     })
 }
 

@@ -20,7 +20,9 @@
 //! - **Conditional reads.** A REST read can revalidate its last answer with
 //!   `If-None-Match`; GitHub answers an unchanged resource with a 304, which
 //!   costs no quota, and the cached body is reused.
-//! - **Concurrency.** [`PR_PERMITS`] bounds how many `gh` run at once.
+//! - **Concurrency.** [`PR_PERMITS`] bounds how many `gh` run at once for
+//!   the API; images have their own [`IMAGE_PERMITS`], so a page of avatars
+//!   never queues ahead of the reads the user is waiting on.
 
 use std::collections::{HashMap, VecDeque};
 use std::ffi::{OsStr, OsString};
@@ -44,6 +46,20 @@ use super::model::PrError;
 /// the badges' two is still under the eight concurrent requests GitHub treats
 /// as polite, and each permit is a whole process, not a pooled connection.
 pub(crate) static PR_PERMITS: Semaphore = Semaphore::const_new(4);
+
+/// How many image fetches run at once. A comment thread can name dozens of
+/// avatars and screenshots; they wait on each other here rather than on the
+/// detail, activity and diff reads behind [`PR_PERMITS`]. They are not API
+/// requests, so GitHub's concurrency guidance for the API does not count them.
+pub(crate) static IMAGE_PERMITS: Semaphore = Semaphore::const_new(3);
+
+/// The permit pool a request of `resource` waits in.
+pub(crate) fn permits_for(resource: Resource) -> &'static Semaphore {
+    match resource {
+        Resource::Unmetered => &IMAGE_PERMITS,
+        Resource::Core | Resource::Graphql => &PR_PERMITS,
+    }
+}
 
 /// A read the user is waiting on. Longer than the sidebar's five seconds: a
 /// detail read is one large GraphQL document.
@@ -362,6 +378,18 @@ fn record_rate_limit(resource: Resource, retry_at: Option<i64>, now: i64) -> i64
     until
 }
 
+/// Until when GitHub itself paused a quota (epoch ms), if it has: a refusal
+/// it sent, as opposed to a read held back at the reserve.
+pub(crate) fn quota_paused_until(now: i64) -> Option<i64> {
+    LIMITS
+        .lock()
+        .paused
+        .values()
+        .map(|&(until, _)| until)
+        .filter(|until| *until > now)
+        .max()
+}
+
 fn record_success(resource: Resource) {
     if resource == Resource::Unmetered {
         return;
@@ -373,6 +401,24 @@ fn record_success(resource: Resource) {
 #[cfg(test)]
 pub(crate) fn reset_limits_for_tests() {
     *LIMITS.lock() = Limits::default();
+}
+
+/// Test seam: the quota state is process-wide, so the tests that set it run
+/// one at a time, in this module and in the driver's.
+#[cfg(test)]
+pub(crate) static LIMITS_SERIAL: Mutex<()> = Mutex::new(());
+
+/// Test seam: a quota with `remaining` of `limit` left until an hour from now.
+#[cfg(test)]
+pub(crate) fn set_quota_for_tests(resource: Resource, limit: f64, remaining: f64) {
+    LIMITS.lock().quotas.insert(
+        resource.key(),
+        Quota {
+            limit,
+            remaining,
+            reset_at_ms: now_ms() + 3_600_000,
+        },
+    );
 }
 
 /// When GitHub asked to be retried: `retry-after` (seconds or an HTTP date),
@@ -528,6 +574,19 @@ pub(crate) fn classify_rest(
 
 /// Decide what one GraphQL answer means, returning its `data`.
 pub(crate) fn classify_graphql(response: &HttpResponse, now: i64) -> Result<Value, PrError> {
+    classify_graphql_with(response, now, false)
+}
+
+/// As [`classify_graphql`], and with `keep_partial` an answer whose only
+/// errors are `NOT_FOUND` and which still carries `data` is that data: an
+/// aliased read of several pull requests answers `null` under a missing
+/// one's alias and keeps the rest, so one deleted pull request does not
+/// cost the whole document.
+fn classify_graphql_with(
+    response: &HttpResponse,
+    now: i64,
+    keep_partial: bool,
+) -> Result<Value, PrError> {
     let body = response.body_text();
     let parsed: Option<Value> = serde_json::from_str(&body).ok();
     let errors: Option<Vec<Value>> = parsed
@@ -561,7 +620,10 @@ pub(crate) fn classify_graphql(response: &HttpResponse, now: i64) -> Result<Valu
             .iter()
             .all(|e| e.get("type").and_then(Value::as_str) == Some("NOT_FOUND"))
         {
-            return Err(PrError::NotFound);
+            let data = parsed
+                .and_then(|mut v| v.get_mut("data").map(Value::take))
+                .filter(|d| keep_partial && d.is_object());
+            return data.ok_or(PrError::NotFound);
         }
         return Err(PrError::GraphqlErrors { errors });
     }
@@ -651,18 +713,28 @@ impl Gh {
         }
     }
 
-    /// One `gh` run through the permit pool and the quota gate, classified
-    /// into an HTTP answer or the reason there is none.
-    async fn send(
-        &self,
-        call: GhCall,
-        resource: Resource,
-        allow_reserve: bool,
-    ) -> Result<HttpResponse, PrError> {
-        admit(resource, allow_reserve, now_ms())?;
-        let _permit = PR_PERMITS.acquire().await.map_err(|_| PrError::Failed {
-            message: "Atlas is shutting down.".into(),
-        })?;
+    /// Test seam: a `gh` at another path (one that does not exist reads as
+    /// [`PrError::NotInstalled`], with no process and no network).
+    #[cfg(test)]
+    pub fn with_program(cwd: &str, program: &str) -> Self {
+        Self {
+            program: OsString::from(program),
+            cwd: cwd.to_string(),
+        }
+    }
+
+    /// One `gh` run through the permit pool, classified into an HTTP answer
+    /// or the reason there is none. The quota gate ([`admit`]) is the
+    /// caller's, ahead of [`Self::settle`]: a read held back at the reserve
+    /// is not GitHub refusing it, and must not pause the quota for the user's
+    /// own reads.
+    async fn send(&self, call: GhCall, resource: Resource) -> Result<HttpResponse, PrError> {
+        let _permit = permits_for(resource)
+            .acquire()
+            .await
+            .map_err(|_| PrError::Failed {
+                message: "Atlas is shutting down.".into(),
+            })?;
         match run(&self.program, &self.cwd, &call).await {
             RunOutcome::Http(response) => {
                 observe(&response.headers);
@@ -699,6 +771,32 @@ impl Gh {
         allow_reserve: bool,
         timeout: Duration,
     ) -> Result<Value, PrError> {
+        self.graphql_with(query, variables, allow_reserve, timeout, false)
+            .await
+    }
+
+    /// A GraphQL read whose `NOT_FOUND`-only answer keeps the data it has
+    /// ([`classify_graphql_with`]).
+    pub async fn graphql_partial(
+        &self,
+        query: &str,
+        variables: Value,
+        allow_reserve: bool,
+        timeout: Duration,
+    ) -> Result<Value, PrError> {
+        self.graphql_with(query, variables, allow_reserve, timeout, true)
+            .await
+    }
+
+    async fn graphql_with(
+        &self,
+        query: &str,
+        variables: Value,
+        allow_reserve: bool,
+        timeout: Duration,
+        keep_partial: bool,
+    ) -> Result<Value, PrError> {
+        admit(Resource::Graphql, allow_reserve, now_ms())?;
         let body =
             serde_json::to_vec(&serde_json::json!({ "query": query, "variables": variables }))
                 .map_err(|e| PrError::Failed {
@@ -716,9 +814,9 @@ impl Gh {
             timeout,
         };
         let result = self
-            .send(call, Resource::Graphql, allow_reserve)
+            .send(call, Resource::Graphql)
             .await
-            .and_then(|r| classify_graphql(&r, now_ms()));
+            .and_then(|r| classify_graphql_with(&r, now_ms(), keep_partial));
         self.settle(Resource::Graphql, result)
     }
 
@@ -726,7 +824,12 @@ impl Gh {
     /// the checkout's remote. `gh` substitutes a placeholder only when it is
     /// a field's whole value, and only in `-F` fields, never in a body on
     /// stdin — so this request alone passes its variables as flags.
-    pub async fn graphql_with_repo_placeholders(&self, query: &str) -> Result<Value, PrError> {
+    pub async fn graphql_with_repo_placeholders(
+        &self,
+        query: &str,
+        allow_reserve: bool,
+    ) -> Result<Value, PrError> {
+        admit(Resource::Graphql, allow_reserve, now_ms())?;
         let call = GhCall {
             args: vec![
                 "api".into(),
@@ -743,7 +846,7 @@ impl Gh {
             timeout: READ_TIMEOUT,
         };
         let result = self
-            .send(call, Resource::Graphql, true)
+            .send(call, Resource::Graphql)
             .await
             .and_then(|r| classify_graphql(&r, now_ms()));
         self.settle(Resource::Graphql, result)
@@ -760,6 +863,7 @@ impl Gh {
         allow_reserve: bool,
         timeout: Duration,
     ) -> Result<Vec<u8>, PrError> {
+        admit(Resource::Core, allow_reserve, now_ms())?;
         let key = revalidate
             .map(|scope| format!("{scope}\0{}\0{}\0{}", self.cwd, accept.unwrap_or(""), path));
         let now = now_ms();
@@ -780,7 +884,7 @@ impl Gh {
             stdin: None,
             timeout,
         };
-        let result = match self.send(call, Resource::Core, allow_reserve).await {
+        let result = match self.send(call, Resource::Core).await {
             Ok(response) => {
                 let now = now_ms();
                 classify_rest(&response, previous.is_some(), now).map(|()| {
@@ -813,6 +917,7 @@ impl Gh {
         path: &str,
         body: Option<&Value>,
     ) -> Result<Vec<u8>, PrError> {
+        admit(Resource::Core, true, now_ms())?;
         let mut args: Vec<String> =
             vec!["api".into(), "-i".into(), "--method".into(), method.into()];
         let stdin = match body {
@@ -832,7 +937,7 @@ impl Gh {
             timeout: WRITE_TIMEOUT,
         };
         let result = self
-            .send(call, Resource::Core, true)
+            .send(call, Resource::Core)
             .await
             .and_then(|r| classify_rest(&r, false, now_ms()).map(|()| r.body));
         self.settle(Resource::Core, result)
@@ -852,7 +957,7 @@ impl Gh {
             stdin: None,
             timeout,
         };
-        let response = self.send(call, Resource::Unmetered, true).await?;
+        let response = self.send(call, Resource::Unmetered).await?;
         classify_rest(&response, false, now_ms())?;
         Ok(response)
     }
@@ -1056,6 +1161,56 @@ mod tests {
     }
 
     #[test]
+    fn a_partial_answer_keeps_what_was_found() {
+        let body = r#"{"data":{"repository":{"p0":{"number":1},"p1":null}},"errors":[{"type":"NOT_FOUND","path":["repository","p1"],"message":"Could not resolve"}]}"#;
+        assert_eq!(
+            classify_graphql_with(&http(200, &[], body), 0, true),
+            Ok(serde_json::json!({"repository":{"p0":{"number":1},"p1":null}}))
+        );
+        // The strict reading still calls it missing.
+        assert_eq!(
+            classify_graphql(&http(200, &[], body), 0),
+            Err(PrError::NotFound)
+        );
+        // With no data at all, missing is missing either way.
+        assert_eq!(
+            classify_graphql_with(
+                &http(
+                    200,
+                    &[],
+                    r#"{"errors":[{"type":"NOT_FOUND","message":"x"}]}"#
+                ),
+                0,
+                true
+            ),
+            Err(PrError::NotFound)
+        );
+        // Any other error still fails the read.
+        assert!(matches!(
+            classify_graphql_with(
+                &http(
+                    200,
+                    &[],
+                    r#"{"data":{},"errors":[{"type":"NOT_FOUND"},{"type":"FORBIDDEN"}]}"#
+                ),
+                0,
+                true
+            ),
+            Err(PrError::GraphqlErrors { .. })
+        ));
+    }
+
+    #[test]
+    fn images_wait_in_a_pool_of_their_own() {
+        assert!(std::ptr::eq(
+            permits_for(Resource::Unmetered),
+            &IMAGE_PERMITS
+        ));
+        assert!(std::ptr::eq(permits_for(Resource::Graphql), &PR_PERMITS));
+        assert!(std::ptr::eq(permits_for(Resource::Core), &PR_PERMITS));
+    }
+
+    #[test]
     fn runs_without_an_answer_are_classified_by_exit_and_stderr() {
         assert_eq!(classify_no_response(Some(4), ""), PrError::NotAuthenticated);
         assert_eq!(
@@ -1079,10 +1234,6 @@ mod tests {
             }
         );
     }
-
-    /// The quota state is process-wide, so the tests that reset it run one
-    /// at a time.
-    static LIMITS_SERIAL: Mutex<()> = Mutex::new(());
 
     #[test]
     fn a_paused_quota_refuses_until_its_time_and_the_reserve_holds_background_reads() {

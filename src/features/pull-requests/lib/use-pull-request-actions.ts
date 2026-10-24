@@ -58,7 +58,13 @@ export type PerformPullRequestAction = (
   updateMethod?: PrUpdateMethod,
 ) => Promise<boolean>;
 
-export function usePullRequestActions(repoPath: string, number: number) {
+/** `headSha`: the head commit the tab shows. A merge sends it, so GitHub
+ *  refuses one whose head moved on since the reader looked. */
+export function usePullRequestActions(
+  repoPath: string,
+  number: number,
+  headSha: string | null = null,
+) {
   const mutation = usePrActionMutation(repoPath, number);
   const comment = usePrCommentMutation(repoPath, number);
   const [pendingAction, setPendingAction] = useState<PrAction | null>(null);
@@ -74,6 +80,7 @@ export function usePullRequestActions(repoPath: string, number: number) {
         action,
         mergeMethod: method ?? null,
         updateMethod: updateMethod ?? null,
+        expectedHeadOid: action === "merge" || action === "enable-auto-merge" ? headSha : null,
       });
       toast.success(ACTION_SUCCESS_LABELS[action]);
       return true;

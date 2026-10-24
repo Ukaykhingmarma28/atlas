@@ -83,7 +83,11 @@ export function PullRequestPanel({
   const activityQuery = usePrActivity(repoPath, number);
   const detail = detailQuery.data ?? null;
   const activity = activityQuery.data ?? null;
-  const { pendingAction, perform, commentThen } = usePullRequestActions(repoPath, number);
+  const { pendingAction, perform, commentThen } = usePullRequestActions(
+    repoPath,
+    number,
+    detail?.headSha ?? null,
+  );
   const agent = usePullRequestAgentActions({ repoPath, number, detail, activity });
   const scopeKey = `${repoPath}:${number}`;
 

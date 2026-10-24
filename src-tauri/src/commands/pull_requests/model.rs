@@ -532,6 +532,14 @@ pub struct PrListEntry {
     /// inside review threads are not among them.
     #[serde(default)]
     pub comment_count: u32,
+    /// `owner/name` of the repository the head branch lives in; `None` when
+    /// that repository is gone (a deleted fork). The branch sweep reads it to
+    /// keep a fork's same-named branch from linking.
+    #[serde(default)]
+    pub head_repository: Option<String>,
+    /// The head branch lives in another repository than the base.
+    #[serde(default)]
+    pub is_cross_repository: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -923,6 +931,10 @@ pub struct PrActionInput {
     pub merge_method: Option<PrMergeMethod>,
     #[serde(default)]
     pub update_method: Option<PrUpdateMethod>,
+    /// For a merge or auto-merge: the head commit the reader was looking at.
+    /// A head that moved since is refused rather than merged unseen.
+    #[serde(default)]
+    pub expected_head_oid: Option<String>,
 }
 
 #[cfg(test)]

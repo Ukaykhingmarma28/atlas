@@ -15,12 +15,17 @@
 use std::ffi::OsStr;
 use std::path::Path;
 use std::process::Stdio;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 
+use super::checkout::run;
 use super::gh::{classify_no_response, PR_PERMITS, WRITE_TIMEOUT};
 use super::model::PrError;
+
+/// One local `git` read for the prefill or the head: a ref, a log.
+const GIT_READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// How many commits the prefill lists before it stops.
 const MAX_LISTED_COMMITS: usize = 50;
@@ -62,9 +67,7 @@ pub struct PrCreateDraft {
 #[tauri::command]
 pub async fn pr_create_draft(path: String) -> Result<PrCreateDraft, PrError> {
     let path = super::checkout(&path)?.to_string();
-    tokio::task::spawn_blocking(move || draft_for(Path::new(&path)))
-        .await
-        .map_err(|e| PrError::failed(e.to_string()))
+    Ok(draft_for(Path::new(&path)).await)
 }
 
 /// Open a pull request for the current branch. The branch must already be on
@@ -82,14 +85,11 @@ pub async fn pr_create(
     if title.is_empty() {
         return Err(PrError::invalid("A pull request needs a title."));
     }
-    let head = {
-        let cwd = cwd.clone();
-        tokio::task::spawn_blocking(move || current_branch(Path::new(&cwd)))
-            .await
-            .map_err(|e| PrError::failed(e.to_string()))?
-    }
-    .ok_or_else(|| PrError::invalid("A pull request cannot be opened from a detached HEAD."))?;
-    let args = create_args(title, &head, &input);
+    let head = current_branch(Path::new(&cwd))
+        .await
+        .ok_or_else(|| PrError::invalid("A pull request cannot be opened from a detached HEAD."))?;
+    let head_ref = head_ref(&cwd, &head).await;
+    let args = create_args(title, &head_ref, &input);
     let _permit = PR_PERMITS
         .acquire()
         .await
@@ -112,6 +112,78 @@ pub async fn pr_create(
         );
     }
     Ok(created)
+}
+
+/// What `--head` names: the branch, or `owner:branch` when the branch is
+/// pushed to another owner's repository than the one the pull request opens
+/// against (a fork's), since GitHub reads a bare name as a branch of the base
+/// repository. The base is the repository `gh` resolves for the checkout,
+/// which is also the one `gh pr create` opens against.
+async fn head_ref(cwd: &str, branch: &str) -> String {
+    let push_owner = push_remote_url(Path::new(cwd), branch)
+        .await
+        .and_then(|url| remote_owner(&url));
+    let base_owner = match super::GitHub::open(cwd).await {
+        Ok(github) => github
+            .provider()
+            .repository
+            .split_once('/')
+            .map(|(owner, _)| owner.to_string()),
+        Err(_) => None,
+    };
+    head_argument(branch, push_owner.as_deref(), base_owner.as_deref())
+}
+
+/// The branch, qualified with the push owner only when it differs from the
+/// base repository's.
+pub(super) fn head_argument(
+    branch: &str,
+    push_owner: Option<&str>,
+    base_owner: Option<&str>,
+) -> String {
+    match (push_owner, base_owner) {
+        (Some(push), Some(base)) if !push.eq_ignore_ascii_case(base) => format!("{push}:{branch}"),
+        _ => branch.to_string(),
+    }
+}
+
+/// The URL of the remote `branch` is pushed to: `branch.<b>.pushRemote`,
+/// else `remote.pushDefault`, else `branch.<b>.remote`, else `origin`.
+async fn push_remote_url(cwd: &Path, branch: &str) -> Option<String> {
+    let mut remote = None;
+    for key in [
+        format!("branch.{branch}.pushRemote"),
+        "remote.pushDefault".to_string(),
+        format!("branch.{branch}.remote"),
+    ] {
+        if let Some(name) = git(cwd, &["config", "--get", &key])
+            .await
+            .filter(|n| !n.is_empty())
+        {
+            remote = Some(name);
+            break;
+        }
+    }
+    let remote = remote.unwrap_or_else(|| "origin".into());
+    git(cwd, &["remote", "get-url", "--push", &remote])
+        .await
+        .filter(|u| !u.is_empty())
+}
+
+/// The owner a remote URL names: `https://host/owner/name(.git)`,
+/// `ssh://git@host/owner/name`, or scp-like `git@host:owner/name.git`.
+pub(super) fn remote_owner(url: &str) -> Option<String> {
+    let url = url.trim();
+    let path = if let Some((_, rest)) = url.split_once("://") {
+        rest.split_once('/')?.1
+    } else {
+        // scp-like: `user@host:path`.
+        url.split_once(':')?.1
+    };
+    let mut parts = path.trim_start_matches('/').split('/');
+    let owner = parts.next().filter(|o| !o.is_empty())?;
+    parts.next().filter(|n| !n.is_empty())?;
+    Some(owner.to_string())
 }
 
 /// `gh pr create`'s arguments. The body goes on stdin (`--body-file -`), so
@@ -213,25 +285,22 @@ fn parse_created(stdout: &str) -> Option<PrCreated> {
     })
 }
 
-fn git(cwd: &Path, args: &[&str]) -> Option<String> {
-    let out = atlas_process::command("git")
-        .args(args)
-        .current_dir(cwd)
-        .stdin(Stdio::null())
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
+/// A bounded local `git` read; `None` for any failure.
+async fn git(cwd: &Path, args: &[&str]) -> Option<String> {
+    run(cwd, "git", args, GIT_READ_TIMEOUT)
+        .await
+        .ok()
+        .map(|out| out.trim().to_string())
 }
 
-fn current_branch(cwd: &Path) -> Option<String> {
-    git(cwd, &["symbolic-ref", "--quiet", "--short", "HEAD"]).filter(|b| !b.is_empty())
+async fn current_branch(cwd: &Path) -> Option<String> {
+    git(cwd, &["symbolic-ref", "--quiet", "--short", "HEAD"])
+        .await
+        .filter(|b| !b.is_empty())
 }
 
-fn draft_for(cwd: &Path) -> PrCreateDraft {
-    let head = current_branch(cwd);
+async fn draft_for(cwd: &Path) -> PrCreateDraft {
+    let head = current_branch(cwd).await;
     // `origin/HEAD` names the remote's default branch when the clone recorded it.
     let base_ref = git(
         cwd,
@@ -242,13 +311,13 @@ fn draft_for(cwd: &Path) -> PrCreateDraft {
             "refs/remotes/origin/HEAD",
         ],
     )
+    .await
     .filter(|r| !r.is_empty());
     let base_branch = base_ref
         .as_deref()
         .map(|r| r.strip_prefix("origin/").unwrap_or(r).to_string());
-    let commits: Vec<(String, String)> = base_ref
-        .as_deref()
-        .and_then(|base| {
+    let log = match base_ref.as_deref() {
+        Some(base) => {
             git(
                 cwd,
                 &[
@@ -258,9 +327,11 @@ fn draft_for(cwd: &Path) -> PrCreateDraft {
                     &format!("{base}..HEAD"),
                 ],
             )
-        })
-        .map(|log| parse_log(&log))
-        .unwrap_or_default();
+            .await
+        }
+        None => None,
+    };
+    let commits: Vec<(String, String)> = log.map(|log| parse_log(&log)).unwrap_or_default();
     let (title, body) = prefill(head.as_deref(), &commits);
     PrCreateDraft {
         head_branch: head,
@@ -361,6 +432,55 @@ mod tests {
             "main".to_string(),
             "--draft".to_string()
         ]));
+    }
+
+    #[test]
+    fn a_fork_s_branch_is_named_with_its_owner() {
+        assert_eq!(head_argument("feat", Some("me"), Some("acme")), "me:feat");
+        assert_eq!(head_argument("feat", Some("Acme"), Some("acme")), "feat");
+        assert_eq!(head_argument("feat", None, Some("acme")), "feat");
+        assert_eq!(head_argument("feat", Some("me"), None), "feat");
+    }
+
+    #[test]
+    fn a_remote_url_names_its_owner() {
+        for url in [
+            "https://github.com/me/shop.git",
+            "https://github.com/me/shop",
+            "ssh://git@github.com/me/shop.git",
+            "git@github.com:me/shop.git",
+            "https://token@ghe.example.com/me/shop",
+        ] {
+            assert_eq!(remote_owner(url).as_deref(), Some("me"), "{url}");
+        }
+        assert_eq!(remote_owner("https://github.com/me"), None);
+        assert_eq!(remote_owner("/local/path/repo"), None);
+    }
+
+    #[tokio::test]
+    async fn the_push_remote_follows_git_s_own_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path();
+        let g = |args: &[&str]| {
+            assert!(std::process::Command::new("git")
+                .args(args)
+                .current_dir(repo)
+                .status()
+                .unwrap()
+                .success());
+        };
+        g(&["init", "-q", "-b", "feat"]);
+        g(&["remote", "add", "origin", "git@github.com:acme/shop.git"]);
+        g(&["remote", "add", "mine", "https://github.com/me/shop.git"]);
+        assert_eq!(
+            push_remote_url(repo, "feat").await.as_deref(),
+            Some("git@github.com:acme/shop.git")
+        );
+        g(&["config", "branch.feat.pushRemote", "mine"]);
+        assert_eq!(
+            push_remote_url(repo, "feat").await.as_deref(),
+            Some("https://github.com/me/shop.git")
+        );
     }
 
     #[test]
