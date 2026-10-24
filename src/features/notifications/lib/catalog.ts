@@ -67,8 +67,12 @@ export type NotificationTarget =
     }
   | {
       type: "session";
+      /** The tab showing the session; `""` when no tab does. */
       tabId: string;
       sessionId?: string;
+      /** Atlas's id for the session (ADR-0001). What opening it takes when no
+       *  tab shows it any more: the click resumes it from history. */
+      threadId?: string;
       projectId?: string;
       projectName?: string;
       orgId?: string;

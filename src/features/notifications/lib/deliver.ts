@@ -12,7 +12,6 @@
  * Buttons are `decision.actions`, run through `runNotificationAction`.
  */
 import { toast } from "sonner";
-import { jumpToSession } from "@/features/chat/lib/tab-project";
 import { jumpToTerminal } from "@/features/terminal/lib/jump-to-terminal";
 import { isWindowFocused } from "@/lib/window-focus";
 import { agentBannerIconPath } from "@/lib/notification-icon";
@@ -55,6 +54,7 @@ import {
 import { registerNotificationAction, runNotificationAction } from "./notification-actions";
 import type { SystemNotificationAction } from "./notifier-api";
 import { answerPermissionFromBanner } from "./permission-actions";
+import { openSessionTarget } from "./open-session-target";
 
 const announced = new Set<string>();
 const ANNOUNCED_CAP = 500;
@@ -74,7 +74,7 @@ function jumpTo(t: NotificationTarget): unknown {
     case "terminal":
       return jumpToTerminal({ tabId: t.tabId, terminalId: t.terminalId, projectId: t.projectId });
     case "session":
-      return jumpToSession(t.tabId);
+      return openSessionTarget(t);
     case "atlas-sign-in":
       return useAuthStore.getState().actions.beginSignIn();
     case "agent-sign-in":
@@ -217,6 +217,7 @@ export function deliverNotification(d: NotificationDecision): boolean {
         tabId: isTabTarget(t) ? t.tabId : undefined,
         terminalId: t.type === "terminal" ? t.terminalId : undefined,
         sessionId: t.type === "session" ? t.sessionId : undefined,
+        threadId: t.type === "session" ? t.threadId : undefined,
         projectId: isTabTarget(t) ? t.projectId : undefined,
         agentType,
         orgId: isTabTarget(t) || t.type === "chat-conversation" ? t.orgId : undefined,
