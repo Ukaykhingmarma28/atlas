@@ -2462,22 +2462,6 @@ html[data-word-wrap="off"] .prose-chat pre {
   border-right-color: var(--atlas-rail-divider);
   box-shadow: var(--inset-highlight);
 }
-.atlas-project-rail--glass {
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--foreground) 4.1%, transparent) 0%,
-      color-mix(in srgb, var(--foreground) 1.8%, transparent) 34%,
-      color-mix(in srgb, var(--foreground) 0.6%, transparent) 70%,
-      transparent 100%
-    ),
-    color-mix(in srgb, var(--sidebar) 66%, transparent);
-  /* As above, and it matters more here: this fill is translucent, so under
-     `border-box` both it and the gradient sit behind the border. */
-  background-clip: padding-box;
-  border-right-color: var(--atlas-rail-divider);
-  box-shadow: var(--inset-highlight), var(--elevation-menu);
-}
 
 /* Set by use-transcript-scroll on the content element for the life of a
    fling. Hover during a scroll is pure waste — each row that passes under a

@@ -101,12 +101,10 @@ interface ProjectState {
   /** Hot-set cap. Beyond this, the LRU evictable (not active/pinned/running)
    *  project is discarded from RAM and cold-loads on revisit. */
   maxMounted: number;
-  /** Cmd+. sidebar visibility. */
+  /** Whether the left sidebar is showing. It is always a docked column, like
+   *  the right-hand panels: it stays open until closed, and the choice is
+   *  remembered across restarts. */
   sidebarOpen: boolean;
-  /** When true the project sidebar is DOCKED (in-flow, pushes the layout)
-   *  instead of the default OVERLAY. A user preference, persisted to
-   *  localStorage. `sidebarOpen` still gates visibility in both modes. */
-  sidebarPinned: boolean;
   /** Guards re-entrant switches while a flush/restore is in flight. */
   switching: boolean;
   actions: {
@@ -134,9 +132,6 @@ interface ProjectState {
     ensureMounted: (id: string) => void;
     toggleSidebar: () => void;
     setSidebarOpen: (open: boolean) => void;
-    /** Toggle docked (pinned) vs overlay. Pinning also opens the sidebar so it
-     *  docks into view immediately. */
-    toggleSidebarPinned: () => void;
     /** One-shot hydration from Rust `AppState` on boot. */
     hydrate: (payload: { projects: Project[]; activeProjectId: string | null }) => void;
   };
@@ -198,20 +193,23 @@ function teardownHot(id: string): void {
   void invoke("mention_cache_clear", { workspaceId: id }).catch(() => {});
 }
 
-const SIDEBAR_PINNED_KEY = "atlas.sidebar.pinned";
-/** Read the persisted dock preference (localStorage — a self-contained UI pref,
- *  not part of the Rust-backed AppState). */
-function readSidebarPinned(): boolean {
+const SIDEBAR_OPEN_KEY = "atlas.sidebar.open";
+/** The sidebar's open state is a self-contained UI pref in localStorage, not
+ *  part of the Rust-backed AppState. Open unless the user closed it. */
+function readSidebarOpen(): boolean {
   try {
-    return localStorage.getItem(SIDEBAR_PINNED_KEY) === "1";
+    return localStorage.getItem(SIDEBAR_OPEN_KEY) !== "0";
   } catch {
-    return false;
+    return true;
   }
 }
-/** Read once at module init so `sidebarOpen` and `sidebarPinned` below cannot
- *  disagree: pinned means DOCKED, and a docked sidebar that starts closed is
- *  invisible until the user opens it manually — the pin looked forgotten. */
-const initialSidebarPinned = readSidebarPinned();
+function writeSidebarOpen(open: boolean) {
+  try {
+    localStorage.setItem(SIDEBAR_OPEN_KEY, open ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+}
 
 export const useProjectStore = createSelectors(
   create<ProjectState>()((set, get) => ({
@@ -219,10 +217,7 @@ export const useProjectStore = createSelectors(
     activeProjectId: null,
     mountedProjectIds: [],
     maxMounted: DEFAULT_MAX_MOUNTED,
-    // Pinned restores OPEN — `toggleSidebarPinned` opens on pin, so the
-    // persisted preference means "docked and showing" across restarts too.
-    sidebarOpen: initialSidebarPinned,
-    sidebarPinned: initialSidebarPinned,
+    sidebarOpen: readSidebarOpen(),
     switching: false,
     actions: {
       addProject: async (path: string) => {
@@ -327,18 +322,8 @@ export const useProjectStore = createSelectors(
         const target = projects.find((w) => w.id === id);
         if (!target) return;
 
-        // INSTANT UI response — before any guard or heavy work: close the
-        // OVERLAY sidebar (its slide-out animation covers the switch's
-        // eventual load latency). When DOCKED (pinned) the sidebar is a
-        // persistent panel, so we leave it open — closing it would make the
-        // whole layout jump on every switch.
-        const pinnedNow = get().sidebarPinned;
-        const wasOpen = get().sidebarOpen && !pinnedNow;
-        if (!pinnedNow) set({ sidebarOpen: false });
-
         // A switch already in flight → don't DROP the click; remember the latest
-        // target and run it when the current one settles (coalesce). The close
-        // above already gave instant feedback.
+        // target and run it when the current one settles (coalesce).
         if (switching) {
           pendingSwitchTarget = id;
           return;
@@ -354,15 +339,6 @@ export const useProjectStore = createSelectors(
         }
 
         set({ switching: true });
-        // Let the panel-close + optimistic highlight PAINT (and the slide-out
-        // animation start) before the synchronous switch work seizes the main
-        // thread — otherwise React batches the close with the heavy work and the
-        // panel appears to hang. A macrotask (rAF) yields past paint; the
-        // microtask from `await flushAll` would not. Skip when the panel was
-        // already closed (keyboard/programmatic switch) — no animation to protect.
-        if (wasOpen && typeof requestAnimationFrame === "function") {
-          await new Promise<void>((r) => requestAnimationFrame(() => r()));
-        }
         try {
           // 1) Commit the OUTGOING project's tab/split VIEW into the layout
           //    store (its tab subtree stays MOUNTED + hidden in CenterPanel),
@@ -530,20 +506,15 @@ export const useProjectStore = createSelectors(
         }));
       },
 
-      toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
-      setSidebarOpen: (open) => set({ sidebarOpen: open }),
-      toggleSidebarPinned: () =>
+      toggleSidebar: () =>
         set((s) => {
-          const sidebarPinned = !s.sidebarPinned;
-          try {
-            localStorage.setItem(SIDEBAR_PINNED_KEY, sidebarPinned ? "1" : "0");
-          } catch {
-            /* ignore */
-          }
-          // Pinning docks it into view immediately; unpinning leaves the
-          // (now overlay) sidebar in whatever open state it was.
-          return sidebarPinned ? { sidebarPinned, sidebarOpen: true } : { sidebarPinned };
+          writeSidebarOpen(!s.sidebarOpen);
+          return { sidebarOpen: !s.sidebarOpen };
         }),
+      setSidebarOpen: (open) => {
+        writeSidebarOpen(open);
+        set({ sidebarOpen: open });
+      },
 
       hydrate: (payload) => {
         set({
