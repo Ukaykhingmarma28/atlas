@@ -10,8 +10,8 @@ use std::path::PathBuf;
 
 use agent_client_protocol::schema::v1 as acp;
 use atlas_thread_metadata::{
-    LiveThreadUpdate, PathList, ThreadId, ThreadMetadata, ThreadMetadataStore, ThreadStoreEvent,
-    WorktreePaths,
+    LiveThreadUpdate, PathList, PullRequestLink, PullRequestLinkSource, ThreadId, ThreadMetadata,
+    ThreadMetadataStore, ThreadStoreEvent, WorktreePaths,
 };
 use chrono::{Duration, Utc};
 
@@ -313,4 +313,45 @@ fn an_unpinned_session_gets_a_full_idle_window() {
         store.auto_settle_idle(Utc::now() + Duration::seconds(1), &HashSet::new()),
         1
     );
+}
+
+fn with_pull_request(mut thread: ThreadMetadata, number: u32) -> ThreadMetadata {
+    thread.pull_requests.push(PullRequestLink::new(
+        "acme/shop",
+        number,
+        format!("https://github.com/acme/shop/pull/{number}"),
+        PullRequestLinkSource::Agent,
+    ));
+    thread
+}
+
+/// A session waiting on its pull request is not idle: a watched one never
+/// settles for inactivity, and with `autoSettleKeepPullRequests` no session
+/// with a pull request does.
+#[test]
+fn the_idle_sweep_leaves_sessions_with_pull_requests_to_their_pull_request() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(&dir);
+    let watched = with_pull_request(thread(Duration::days(5)), 1);
+    let linked = with_pull_request(thread(Duration::days(5)), 2);
+    let plain = thread(Duration::days(5));
+    let (watched_id, linked_id, plain_id) = (watched.thread_id, linked.thread_id, plain.thread_id);
+    store.save_all(vec![watched, linked, plain]);
+    assert!(store.set_pull_request_watch(watched_id, "acme/shop", 1, true));
+
+    let cutoff = Utc::now() - Duration::days(3);
+    let idle: Vec<_> = store
+        .idle_sessions_keeping(cutoff, true)
+        .into_iter()
+        .map(|(session, _)| session)
+        .collect();
+    assert_eq!(idle.len(), 1, "only the session with no pull request");
+    assert_eq!(store.auto_settle_idle_keeping(cutoff, &HashSet::new(), true), 1);
+    assert!(store.thread(plain_id).unwrap().is_settled());
+    assert!(!store.thread(linked_id).unwrap().is_settled());
+
+    // With the setting off, a linked one settles; a watched one still does not.
+    assert_eq!(store.auto_settle_idle(cutoff, &HashSet::new()), 1);
+    assert!(store.thread(linked_id).unwrap().is_settled());
+    assert!(!store.thread(watched_id).unwrap().is_settled());
 }

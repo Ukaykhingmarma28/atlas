@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use agent_client_protocol::schema::v1 as acp;
 use atlas_thread_metadata::{
     visible_pull_requests, PathList, PullRequestLink, PullRequestLinkSource, PullRequestSnapshot,
-    ThreadId, ThreadMetadata, ThreadMetadataStore, ThreadStoreEvent,
+    PullRequestWatch, ThreadId, ThreadMetadata, ThreadMetadataStore, ThreadStoreEvent, WatchSync,
 };
 use chrono::Utc;
 
@@ -138,4 +138,89 @@ fn a_row_that_does_not_exist_has_no_links_and_takes_none() {
     assert!(store.pull_requests(ghost).is_empty());
     assert!(!store.link_pull_request(ghost, pr(1, PullRequestLinkSource::Manual)));
     assert!(!store.unlink_pull_request(ghost, "acme/shop", 1));
+}
+
+// ── Watching ────────────────────────────────────────────────────────────────
+
+#[test]
+fn a_watch_survives_a_reopen_and_ends_into_ended_watch() {
+    let dir = tempfile::tempdir().unwrap();
+    let id = {
+        let store = open(&dir);
+        let id = saved(&store);
+        assert!(store.link_pull_request(id, pr(3, PullRequestLinkSource::Agent)));
+        assert!(store.set_pull_request_watch(id, "acme/shop", 3, true));
+        assert!(!store.set_pull_request_watch(id, "acme/shop", 3, true));
+        store.flush().unwrap();
+        id
+    };
+    let store = open(&dir);
+    assert!(store.pull_requests(id)[0].is_watched());
+    assert!(store.set_pull_request_watch(id, "ACME/shop", 3, false));
+    let link = &store.pull_requests(id)[0];
+    assert!(!link.is_watched());
+    assert!(link.ended_watch.is_some());
+}
+
+#[test]
+fn a_reactor_pass_applies_only_while_its_watch_is_on() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(&dir);
+    let id = saved(&store);
+    store.link_pull_request(id, pr(4, PullRequestLinkSource::Manual));
+    store.set_pull_request_watch(id, "acme/shop", 4, true);
+    let watch: PullRequestWatch = store.pull_requests(id)[0].watch.clone().unwrap();
+    let mut next = watch.clone();
+    next.wakes = 2;
+
+    // Going on writes without an event: nothing any surface shows changed.
+    let mut events = store.subscribe();
+    assert!(store.sync_pull_request_watch(
+        id,
+        "acme/shop",
+        4,
+        watch.started_at,
+        WatchSync::Continue(next.clone())
+    ));
+    assert!(events.try_recv().is_err());
+    assert_eq!(store.pull_requests(id)[0].watch.as_ref().unwrap().wakes, 2);
+
+    // The user stops it while a pass reads the host: the pass lands on nothing.
+    assert!(store.end_pull_request_watches(id));
+    assert!(matches!(events.try_recv(), Ok(ThreadStoreEvent::Changed)));
+    assert!(!store.sync_pull_request_watch(
+        id,
+        "acme/shop",
+        4,
+        watch.started_at,
+        WatchSync::Continue(next)
+    ));
+    assert!(!store.pull_requests(id)[0].is_watched());
+}
+
+#[test]
+fn settling_ends_the_watches_and_a_settled_session_starts_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(&dir);
+    // Sent to a while ago: a settle within the send grace is refused.
+    let id = saved(&store);
+    store.update_interacted_at(id, Utc::now() - chrono::Duration::minutes(5));
+    store.link_pull_request(id, pr(5, PullRequestLinkSource::Agent));
+    store.set_pull_request_watch(id, "acme/shop", 5, true);
+    assert!(store.settle(id));
+    assert!(!store.pull_requests(id)[0].is_watched());
+    assert!(!store.set_pull_request_watch(id, "acme/shop", 5, true));
+}
+
+#[test]
+fn a_watch_needs_a_visible_link() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(&dir);
+    let id = saved(&store);
+    assert!(!store.set_pull_request_watch(id, "acme/shop", 6, true));
+    store.link_pull_request(id, pr(6, PullRequestLinkSource::Manual));
+    store.set_pull_request_watch(id, "acme/shop", 6, true);
+    assert!(store.unlink_pull_request(id, "acme/shop", 6));
+    assert!(!store.pull_requests(id)[0].is_watched());
+    assert!(!store.set_pull_request_watch(id, "acme/shop", 6, true));
 }

@@ -14,6 +14,13 @@
 //! ([`PullRequestLinkSource::Dismissed`]): the branch sweep would otherwise
 //! find the pull request again a minute later and put it back. Every surface
 //! hides tombstones ([`visible`]); linking the pull request again revives it.
+//!
+//! A link can also be **watched** ([`PullRequestWatch`]): the app's watch
+//! reactor reads it every couple of minutes and wakes the session's agent
+//! when something it should act on happens (a check fails, the gate passes,
+//! someone comments, the branch conflicts). The watch carries what it has
+//! already told, so a wake never repeats itself; an ended watch is kept as
+//! `ended_watch`, so watching again does not repeat it either.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -109,6 +116,71 @@ impl PullRequestSnapshot {
     }
 }
 
+/// What a watch has already told the agent about a pull request, so the next
+/// read wakes it only for what is new. The watch reactor's `evaluate` reads
+/// one and answers the next.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PullRequestWatch {
+    /// When the watch began. Its identity: a reactor pass applies its result
+    /// only while the same watch is still on ([`WatchSync`]), so a stop or a
+    /// re-watch that lands during the host read wins.
+    pub started_at: DateTime<Utc>,
+    /// The head commit the checks below were read on. A push resets them.
+    #[serde(default)]
+    pub head_sha: Option<String>,
+    /// Checks already reported failed on this head.
+    #[serde(default)]
+    pub failed_checks: Vec<String>,
+    /// Whether "checks passed" has been reported on this head.
+    #[serde(default)]
+    pub passed: bool,
+    /// The gate's check names when it was reported passed, so a required
+    /// check that appears already passed is reported too.
+    #[serde(default)]
+    pub passed_checks: Vec<String>,
+    /// Remarks up to this time have been told (RFC 3339, as the host spelled
+    /// it).
+    pub remarks_through: String,
+    /// The remarks told at exactly `remarks_through`: host times are per
+    /// second, so a late one at the same second is told apart by id.
+    #[serde(default)]
+    pub remark_ids: Vec<String>,
+    /// Whether a conflict with the base has been reported.
+    #[serde(default)]
+    pub conflicting: bool,
+    /// Wakes in a row that brought only comments; anything else resets it.
+    #[serde(default)]
+    pub wakes: u32,
+}
+
+impl PullRequestWatch {
+    /// A fresh watch at `now`. Check and conflict news an `ended` watch
+    /// already told is not told again; remarks start from now.
+    pub fn starting(now: DateTime<Utc>, ended: Option<&PullRequestWatch>) -> Self {
+        Self {
+            started_at: now,
+            head_sha: ended.and_then(|e| e.head_sha.clone()),
+            failed_checks: ended.map(|e| e.failed_checks.clone()).unwrap_or_default(),
+            passed: ended.is_some_and(|e| e.passed),
+            passed_checks: ended.map(|e| e.passed_checks.clone()).unwrap_or_default(),
+            remarks_through: now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            remark_ids: Vec::new(),
+            conflicting: ended.is_some_and(|e| e.conflicting),
+            wakes: 0,
+        }
+    }
+}
+
+/// What a reactor pass decided for one watch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WatchSync {
+    /// The watch goes on, having told this much.
+    Continue(PullRequestWatch),
+    /// The watch ends. `told` is what it had told by then, when the pass
+    /// knows more than the watch it read.
+    End { told: Option<PullRequestWatch> },
+}
+
 /// One pull request linked to a session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PullRequestLink {
@@ -123,6 +195,13 @@ pub struct PullRequestLink {
     /// `None` until the host has been read.
     #[serde(default)]
     pub snapshot: Option<PullRequestSnapshot>,
+    /// On while Atlas watches the pull request for this session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub watch: Option<PullRequestWatch>,
+    /// The last watch, once it ended: what it had told, so watching again
+    /// does not repeat it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ended_watch: Option<PullRequestWatch>,
 }
 
 impl PullRequestLink {
@@ -139,7 +218,23 @@ impl PullRequestLink {
             source,
             linked_at: Utc::now(),
             snapshot: None,
+            watch: None,
+            ended_watch: None,
         }
+    }
+
+    /// Whether Atlas is watching it for the session.
+    pub fn is_watched(&self) -> bool {
+        self.watch.is_some() && self.is_visible()
+    }
+
+    /// End the watch, keeping what it told as `ended_watch`.
+    fn end_watch(&mut self) -> bool {
+        let Some(watch) = self.watch.take() else {
+            return false;
+        };
+        self.ended_watch = Some(watch);
+        true
     }
 
     pub fn with_snapshot(mut self, snapshot: Option<PullRequestSnapshot>) -> Self {
@@ -201,6 +296,7 @@ pub(crate) fn link(links: &mut Vec<PullRequestLink>, link: PullRequestLink) -> b
 }
 
 /// Tombstone `repository#number`. Answers whether a visible link was there.
+/// Unlinking ends its watch.
 pub(crate) fn unlink(links: &mut [PullRequestLink], repository: &str, number: u32) -> bool {
     let Some(ix) = position(links, repository, number) else {
         return false;
@@ -210,7 +306,78 @@ pub(crate) fn unlink(links: &mut [PullRequestLink], repository: &str, number: u3
         return false;
     }
     existing.source = PullRequestLinkSource::Dismissed;
+    existing.end_watch();
     true
+}
+
+/// Start or stop watching `repository#number`. Answers whether anything
+/// changed: watching one already watched, or stopping one not watched, is
+/// not a change. Only a visible link can be watched.
+pub(crate) fn set_watch(
+    links: &mut [PullRequestLink],
+    repository: &str,
+    number: u32,
+    watching: bool,
+    now: DateTime<Utc>,
+) -> bool {
+    let Some(ix) = position(links, repository, number) else {
+        return false;
+    };
+    let existing = &mut links[ix];
+    if !existing.is_visible() {
+        return false;
+    }
+    if !watching {
+        return existing.end_watch();
+    }
+    if existing.watch.is_some() {
+        return false;
+    }
+    existing.watch = Some(PullRequestWatch::starting(
+        now,
+        existing.ended_watch.as_ref(),
+    ));
+    true
+}
+
+/// Apply a reactor pass's result to `repository#number`, but only while the
+/// watch that pass read (`started_at`) is still the one on. Answers whether
+/// it applied: `false` when the watch was stopped, restarted or unlinked
+/// meanwhile, which the reactor reads as "say nothing".
+pub(crate) fn sync_watch(
+    links: &mut [PullRequestLink],
+    repository: &str,
+    number: u32,
+    started_at: DateTime<Utc>,
+    result: WatchSync,
+) -> bool {
+    let Some(ix) = position(links, repository, number) else {
+        return false;
+    };
+    let existing = &mut links[ix];
+    if !existing.is_visible() || existing.watch.as_ref().map(|w| w.started_at) != Some(started_at)
+    {
+        return false;
+    }
+    match result {
+        WatchSync::Continue(next) => existing.watch = Some(next),
+        WatchSync::End { told } => {
+            existing.end_watch();
+            if let Some(told) = told {
+                existing.ended_watch = Some(told);
+            }
+        }
+    }
+    true
+}
+
+/// End every watch in `links`. Answers whether any was on.
+pub(crate) fn end_watches(links: &mut [PullRequestLink]) -> bool {
+    let mut any = false;
+    for link in links.iter_mut() {
+        any |= link.end_watch();
+    }
+    any
 }
 
 /// Record a fresh read of `repository#number`. Answers whether it said
@@ -351,6 +518,120 @@ mod tests {
         assert!(!sync(&mut links, "acme/shop", 4, again));
         assert!(sync(&mut links, "acme/shop", 4, snapshot("merged", "One")));
         assert!(!sync(&mut links, "acme/shop", 99, snapshot("open", "Nope")));
+    }
+
+    fn at(rfc: &str) -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339(rfc)
+            .unwrap()
+            .with_timezone(&Utc)
+    }
+
+    #[test]
+    fn a_watch_starts_on_a_visible_link_and_stops_into_ended_watch() {
+        let mut links = vec![pr(1, PullRequestLinkSource::Agent)];
+        let now = at("2026-10-20T10:00:00Z");
+        assert!(set_watch(&mut links, "acme/shop", 1, true, now));
+        assert!(links[0].is_watched());
+        assert_eq!(
+            links[0].watch.as_ref().unwrap().remarks_through,
+            "2026-10-20T10:00:00Z"
+        );
+        // Watching twice is watching once: the same watch stays.
+        assert!(!set_watch(
+            &mut links,
+            "acme/shop",
+            1,
+            true,
+            at("2026-10-20T11:00:00Z")
+        ));
+        assert_eq!(links[0].watch.as_ref().unwrap().started_at, now);
+        assert!(set_watch(&mut links, "acme/shop", 1, false, now));
+        assert!(!links[0].is_watched());
+        assert_eq!(links[0].ended_watch.as_ref().unwrap().started_at, now);
+        assert!(!set_watch(&mut links, "acme/shop", 1, false, now));
+        assert!(!set_watch(&mut links, "acme/shop", 2, true, now));
+    }
+
+    #[test]
+    fn watching_again_does_not_repeat_check_or_conflict_news() {
+        let mut links = vec![pr(1, PullRequestLinkSource::Agent)];
+        let first = at("2026-10-20T10:00:00Z");
+        assert!(set_watch(&mut links, "acme/shop", 1, true, first));
+        let mut told = links[0].watch.clone().unwrap();
+        told.head_sha = Some("abc".into());
+        told.failed_checks = vec!["lint".into()];
+        told.conflicting = true;
+        told.wakes = 9;
+        told.remark_ids = vec!["r1".into()];
+        assert!(sync_watch(
+            &mut links,
+            "acme/shop",
+            1,
+            first,
+            WatchSync::End { told: Some(told) }
+        ));
+        let again = at("2026-10-20T12:00:00Z");
+        assert!(set_watch(&mut links, "acme/shop", 1, true, again));
+        let watch = links[0].watch.clone().unwrap();
+        assert_eq!(watch.head_sha.as_deref(), Some("abc"));
+        assert_eq!(watch.failed_checks, vec!["lint".to_string()]);
+        assert!(watch.conflicting);
+        assert_eq!(watch.wakes, 0);
+        assert!(watch.remark_ids.is_empty());
+        assert_eq!(watch.remarks_through, "2026-10-20T12:00:00Z");
+    }
+
+    #[test]
+    fn a_pass_applies_only_to_the_watch_it_read() {
+        let mut links = vec![pr(1, PullRequestLinkSource::Agent)];
+        let first = at("2026-10-20T10:00:00Z");
+        set_watch(&mut links, "acme/shop", 1, true, first);
+        let mut next = links[0].watch.clone().unwrap();
+        next.wakes = 1;
+        // Stopped and started again while the pass read the host.
+        set_watch(&mut links, "acme/shop", 1, false, first);
+        set_watch(&mut links, "acme/shop", 1, true, at("2026-10-20T10:01:00Z"));
+        assert!(!sync_watch(
+            &mut links,
+            "acme/shop",
+            1,
+            first,
+            WatchSync::Continue(next.clone())
+        ));
+        assert_eq!(links[0].watch.as_ref().unwrap().wakes, 0);
+        // Unlinked: the watch ends and nothing is left to apply to.
+        let current = links[0].watch.as_ref().unwrap().started_at;
+        assert!(unlink(&mut links, "acme/shop", 1));
+        assert!(!links[0].is_watched());
+        assert!(!sync_watch(
+            &mut links,
+            "acme/shop",
+            1,
+            current,
+            WatchSync::Continue(next)
+        ));
+    }
+
+    #[test]
+    fn a_link_without_a_watch_writes_exactly_as_before() {
+        let link = pr(1, PullRequestLinkSource::Manual);
+        let text = serde_json::to_string(&link).unwrap();
+        assert!(!text.contains("watch"), "{text}");
+        let mut watched = vec![link];
+        set_watch(&mut watched, "acme/shop", 1, true, Utc::now());
+        assert_eq!(decode(encode(&watched)), watched);
+    }
+
+    #[test]
+    fn ending_every_watch_says_whether_one_was_on() {
+        let mut links = vec![
+            pr(1, PullRequestLinkSource::Agent),
+            pr(2, PullRequestLinkSource::Manual),
+        ];
+        assert!(!end_watches(&mut links));
+        set_watch(&mut links, "acme/shop", 2, true, Utc::now());
+        assert!(end_watches(&mut links));
+        assert!(links.iter().all(|l| !l.is_watched()));
     }
 
     #[test]

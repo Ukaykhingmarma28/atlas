@@ -71,6 +71,7 @@ pub use paths::{LengthMismatch, PathList, SerializedPathList, WorktreePaths};
 pub use projects::{AttachSource, AttachedProject, ProjectAccess};
 pub use pull_requests::{
     visible as visible_pull_requests, PullRequestLink, PullRequestLinkSource, PullRequestSnapshot,
+    PullRequestWatch, WatchSync,
 };
 pub use recorder::{
     affects_thread_metadata, lifecycle_signal, LifecycleSignal, ThreadRecorder, ThreadSnapshot,
