@@ -3,8 +3,13 @@ import { FileSaveCoordinator } from "./file-save-coordinator";
 
 interface FileSaveOptions {
   path: string;
-  /** The contents on disk when the session starts. */
-  baseline: string;
+  /**
+   * The contents on disk when the session starts, or `null` while they are
+   * still being read. The session takes the first non-null value as its
+   * baseline, whenever it arrives; later values are ignored (saves and reloads
+   * move the baseline through the coordinator itself).
+   */
+  baseline: string | null;
   persist: (contents: string) => Promise<boolean>;
   onPendingChange: (pending: boolean) => void;
   onConfirmed: (contents: string) => void;
@@ -37,15 +42,31 @@ export function useFileSaveCoordinator(options: FileSaveOptions): FileSaveSessio
   // StrictMode replays effect setup. A retired session stays inert, while the
   // replay gets a fresh coordinator instead of reusing a disposed one.
   useEffect(session.setup, [session]);
+  // The file is read after the session starts: seed it once the text lands,
+  // or "clean" would mean "empty" until the first reload.
+  const { baseline } = options;
+  useEffect(() => {
+    if (baseline !== null) session.seed(baseline);
+  }, [session, baseline]);
   return session;
 }
 
 function createFileSaveSession(latest: { current: FileSaveOptions }) {
   const coordinatorRef = createRef<FileSaveCoordinator>();
+  let seeded = false;
   return {
     change: (contents: string) => coordinatorRef.current?.change(contents),
-    reset: (contents: string) => coordinatorRef.current?.reset(contents),
+    reset: (contents: string) => {
+      seeded = true;
+      coordinatorRef.current?.reset(contents);
+    },
     flush: () => coordinatorRef.current?.flush() ?? Promise.resolve(false),
+    /** The first baseline only; a later one is the coordinator's own doing. */
+    seed: (baseline: string) => {
+      if (seeded || !coordinatorRef.current) return;
+      seeded = true;
+      coordinatorRef.current.reset(baseline);
+    },
     setup: () => {
       const coordinator = new FileSaveCoordinator({
         debounceMs: null,
@@ -53,8 +74,13 @@ function createFileSaveSession(latest: { current: FileSaveOptions }) {
         onPendingChange: (pending) => latest.current.onPendingChange(pending),
         onConfirmed: (contents) => latest.current.onConfirmed(contents),
       });
-      coordinator.reset(latest.current.baseline);
       coordinatorRef.current = coordinator;
+      seeded = false;
+      const { baseline } = latest.current;
+      if (baseline !== null) {
+        seeded = true;
+        coordinator.reset(baseline);
+      }
       return () => {
         coordinatorRef.current = null;
         coordinator.dispose();

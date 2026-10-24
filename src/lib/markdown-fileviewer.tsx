@@ -3,8 +3,55 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import { onMarkdownClick } from "@/lib/markdown-links";
 import { cachedPreviewImage, previewImage } from "@/lib/markdown-preview-image";
 import "@/styles/hljs.css";
+
+/**
+ * What a trusted document's raw HTML may keep: GitHub's own allowlist, plus
+ * the sizing attributes README images carry. A cloned repo is not trusted
+ * *code* — `<meta http-equiv="refresh">` would be hoisted into the app's
+ * `<head>` by React and navigate the whole window, `<style>` restyles the app
+ * globally, and `<iframe srcdoc>` runs whatever it holds. The tags below are
+ * dropped (the default schema already omits them; naming them keeps a later
+ * widening of `tagNames` from letting one back in), and no element may carry
+ * a `style` attribute, so nothing can pin a full-window overlay either.
+ */
+const BLOCKED_TAGS = new Set([
+  "meta",
+  "style",
+  "script",
+  "iframe",
+  "frame",
+  "frameset",
+  "link",
+  "base",
+  "form",
+  "object",
+  "embed",
+  "applet",
+  "dialog",
+  "template",
+  "svg",
+  "math",
+]);
+const PREVIEW_SANITIZE_SCHEMA = {
+  ...defaultSchema,
+  tagNames: [...(defaultSchema.tagNames ?? []), "picture", "source"].filter(
+    (t) => !BLOCKED_TAGS.has(t),
+  ),
+  attributes: Object.fromEntries(
+    Object.entries({
+      ...defaultSchema.attributes,
+      img: [...(defaultSchema.attributes?.img ?? []), "width", "height", "align"],
+      source: ["srcSet", "media"],
+    }).map(([tag, attrs]) => [
+      tag,
+      (attrs ?? []).filter((a) => (Array.isArray(a) ? a[0] : a) !== "style"),
+    ]),
+  ),
+};
 
 const IMG_CLASS = "my-1 inline-block h-auto max-w-full rounded align-middle";
 
@@ -37,6 +84,17 @@ function PreviewImage({
     return alt ? <span className="text-[var(--muted-foreground)]">{alt}</span> : null;
   }
   return <img {...rest} alt={alt} src={url} className={IMG_CLASS} />;
+}
+
+/**
+ * A web link opens in the system browser; nothing else may navigate the
+ * window away from the app (a relative `docs/x.md` would otherwise load
+ * `tauri://localhost/docs/x.md` over Atlas). In-page `#anchors` still scroll.
+ */
+function onPreviewLinkClick(e: React.MouseEvent<HTMLAnchorElement>) {
+  if (onMarkdownClick(e.nativeEvent)) return;
+  if (e.currentTarget.getAttribute("href")?.startsWith("#")) return;
+  e.preventDefault();
 }
 
 function handleWheel(e: React.WheelEvent<HTMLElement>) {
@@ -76,7 +134,11 @@ export const MarkdownFile = memo(function MarkdownFile({
     <div className="text-md leading-relaxed text-[var(--foreground)] break-words select-text">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[...(trusted ? [rehypeRaw] : []), rehypeHighlight]}
+        rehypePlugins={
+          trusted
+            ? [rehypeRaw, [rehypeSanitize, PREVIEW_SANITIZE_SCHEMA], rehypeHighlight]
+            : [rehypeHighlight]
+        }
         components={{
           h1: (p) => (
             <h1 className="mt-8 mb-3 border-b border-[var(--border)] pb-2 text-2xl font-bold tracking-tight">
@@ -96,11 +158,12 @@ export const MarkdownFile = memo(function MarkdownFile({
 
           p: (p) => <p className="my-3">{p.children}</p>,
 
-          a: (p) => (
+          a: ({ node: _node, ...p }) => (
             <a
               {...p}
               target="_blank"
               rel="noreferrer"
+              onClick={onPreviewLinkClick}
               className="text-[var(--primary)] underline hover:opacity-80"
             />
           ),

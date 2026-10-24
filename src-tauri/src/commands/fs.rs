@@ -8,13 +8,31 @@ use std::path::{Component, Path};
 /// blocking work through `tokio::task::spawn_blocking`, which puts the syscall
 /// on tokio's blocking worker pool and leaves the main thread responsive.
 
+/// The error a `read_file_content` over its `max_bytes` returns: this prefix,
+/// then the file's size in bytes. The frontend matches on it to show "too
+/// large to open" instead of a read failure (`editor-fs-api.ts`).
+pub const FILE_TOO_LARGE_PREFIX: &str = "file-too-large:";
+
+/// Read a text file whole. With `max_bytes`, a file larger than that is
+/// refused before a byte is read, so a multi-hundred-MB log never crosses IPC
+/// into the JS heap; the error is `FILE_TOO_LARGE_PREFIX` + its size.
 #[tauri::command]
-pub async fn read_file_content(path: String) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || {
-        fs::read_to_string(&path).map_err(|e| format!("Failed to read {path}: {e}"))
-    })
-    .await
-    .map_err(|e| e.to_string())?
+pub async fn read_file_content(path: String, max_bytes: Option<u64>) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || read_text_capped(&path, max_bytes))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn read_text_capped(path: &str, max_bytes: Option<u64>) -> Result<String, String> {
+    if let Some(max) = max_bytes {
+        let len = fs::metadata(path)
+            .map_err(|e| format!("Failed to read {path}: {e}"))?
+            .len();
+        if len > max {
+            return Err(format!("{FILE_TOO_LARGE_PREFIX}{len}"));
+        }
+    }
+    fs::read_to_string(path).map_err(|e| format!("Failed to read {path}: {e}"))
 }
 
 /// Read an arbitrary file as standard base64. Used for binary payloads the
@@ -1055,6 +1073,24 @@ mod inline_cap_tests {
             .unwrap_err();
         assert!(err.contains("too large"), "{err}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod text_cap_tests {
+    use super::{read_text_capped, FILE_TOO_LARGE_PREFIX};
+
+    #[test]
+    fn a_file_over_the_cap_is_refused_unread_with_its_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let small = dir.path().join("small.txt");
+        std::fs::write(&small, "hello").unwrap();
+        let small = small.to_string_lossy();
+        assert_eq!(read_text_capped(&small, Some(5)).unwrap(), "hello");
+        assert_eq!(read_text_capped(&small, None).unwrap(), "hello");
+
+        let err = read_text_capped(&small, Some(4)).unwrap_err();
+        assert_eq!(err, format!("{FILE_TOO_LARGE_PREFIX}5"));
     }
 }
 

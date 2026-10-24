@@ -4,6 +4,7 @@ import {
   fileBreadcrumbChildren,
   fileBreadcrumbParent,
   fileBreadcrumbs,
+  relativeToRoot,
   retainedBreadcrumbTrail,
   trailChildOf,
 } from "./file-path";
@@ -117,5 +118,25 @@ describe("trailChildOf", () => {
     expect(trailChildOf("", "src/components/button.tsx")).toBe("src");
     expect(trailChildOf("src/components/button.tsx", "src/components/button.tsx")).toBeNull();
     expect(trailChildOf("lib", "src/components/button.tsx")).toBeNull();
+  });
+});
+
+describe("relativeToRoot", () => {
+  it("is the path below a POSIX root", () => {
+    expect(relativeToRoot("/repo/src/a.ts", "/repo")).toBe("src/a.ts");
+    expect(relativeToRoot("/repo/src/a.ts", "/repo/")).toBe("src/a.ts");
+    expect(relativeToRoot("/a.ts", "/")).toBe("a.ts");
+  });
+
+  it("is the path below a Windows root, whichever separators either uses", () => {
+    expect(relativeToRoot("C:\\work\\repo\\src\\a.ts", "C:\\work\\repo")).toBe("src/a.ts");
+    expect(relativeToRoot("C:/work/repo/src/a.ts", "C:\\work\\repo")).toBe("src/a.ts");
+  });
+
+  it("is null outside the root, for the root itself, and for a sibling prefix", () => {
+    expect(relativeToRoot("/repo", "/repo")).toBeNull();
+    expect(relativeToRoot("/repo-two/a.ts", "/repo")).toBeNull();
+    expect(relativeToRoot("/elsewhere/a.ts", "/repo")).toBeNull();
+    expect(relativeToRoot("/repo/a.ts", "")).toBeNull();
   });
 });

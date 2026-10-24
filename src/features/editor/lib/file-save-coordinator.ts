@@ -143,7 +143,14 @@ export class FileSaveCoordinator {
     }
 
     this.saving = false;
-    if (revision === this.latestRevision) {
+    // Edited during the write, but back to exactly the bytes it wrote (an
+    // undo, say): what is on disk is what is shown, so nothing is pending.
+    const caughtUp = succeeded && this.latestContents === contents;
+    if (revision === this.latestRevision || caughtUp) {
+      if (caughtUp) {
+        this.confirmedRevision = this.latestRevision;
+        this.clearTimer();
+      }
       if (confirmed) this.setPending(false);
       this.settleWaiters(succeeded);
       return;

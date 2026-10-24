@@ -67,7 +67,12 @@ export const DIFF_VIEW_CSS = `
      hue, stronger under the line number than across the code. Solid mixes,
      not the theme's translucent line backgrounds, which nearly vanish over
      the viewer's own surface. Every term is a variable, so the diff palette
-     setting and a theme switch recolour them in place. */
+     setting and a theme switch recolour them in place.
+
+     These are mix *targets*, not the painted colour: the viewer paints a line
+     as its surface mixed with the target at 15% (dark) / 9% (light), so 30%
+     hue here lands as under 5% on screen. Don't read them as loud and halve
+     them; the changed-word emphasis below is what stood out. */
   --diffs-bg-addition-override: light-dark(
     color-mix(in srgb, var(--atlas-editor-background) 50%, var(--atlas-diff-added-text)),
     color-mix(in srgb, var(--atlas-editor-background) 70%, var(--atlas-diff-added-text))
@@ -94,8 +99,21 @@ export const DIFF_VIEW_CSS = `
     var(--atlas-editor-background) 85%,
     var(--atlas-diff-removed-text)
   );
-  --diffs-bg-addition-emphasis-override: var(--atlas-diff-added-emphasis);
-  --diffs-bg-deletion-emphasis-override: var(--atlas-diff-removed-emphasis);
+  /* Changed words: the theme's emphasis colour at about two thirds of its
+     strength. Themes write emphasis at around a third opacity for an editor's
+     merge view; painted at full strength over a diff line it saturates, a
+     solid block per word. Scaled here, every theme and both diff palettes
+     step down alike, to about the viewer's own default (0.15–0.2). */
+  --diffs-bg-addition-emphasis-override: color-mix(
+    in srgb,
+    var(--atlas-diff-added-emphasis) 65%,
+    transparent
+  );
+  --diffs-bg-deletion-emphasis-override: color-mix(
+    in srgb,
+    var(--atlas-diff-removed-emphasis) 65%,
+    transparent
+  );
 
   background-color: var(--diffs-bg) !important;
   color: var(--atlas-editor-foreground) !important;

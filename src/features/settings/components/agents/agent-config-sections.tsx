@@ -118,7 +118,7 @@ export function IdentityRow({ item }: { item: AgentItem }) {
 }
 
 /** One profile field. Text-like fields sit full width under their
- *  description, the way T3 lays out a provider's runtime fields. */
+ *  description, as a provider's runtime fields are laid out. */
 function ProfileFieldRow({ item, field }: { item: AgentItem; field: ProfileField }) {
   const variables = item.catalog?.launch?.variables ?? [];
   const value = readField(variables, field);

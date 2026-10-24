@@ -158,6 +158,21 @@ export function loadFirstScreenGrammar(
   return getSharedHighlighter({ themes: [theme], langs: ["text", lang], preferredHighlighter });
 }
 
+/**
+ * Forget the cached head when it belongs to the file version `cacheKey`. The
+ * cache keeps that version's whole text alive, so a view calls this when it
+ * lets the version go (its tab closed, or the document replaced). Another
+ * file's head is left alone.
+ */
+export function releaseFirstScreenCache(cacheKey: string | undefined): void {
+  if (cache && cacheKey !== undefined && cache.cacheKey === cacheKey) cache = null;
+}
+
+/** Whether a head is cached (tests). */
+export function hasFirstScreenCache(): boolean {
+  return cache !== null;
+}
+
 /** Forget the cached head (tests). */
 export function resetFirstScreenCache(): void {
   cache = null;
