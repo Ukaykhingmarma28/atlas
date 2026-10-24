@@ -31,6 +31,7 @@ import {
   changedFilesOf,
   folderPaths,
   formatDiffCount,
+  splitForMiddleTruncate,
   sumStats,
   visibleRows,
   type ChangedFile,
@@ -57,34 +58,43 @@ const NO_OVERRIDES: Record<string, boolean> = {};
  *
  * Skipped, a card measures as its intrinsic size. `auto` makes that the size
  * it last rendered at; before its first render it is this estimate, which is
- * exact: the header (`h-control-xs` plus `py-1`), a 1.5rem row per visible
- * row, and the tree's `pb-1`. An exact guess matters because the transcript
- * grows upward, and a card that changed height as it scrolled in would move
- * everything under the reader.
+ * exact: the header (`h-control-xs` plus `py-2`), a 1.75rem (`h-7`) row per
+ * visible row, and the tree's `p-2`. An exact guess matters because the
+ * transcript grows upward, and a card that changed height as it scrolled in
+ * would move everything under the reader.
  */
 function cardStyle(rows: number) {
   return {
     contentVisibility: "auto",
-    containIntrinsicSize: `auto calc(var(--control-xs) + 0.75rem + ${rows} * 1.5rem)`,
+    containIntrinsicSize: `auto calc(var(--control-xs) + 2rem + ${rows} * 1.75rem)`,
   } as const;
 }
 
 /** `+12 −3`, compact past a thousand. Zero sides are kept: a column of
- *  figures reads by position. */
+ *  figures reads by position. `aligned` sets the two sides in fixed columns,
+ *  right-aligned, so the rows of a tree line up figure under figure. */
 export function DiffCounts({
   added,
   removed,
+  layout = "inline",
   className,
 }: {
   added: number;
   removed: number;
+  layout?: "inline" | "aligned";
   className?: string;
 }) {
   return (
     <span
       role="group"
       aria-label={`${added} added, ${removed} removed`}
-      className={cn("inline-flex shrink-0 gap-1 font-mono tabular-nums", className)}
+      className={cn(
+        "shrink-0 font-mono tabular-nums",
+        layout === "aligned"
+          ? "inline-grid grid-cols-[4ch_4ch] gap-2 text-right"
+          : "inline-flex gap-1",
+        className,
+      )}
     >
       <span aria-hidden className="text-[var(--atlas-diff-added-text)]">
         +{formatDiffCount(added)}
@@ -121,9 +131,13 @@ export const ChangedFilesCard = memo(function ChangedFilesCard({
   }, [tree, allExpanded]);
 
   return (
-    <div className="rounded-lg bg-card" data-changed-files="" style={cardStyle(firstRows)}>
+    <div
+      className="@container/changed-files rounded-lg bg-card"
+      data-changed-files=""
+      style={cardStyle(firstRows)}
+    >
       <div
-        className="sticky z-10 flex items-center justify-between gap-2 rounded-t-lg bg-card py-1 pr-1 pl-3"
+        className="sticky z-10 flex items-center justify-between gap-2 rounded-t-lg bg-card px-3 py-2"
         // Under the session's floating header, not behind it.
         style={{ top: HEADER_INSET }}
       >
@@ -132,30 +146,35 @@ export const ChangedFilesCard = memo(function ChangedFilesCard({
             {files.length} changed file{files.length === 1 ? "" : "s"}
           </span>
           {(total.added > 0 || total.removed > 0) && (
-            <DiffCounts added={total.added} removed={total.removed} className="text-2xs" />
+            <DiffCounts added={total.added} removed={total.removed} className="text-xs" />
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-0.5">
+        <div className="flex shrink-0 items-center gap-1">
           {hasFolders && (
             <Hint label={allExpanded ? "Collapse all folders" : "Expand all folders"} side="top">
               <IconButton
                 size="xs"
                 icon={allExpanded ? ChevronsDownUp : ChevronsUpDown}
                 label={allExpanded ? "Collapse all folders" : "Expand all folders"}
-                aria-pressed={allExpanded}
                 onClick={() => setExpanded(turnKey, !allExpanded)}
               />
             </Hint>
           )}
           <Hint label="Open this turn's diff" side="top">
-            <Button variant="ghost" size="xs" onClick={() => openTurnDiff(turnKey)}>
+            <Button
+              variant="ghost"
+              size="xs"
+              aria-label="Open diff"
+              onClick={() => openTurnDiff(turnKey)}
+            >
               <FileDiff size={12} />
-              Open diff
+              {/* A narrow card keeps the icon alone. */}
+              <span className="hidden @sm/changed-files:inline">Open diff</span>
             </Button>
           </Hint>
         </div>
       </div>
-      <div className="px-1 pb-1">
+      <div className="p-2">
         <ChangedFilesTree
           // A new expand-all answer starts the folders afresh, as it says.
           key={allExpanded ? "all" : "folded"}
@@ -230,7 +249,7 @@ const ChangedFilesTree = memo(function ChangedFilesTree({
           <button
             type="button"
             onClick={() => setShowAll(true)}
-            className="flex h-6 w-full cursor-pointer items-center rounded-md px-2 text-left text-2xs text-muted-foreground hover:bg-element-hover hover:text-foreground"
+            className="flex h-7 w-full cursor-pointer items-center rounded-md px-2 text-left text-2xs text-muted-foreground hover:bg-element-hover hover:text-foreground"
           >
             Show {rows.length - shown.length} more
           </button>
@@ -252,7 +271,20 @@ const ChangedFilesTree = memo(function ChangedFilesTree({
 });
 
 const ROW =
-  "group flex h-6 w-full cursor-pointer items-center gap-1.5 rounded-md pr-2 text-left outline-none transition-colors duration-fast hover:bg-element-hover focus-visible:ring-1 focus-visible:ring-border-strong focus-visible:ring-inset";
+  "group flex h-7 w-full cursor-pointer items-center gap-2 rounded-md pr-2 text-left outline-none transition-colors duration-fast hover:bg-element-hover focus-visible:ring-1 focus-visible:ring-border-strong focus-visible:ring-inset";
+
+/** A name cut in the middle, not at the end: `use-turn-revi…s.test.tsx`. The
+ *  whole name is the row's title. */
+function MiddleTruncate({ value }: { value: string }) {
+  const split = splitForMiddleTruncate(value);
+  if (!split) return <span className="min-w-0 truncate">{value}</span>;
+  return (
+    <span className="inline-flex min-w-0 max-w-full overflow-hidden whitespace-nowrap">
+      <span className="min-w-0 truncate">{split.head}</span>
+      <span className="shrink-0">{split.tail}</span>
+    </span>
+  );
+}
 
 function TreeRow({
   row,
@@ -269,7 +301,7 @@ function TreeRow({
   onOpen: (file: ChangedFile) => void;
 }) {
   const { node, depth } = row;
-  const indent = { paddingLeft: 6 + depth * INDENT };
+  const indent = { paddingLeft: 8 + depth * INDENT };
   if (node.kind === "dir") {
     return (
       <button
@@ -282,13 +314,13 @@ function TreeRow({
         style={indent}
       >
         <ChevronRight
-          size={12}
+          size={14}
           className={cn(
-            "shrink-0 text-muted-foreground transition-transform duration-fast",
+            "shrink-0 text-muted-foreground transition-transform duration-fast group-hover:text-foreground",
             open && "rotate-90",
           )}
         />
-        <FileIcon path={node.path} kind={open ? "folderExpanded" : "folder"} size={13} />
+        <FileIcon path={node.path} kind={open ? "folderExpanded" : "folder"} size={14} />
         <span className="min-w-0 truncate font-mono text-2xs text-muted-foreground group-hover:text-foreground">
           {node.name}
         </span>
@@ -296,6 +328,7 @@ function TreeRow({
           <DiffCounts
             added={node.stat.added}
             removed={node.stat.removed}
+            layout="aligned"
             className="ml-auto text-2xs"
           />
         )}
@@ -313,12 +346,17 @@ function TreeRow({
       className={ROW}
       style={indent}
     >
-      {!flat && <span className="w-3 shrink-0" aria-hidden />}
-      <FileIcon path={file.path} size={13} />
-      <span className="min-w-0 truncate font-mono text-xs text-secondary-foreground group-hover:text-foreground">
-        {node.name}
+      {!flat && <span className="size-3.5 shrink-0" aria-hidden />}
+      <FileIcon path={file.path} size={14} />
+      <span className="flex min-w-0 font-mono text-xs text-secondary-foreground group-hover:text-foreground">
+        <MiddleTruncate value={node.name} />
       </span>
-      <DiffCounts added={file.added} removed={file.removed} className="ml-auto text-2xs" />
+      <DiffCounts
+        added={file.added}
+        removed={file.removed}
+        layout="aligned"
+        className="ml-auto text-2xs"
+      />
     </button>
   );
 }

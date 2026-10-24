@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import type { ReviewFile } from "../../lib/use-review-files";
@@ -75,11 +75,11 @@ const updateSettings = vi.fn((partial: Partial<typeof DEFAULT_SETTINGS>) =>
   useSettingsStore.setState((s) => ({ settings: { ...s.settings, ...partial } })),
 );
 
-function renderPanel() {
+function renderPanel({ viewedMarks = false }: { viewedMarks?: boolean } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <DiffPanel tabId="review" repoPath="/repo" />
+      <DiffPanel tabId="review" repoPath="/repo" viewedMarks={viewedMarks} />
     </QueryClientProvider>,
   );
 }
@@ -159,18 +159,26 @@ describe("DiffPanel find (⌘F)", () => {
     expect(event.defaultPrevented).toBe(false);
     expect(screen.queryByRole("search")).toBeNull();
   });
+});
 
-  it("opens from its header button too", async () => {
+describe("DiffPanel file headers", () => {
+  it("shows a file's counts the viewer's way, removals first and empty sides left out", async () => {
     renderPanel();
     await screen.findByTestId("viewer");
-    act(() => {
-      fireEvent.click(screen.getByRole("button", { name: /find in diff/i }));
-    });
-    expect(screen.getByRole("search", { name: "Find in diff" })).toBeTruthy();
+    const item = within(screen.getByTestId("item"));
+    const stat = item.getByRole("group", { name: "1 additions, 0 deletions" });
+    expect(stat.textContent).toBe("+1");
   });
 });
 
 describe("DiffPanel viewed files", () => {
+  it("has no Viewed box or count unless the panel offers them", async () => {
+    renderPanel();
+    await screen.findByTestId("viewer");
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.queryByText(/viewed$/)).toBeNull();
+  });
+
   const viewedCount = () => screen.getByText(/viewed$/).textContent;
   // Base UI's box forwards a click to its hidden native input, which is what
   // the test DOM can toggle.
@@ -180,10 +188,9 @@ describe("DiffPanel viewed files", () => {
       fireEvent.click(box.parentElement!.querySelector("input")!);
     });
 
-  it("counts files and viewed ones, and a tick folds the file", async () => {
-    renderPanel();
+  it("counts viewed files, and a tick folds the file", async () => {
+    renderPanel({ viewedMarks: true });
     await screen.findByTestId("viewer");
-    expect(screen.getByText("1 file")).toBeTruthy();
     expect(screen.getByRole("checkbox", { name: "Viewed" })).toBeTruthy();
     expect(viewedCount()).toBe("0 / 1 viewed");
     expect(screen.getByTestId("item").dataset.collapsed).toBe("false");
@@ -201,7 +208,7 @@ describe("DiffPanel viewed files", () => {
   });
 
   it("reads as changed when the file's diff moved since it was viewed", async () => {
-    renderPanel();
+    renderPanel({ viewedMarks: true });
     await screen.findByTestId("viewer");
     tick();
     // The mark as if made against another version of the diff.
