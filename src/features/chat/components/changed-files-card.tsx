@@ -49,7 +49,6 @@ import {
   type DiffStat,
 } from "../lib/changed-files-tree";
 import { isAbsolutePath, joinPath, openTurnDiff } from "../lib/open-turn-diff";
-import { HEADER_INSET } from "../lib/row-metrics";
 import { needsGroupHeaders, type SessionRoot } from "../lib/session-roots";
 import { useSessionRoots } from "../hooks/use-session-roots";
 import { useChatStore } from "../stores/chat-store";
@@ -188,11 +187,7 @@ export const ChangedFilesCard = memo(function ChangedFilesCard({
       data-changed-files=""
       style={cardStyle(firstRows)}
     >
-      <div
-        className="sticky z-10 flex items-center justify-between gap-2 rounded-t-lg bg-card px-3 py-2"
-        // Under the session's floating header, not behind it.
-        style={{ top: HEADER_INSET }}
-      >
+      <div className="sticky top-0 z-10 flex items-center justify-between gap-2 rounded-t-lg bg-card px-3 py-2">
         <div className="flex min-w-0 items-center gap-3 text-xs font-medium text-foreground">
           <span className="truncate">
             {files.length} changed file{files.length === 1 ? "" : "s"}

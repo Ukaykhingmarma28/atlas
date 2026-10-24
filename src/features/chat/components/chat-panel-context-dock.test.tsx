@@ -26,18 +26,20 @@ vi.mock("../lib/agents-api", async (importOriginal) => {
 });
 const Null = vi.hoisted(() => () => null);
 vi.mock("./message-input", () => ({ MessageInput: Null }));
-vi.mock("./chat-header", () => ({ ChatHeader: Null }));
+vi.mock("./session-header", () => ({ SessionHeaderControls: Null }));
 vi.mock("./agent-update-bar", () => ({ AgentUpdateBar: Null }));
 vi.mock("./permission-modal", () => ({ PermissionModal: Null }));
 vi.mock("./chat-comments-controller", () => ({ ChatCommentsController: Null }));
 vi.mock("./session-elicitation", () => ({ SessionElicitation: Null }));
 vi.mock("./transcript", () => ({ Transcript: Null }));
-vi.mock("./thread-overview-panel", () => ({ ThreadOverviewPanel: Null }));
+vi.mock("./session-overview-panel", () => ({
+  SessionOverviewCard: () => <div data-testid="overview-card" />,
+}));
 vi.mock("@/features/session-context/components/session-context-popover", () => ({
   SessionContextBody: Null,
 }));
 
-import { act, cleanup, render } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   CONTEXT_CARD_CLEARANCE,
@@ -47,7 +49,7 @@ import {
 } from "@/features/session-context/lib/context-dock";
 import { useSessionContextStore } from "@/features/session-context/stores/session-context-store";
 import { useChatStore } from "../stores/chat-store";
-import { overviewScope, useThreadOverviewStore } from "../stores/thread-overview-store";
+import { overviewScope, useSessionOverviewStore } from "../stores/session-overview-store";
 import { ChatPanel } from "./chat-panel";
 
 const TAB = "tab-1";
@@ -83,7 +85,7 @@ beforeEach(() => {
       { id: "m1", role: "user", content: "hi", timestamp: 0 },
     ] as unknown as (typeof s.sessions)[typeof TAB]["messages"];
   });
-  useThreadOverviewStore.setState({ open: {}, width: 300 });
+  useSessionOverviewStore.setState({ open: {}, popoverFor: null });
   useSessionContextStore.setState({ openFor: null, dockable: {}, dockOpen: {}, view: "main" });
 });
 afterEach(() => {
@@ -216,13 +218,24 @@ describe("the docked session context card in the chat panel", () => {
     expect(frame(container)).toEqual(closed);
   });
 
-  it("gives the right side to the overview rail: no dock, no reservation", () => {
-    useThreadOverviewStore.setState({
-      open: { [overviewScope(TAB, undefined)]: true },
-      width: 300,
-    });
+  it("shares its room with the session overview: both dock, nothing moves", async () => {
     const { container } = mount();
-    expect(useSessionContextStore.getState().dockable[TAB]).toBeUndefined();
-    expect(frame(container).row.style).toBeNull();
+    const { reserve } = resolveContextDock(WIDTH, Number.POSITIVE_INFINITY);
+    const closed = frame(container);
+    expect(closed.row.style).toContain(`padding-right: ${reserve}px`);
+
+    act(() => useSessionOverviewStore.getState().actions.toggle(overviewScope(TAB, undefined)));
+    expect(await screen.findByTestId("overview-card")).toBeTruthy();
+    // The overview opening does not take the room from the context card.
+    expect(useSessionContextStore.getState().dockable[TAB]).toBe(true);
+    expect(frame(container)).toEqual(closed);
+
+    act(() => useSessionContextStore.getState().actions.toggle(TAB));
+    // Both in the one lane, the overview first.
+    const lane = container.querySelector("[data-session-dock-lane]")!;
+    expect(lane.querySelector("[data-session-overview-dock]")).not.toBeNull();
+    expect(lane.querySelector("[data-session-context-dock]")).not.toBeNull();
+    expect(lane.firstElementChild?.hasAttribute("data-session-overview-dock")).toBe(true);
+    expect(frame(container)).toEqual(closed);
   });
 });

@@ -113,6 +113,8 @@ import { useAppStore } from "@/features/app/stores/app-store";
 import { PanelSkeleton } from "@/components/panel-skeleton";
 import { AtlasIcon } from "@/components/atlas-icon";
 import { useChatStore } from "@/features/chat/stores/chat-store";
+import { sessionDisplayTitle } from "@/features/chat/lib/session-title";
+import { SessionHeaderSlot } from "@/features/chat/components/session-header-slot";
 import { useShallow } from "zustand/react/shallow";
 import {
   MessageSquare,
@@ -566,6 +568,12 @@ const TabColumn = memo(function TabColumn({
           <div className="flex min-w-0 flex-1 items-center gap-0.5">
             {!main && <SurfaceAdd groupId={groupId} />}
             <span className="flex-1" />
+            {/* The session's own controls (its ⋯ menu, the overview button),
+                portalled in by its chat panel. Only for a session tab: any
+                other tab leaves this end of the bar as it is. */}
+            {activeTab?.type === "chat" && (
+              <SessionHeaderSlot key={activeTab.id} tabId={activeTab.id} />
+            )}
             {main && <TeamChatToggle />}
             {main && (
               // The session's details: workspace, branch and PR, changes,
@@ -597,11 +605,13 @@ function namedInWindowBar(tab: Tab): boolean {
 
 /** The main pane's title, the breadcrumb's last segment. A chat names its
  *  session (the chat store is keyed by tab id) rather than the tab's generic
- *  "Agents". */
+ *  "Agents". It is the one place the session's name shows: the session view
+ *  itself does not repeat it. */
 function MainTitle({ tab }: { tab: Tab }) {
-  const sessionTitle = useChatStore((s) =>
-    tab.type === "chat" ? (s.sessions[tab.id]?.title ?? null) : null,
-  );
+  const sessionTitle = useChatStore((s) => {
+    const session = tab.type === "chat" ? s.sessions[tab.id] : undefined;
+    return session ? sessionDisplayTitle(session.title, session.firstUserContent) : null;
+  });
   return (
     <span className="min-w-0 truncate px-1 text-sm text-foreground">
       {sessionTitle ?? tab.title}

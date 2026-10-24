@@ -119,7 +119,7 @@ describe("the docked session context card", () => {
     expect(card()).toBeNull();
   });
 
-  it("reserves nothing while disabled (the overview rail holds the right side)", () => {
+  it("reserves nothing while disabled (an empty session has no column to clear)", () => {
     render(<Panel enabled={false} />);
     expect(useSessionContextStore.getState().dockable[TAB]).toBeUndefined();
     expect(layout().row.style).toBeNull();
