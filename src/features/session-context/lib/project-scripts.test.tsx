@@ -155,8 +155,8 @@ describe("running a project script", () => {
         <ProjectScriptsControl projectPath={PROJECT} />
       </QueryClientProvider>,
     );
-    await settle();
-    expect(screen.getByText(setup.command).className).toContain("font-mono");
+    // The list arrives through react-query, which can take more than one tick.
+    expect((await screen.findByText(setup.command)).className).toContain("font-mono");
     fireEvent.click(screen.getByText("Setup"));
     expect(openCommandTerminal).not.toHaveBeenCalled();
     expect(useSessionContextStore.getState().scriptConfirm?.script.id).toBe("setup");
