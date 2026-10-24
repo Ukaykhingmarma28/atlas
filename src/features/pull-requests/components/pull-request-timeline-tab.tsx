@@ -53,6 +53,7 @@ import {
 } from "../lib/pull-request-timeline";
 import { usePrTimelineHistory } from "../lib/pull-requests-queries";
 import type { PrActivity, PrActor, PrDetail, PrLabel } from "../lib/pull-requests-types";
+import { PullRequestCommentActions } from "./pull-request-comment-actions";
 import { PullRequestMarkdown } from "./pull-request-markdown";
 import {
   ActorAvatar,
@@ -233,11 +234,9 @@ function ConversationCard({
         ) : null}
         <OpenOnHost url={event.url} />
       </div>
-      {event.body ? (
-        <div className="px-2">
-          <TimelineBody body={event.body} />
-        </div>
-      ) : null}
+      <PullRequestCommentActions className="px-2" comment={event.comment}>
+        {event.body ? <TimelineBody body={event.body} /> : null}
+      </PullRequestCommentActions>
     </article>
   );
 }
@@ -456,7 +455,9 @@ function ReviewVerdictEvent({
         ) : null}
         <OpenOnHost url={event.url} />
       </div>
-      {event.body ? <TimelineBody body={event.body} /> : null}
+      <PullRequestCommentActions comment={event.comment}>
+        {event.body ? <TimelineBody body={event.body} /> : null}
+      </PullRequestCommentActions>
     </div>
   );
 }

@@ -76,6 +76,8 @@ import {
 import { LabelPicker, ReviewerPicker } from "./pull-request-pickers";
 import { ReactionBar } from "./pull-request-reactions";
 import { ActivityUnavailableState, ConversationGhost } from "./pull-request-states";
+import { PullRequestCommentActions } from "./pull-request-comment-actions";
+import { CheckLogButton } from "./pull-request-check-log";
 import { VerdictRing } from "./pull-request-triggers";
 
 export const COMMENT_PAGE = 10;
@@ -414,7 +416,9 @@ export function PullRequestSummaryTab({
             <CommentLocation comment={comment} thread={thread} />
           </div>
         )}
-        {body ? <ClampedMarkdown className="px-3 py-2.5" text={body} /> : null}
+        <PullRequestCommentActions className="px-3 py-2.5" comment={comment}>
+          {body ? <ClampedMarkdown text={body} /> : null}
+        </PullRequestCommentActions>
       </article>
     );
   };
@@ -612,6 +616,7 @@ export function PullRequestSummaryTab({
                       {checkStatusLabel(check)}
                     </span>
                   </button>
+                  <CheckLogButton check={check} />
                   {failing ? fixButton({ kind: "check", check }) : null}
                 </div>
               );

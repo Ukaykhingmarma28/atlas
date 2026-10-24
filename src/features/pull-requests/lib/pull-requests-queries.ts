@@ -28,8 +28,10 @@ import {
   prActivity,
   prComment,
   prCommits,
+  prDeleteComment,
   prDetail,
   prDiff,
+  prEditComment,
   prFilesViewed,
   prLabelCandidates,
   prReviewerCandidates,
@@ -39,6 +41,7 @@ import {
   prReplyToThread,
   prRequestReviewers,
   prResolveThread,
+  prRevert,
   prSetLabels,
   prSubmitReview,
   prTimeline,
@@ -47,6 +50,7 @@ import {
 import type {
   PrActionInput,
   PrActivity,
+  PrCommentKind,
   PrCommitsPage,
   PrDetail,
   PrDiffResult,
@@ -58,6 +62,7 @@ import type {
   PrListResult,
   PrProvider,
   PrReactionContent,
+  PrReverted,
   PrReviewCommentDraft,
   PrReviewerRef,
   PrReviewVerdict,
@@ -560,4 +565,33 @@ export function usePrLabelsMutation(cwd: string, number: number) {
     ({ labels, applied }) => prSetLabels(cwd, number, labels, applied),
     { listings: true },
   );
+}
+
+export function usePrEditCommentMutation(cwd: string, number: number) {
+  return usePrMutation<{ commentId: string; kind: PrCommentKind; body: string }>(
+    cwd,
+    number,
+    ({ commentId, kind, body }) => prEditComment(cwd, number, commentId, kind, body),
+  );
+}
+
+export function usePrDeleteCommentMutation(cwd: string, number: number) {
+  return usePrMutation<{ commentId: string; kind: PrCommentKind }>(
+    cwd,
+    number,
+    ({ commentId, kind }) => prDeleteComment(cwd, number, commentId, kind),
+  );
+}
+
+/** Revert a merged pull request: answers the one it opened, and marks this
+ *  one's reads and the checkout's listings stale (the revert is a new row). */
+export function usePrRevertMutation(cwd: string, number: number) {
+  const client = useQueryClient();
+  return useMutation<PrReverted, PrError, void>({
+    mutationFn: () => prRevert(cwd, number),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: pullRequestKeys.pull(cwd, number) });
+      await client.invalidateQueries({ queryKey: ["pull-requests", cwd, "list"] });
+    },
+  });
 }

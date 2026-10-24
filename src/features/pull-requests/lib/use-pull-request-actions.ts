@@ -8,8 +8,14 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { classifyPrError, prErrorMessage } from "./pr-errors";
+import { openPullRequestTab } from "./open-pull-request-tab";
 import { ACTION_FAILURE_LABELS } from "./pull-request-logic";
-import { usePrActionMutation, usePrCommentMutation } from "./pull-requests-queries";
+import { removeAgentCreditsOnMerge } from "./pull-request-prefs";
+import {
+  usePrActionMutation,
+  usePrCommentMutation,
+  usePrRevertMutation,
+} from "./pull-requests-queries";
 import type { PrAction, PrError, PrMergeMethod, PrUpdateMethod } from "./pull-requests-types";
 
 const ACTION_SUCCESS_LABELS: Record<PrAction, string> = {
@@ -22,6 +28,8 @@ const ACTION_SUCCESS_LABELS: Record<PrAction, string> = {
   "enable-auto-merge": "Auto-merge turned on",
   "disable-auto-merge": "Auto-merge turned off",
   "delete-branch": "Branch deleted",
+  revert: "Revert opened",
+  "approve-workflows": "Workflows approved",
 };
 
 const ACTION_FAILURE_HINTS: Record<PrAction, string> = {
@@ -39,6 +47,10 @@ const ACTION_FAILURE_HINTS: Record<PrAction, string> = {
     "GitHub refused it. Check that you have write access, and that the merge has not already happened.",
   "delete-branch":
     "GitHub refused it. Check that you have write access to the branch's repository, and that the branch has not moved.",
+  revert:
+    "GitHub refused it. Check that you have write access, that the pull request is merged, and that its changes still revert cleanly.",
+  "approve-workflows":
+    "GitHub refused it. Check that you have write access, and that the runs are still waiting for approval.",
 };
 
 const REBASE_FAILURE_HINT =
@@ -67,6 +79,7 @@ export function usePullRequestActions(
 ) {
   const mutation = usePrActionMutation(repoPath, number);
   const comment = usePrCommentMutation(repoPath, number);
+  const revertMutation = usePrRevertMutation(repoPath, number);
   const [pendingAction, setPendingAction] = useState<PrAction | null>(null);
   const busy = useRef(false);
 
@@ -81,6 +94,10 @@ export function usePullRequestActions(
         mergeMethod: method ?? null,
         updateMethod: updateMethod ?? null,
         expectedHeadOid: action === "merge" || action === "enable-auto-merge" ? headSha : null,
+        // The project's `removeAgentCreditsOnMerge` setting, read as the merge is sent.
+        removeAgentCredits:
+          (action === "merge" || action === "enable-auto-merge") &&
+          removeAgentCreditsOnMerge(repoPath),
       });
       toast.success(ACTION_SUCCESS_LABELS[action]);
       return true;
@@ -134,5 +151,30 @@ export function usePullRequestActions(
     }
   };
 
-  return { pendingAction, perform, commentThen };
+  /** Revert a merged pull request, then offer the new one's tab. */
+  const revert = async (): Promise<boolean> => {
+    if (busy.current) return false;
+    busy.current = true;
+    setPendingAction("revert");
+    try {
+      const opened = await revertMutation.mutateAsync();
+      toast.success(`Revert opened as #${opened.number}`, {
+        action: {
+          label: "Open",
+          onClick: () => openPullRequestTab({ repoPath, number: opened.number }),
+        },
+      });
+      return true;
+    } catch (raw) {
+      toast.error(ACTION_FAILURE_LABELS.revert, {
+        description: readableFailure(classifyPrError(raw), ACTION_FAILURE_HINTS.revert),
+      });
+      return false;
+    } finally {
+      busy.current = false;
+      setPendingAction(null);
+    }
+  };
+
+  return { pendingAction, perform, commentThen, revert };
 }

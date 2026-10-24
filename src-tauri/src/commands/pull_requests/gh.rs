@@ -910,6 +910,56 @@ impl Gh {
         self.settle(Resource::Core, result)
     }
 
+    /// A REST GET of plain text that may carry terminal escape codes (a
+    /// workflow job's log). `gh` refuses to print those unless told it may;
+    /// an older `gh` that does not know the flag is asked again without it
+    /// (it prints them anyway). Never revalidated: a log is read once, on
+    /// request.
+    pub async fn rest_get_text(&self, path: &str, timeout: Duration) -> Result<Vec<u8>, PrError> {
+        admit(Resource::Core, true, now_ms())?;
+        let mut result = Err(PrError::NotInstalled);
+        for allow_escapes in [true, false] {
+            let mut args: Vec<String> =
+                vec!["api".into(), "-i".into(), "--method".into(), "GET".into()];
+            if allow_escapes {
+                args.push("--allow-escape-sequences".into());
+            }
+            args.push(path.to_string());
+            let call = GhCall {
+                args,
+                stdin: None,
+                timeout,
+            };
+            let outcome =
+                {
+                    let _permit = permits_for(Resource::Core).acquire().await.map_err(|_| {
+                        PrError::Failed {
+                            message: "Atlas is shutting down.".into(),
+                        }
+                    })?;
+                    run(&self.program, &self.cwd, &call).await
+                };
+            result = match outcome {
+                RunOutcome::NoResponse { stderr, .. }
+                    if allow_escapes && stderr.contains("unknown flag") =>
+                {
+                    continue
+                }
+                RunOutcome::Http(response) => {
+                    observe(&response.headers);
+                    classify_rest(&response, false, now_ms()).map(|()| response.body)
+                }
+                RunOutcome::Missing => Err(PrError::NotInstalled),
+                RunOutcome::TimedOut => Err(PrError::Network {
+                    message: "GitHub did not answer in time.".into(),
+                }),
+                RunOutcome::NoResponse { exit, stderr } => Err(classify_no_response(exit, &stderr)),
+            };
+            break;
+        }
+        self.settle(Resource::Core, result)
+    }
+
     /// A REST write. `body` is sent as JSON on stdin.
     pub async fn rest_send(
         &self,

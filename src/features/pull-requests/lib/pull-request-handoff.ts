@@ -9,10 +9,12 @@
 // Everything taken from the pull request is marked untrusted: review bodies
 // and check output are attacker-controlled on public repositories.
 
+import { checkLogHandoffText } from "./pull-request-check-log";
 import { visibleBody } from "./pull-request-logic";
 import type {
   PrActivity,
   PrCheck,
+  PrCheckLog,
   PrComment,
   PrDetail,
   PrDiffFile,
@@ -98,7 +100,12 @@ export function reviewThreadText(thread: PrReviewThread): string {
   ].join("\n");
 }
 
-function checkText(check: PrCheck): string[] {
+function checkText(check: PrCheck, log: PrCheckLog | null = null): string[] {
+  if (log) return [...checkSummary(check), "", ...checkLogHandoffText(log)];
+  return checkSummary(check);
+}
+
+function checkSummary(check: PrCheck): string[] {
   return [
     `Check: ${boundedField(check.name)}${check.workflow ? ` (workflow ${boundedField(check.workflow)})` : ""}`,
     `Conclusion: ${check.status}${check.required ? ", required" : ""}`,
@@ -124,6 +131,8 @@ export function buildFixFindingHandoff(
   finding: Finding,
   files: readonly PrDiffFile[] = [],
   changedFiles = files.length,
+  /** A failing check's log, read for the handoff; untrusted, and fenced so. */
+  checkLog: PrCheckLog | null = null,
 ): Handoff {
   const preamble = handoffPreamble(pr);
   const filesList = changedFilesSummary(files, changedFiles);
@@ -141,7 +150,7 @@ export function buildFixFindingHandoff(
   }
   return {
     prompt: `Fix the failing check "${boundedField(finding.check.name)}" on PR #${pr.number}. Reproduce it locally first: the run may fail for a reason the code cannot show.`,
-    context: [...preamble, "", ...checkText(finding.check), "", ...filesList].join("\n"),
+    context: [...preamble, "", ...checkText(finding.check, checkLog), "", ...filesList].join("\n"),
   };
 }
 

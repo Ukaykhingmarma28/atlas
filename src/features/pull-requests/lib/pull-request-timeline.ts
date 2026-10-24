@@ -170,6 +170,8 @@ export function buildTimeline(
             path: null,
             reviewState: null,
             reactions: known?.reactions ?? [],
+            canEdit: known?.canEdit ?? false,
+            canDelete: known?.canDelete ?? false,
           }),
         );
         break;
@@ -190,6 +192,8 @@ export function buildTimeline(
             // The activity read knows a review was dismissed after the fact.
             reviewState: known?.reviewState ?? item.state,
             reactions: known?.reactions ?? [],
+            canEdit: known?.canEdit ?? false,
+            canDelete: known?.canDelete ?? false,
           }),
         );
         break;

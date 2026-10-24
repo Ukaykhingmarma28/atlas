@@ -13,7 +13,9 @@ use std::sync::LazyLock;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
 
+use super::check_log;
 use super::gh::{now_ms, Gh, DIFF_TIMEOUT, READ_TIMEOUT, WRITE_TIMEOUT};
+use super::merge_message::remove_agent_credits;
 use super::model::*;
 use super::parse::{self, RepoContext};
 use super::queries as q;
@@ -40,6 +42,10 @@ const LIST_DEFAULT_ROWS: u32 = 50;
 /// above it, and a session never links this many.
 const ENTRIES_PER_REQUEST: usize = 50;
 const EMPTY_OID: &str = "0000000000000000000000000000000000000000";
+/// Open pull requests sharing a head branch, and workflow runs waiting on
+/// one head, past which approval refuses rather than guess.
+const WORKFLOW_APPROVAL_LIMIT: usize = 1_000;
+const RUNS_PAGE_SIZE: usize = 100;
 
 static REPO_CONTEXTS: LazyLock<Mutex<HashMap<String, (RepoContext, i64)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -108,6 +114,8 @@ pub(crate) fn is_head_changed_refusal(error: &PrError) -> bool {
 
 const HEAD_CHANGED: &str =
     "The pull request's head changed since you loaded it. Review the new commits, then merge again.";
+const WORKFLOW_HEAD_CHANGED: &str =
+    "The pull request's head changed before its workflows could be approved. Review the new commits, then approve again.";
 
 /// `encodeURIComponent`, for one segment of a request path.
 pub(crate) fn encode_component(segment: &str) -> String {
@@ -851,7 +859,7 @@ impl GitHub {
 
     /// Confirms a client-given subject hangs off this pull request, so the
     /// mutation cannot write wherever the id actually belongs.
-    async fn check_subject(&self, number: u64, subject_id: &str) -> Result<(), PrError> {
+    async fn check_subject(&self, number: u64, subject_id: &str) -> Result<Value, PrError> {
         if !parse::is_node_id(subject_id) {
             return Err(PrError::invalid("That is not a comment or review id."));
         }
@@ -862,7 +870,7 @@ impl GitHub {
             )
             .await?;
         if parse::is_subject_of_pull_request(&data) {
-            Ok(())
+            Ok(data)
         } else {
             Err(PrError::invalid("That belongs to another pull request."))
         }
@@ -1089,6 +1097,8 @@ impl GitHub {
             PrAction::UpdateBranch | PrAction::Merge | PrAction::EnableAutoMerge => {
                 self.merge_or_update(number, input).await
             }
+            PrAction::Revert => self.revert(number).await.map(drop),
+            PrAction::ApproveWorkflows => self.approve_workflows(number).await,
             _ => unreachable!("simple actions return above"),
         }
     }
@@ -1156,12 +1166,18 @@ impl GitHub {
         let auto = queued
             || (input.action == PrAction::EnableAutoMerge
                 && !parse::is_immediately_mergeable(merge_state.as_deref()));
-        let merge = merge_input(
-            &id,
-            input.merge_method.unwrap_or(PrMergeMethod::Merge),
-            expected.as_deref(),
-            head.as_deref(),
-        )?;
+        let method = input.merge_method.unwrap_or(PrMergeMethod::Merge);
+        let mut merge = merge_input(&id, method, expected.as_deref(), head.as_deref())?;
+        if input.remove_agent_credits && method != PrMergeMethod::Rebase {
+            if let Some(body) = self
+                .merge_body_without_credits(number, method, head.as_deref())
+                .await?
+            {
+                if let Some(map) = merge.as_object_mut() {
+                    map.insert("commitBody".into(), json!(body));
+                }
+            }
+        }
         let mutation = if auto {
             q::ENABLE_AUTO_MERGE
         } else {
@@ -1172,6 +1188,282 @@ impl GitHub {
             Err(error) if is_head_changed_refusal(&error) => Err(PrError::failed(HEAD_CHANGED)),
             Err(error) => Err(error),
         }
+    }
+
+    /// GitHub's own merge message for `method` with the agents' credits
+    /// taken out, when that changes it. `None` leaves the message to GitHub:
+    /// nothing to take out, or a merge queue, which writes its own and
+    /// ignores one sent. The message is GitHub's for the head just read; a
+    /// push between the two reads is refused rather than merged unseen.
+    async fn merge_body_without_credits(
+        &self,
+        number: u64,
+        method: PrMergeMethod,
+        head: Option<&str>,
+    ) -> Result<Option<String>, PrError> {
+        let data = self
+            .write_read(
+                q::PULL_REQUEST_MERGE_MESSAGE,
+                self.vars(
+                    number,
+                    json!({ "method": parse::graphql_merge_method(method) }),
+                ),
+            )
+            .await?;
+        let message = not_found_or(parse::to_merge_message(&data))?;
+        if message.queued {
+            return Ok(None);
+        }
+        if let (Some(read), Some(head)) = (message.head.as_deref(), head) {
+            if !read.eq_ignore_ascii_case(head) {
+                return Err(PrError::failed(HEAD_CHANGED));
+            }
+        }
+        let cleaned = remove_agent_credits(&message.body);
+        Ok((cleaned != message.body).then_some(cleaned))
+    }
+
+    /// A read a write depends on: the user is waiting, so it may spend the
+    /// reserve whatever the driver's policy.
+    async fn write_read(&self, query: &str, vars: Value) -> Result<Value, PrError> {
+        self.gh.graphql(query, vars, true, READ_TIMEOUT).await
+    }
+
+    /// Opens the pull request that undoes a merged one. GitHub refuses one
+    /// that is not merged, or a viewer without push access.
+    pub async fn revert(&self, number: u64) -> Result<PrReverted, PrError> {
+        let pull_request_id = self.node_id(number).await?;
+        let data = self
+            .write(
+                q::REVERT_PULL_REQUEST,
+                json!({ "pullRequestId": pull_request_id }),
+            )
+            .await?;
+        parse::to_reverted(&data)
+            .ok_or_else(|| PrError::failed("GitHub did not say which pull request it opened."))
+    }
+
+    /// The head as workflow approval checks it.
+    async fn workflow_head(&self, number: u64) -> Result<parse::WorkflowHead, PrError> {
+        let data = self
+            .write_read(q::PULL_REQUEST_WORKFLOW_HEAD, self.vars(number, json!({})))
+            .await?;
+        not_found_or(parse::to_workflow_head(&data))
+    }
+
+    /// A run is named by branch and commit only, so a fork's head is
+    /// approved only while exactly one open pull request — this one — is
+    /// that head.
+    async fn check_unique_head(
+        &self,
+        number: u64,
+        head: &parse::WorkflowHead,
+    ) -> Result<(), PrError> {
+        let mut rows = Vec::new();
+        let mut after: Option<String> = None;
+        loop {
+            let data = self
+                .write_read(
+                    q::PULL_REQUEST_HEADS,
+                    json!({
+                        "owner": self.ctx.owner,
+                        "name": self.ctx.name,
+                        "head": head.branch,
+                        "after": after,
+                    }),
+                )
+                .await?;
+            let (page, next) = not_found_or(parse::to_heads_page(&data))?;
+            rows.extend(page);
+            if rows.len() > WORKFLOW_APPROVAL_LIMIT {
+                return Err(PrError::failed(
+                    "Too many open pull requests share this branch name to approve its workflows safely.",
+                ));
+            }
+            if next.is_none() || next == after {
+                break;
+            }
+            after = next;
+        }
+        if parse::is_only_open_head(&rows, number, head) {
+            Ok(())
+        } else {
+            Err(PrError::failed(
+                "Another open pull request has the same head, so its workflow runs cannot be told apart. Approve them on GitHub.",
+            ))
+        }
+    }
+
+    /// Every run of this head waiting on a maintainer.
+    async fn action_required_runs(
+        &self,
+        head_sha: &str,
+        head_branch: &str,
+    ) -> Result<Vec<parse::WorkflowRun>, PrError> {
+        let mut runs = Vec::new();
+        for page in 1.. {
+            let body = self
+                .gh
+                .rest_get(
+                    &self.repo_path(&format!(
+                        "actions/runs?head_sha={}&branch={}&event=pull_request&status=action_required&per_page={RUNS_PAGE_SIZE}&page={page}",
+                        encode_component(head_sha),
+                        encode_component(head_branch),
+                    )),
+                    None,
+                    None,
+                    true,
+                    READ_TIMEOUT,
+                )
+                .await?;
+            let value: Value = serde_json::from_slice(&body).map_err(|_| {
+                PrError::failed("GitHub's list of workflow runs could not be read.")
+            })?;
+            let (found, raw_count) = parse::to_action_required_runs(&value, head_sha, head_branch);
+            runs.extend(found);
+            if runs.len() > WORKFLOW_APPROVAL_LIMIT {
+                return Err(PrError::failed(
+                    "Too many workflow runs are waiting to approve them safely from here.",
+                ));
+            }
+            if raw_count < RUNS_PAGE_SIZE {
+                break;
+            }
+        }
+        Ok(runs)
+    }
+
+    /// Approves the workflow runs a fork's push is holding for a
+    /// maintainer. The head is read first and again before each run, and a
+    /// run is approved only while it is still waiting on that same head, so
+    /// a push in between is never approved unseen. A pull request from the
+    /// same repository has nothing waiting, and nothing is done.
+    pub async fn approve_workflows(&self, number: u64) -> Result<(), PrError> {
+        let expected = self.workflow_head(number).await?;
+        if !expected.cross_repository {
+            return Ok(());
+        }
+        if !expected.open {
+            return Err(PrError::invalid(
+                "Only an open pull request's workflows wait for approval.",
+            ));
+        }
+        let (Some(sha), Some(_)) = (expected.sha.clone(), expected.owner.as_ref()) else {
+            return Err(PrError::Unsupported {
+                message: "The pull request's head is no longer available.".into(),
+            });
+        };
+        let (unique, runs) = tokio::join!(
+            self.check_unique_head(number, &expected),
+            self.action_required_runs(&sha, &expected.branch)
+        );
+        unique?;
+        for run in runs? {
+            let current = self.workflow_head(number).await?;
+            if !current.is_same_head(&expected) {
+                return Err(PrError::failed(WORKFLOW_HEAD_CHANGED));
+            }
+            let still_waiting = self
+                .action_required_runs(&sha, &expected.branch)
+                .await?
+                .iter()
+                .any(|r| r.id == run.id);
+            if still_waiting {
+                self.gh
+                    .rest_send(
+                        "POST",
+                        &self.repo_path(&format!("actions/runs/{}/approve", run.id)),
+                        None,
+                    )
+                    .await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Rewrites a comment, a line comment or a review's summary. The remark
+    /// must hang off this pull request and be of the kind named, so the
+    /// mutation for one kind never reaches another's id.
+    pub async fn edit_comment(
+        &self,
+        number: u64,
+        comment_id: &str,
+        kind: PrCommentKind,
+        body: &str,
+    ) -> Result<(), PrError> {
+        if body.trim().is_empty() {
+            return Err(PrError::invalid("A comment needs some words."));
+        }
+        self.check_remark(number, comment_id, kind).await?;
+        let mutation = match kind {
+            PrCommentKind::IssueComment => q::UPDATE_ISSUE_COMMENT,
+            PrCommentKind::ReviewComment => q::UPDATE_REVIEW_COMMENT,
+            PrCommentKind::Review => q::UPDATE_REVIEW,
+        };
+        self.write(mutation, json!({ "commentId": comment_id, "body": body }))
+            .await
+            .map(drop)
+    }
+
+    /// Deletes a comment or a line comment. A submitted review's summary is
+    /// never deleted (GitHub dismisses reviews; it does not delete them).
+    pub async fn delete_comment(
+        &self,
+        number: u64,
+        comment_id: &str,
+        kind: PrCommentKind,
+    ) -> Result<(), PrError> {
+        let mutation = match kind {
+            PrCommentKind::IssueComment => q::DELETE_ISSUE_COMMENT,
+            PrCommentKind::ReviewComment => q::DELETE_REVIEW_COMMENT,
+            PrCommentKind::Review => {
+                return Err(PrError::invalid("A review's summary cannot be deleted."))
+            }
+        };
+        self.check_remark(number, comment_id, kind).await?;
+        self.write(mutation, json!({ "commentId": comment_id }))
+            .await
+            .map(drop)
+    }
+
+    /// [`Self::check_subject`], and the subject is the kind of remark named.
+    async fn check_remark(
+        &self,
+        number: u64,
+        comment_id: &str,
+        kind: PrCommentKind,
+    ) -> Result<(), PrError> {
+        let data = self.check_subject(number, comment_id).await?;
+        if parse::subject_typename(&data).as_deref() == Some(parse::comment_typename(kind)) {
+            Ok(())
+        } else {
+            Err(PrError::invalid(
+                "That is not the kind of comment it was named as.",
+            ))
+        }
+    }
+
+    /// The end of one check's log: the job its link names, read from
+    /// GitHub Actions, cut to the lines around its first error.
+    pub async fn check_log(&self, check_url: &str) -> Result<PrCheckLog, PrError> {
+        let job_id = check_log::job_id(check_url, &self.ctx.host, &self.ctx.owner, &self.ctx.name)
+            .ok_or_else(|| {
+                PrError::invalid("Only a GitHub Actions job in this repository has a log to read.")
+            })?;
+        let raw = self
+            .gh
+            .rest_get_text(
+                &self.repo_path(&format!("actions/jobs/{job_id}/logs")),
+                DIFF_TIMEOUT,
+            )
+            .await?;
+        let (text, truncated, found_error) = check_log::tail(&raw);
+        Ok(PrCheckLog {
+            job_id,
+            text,
+            truncated,
+            found_error,
+        })
     }
 
     /// Deletes a closed pull request's source branch, only while it is

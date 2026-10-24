@@ -120,7 +120,13 @@ describe("PullRequestQuickActions", () => {
       expect(invoke).toHaveBeenCalledWith("pr_action", {
         path: "/repo",
         number: 7,
-        input: { action: "merge", mergeMethod: "squash", expectedHeadOid: "abc123" },
+        input: {
+          action: "merge",
+          mergeMethod: "squash",
+          expectedHeadOid: "abc123",
+          // The project setting's default.
+          removeAgentCredits: false,
+        },
       }),
     );
   });

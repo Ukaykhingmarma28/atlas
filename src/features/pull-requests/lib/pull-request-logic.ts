@@ -156,6 +156,8 @@ export const ACTION_FAILURE_LABELS: Record<PrAction, string> = {
   "enable-auto-merge": "Could not turn on auto-merge",
   "disable-auto-merge": "Could not turn off auto-merge",
   "delete-branch": "Could not delete this branch",
+  revert: "Could not revert this pull request",
+  "approve-workflows": "Could not approve the workflows",
 };
 
 // ── checks ──────────────────────────────────────────────────────────────

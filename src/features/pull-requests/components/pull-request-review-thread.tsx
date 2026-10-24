@@ -21,6 +21,7 @@ import { usePrReplyMutation, usePrResolveMutation } from "../lib/pull-requests-q
 import type { PrReviewThread, PrThreadComment } from "../lib/pull-requests-types";
 import { readableFailure } from "../lib/use-pull-request-actions";
 import type { PendingReviewComment } from "../stores/pull-request-review-store";
+import { PullRequestCommentActions } from "./pull-request-comment-actions";
 import { usePullRequestScope } from "./pull-request-context";
 import { PullRequestMarkdown, TEXTAREA_CLASS } from "./pull-request-markdown";
 import { ActorLabel } from "./pull-request-presentation";
@@ -186,7 +187,7 @@ export function ReviewThreadCard({
         <>
           <div className="mt-2 space-y-3">
             {comments.map((comment) => (
-              <article key={comment.id} className="min-w-0">
+              <article key={comment.id} className="group min-w-0">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <ActorLabel actor={comment.author} />
                   <time
@@ -203,7 +204,12 @@ export function ReviewThreadCard({
                     subjectId={comment.id}
                   />
                 </div>
-                <PullRequestMarkdown className="mt-1 min-w-0 text-sm" text={comment.body} />
+                <PullRequestCommentActions
+                  className="mt-1"
+                  comment={{ ...comment, kind: "review-comment" }}
+                >
+                  <PullRequestMarkdown className="min-w-0 text-sm" text={comment.body} />
+                </PullRequestCommentActions>
               </article>
             ))}
           </div>

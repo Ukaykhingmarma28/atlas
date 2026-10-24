@@ -25,6 +25,7 @@ import { agentMeta } from "@/features/agents/lib/agent-meta";
 import { useProjectSetting } from "@/features/settings/lib/use-scoped-setting";
 
 import { actionAgent, currentSessionTab, openHandoffSession } from "./pr-agent-session";
+import { fetchCheckLogForHandoff } from "./pull-request-check-log";
 import { findingKey, type Finding } from "./pull-request-logic";
 import {
   buildAskAboutGuideStopHandoff,
@@ -137,7 +138,10 @@ export function usePullRequestAgentActions(target: {
     }
   };
 
-  const fixWith = async (kind: string, build: (files: PrDiffFile[]) => Handoff) => {
+  const fixWith = async (
+    kind: string,
+    build: (files: PrDiffFile[]) => Handoff | Promise<Handoff>,
+  ) => {
     if (!detail || pending !== null) return;
     setPending(kind);
     const toastId = toast.loading("Preparing the pull request checkout…");
@@ -150,7 +154,7 @@ export function usePullRequestAgentActions(target: {
         projectPath: repoPath,
         cwd: checkout.cwd,
         agent: agent.agent,
-        handoff: build(files),
+        handoff: await build(files),
       });
       const where = checkout.worktreePath
         ? `${checkout.reused ? "Its existing worktree" : "A new worktree"} on ${checkout.branch}`
@@ -177,8 +181,14 @@ export function usePullRequestAgentActions(target: {
   const canFix = detail?.state === "open";
   const fixFinding = canFix
     ? (finding: Finding) => {
-        void fixWith(findingKey(finding), (files) =>
-          buildFixFindingHandoff(detail, finding, files, detail.changedFiles),
+        // A failing check's log is read alongside the checkout, and rides in
+        // the handoff marked untrusted; one that cannot be read is left out.
+        const log =
+          finding.kind === "check"
+            ? fetchCheckLogForHandoff(client, repoPath, number, finding.check)
+            : Promise.resolve(null);
+        void fixWith(findingKey(finding), async (files) =>
+          buildFixFindingHandoff(detail, finding, files, detail.changedFiles, await log),
         );
       }
     : null;
