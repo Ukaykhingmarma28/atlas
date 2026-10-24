@@ -243,6 +243,24 @@ describe("FileSaveCoordinator, saving on request", () => {
     expect(coordinator.isPending).toBe(false);
   });
 
+  it("is clean once the write lands when edits during it were undone to its exact bytes", async () => {
+    const write = deferred();
+    const persist = vi.fn<(c: string) => Promise<boolean>>().mockReturnValueOnce(write.promise);
+    const { coordinator, onPendingChange } = manual(persist);
+    coordinator.change("written");
+    const saved = coordinator.flush();
+    coordinator.change("written, then more");
+    coordinator.change("written");
+    write.resolve(true);
+    await expect(saved).resolves.toBe(true);
+
+    expect(coordinator.isPending).toBe(false);
+    expect(onPendingChange).toHaveBeenLastCalledWith(false);
+    // And nothing is left to write.
+    await expect(coordinator.flush()).resolves.toBe(true);
+    expect(persist).toHaveBeenCalledTimes(1);
+  });
+
   it("writes the newer contents when saved again while a write is in flight", async () => {
     const write = deferred();
     const persist = vi

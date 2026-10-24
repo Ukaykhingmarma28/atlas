@@ -7,6 +7,7 @@
 // project-relative trail starts with the project's own crumb.
 
 import type { ProjectEntry } from "@/features/explorer/lib/fs-api";
+import { isUnderRoot, normalisePath } from "@/lib/file-links";
 
 export interface FileBreadcrumb {
   label: string;
@@ -112,4 +113,17 @@ export function fileBreadcrumbParent(directoryPath: string): string | null {
   if (!directoryPath) return null;
   const separatorIndex = directoryPath.lastIndexOf("/");
   return separatorIndex === -1 ? "" : directoryPath.slice(0, separatorIndex);
+}
+
+/**
+ * `path` relative to `root`, `/`-separated, or null when it is not strictly
+ * inside it. Either may be written with `\` (a Windows path) or carry `.`/`..`
+ * segments; both are normalised first.
+ */
+export function relativeToRoot(path: string, root: string): string | null {
+  if (!path || !root) return null;
+  const p = normalisePath(path);
+  const r = normalisePath(root);
+  if (!p || !r || p === r || !isUnderRoot(p, r)) return null;
+  return p.slice(r.endsWith("/") ? r.length : r.length + 1);
 }

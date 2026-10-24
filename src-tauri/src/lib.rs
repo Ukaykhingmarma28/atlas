@@ -5,6 +5,7 @@ mod keep_awake;
 mod logging;
 #[cfg(target_os = "macos")]
 mod menu;
+mod nav_guard;
 mod notifier;
 mod open_vsx;
 mod sleep_watch;
@@ -144,7 +145,8 @@ pub fn run() {
     // so the webview boot path can read it via `cli_take_initial_project_path`.
     let initial_project = commands::cli::parse_initial_project();
 
-    let builder = tauri::Builder::default();
+    // The main window may only navigate within the app; see `nav_guard.rs`.
+    let builder = tauri::Builder::default().plugin(nav_guard::init());
 
     // Single-instance — RELEASE ONLY. When a launcher starts the binary with a
     // project path while Atlas is already open, this plugin forwards that

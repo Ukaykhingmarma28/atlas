@@ -12,7 +12,9 @@ import {
   FIRST_SCREEN_MAX_LINE,
   FIRST_SCREEN_MIN_LINES,
   colourFirstScreen,
+  hasFirstScreenCache,
   missingFirstScreenGrammar,
+  releaseFirstScreenCache,
   resetFirstScreenCache,
 } from "./first-screen-highlight";
 
@@ -99,6 +101,17 @@ describe("colourFirstScreen", () => {
       // Block comments open above the window: the rows inside one still read as comment.
       expect(JSON.stringify(coloured!.code[50])).toContain("syntax-comment");
       expect(coloured!.themeStyles).toBe(plain.themeStyles);
+    });
+
+    it("lets go of a file's cached head when its view releases it, and only its", () => {
+      const file = source(FIRST_SCREEN_MIN_LINES);
+      colourFirstScreen(file, plainWindow(highlighter, file, 0, 50), 0, 50, undefined, OPTIONS);
+      expect(hasFirstScreenCache()).toBe(true);
+
+      releaseFirstScreenCache("some-other-file");
+      expect(hasFirstScreenCache()).toBe(true);
+      releaseFirstScreenCache(file.cacheKey);
+      expect(hasFirstScreenCache()).toBe(false);
     });
 
     it("leaves short files, plain files and windows past the head alone", () => {

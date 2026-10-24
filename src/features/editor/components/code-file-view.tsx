@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
+import { useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import {
   DEFAULT_TOKENIZE_MAX_LENGTH,
   VirtualizedFile,
@@ -29,6 +29,7 @@ import { revealSelection, type RevealTarget } from "../lib/reveal";
 import {
   loadFirstScreenGrammar,
   missingFirstScreenGrammar,
+  releaseFirstScreenCache,
 } from "@/features/git/lib/first-screen-highlight";
 
 /**
@@ -54,6 +55,9 @@ export interface CodeFileViewHandle {
   getText: () => string | undefined;
   position: () => EditorPosition | undefined;
   focus: () => void;
+  /** Whether the editor's own find panel can open: there is an editable
+   *  editor. Not in read-only mode, nor before the workers' highlight lands. */
+  canFind: () => boolean;
   /** Open the editor's find panel. False when there is no editor yet. */
   openFind: () => boolean;
 }
@@ -248,18 +252,28 @@ function useFileLineReveal(
 const createFileEditor: EditorFactory<undefined, undefined> = (editorType, options, editStateKey) =>
   new Editor(editorType, options, editStateKey);
 
-function needsWorkerHighlight(workerPool: WorkerPoolManager | undefined, file: FileContents) {
-  if (workerPool?.isWorkingPool() !== true) return false;
-  if ((file.lang ?? getFiletypeFromFileName(file.name)) === "text") return false;
+/** Whether `contents` is short enough for the workers to tokenize. Counting
+ *  stops at the limit, so a long file costs only that many `indexOf`s. */
+function withinTokenizeLimit(contents: string): boolean {
   let lines = 1;
   for (
-    let index = file.contents.indexOf("\n");
-    index !== -1;
-    index = file.contents.indexOf("\n", index + 1)
+    let index = contents.indexOf("\n");
+    index !== -1 && lines <= DEFAULT_TOKENIZE_MAX_LENGTH;
+    index = contents.indexOf("\n", index + 1)
   ) {
     lines += 1;
   }
   return lines <= DEFAULT_TOKENIZE_MAX_LENGTH;
+}
+
+function needsWorkerHighlight(
+  workerPool: WorkerPoolManager | undefined,
+  file: FileContents,
+  tokenizable: boolean,
+) {
+  if (workerPool?.isWorkingPool() !== true) return false;
+  if ((file.lang ?? getFiletypeFromFileName(file.name)) === "text") return false;
+  return tokenizable;
 }
 
 /**
@@ -270,7 +284,9 @@ function needsWorkerHighlight(workerPool: WorkerPoolManager | undefined, file: F
 function useEditableAfterHighlight(file: FileContents) {
   const workerPool = useWorkerPool();
   const [highlightedFile, setHighlightedFile] = useState<FileContents | null>(null);
-  const needsHighlight = needsWorkerHighlight(workerPool, file);
+  // Once per version of the file, not on every render.
+  const tokenizable = useMemo(() => withinTokenizeLimit(file.contents), [file.contents]);
+  const needsHighlight = needsWorkerHighlight(workerPool, file, tokenizable);
   const ready = !needsHighlight || highlightedFile === file;
 
   useEffect(() => {
@@ -316,6 +332,10 @@ function useFirstScreenRepaint(file: FileContents) {
       live = false;
     };
   }, [file, lang, workerPool]);
+
+  // The first-screen cache holds the whole text of the last long file it
+  // coloured; a closed tab (or a replaced version) must not keep that alive.
+  useEffect(() => () => releaseFirstScreenCache(file.cacheKey), [file]);
 
   return (instance: FileInstance<undefined, undefined>, phase: PostRenderPhase) => {
     instanceRef.current = phase === "unmount" ? null : instance;
@@ -485,6 +505,9 @@ function EditableFileSurface({
         return selection ? positionOfSelection(selection) : undefined;
       },
       focus: () => editorRef.current?.focus({ preventScroll: true }),
+      canFind: () =>
+        !!editorRef.current &&
+        !!containerRef.current?.shadowRoot?.querySelector("[contenteditable]"),
       openFind: () => {
         const editor = editorRef.current;
         const root = containerRef.current?.shadowRoot;

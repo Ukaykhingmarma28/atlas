@@ -389,11 +389,23 @@ describe("ui_close", () => {
 
   /// Own-session refusal's sibling: closing unsaved work is the user's call.
   it("refuses to close an editor with unsaved changes", async () => {
+    // The tab's save session marks the tab itself dirty.
+    useLayoutStore.getState().actions.setTabDirty("editor:/p/src/App.tsx", true);
+    expect(error(await act("ui_close", { tabId: "editor:/p/src/App.tsx" }))).toMatch(/unsaved/);
+    expect(layout().tabs.some((t) => t.id === "editor:/p/src/App.tsx")).toBe(true);
+  });
+
+  /// A buffer's shared flag can outlive the edits it described (a tab closed
+  /// with "Don't save", another tab on the same file); only the tab's own
+  /// flag, which its save session keeps current, blocks the close.
+  it("closes a clean editor whose buffer carries a stale dirty flag, and drops the buffer", async () => {
     useEditorStore.setState({
       buffers: { "/p/src/App.tsx": { path: "/p/src/App.tsx", dirty: true } as never },
     });
-    expect(error(await act("ui_close", { tabId: "editor:/p/src/App.tsx" }))).toMatch(/unsaved/);
-    expect(layout().tabs.some((t) => t.id === "editor:/p/src/App.tsx")).toBe(true);
+    expect(result(await act("ui_close", { tabId: "editor:/p/src/App.tsx" }))).toMatchObject({
+      closed: true,
+    });
+    expect(useEditorStore.getState().buffers["/p/src/App.tsx"]).toBeUndefined();
   });
 
   /// Not only editors hold unsaved work: the PDF viewer marks its tab dirty

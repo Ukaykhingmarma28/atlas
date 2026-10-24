@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { toast } from "sonner";
 import { Code2, Eye, RefreshCw, Table2, WrapText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "../stores/editor-store";
@@ -24,7 +24,15 @@ import { BLAME_PART_COLOR } from "../lib/blame";
 import { registerEditorView } from "../lib/editor-views";
 import { FileDecorations } from "../lib/file-decorations";
 import { filePreviewDelimiter } from "../lib/delimited-preview";
-import { retainedBreadcrumbTrail } from "../lib/file-path";
+import { relativeToRoot, retainedBreadcrumbTrail } from "../lib/file-path";
+import { registerFileSaver } from "../lib/dirty-close";
+import {
+  FileTooLargeError,
+  MAX_OPEN_BYTES,
+  fileMtimeMs,
+  readFileForTab,
+  writeFileContent,
+} from "../lib/editor-fs-api";
 import {
   readRenderedPreference,
   renderedModeOf,
@@ -35,6 +43,7 @@ import { useFileSaveCoordinator } from "../lib/use-file-save-coordinator";
 import { CodeFileView, type CodeFileViewHandle } from "./code-file-view";
 import { DelimitedTablePreview } from "./delimited-table-preview";
 import { FileBreadcrumbsRow, type FileBreadcrumbsProps } from "./file-breadcrumbs";
+import { FileFindBar } from "./file-find-bar";
 import { HtmlPreview } from "./html-preview";
 import {
   FILE_SURFACE_SUBHEADER_CLASS,
@@ -68,9 +77,12 @@ interface EditorPanelProps {
   containerHeight: number;
 }
 
-function relativeTo(path: string, projectPath: string): string | null {
-  if (!projectPath || !path.startsWith(projectPath + "/")) return null;
-  return path.slice(projectPath.length + 1);
+const relativeTo = relativeToRoot;
+
+/** Why a save failed, for the toast: the command's own message, trimmed. */
+function saveFailureMessage(err: unknown): string {
+  const text = err instanceof Error ? err.message : String(err);
+  return text.length > 300 ? `${text.slice(0, 300)}…` : text;
 }
 
 export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelProps) {
@@ -78,13 +90,22 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
   const isUntitled = path.startsWith("untitled:");
   const buffer = useEditorStore((s) => s.buffers[path]);
   const pendingReveal = useEditorStore((s) => s.pendingReveals[path]);
-  const { openBuffer, setDirty, markSaved, reloadBuffer, markExternallyChanged, consumeReveal } =
-    useEditorStore.use.actions();
+  const {
+    openBuffer,
+    setDirty,
+    markSaved,
+    reloadBuffer,
+    markExternallyChanged,
+    consumeReveal,
+    requestReveal,
+  } = useEditorStore.use.actions();
   const projectPath = useAppStore.use.currentProject()?.path ?? "";
   const layoutActions = useLayoutStore.use.actions();
   const viewRef = useRef<CodeFileViewHandle | null>(null);
   const [decorations] = useState(() => new FileDecorations());
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Set when the file is over `MAX_OPEN_BYTES`: it is never read.
+  const [tooLargeBytes, setTooLargeBytes] = useState<number | null>(null);
   // Bumped when the document is replaced from disk; the code view takes the
   // buffer's contents as a new document only then.
   const [docVersion, setDocVersion] = useState(0);
@@ -142,13 +163,16 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
     }
     let live = true;
     setLoadError(null);
+    setTooLargeBytes(null);
     void (async () => {
       try {
-        const content = await invoke<string>("read_file_content", { path });
-        const mtime = await invoke<number>("file_mtime_ms", { path }).catch(() => 0);
+        const content = await readFileForTab(path);
+        const mtime = await fileMtimeMs(path);
         if (live) openBuffer(path, content, mtime);
       } catch (err) {
-        if (live) setLoadError(String(err));
+        if (!live) return;
+        if (err instanceof FileTooLargeError) setTooLargeBytes(err.bytes);
+        else setLoadError(String(err));
       }
     })();
     return () => {
@@ -190,14 +214,18 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
   );
   const save = useFileSaveCoordinator({
     path,
-    baseline: buffer?.originalContent ?? "",
+    // Null until the file has been read: the session seeds itself from the
+    // text once it lands, so "clean" means the file, not "".
+    baseline: buffer ? buffer.originalContent : null,
     persist: async (content) => {
       try {
-        await invoke("write_file_content", { path, content });
-        persistedMtime.current = await invoke<number>("file_mtime_ms", { path }).catch(() => 0);
+        await writeFileContent(path, content);
+        persistedMtime.current = await fileMtimeMs(path);
         return true;
       } catch (err) {
-        console.error("Save failed:", err);
+        toast.error(`Couldn't save ${path.split(/[\\/]/).pop() || path}`, {
+          description: saveFailureMessage(err),
+        });
         return false;
       }
     },
@@ -228,19 +256,19 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
   // Untitled buffers open the OS save dialog first; on commit the file is
   // written, the untitled tab is replaced by a real-path one, and the buffer
   // moves to the new key so that tab opens without a disk round trip.
-  const saveAs = useCallback(async () => {
+  const saveAs = useCallback(async (): Promise<boolean> => {
     const content = viewRef.current?.getText();
-    if (content === undefined) return;
+    if (content === undefined) return false;
     try {
       const { save: saveDialog } = await import("@tauri-apps/plugin-dialog");
       const chosen = await saveDialog({
         defaultPath: projectPath || undefined,
         title: "Save File",
       });
-      if (!chosen) return;
+      if (!chosen) return false;
       const newPath = chosen as string;
-      await invoke("write_file_content", { path: newPath, content });
-      const mtime = await invoke<number>("file_mtime_ms", { path: newPath }).catch(() => 0);
+      await writeFileContent(newPath, content);
+      const mtime = await fileMtimeMs(newPath);
       openBuffer(newPath, content, mtime);
       markSaved(newPath, content, mtime);
       layoutActions.closeTab(tabId);
@@ -251,15 +279,21 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
         summary: newPath.split("/").pop() ?? newPath,
         payload: { path: newPath, bytes: content.length },
       });
+      return true;
     } catch (err) {
-      console.error("Save-as failed:", err);
+      toast.error("Couldn't save the file", { description: saveFailureMessage(err) });
+      return false;
     }
   }, [projectPath, openBuffer, markSaved, layoutActions, tabId]);
 
-  const handleSave = useCallback(() => {
-    if (isUntitled) void saveAs();
-    else void save.flush();
-  }, [isUntitled, saveAs, save]);
+  const handleSave = useCallback(
+    (): Promise<boolean> => (isUntitled ? saveAs() : save.flush()),
+    [isUntitled, saveAs, save],
+  );
+  // The close prompt's "Save" writes through here (`dirty-close.ts`).
+  const handleSaveRef = useRef(handleSave);
+  handleSaveRef.current = handleSave;
+  useEffect(() => registerFileSaver(tabId, () => handleSaveRef.current()), [tabId]);
 
   // ── External changes ──
   const replaceDocument = useCallback(
@@ -281,11 +315,11 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
     if (!path || isUntitled) return;
     const buf = useEditorStore.getState().buffers[path];
     if (!buf) return;
-    const mtime = await invoke<number>("file_mtime_ms", { path }).catch(() => 0);
+    const mtime = await fileMtimeMs(path);
     if (!mtime || mtime <= buf.diskMtimeMs) return;
     let content: string;
     try {
-      content = await invoke<string>("read_file_content", { path });
+      content = await readFileForTab(path);
     } catch {
       return;
     }
@@ -294,8 +328,12 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
     if (!cur) return;
     const liveDoc = viewRef.current?.getText() ?? cur.originalContent;
     if (content === liveDoc) {
-      // Matches what's shown (our own save, say): just record the mtime.
+      // Matches what's shown (our own save, say): just record the mtime. The
+      // store now reads clean, so the save session must too, or its next
+      // edit (already "pending") never re-marks the buffer dirty and the next
+      // external write replaces unsaved typing.
       reloadBuffer(path, content, mtime);
+      save.reset(content);
       return;
     }
     if (cur.dirty) {
@@ -303,7 +341,7 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
       return;
     }
     replaceDocument(content, mtime);
-  }, [path, isUntitled, reloadBuffer, markExternallyChanged, replaceDocument]);
+  }, [path, isUntitled, reloadBuffer, save, markExternallyChanged, replaceDocument]);
   const revalidateRef = useRef(revalidate);
   revalidateRef.current = revalidate;
 
@@ -312,11 +350,11 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
     if (!path || isUntitled) return;
     let content: string;
     try {
-      content = await invoke<string>("read_file_content", { path });
+      content = await readFileForTab(path);
     } catch {
       return;
     }
-    const mtime = await invoke<number>("file_mtime_ms", { path }).catch(() => 0);
+    const mtime = await fileMtimeMs(path);
     replaceDocument(content, mtime);
   }, [path, isUntitled, replaceDocument]);
 
@@ -391,17 +429,25 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
   }, [docVersion]);
 
   // ── Keys, position, layout ──
+  const [plainFind, setPlainFind] = useState({ open: false, focus: 0 });
   useScopedHotkeys({
     tabId,
     handlers: {
       "editor.save": () => {
-        handleSave();
+        void handleSave();
       },
       "editor.find": () => {
         if (rendered) return false;
-        // Focus inside the editor: its own ⌘F opens the panel.
-        if (document.activeElement?.closest?.("[data-file-view]")) return false;
-        return viewRef.current?.openFind() ?? false;
+        const view = viewRef.current;
+        if (view?.canFind()) {
+          // Focus inside the editor: its own ⌘F opens the panel.
+          if (document.activeElement?.closest?.("[data-file-view]")) return false;
+          return view.openFind();
+        }
+        // No editor to search in (read-only, or not attached yet): search
+        // the plain text instead.
+        setPlainFind((f) => ({ open: true, focus: f.focus + 1 }));
+        return true;
       },
     },
   });
@@ -412,6 +458,17 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
     decorations.setLayout(wordWrap, gitBlameInline);
   }, [decorations, wordWrap, gitBlameInline]);
 
+  if (tooLargeBytes !== null) {
+    return (
+      <div className="flex h-full flex-col bg-background">
+        <FileSurfaceFailure
+          message={`This file is too large to open here (${formatMegabytes(tooLargeBytes)}; the limit is ${formatMegabytes(MAX_OPEN_BYTES)}). Open it in your editor instead.`}
+          detail={path}
+          action={<OpenInEditorButton path={path} />}
+        />
+      </div>
+    );
+  }
   if (loadError) {
     return (
       <div className="flex h-full flex-col bg-background">
@@ -515,11 +572,27 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
       </div>
       {large && !rendered && (
         <FileSurfaceNotice>
-          {`Large file (${(buffer.originalContent.length / 1024 / 1024).toFixed(1)} MB): shown read-only, without highlighting.`}
+          {`Large file (${formatMegabytes(buffer.originalContent.length)}): shown read-only, without highlighting.`}
         </FileSurfaceNotice>
       )}
       {sourceMounted && (
-        <div className={rendered ? "hidden" : "flex min-h-0 flex-1"}>
+        <div className={rendered ? "hidden" : "relative flex min-h-0 flex-1"}>
+          {plainFind.open && !rendered && (
+            <FileFindBar
+              focusRequest={plainFind.focus}
+              getText={() => viewRef.current?.getText() ?? buffer.originalContent}
+              startLine={() => viewRef.current?.position()?.cursor.line ?? 1}
+              onGo={(m) =>
+                requestReveal(path, {
+                  line: m.line,
+                  column: m.column,
+                  endLine: m.line,
+                  endColumn: m.endColumn,
+                })
+              }
+              onClose={() => setPlainFind((f) => ({ ...f, open: false }))}
+            />
+          )}
           <CodeFileView
             key={path}
             handleRef={viewRef}
@@ -593,4 +666,8 @@ function UntitledName({
       )}
     </span>
   );
+}
+
+function formatMegabytes(bytes: number): string {
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
