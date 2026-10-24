@@ -1350,11 +1350,19 @@ impl AcpThread {
     }
 
     /// The agent is about to replay a stored conversation into this thread.
-    /// Everything appended until the user's next prompt (or the next turn)
-    /// is marked approximate. Not ended when `session/load` answers: an
-    /// external agent's replay frames can still be queued then.
+    /// Everything appended until [`Self::end_replay`] (or the user's next
+    /// prompt, or the next turn) is marked approximate.
     pub fn begin_replay(&mut self) {
         self.replaying = true;
+    }
+
+    /// The replay is over: what arrives from here on is live, and timed.
+    /// Called once the `session/load` answer has landed AND every frame the
+    /// agent sent before it has been applied — an external agent's replay
+    /// frames can still be queued on the dispatch task when the answer
+    /// resolves, so the caller orders this behind them.
+    pub fn end_replay(&mut self) {
+        self.replaying = false;
     }
 
     pub fn entries(&self) -> &[AgentThreadEntry] {
