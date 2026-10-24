@@ -8,8 +8,9 @@ import { revealSingleton, toggleSingleton } from "./singleton-surface";
  * focuses an open Files tab rather than adding a second).
  *
  * It is a way in, not a place to stay. Opening a file from it opens (or
- * focuses) that file's tab and closes this one; the file tab carries the same
- * tree beside it (`FileTabFrame`), so the tree is never shown twice.
+ * focuses) that file's tab and closes this one: the file takes its place. The
+ * tree itself is the column's (`FileDockColumn`), filling the column on this
+ * tab and docked right of the file after, the same instance throughout.
  */
 export const FILES_TAB: Tab = {
   id: "files",

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useMemo, memo, lazy, Suspense, Fragment } from "react";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { cn } from "@/lib/utils";
+import { copyText } from "@/lib/clipboard";
 import { deepActiveElement } from "@/lib/deep-active-element";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 import { requestCloseTab } from "@/features/chat/lib/close-tab";
@@ -12,12 +13,24 @@ import {
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 import { Kbd } from "@/ui/kbd";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/ui/context-menu";
 import { IconButton } from "@/ui/icon-button";
 import { PaneHeader } from "@/components/titlebar";
 import { columnChrome } from "../lib/shell-edges";
 import { OPEN_SURFACE_MENU_EVENT, SURFACES, openSurface, surfaceForKey } from "../lib/surfaces";
 import { Group, Panel, Separator, useDefaultLayout, usePanelRef } from "react-resizable-panels";
-import { useLayoutStore, type Tab, type ProjectView } from "../stores/layout-store";
+import {
+  useLayoutStore,
+  type Tab,
+  type ProjectView,
+  type SurfacesDock,
+} from "../stores/layout-store";
 import { useProjectStore } from "@/features/projects/stores/project-store";
 import { FileIcon, type FallbackIcon } from "@/features/icon-theme/components/file-icon";
 // Chat is the default landing surface — always loaded so the first paint
@@ -26,6 +39,7 @@ import { ChatPanel } from "@/features/chat/components/chat-panel";
 import { WelcomeScreen } from "@/features/app/components/welcome-screen";
 import { UnsupportedView } from "@/features/unsupported/components/unsupported-view";
 import { FileTabFrame } from "@/features/explorer/components/file-tab-frame";
+import { FileDockColumn } from "@/features/explorer/components/file-dock";
 
 // Every other tab type is lazy. Editor/Terminal in particular pull in
 // CodeMirror+Lezer (~600 KB) and xterm (~250 KB) respectively — keeping
@@ -140,7 +154,8 @@ import {
   Layers,
   Frame,
   NotebookText,
-  Columns2,
+  PanelBottom,
+  PanelRight,
   Maximize2,
   Minimize2,
   MessagesSquare,
@@ -343,6 +358,8 @@ const ProjectColumns = memo(function ProjectColumns({
   runningTabIds: Set<string>;
 }) {
   const surfaces = useLayoutStore.use.surfaces();
+  const dock = useLayoutStore.use.surfacesDock();
+  const bottom = dock === "bottom";
   const split = view.groupOrder.length > 1;
   // The first column is the main pane; every one after it is the surfaces
   // pane. Hidden or expanded, a column is collapsed to zero width rather than
@@ -353,6 +370,14 @@ const ProjectColumns = memo(function ProjectColumns({
   const firstShown = shown.indexOf(true);
   const lastShown = shown.lastIndexOf(true);
   const solo = firstShown === lastShown;
+  // Docked at the bottom, the split runs top to bottom: the top row carries
+  // both ends of the window bar, and the rows under it carry neither. The
+  // orientation flips in place (same Group, same keyed panels), so placing
+  // the pane never remounts a session, a terminal or an editor.
+  const edges = (i: number) =>
+    bottom
+      ? { atLeft: i === firstShown, atRight: i === firstShown }
+      : { atLeft: i === firstShown, atRight: i === lastShown };
   // A fresh two-column split opens 65/35, not even: the column you split from
   // is the one you were working in (a chat, beside its changes), and the new
   // one is a reference beside it. Only a default — the library uses it when it
@@ -367,7 +392,7 @@ const ProjectColumns = memo(function ProjectColumns({
   return (
     <Group
       id={layoutId}
-      orientation="horizontal"
+      orientation={bottom ? "vertical" : "horizontal"}
       defaultLayout={defaultLayout}
       onLayoutChanged={onLayoutChanged}
       className="h-full bg-background"
@@ -377,7 +402,8 @@ const ProjectColumns = memo(function ProjectColumns({
           {i > 0 && (
             <Separator
               className={cn(
-                "w-px bg-border hover:bg-primary data-[separator=active]:bg-primary transition-colors cursor-col-resize",
+                "bg-border hover:bg-primary data-[separator=active]:bg-primary transition-colors",
+                bottom ? "h-px cursor-row-resize" : "w-px cursor-col-resize",
                 // Kept in the tree, like the collapsed column beside it; inert
                 // while either side is collapsed.
                 !(shown[i - 1] && shown[i]) && "pointer-events-none invisible",
@@ -388,7 +414,9 @@ const ProjectColumns = memo(function ProjectColumns({
             id={gid}
             shown={shown[i]}
             defaultSize={pairSizes?.[i]}
-            minSize={i === 0 ? undefined : columnMinSize(view, gid)}
+            // A surface's pixel floor is a width; docked at the bottom the
+            // split sizes heights, so it keeps the percentage floor.
+            minSize={i === 0 || bottom ? undefined : columnMinSize(view, gid)}
           >
             <TabColumn
               groupId={gid}
@@ -397,8 +425,8 @@ const ProjectColumns = memo(function ProjectColumns({
               isActive={isActive}
               runningTabIds={runningTabIds}
               solo={solo}
-              atLeft={i === firstShown}
-              atRight={i === lastShown}
+              {...edges(i)}
+              placementControls={i > 0 && i === view.groupOrder.length - 1}
               projectId={projectId}
             />
           </ColumnPanel>
@@ -483,9 +511,10 @@ function ColumnPanel({
  *   strip at all — the tab's title is the breadcrumb's last segment, except an
  *   editor's, which its own crumb row names. A strip appears only once there
  *   is something to switch between. Its right end toggles the surfaces pane.
- * - **surface**: tabs then `+`, left-aligned, and an expand toggle at the
- *   right. It is hidden from the main pane's toggle, never closed with an ×,
- *   so hiding it never throws its tabs into the main pane.
+ * - **surface**: tabs then `+`, left-aligned; the pane's last column ends in
+ *   maximize and the two placement toggles (`PanelPlacementControls`). The
+ *   pane is hidden from there or docked under the session, never closed with
+ *   an ×, so hiding it never throws its tabs into the main pane.
  */
 const TabColumn = memo(function TabColumn({
   groupId,
@@ -496,6 +525,7 @@ const TabColumn = memo(function TabColumn({
   solo,
   atLeft,
   atRight,
+  placementControls,
   projectId,
 }: {
   groupId: string;
@@ -507,6 +537,9 @@ const TabColumn = memo(function TabColumn({
   solo: boolean;
   atLeft: boolean;
   atRight: boolean;
+  /** The pane's last column: its strip ends in maximize and the placement
+   *  toggles. */
+  placementControls: boolean;
   projectId: string;
 }) {
   const { setActiveTab, setFocusedGroup } = useLayoutStore.use.actions();
@@ -560,6 +593,7 @@ const TabColumn = memo(function TabColumn({
                 focused={solo || isFocused}
                 running={runningTabIds.has(tab.id)}
                 onSelect={() => setActiveTab(tab.id)}
+                strip={tabs}
               />
             ))}
           </div>
@@ -581,7 +615,8 @@ const TabColumn = memo(function TabColumn({
               // shows one; otherwise it covers the active project only.
               <SessionContextButton tabId={activeTab?.type === "chat" ? activeTab.id : null} />
             )}
-            {main ? <SurfacesToggle groupOrder={view.groupOrder} /> : <ExpandToggle />}
+            {main && <SurfacesToggle groupOrder={view.groupOrder} />}
+            {placementControls && <PanelPlacementControls />}
           </div>
         </HintGroup>
       </PaneHeader>
@@ -619,28 +654,32 @@ function MainTitle({ tab }: { tab: Tab }) {
   );
 }
 
-/** The main pane's toggle for the surfaces pane beside it: opens one (on the
- *  launcher) when there is none, else shows or hides it — its tabs keep
- *  running while hidden. */
+/** The main pane's toggle for the surfaces pane: opens one (on the
+ *  launcher) when there is none, else shows it; its tabs keep running while
+ *  hidden. Only while the pane is off screen: once it is up, the toggle lives
+ *  at the end of the pane's own strip (`PanelPlacementControls`), with the
+ *  pane's other layout controls. */
 function SurfacesToggle({ groupOrder }: { groupOrder: string[] }) {
   const surfaces = useLayoutStore.use.surfaces();
+  const dock = useLayoutStore.use.surfacesDock();
   const hint = useActionShortcut("tabs.openSurface")?.label;
   const open = groupOrder.length > 1 && surfaces !== "hidden";
-  const label = open ? "Hide surfaces" : "Show surfaces";
+  if (open) return null;
+  const label = "Show surfaces";
   return (
-    <HintItem label={hint && !open ? `${label} (${hint})` : label}>
+    <HintItem label={hint ? `${label} (${hint})` : label}>
       <IconButton
-        icon={Columns2}
+        icon={dock === "bottom" ? PanelBottom : PanelRight}
         label={label}
         size="sm"
         iconSize="md"
-        aria-pressed={open}
+        aria-pressed={false}
         onClick={() => {
           const { setSurfaces, setFocusedGroup, addGroup } = useLayoutStore.getState().actions;
           if (groupOrder.length === 1) {
             setFocusedGroup(groupOrder[0]);
             addGroup();
-          } else setSurfaces(open ? "hidden" : "shown");
+          } else setSurfaces("shown");
         }}
       />
     </HintItem>
@@ -672,24 +711,63 @@ function TeamChatToggle() {
   );
 }
 
-/** The surfaces pane's expand toggle: the pane takes the whole centre (the
- *  main pane collapses, still mounted) and gives it back. */
-function ExpandToggle() {
+/**
+ * The end of the surfaces pane's strip: maximize, then where the pane docks.
+ *
+ * - **Maximize** gives the pane the whole centre (the session collapses, still
+ *   mounted), so the strip sits at the window's top; again restores it.
+ * - **Bottom / right** dock the pane under or beside the session. The lit one
+ *   is where it is now: pressing it hides the pane (the main pane's toggle
+ *   brings it back), pressing the other moves it there.
+ */
+function PanelPlacementControls() {
   const surfaces = useLayoutStore.use.surfaces();
-  const { setSurfaces } = useLayoutStore.use.actions();
-  const expanded = surfaces === "expanded";
-  const label = expanded ? "Restore pane" : "Expand pane";
+  const dock = useLayoutStore.use.surfacesDock();
+  const { setSurfaces, setSurfacesDock } = useLayoutStore.use.actions();
+  const maximized = surfaces === "expanded";
+  const maximizeLabel = maximized ? "Restore panel size" : "Maximize panel";
+  const place = (target: SurfacesDock) => {
+    if (dock === target && !maximized) setSurfaces("hidden");
+    else {
+      setSurfacesDock(target);
+      setSurfaces("shown");
+    }
+  };
+  const bottomLabel = dock === "bottom" ? "Hide panel" : "Dock panel at the bottom";
+  const rightLabel = dock === "right" ? "Hide panel" : "Dock panel on the right";
   return (
-    <HintItem label={label}>
-      <IconButton
-        icon={expanded ? Minimize2 : Maximize2}
-        label={label}
-        size="sm"
-        iconSize="md"
-        aria-pressed={expanded}
-        onClick={() => setSurfaces(expanded ? "shown" : "expanded")}
-      />
-    </HintItem>
+    <>
+      <HintItem label={maximizeLabel}>
+        <IconButton
+          icon={maximized ? Minimize2 : Maximize2}
+          label={maximizeLabel}
+          size="sm"
+          iconSize="md"
+          aria-pressed={maximized}
+          onClick={() => setSurfaces(maximized ? "shown" : "expanded")}
+        />
+      </HintItem>
+      <HintItem label={bottomLabel}>
+        <IconButton
+          icon={PanelBottom}
+          label={bottomLabel}
+          size="sm"
+          iconSize="md"
+          aria-pressed={dock === "bottom"}
+          onClick={() => place("bottom")}
+        />
+      </HintItem>
+      <HintItem label={rightLabel}>
+        <IconButton
+          icon={PanelRight}
+          label={rightLabel}
+          size="sm"
+          iconSize="md"
+          aria-pressed={dock === "right"}
+          onClick={() => place("right")}
+        />
+      </HintItem>
+    </>
   );
 }
 
@@ -815,88 +893,98 @@ const TabContentContainer = memo(function TabContentContainer({
   );
   const activeIsNonPersistent = !persistentTabs.find((t) => t.id === activeTab.id);
 
+  // `@container`: the column's width is what the docked file tree and the
+  // room a file leaves for it are measured against (`FILE_DOCK_WIDTH`).
   return (
     <div
       ref={ref}
+      className="@container"
       style={{ flex: "1 1 0%", minHeight: 0, overflow: "hidden", position: "relative" }}
     >
-      <Suspense fallback={<PanelLoading />}>
-        {persistentTabs.map((tab) => {
-          const isActive = tab.id === activeTab.id;
-          if (tab.type === "chat") {
-            // Until the column has been active for an idle slice, hidden chats
-            // fall back to `display:none` (see `warmReady`).
-            const hidden = !isActive;
+      <FileDockColumn
+        projectId={projectId}
+        projectActive={isActive}
+        tabs={tabs}
+        activeTab={activeTab}
+      >
+        <Suspense fallback={<PanelLoading />}>
+          {persistentTabs.map((tab) => {
+            const isActive = tab.id === activeTab.id;
+            if (tab.type === "chat") {
+              // Until the column has been active for an idle slice, hidden chats
+              // fall back to `display:none` (see `warmReady`).
+              const hidden = !isActive;
+              return (
+                <div
+                  key={tab.id}
+                  className="absolute inset-0"
+                  inert={hidden}
+                  // Pauses the session's working shimmers while it is hidden
+                  // (`src/lib/visible-animation.ts`): `visibility:hidden` does
+                  // not stop CSS animations the way `display:none` does.
+                  data-atlas-offstage={hidden || undefined}
+                  style={{
+                    display: hidden && !warmChats ? "none" : undefined,
+                    visibility: hidden ? "hidden" : "visible",
+                    // `visibility` alone is not enough. Anything inside that
+                    // WebKit has promoted to its own compositing layer keeps
+                    // painting for ~100ms after the ancestor is hidden, and this
+                    // wrapper is positioned, so those leftovers land ON TOP of
+                    // the tab you just switched to. Ancestor opacity is applied
+                    // when the layer is composited, so a stale layer cannot
+                    // survive it. Free: opacity is not a layout or paint input.
+                    opacity: hidden ? 0 : 1,
+                    pointerEvents: hidden ? "none" : "auto",
+                    zIndex: hidden ? 0 : 1,
+                    contain: "layout style",
+                  }}
+                >
+                  <ChatPanel tabId={tab.id} />
+                </div>
+              );
+            }
+            if (tab.type === "terminal") {
+              // The chat's contract (above), minus the warm-up: a hidden terminal
+              // keeps its box. Under `display:none` WebKit dropped the render
+              // tree of every block and line, and showing the tab rebuilt all of
+              // it on the switch frame — the near-freeze when switching to a
+              // terminal that had been busy. Its sessions stop rendering while
+              // hidden anyway (`useIsTabVisible`), so the kept box costs nothing
+              // per frame.
+              const hidden = !isActive;
+              return (
+                <div
+                  key={tab.id}
+                  className="absolute inset-0"
+                  inert={hidden}
+                  style={{
+                    visibility: hidden ? "hidden" : "visible",
+                    opacity: hidden ? 0 : 1,
+                    pointerEvents: hidden ? "none" : "auto",
+                    zIndex: hidden ? 0 : 1,
+                    contain: "layout style",
+                  }}
+                >
+                  <PersistentPanel tab={tab} projectId={projectId} height={height} />
+                </div>
+              );
+            }
             return (
-              <div
-                key={tab.id}
-                className="absolute inset-0"
-                inert={hidden}
-                // Pauses the session's working shimmers while it is hidden
-                // (`src/lib/visible-animation.ts`): `visibility:hidden` does
-                // not stop CSS animations the way `display:none` does.
-                data-atlas-offstage={hidden || undefined}
-                style={{
-                  display: hidden && !warmChats ? "none" : undefined,
-                  visibility: hidden ? "hidden" : "visible",
-                  // `visibility` alone is not enough. Anything inside that
-                  // WebKit has promoted to its own compositing layer keeps
-                  // painting for ~100ms after the ancestor is hidden, and this
-                  // wrapper is positioned, so those leftovers land ON TOP of
-                  // the tab you just switched to. Ancestor opacity is applied
-                  // when the layer is composited, so a stale layer cannot
-                  // survive it. Free: opacity is not a layout or paint input.
-                  opacity: hidden ? 0 : 1,
-                  pointerEvents: hidden ? "none" : "auto",
-                  zIndex: hidden ? 0 : 1,
-                  contain: "layout style",
-                }}
-              >
-                <ChatPanel tabId={tab.id} />
-              </div>
-            );
-          }
-          if (tab.type === "terminal") {
-            // The chat's contract (above), minus the warm-up: a hidden terminal
-            // keeps its box. Under `display:none` WebKit dropped the render
-            // tree of every block and line, and showing the tab rebuilt all of
-            // it on the switch frame — the near-freeze when switching to a
-            // terminal that had been busy. Its sessions stop rendering while
-            // hidden anyway (`useIsTabVisible`), so the kept box costs nothing
-            // per frame.
-            const hidden = !isActive;
-            return (
-              <div
-                key={tab.id}
-                className="absolute inset-0"
-                inert={hidden}
-                style={{
-                  visibility: hidden ? "hidden" : "visible",
-                  opacity: hidden ? 0 : 1,
-                  pointerEvents: hidden ? "none" : "auto",
-                  zIndex: hidden ? 0 : 1,
-                  contain: "layout style",
-                }}
-              >
+              <div key={tab.id} style={{ display: isActive ? "contents" : "none" }}>
                 <PersistentPanel tab={tab} projectId={projectId} height={height} />
               </div>
             );
-          }
-          return (
-            <div key={tab.id} style={{ display: isActive ? "contents" : "none" }}>
-              <PersistentPanel tab={tab} projectId={projectId} height={height} />
-            </div>
-          );
-        })}
+          })}
 
-        {/* Keyed by tab id: two tabs of one type (two drafts, two diffs) sit in
+          {/* Keyed by tab id: two tabs of one type (two drafts, two diffs) sit in
             the same slot here, and without a key React reuses the first tab's
             component — and its state — for the second. Two draft tabs shared
             one Y.Doc that way and wrote each other's content. */}
-        {activeIsNonPersistent && (
-          <TabContent key={activeTab.id} tab={activeTab} projectId={projectId} />
-        )}
-      </Suspense>
+          {activeIsNonPersistent && (
+            <TabContent key={activeTab.id} tab={activeTab} projectId={projectId} />
+          )}
+        </Suspense>
+      </FileDockColumn>
     </div>
   );
 });
@@ -928,6 +1016,7 @@ function PersistentPanel({
           tabId={tab.id}
           projectId={projectId}
           filePath={tab.data.filePath as string | undefined}
+          ownHeader
         >
           <EditorPanel
             tabId={tab.id}
@@ -1060,7 +1149,8 @@ function PanelLoading() {
 }
 
 function TabContent({ tab, projectId = null }: { tab: Tab; projectId?: string | null }) {
-  // A file tab carries the project tree beside the file (see FileTabFrame).
+  // A file tab sits in its frame: the header band, and room for the column's
+  // docked project tree (`file-tab-frame.tsx`, `file-dock.tsx`).
   const framed = (content: React.ReactNode) => (
     <FileTabFrame
       tabId={tab.id}
@@ -1080,7 +1170,7 @@ function TabContent({ tab, projectId = null }: { tab: Tab; projectId?: string | 
     case "source-control":
       return <SourceControlPanel />;
     case "files":
-      return <FilesPanel tabId={tab.id} projectId={projectId} />;
+      return <FilesPanel projectId={projectId} />;
     case "media":
       return framed(<MediaViewer filePath={tab.data.filePath as string} />);
     case "svg":
@@ -1160,7 +1250,15 @@ function PlaceholderContent({ tab }: { tab: Tab }) {
  *
  * Closing lives where the icon is: on hover a closable tab's icon becomes its
  * ×, so the close target is always in the same place and never pushes the
- * label around. Middle-click closes too.
+ * label around. Middle-click closes too, and the right-click menu closes this
+ * tab, the others, the ones to its right or all of them (each through
+ * `requestCloseTab`, so unsaved files and running sessions still ask), and
+ * copies a file tab's path.
+ *
+ * Every tab stays until it is closed: there is no italic preview tab that the
+ * next click replaces. The one tab another replaces is Files: a file picked
+ * from it takes its place (`file-dock.tsx`), and every file after that adds
+ * its own tab, or focuses the tab it already has.
  */
 function PaneTab({
   tab,
@@ -1169,6 +1267,7 @@ function PaneTab({
   focused,
   running,
   onSelect,
+  strip,
 }: {
   tab: Tab;
   /** Overrides the tab type's icon (the projectless strip's Home). */
@@ -1177,6 +1276,9 @@ function PaneTab({
   focused: boolean;
   running: boolean;
   onSelect: () => void;
+  /** The strip the tab sits in, for the menu's close-others commands; left
+   *  out, the tab has no menu (the projectless strip's pseudo-tabs). */
+  strip?: readonly Tab[];
 }) {
   const Icon = icon ?? tabIcons[tab.type as TabType] ?? MessageSquare;
   // A tab opened from a path carries it in `data.filePath`, so the strip
@@ -1184,14 +1286,20 @@ function PaneTab({
   const filePath = typeof tab.data?.filePath === "string" ? tab.data.filePath : null;
   const close = () => requestCloseTab(tab.id);
 
-  return (
+  const chip = (
     <div
       role="tab"
       aria-selected={active}
       tabIndex={0}
+      title={filePath ?? undefined}
       onClick={onSelect}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") onSelect();
+      }}
+      // Middle-click must not paste the primary selection on Linux, nor
+      // start an autoscroll elsewhere.
+      onMouseDown={(e) => {
+        if (e.button === 1) e.preventDefault();
       }}
       onAuxClick={(e) => {
         if (e.button === 1 && tab.closable) {
@@ -1239,6 +1347,40 @@ function PaneTab({
       </span>
       <span className={cn("truncate", tab.dirty && "italic")}>{tab.title}</span>
     </div>
+  );
+
+  if (!strip) return chip;
+  const closable = strip.filter((t) => t.closable);
+  const index = strip.findIndex((t) => t.id === tab.id);
+  const others = closable.filter((t) => t.id !== tab.id);
+  const toRight = strip.slice(index + 1).filter((t) => t.closable);
+  const closeAll = (tabs: readonly Tab[]) => {
+    for (const t of tabs) requestCloseTab(t.id);
+  };
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger render={chip} />
+      <ContextMenuContent className="min-w-44">
+        <ContextMenuItem disabled={!tab.closable} onClick={close}>
+          Close
+        </ContextMenuItem>
+        <ContextMenuItem disabled={others.length === 0} onClick={() => closeAll(others)}>
+          Close others
+        </ContextMenuItem>
+        <ContextMenuItem disabled={toRight.length === 0} onClick={() => closeAll(toRight)}>
+          Close to the right
+        </ContextMenuItem>
+        <ContextMenuItem disabled={closable.length === 0} onClick={() => closeAll(closable)}>
+          Close all
+        </ContextMenuItem>
+        {filePath && !filePath.startsWith("untitled:") && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem onClick={() => void copyText(filePath)}>Copy path</ContextMenuItem>
+          </>
+        )}
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 

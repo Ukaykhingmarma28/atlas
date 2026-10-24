@@ -11,14 +11,7 @@ import {
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { toast } from "sonner";
-import {
-  ChevronsDownUp,
-  ChevronsUpDown,
-  FilePlus,
-  FolderPlus,
-  PanelLeftClose,
-  RefreshCw,
-} from "lucide-react";
+import { ChevronsDownUp, ChevronsUpDown, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { openInProject } from "../lib/open-in-project";
 import { IconButton } from "@/ui/icon-button";
@@ -64,7 +57,6 @@ import { searchProjectFiles } from "@/features/file-picker/lib/file-picker-api";
 import { useProjectStore } from "@/features/projects/stores/project-store";
 import { absoluteOf, ProjectFileOps, relativeTo } from "../lib/project-file-ops";
 import { INDENT_PER_LEVEL, ROW_HEIGHT } from "../lib/tree-constants";
-import { FILE_SURFACE_SUBHEADER_CLASS } from "@/features/editor/components/file-surface-chrome";
 import { ROOT_DROP, useFileTreeDragDrop } from "../hooks/use-file-tree-drag-drop";
 import { useExternalFileDrop } from "../hooks/use-external-file-drop";
 import { ProjectTreeRow, RenameInput } from "./project-tree-row";
@@ -72,6 +64,7 @@ import { FileTreeConfirmDelete } from "./file-tree-confirm-delete";
 import { OpenInEditorContextItems } from "@/features/external-editor/components/open-in-editor-menu";
 import { SYSTEM_EDITOR_ID } from "@/features/external-editor/lib/external-editor-api";
 import { openInEditor } from "@/features/external-editor/lib/preferred-editor";
+import { isFileTab } from "../lib/file-tabs";
 
 /**
  * The project's files, as a lazily loaded, virtualized tree: the Files
@@ -114,7 +107,6 @@ interface Selection {
 const NO_SELECTION: Selection = { paths: new Set(), anchor: null };
 
 /** Tab types whose `data.filePath` is a file the tree can point at. */
-const FILE_TABS = new Set(["editor", "media", "svg", "pdf", "notebook", "unsupported"]);
 
 /**
  * The file the reader is looking at: the active tab of the focused column, or
@@ -127,7 +119,7 @@ function useActiveFilePath(): string | null {
   return useLayoutStore((s) => {
     const fileOf = (id: string | null | undefined) => {
       const tab = id ? s.tabs.find((t) => t.id === id) : undefined;
-      return tab && FILE_TABS.has(tab.type) && typeof tab.data.filePath === "string"
+      return tab && isFileTab(tab.type) && typeof tab.data.filePath === "string"
         ? tab.data.filePath
         : null;
     };
@@ -164,17 +156,12 @@ export interface ProjectFileTreeProps {
   revealNonce?: number;
   /** After the tree opened a file. */
   onFileOpened?: (path: string) => void;
-  /** Offer a button that hides the tree. */
-  onHide?: () => void;
   /**
    * A folder to reveal and select, root-relative (`""` is the root, which
    * scrolls back to the top). A file's breadcrumbs ask for it when the
    * reader walks up from the file; a new `nonce` asks again.
    */
   revealFolder?: { path: string; nonce: number } | null;
-  /** The header is one half of the file tab's second row: it carries the
-   *  rule under that row, so the row reads as one band with the file's. */
-  subheader?: boolean;
 }
 
 export function ProjectFileTree({
@@ -184,9 +171,7 @@ export function ProjectFileTree({
   activeFile,
   revealNonce = 0,
   onFileOpened,
-  onHide,
   revealFolder = null,
-  subheader = false,
 }: ProjectFileTreeProps) {
   const showHidden = useSettingsStore((s) => s.settings.showHiddenFiles);
   const model = useMemo(
@@ -905,8 +890,6 @@ export function ProjectFileTree({
     expandAbort.current = controller;
     void model.expandAll(controller.signal);
   };
-  const focusedRow = focused ? rows.find((r) => r.path === focused) : undefined;
-  const newEntryParent = dirForPaste(focusedRow ?? null);
 
   const refresh = () => {
     void model.refresh();
@@ -914,16 +897,11 @@ export function ProjectFileTree({
     if (searching) setSearchNonce((n) => n + 1);
   };
 
-  // One quiet row: refresh, the search field filling the width, then the
-  // tree's own buttons.
+  // One quiet row, as in the file view's header band: refresh, the search
+  // field filling the width, then collapse/expand all. New files and folders
+  // are on the tree's context menu (a row's, or the empty space below).
   const header = (
-    <div
-      className={cn(
-        "flex shrink-0 items-center gap-1 px-2",
-        subheader ? FILE_SURFACE_SUBHEADER_CLASS : "h-control-lg",
-      )}
-      data-surface-subheader={subheader || undefined}
-    >
+    <div className="flex h-control-lg shrink-0 items-center gap-1 px-2">
       {leading}
       <Hint label="Refresh">
         <IconButton size="sm" icon={RefreshCw} label="Refresh files" onClick={refresh} />
@@ -956,37 +934,14 @@ export function ProjectFileTree({
           className="min-w-0 flex-1 bg-transparent font-sans text-md text-foreground outline-none placeholder:text-muted-foreground"
         />
       </div>
-      <div className="flex shrink-0 items-center gap-0.5">
-        <Hint label="New file">
-          <IconButton
-            size="sm"
-            icon={FilePlus}
-            label="New file"
-            onClick={() => beginNewEntry(newEntryParent, false)}
-          />
-        </Hint>
-        <Hint label="New folder">
-          <IconButton
-            size="sm"
-            icon={FolderPlus}
-            label="New folder"
-            onClick={() => beginNewEntry(newEntryParent, true)}
-          />
-        </Hint>
-        <Hint label={anyExpanded ? "Collapse all folders" : "Expand all folders"}>
-          <IconButton
-            size="sm"
-            icon={anyExpanded ? ChevronsDownUp : ChevronsUpDown}
-            label={anyExpanded ? "Collapse all folders" : "Expand all folders"}
-            onClick={toggleAll}
-          />
-        </Hint>
-        {onHide && (
-          <Hint label="Hide file tree">
-            <IconButton size="sm" icon={PanelLeftClose} label="Hide file tree" onClick={onHide} />
-          </Hint>
-        )}
-      </div>
+      <Hint label={anyExpanded ? "Collapse all folders" : "Expand all folders"}>
+        <IconButton
+          size="sm"
+          icon={anyExpanded ? ChevronsDownUp : ChevronsUpDown}
+          label={anyExpanded ? "Collapse all folders" : "Expand all folders"}
+          onClick={toggleAll}
+        />
+      </Hint>
     </div>
   );
 

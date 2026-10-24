@@ -103,6 +103,11 @@ interface LayoutState {
    *  collapsing the main pane instead. Not persisted: a relaunch starts with
    *  both on screen. */
   surfaces: SurfacesMode;
+  /** Where the surfaces pane docks: beside the session (`right`, the
+   *  default) or under it (`bottom`). Persisted: it is how the reader likes
+   *  to work. Changing it flips the split's orientation in place, so nothing
+   *  in either pane remounts. */
+  surfacesDock: SurfacesDock;
   /**
    * The destination (ADR-0024): a full-page view taking the area right of the
    * rail, one at a time, never a tab in a column. `destinationShown` false is
@@ -119,6 +124,7 @@ interface LayoutState {
 }
 
 export type SurfacesMode = "shown" | "hidden" | "expanded";
+export type SurfacesDock = "right" | "bottom";
 
 /** The source-control surface's sections, in the order its header shows them. */
 export const SOURCE_CONTROL_SECTIONS = ["changes", "git-graph", "github"] as const;
@@ -128,6 +134,8 @@ interface LayoutActions {
   actions: {
     /** Show, hide or expand the surfaces pane (see `surfaces`). */
     setSurfaces: (mode: SurfacesMode) => void;
+    /** Dock the surfaces pane beside or under the session (see `surfacesDock`). */
+    setSurfacesDock: (dock: SurfacesDock) => void;
     toggleKnowledgeSidebar: () => void;
     toggleKnowledgeInspector: () => void;
     setKnowledgeSidebarWidth: (width: number) => void;
@@ -224,6 +232,7 @@ const initialState: LayoutState = {
   zen: false,
   zenPrev: null,
   surfaces: "shown",
+  surfacesDock: "right",
   destination: null,
   destinationShown: false,
   tabHistory: ["welcome-chat"],
@@ -780,6 +789,10 @@ export const useLayoutStore = createSelectors(
               }
               syncActiveMirror(s);
             }),
+          setSurfacesDock: (dock) =>
+            set((s) => {
+              s.surfacesDock = dock;
+            }),
           setFocusedGroup: (groupId) =>
             set((s) => {
               if (!s.groupOrder.includes(groupId) || s.focusedGroupId === groupId) return;
@@ -1125,6 +1138,7 @@ export const useLayoutStore = createSelectors(
           bashPanel: s.bashPanel,
           plansPanel: s.plansPanel,
           timelinePanel: s.timelinePanel,
+          surfacesDock: s.surfacesDock,
         }),
         // One-level-deep merge so persisted slices overlay the defaults
         // without dropping any fields added in newer versions (the
@@ -1192,6 +1206,7 @@ export const useLayoutStore = createSelectors(
           return {
             ...current,
             ...rest,
+            surfacesDock: rest.surfacesDock === "bottom" ? "bottom" : "right",
             tabs,
             activeTabId,
             sourceControl,
