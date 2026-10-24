@@ -271,7 +271,10 @@ mod tests {
             let SandboxPolicy::WorkspaceWrite { writable_roots, .. } = sandbox else {
                 panic!("{mode} is workspace-write");
             };
-            let roots: Vec<_> = writable_roots.iter().map(|r| r.to_path_buf()).collect();
+            let roots: Vec<_> = writable_roots
+                .iter()
+                .map(atlas_engine_config::AbsolutePathBuf::to_path_buf)
+                .collect();
             assert_eq!(roots, [std::path::PathBuf::from("/work/server")]);
         }
         // Plan writes nothing, attached project or not; Bypass needs no roots.
