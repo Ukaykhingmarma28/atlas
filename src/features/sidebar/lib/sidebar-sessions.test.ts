@@ -188,3 +188,40 @@ describe("nextAfterParking", () => {
     expect(nextAfterParking([{ threadId: "a" }], "a")).toBeNull();
   });
 });
+
+describe("attached projects", () => {
+  const docs = {
+    path: "/work/docs",
+    displayName: "docs",
+    access: "read_write" as const,
+    attachedAt: iso(-30),
+    source: "mention" as const,
+  };
+  const groups = [
+    group(["/work/app"], [row("a", { attachedProjects: [docs] }), row("b")]),
+    group(["/work/docs"], [row("c", { projectName: "docs", folderPaths: ["/work/docs"] })]),
+  ];
+
+  it("carries the attached names on the row, and an empty list otherwise", () => {
+    const { active } = partition(groups);
+    const a = active.find((s) => s.threadId === "a")!;
+    const b = active.find((s) => s.threadId === "b")!;
+    expect(a.attachedNames).toBe("docs");
+    expect(a.attachedProjects).toHaveLength(1);
+    expect(b.attachedProjects).toHaveLength(0);
+    expect(b.attachedNames).toBe("");
+  });
+
+  it("scoped to a project, also lists the sessions it is attached to, marked", () => {
+    const { active } = partition(groups, { scopeProjectId: "p-docs" });
+    expect(active.map((s) => [s.threadId, s.viaAttached]).sort()).toEqual([
+      ["a", true],
+      ["c", false],
+    ]);
+  });
+
+  it("finds a session by an attached project's name", () => {
+    const { active } = partition(groups);
+    expect(searchSidebarSessions(active, "docs").map((s) => s.threadId)).toContain("a");
+  });
+});

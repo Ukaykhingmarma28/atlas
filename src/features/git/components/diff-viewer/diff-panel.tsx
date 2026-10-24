@@ -49,6 +49,13 @@ import { getDiffFileContents, getDiffPreview, type DiffSource } from "../../lib/
 import { buildFileDiffContentVersion, fnv1a32 } from "../../lib/diff-rendering";
 import { FileViewedContext, FileViewedToggle, type FileViewedState } from "./file-viewed-toggle";
 import { invalidateReviewFiles, useReviewFiles, type ReviewFile } from "../../lib/use-review-files";
+import {
+  combineReviews,
+  useAttachedRootReviews,
+  useSessionTouchedPaths,
+} from "../../lib/use-root-review";
+import { useSessionRoots } from "@/features/chat/hooks/use-session-roots";
+import { isAbsolutePath } from "@/features/chat/lib/open-turn-diff";
 import { useDiffJump } from "../../lib/diff-jump";
 import {
   useSessionEditTurns,
@@ -348,7 +355,73 @@ export function DiffPanel({
     only,
     ignoreWhitespace,
   });
-  const { files, stats: treeFiles, requestFile, retry } = scope === "turn" ? turnReview : gitReview;
+  const baseReview = scope === "turn" ? turnReview : gitReview;
+
+  // ── The session's other roots: its attached projects' working trees, and
+  // a turn's files grouped by the root that holds them (`use-root-review.ts`).
+  // Beside no session there are none, and the list is the main review's. ──
+  const roots = useSessionRoots(sessionId, repoPath);
+  const attachedRoots = useMemo(
+    () => (sessionId ? roots.filter((r) => r.kind === "attached") : []),
+    [roots, sessionId],
+  );
+  const touchedByAgent = useSessionTouchedPaths(scope === "session" ? sessionId : null);
+  const touched = useMemo(() => {
+    if (scope !== "session") return null;
+    const set = new Set(touchedByAgent ?? []);
+    // The record's files outside the main project carry their own path.
+    for (const f of sessionFiles) if (f.outOfRepo && isAbsolutePath(f.path)) set.add(f.path);
+    return set as ReadonlySet<string>;
+  }, [scope, touchedByAgent, sessionFiles]);
+  const attachedReview = useAttachedRootReviews({
+    roots: attachedRoots,
+    kind: scope === "turn" ? null : sourceKind,
+    touched,
+    ignoreWhitespace,
+  });
+  // An attached project's repository moving (a commit, a checkout) re-reads
+  // its preview, as the main project's does above.
+  const refetchAttached = useRef(attachedReview.refetch);
+  refetchAttached.current = attachedReview.refetch;
+  const attachedKey = attachedRoots.map((r) => r.path).join("\0");
+  useEffect(() => {
+    if (!attachedKey) return;
+    const paths = new Set(attachedKey.split("\0"));
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const off = listen<{ project: string }>("atlas:git-changed", (e) => {
+      const project = e.payload?.project;
+      if (!project || !paths.has(project)) return;
+      invalidateReviewFiles(queryClient, project);
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => refetchAttached.current(), 250);
+    });
+    return () => {
+      if (timer) clearTimeout(timer);
+      void off.then((u) => u());
+    };
+  }, [attachedKey, queryClient]);
+  const combined = useMemo(
+    () => combineReviews(baseReview.files, scope === "turn" ? [] : attachedReview.reviews, roots),
+    [baseReview.files, attachedReview.reviews, roots, scope],
+  );
+  const { files, stats: treeFiles } = combined;
+
+  // Loading and retrying go to the review the file came from, by the path it
+  // knows the file by. Stable: every pending row's header holds them.
+  const routeRef = useRef({ combined, baseReview, attached: attachedReview.reviews });
+  routeRef.current = { combined, baseReview, attached: attachedReview.reviews };
+  const requestFile = useCallback((key: string) => {
+    const { combined, baseReview, attached } = routeRef.current;
+    const info = combined.keys.get(key);
+    if (info && info.slot >= 0) attached[info.slot]?.review.requestFile(info.orig);
+    else baseReview.requestFile(info?.orig ?? key);
+  }, []);
+  const retry = useCallback((key: string) => {
+    const { combined, baseReview, attached } = routeRef.current;
+    const info = combined.keys.get(key);
+    if (info && info.slot >= 0) attached[info.slot]?.review.retry(info.orig);
+    else baseReview.retry(info?.orig ?? key);
+  }, []);
 
   const collapseScopeKey =
     scope === "turn"
@@ -456,15 +529,20 @@ export function DiffPanel({
   sourceRef.current = source;
   const loadDiffFiles = useCallback<FileDiffContentsLoader>(
     async (fileDiff) => {
-      const current = sourceRef.current;
-      if (!current) throw new Error("No diff source to load from.");
       const path = fileDiff.name;
       const oldPath = fileDiff.prevName ?? path;
-      const contents = await getDiffFileContents(repoPath, {
+      // An attached project's file is read from its own repository, by its
+      // path there; the viewer knows it by its key.
+      const { combined, attached } = routeRef.current;
+      const info = combined.keys.get(path);
+      const slot = info && info.slot >= 0 ? attached[info.slot] : null;
+      const current = slot ? slot.source : sourceRef.current;
+      if (!current) throw new Error("No diff source to load from.");
+      const contents = await getDiffFileContents(slot ? slot.root.path : repoPath, {
         sourceKind: current.kind,
         baseRef: current.mergeBase ?? current.baseRef,
-        filePath: path,
-        oldPath: fileDiff.prevName ?? null,
+        filePath: info?.orig ?? path,
+        oldPath: fileDiff.prevName ? (info?.origOld ?? fileDiff.prevName) : null,
       });
       // Keyed by content, so an unchanged side stays cached across refreshes.
       const keyOf = (name: string, text: string) =>
@@ -509,7 +587,12 @@ export function DiffPanel({
   const viewer = mounted?.key === collapseScopeKey ? mounted.handle : null;
   const [selected, setSelected] = useState<string | null>(null);
   const reveal = useCallback(
-    (path: string) => {
+    (requested: string) => {
+      // A jump from outside names the file as its source does (absolute, for
+      // a file outside the main project); the list keys it per root.
+      const path = files.some((f) => f.stat.path === requested)
+        ? requested
+        : combined.keyOf(requested);
       const file = files.find((f) => f.stat.path === path);
       if (!file) return false;
       const id = itemIdOf(file);
@@ -524,7 +607,7 @@ export function DiffPanel({
       viewer?.scrollTo({ type: "item", id, align: "start" });
       return true;
     },
-    [files, requestFile, updateCollapsed, viewer],
+    [files, combined, requestFile, updateCollapsed, viewer],
   );
   // ── Find (⌘F), scoped to this tab: the session beside it keeps its own ──
   const [find, setFind] = useState({ open: false, focus: 0 });
@@ -676,7 +759,10 @@ export function DiffPanel({
               icon={RefreshCw}
               label="Refresh diff"
               disabled={preview.isFetching}
-              onClick={() => void refetch()}
+              onClick={() => {
+                void refetch();
+                attachedReview.refetch();
+              }}
             />
           </Hint>
         )}
@@ -790,7 +876,7 @@ export function DiffPanel({
     body = <Empty>Couldn't read the diff: {String(preview.error)}</Empty>;
   } else if (git && !preview.data) {
     body = <DiffPanelSkeleton />;
-  } else if (git && preview.data?.sources.length === 0) {
+  } else if (git && preview.data?.sources.length === 0 && files.length === 0) {
     body = <Empty>This project isn't a git repository.</Empty>;
   } else if (files.length === 0) {
     body = (
@@ -848,7 +934,9 @@ export function DiffPanel({
               if (file.stat.status === "deleted") return;
               // As a right-panel file tab, or the system editor for a file
               // outside the project.
-              void openReviewFile(`${repoPath}/${file.stat.path}`);
+              void openReviewFile(
+                combined.keys.get(file.stat.path)?.abs ?? `${repoPath}/${file.stat.path}`,
+              );
             }}
           >
             <FileViewedContext value={viewedMarksOn ? viewedState : null}>
@@ -892,7 +980,13 @@ export function DiffPanel({
                   const file = fileById.get(item.id);
                   if (!file) return null;
                   return (
-                    <FileStatus file={file} onRequest={requestFile} onRetry={retry} turn={!git} />
+                    <FileStatus
+                      file={file}
+                      copyPath={combined.keys.get(file.stat.path)?.rel}
+                      onRequest={requestFile}
+                      onRetry={retry}
+                      turn={!git}
+                    />
                   );
                 }}
                 renderHeaderMetadata={(item) => {
@@ -938,6 +1032,7 @@ export function DiffPanel({
             >
               <DiffFileTree
                 files={treeFiles}
+                groups={combined.grouped ? combined.groups : undefined}
                 root={repoPath}
                 selectedPath={selected}
                 onSelect={reveal}
@@ -1016,11 +1111,14 @@ const CollapseToggle = memo(function CollapseToggle({
  *  viewer has scrolled it into its render window. */
 function FileStatus({
   file,
+  copyPath,
   onRequest,
   onRetry,
   turn = false,
 }: {
   file: ReviewFile;
+  /** What "Copy path" copies: the path in the file's own root. */
+  copyPath?: string;
   onRequest: (path: string) => void;
   onRetry: (path: string) => void;
   /** A turn's file: diffed from its texts, so "no changes" is not "now". */
@@ -1033,7 +1131,7 @@ function FileStatus({
   }, [pending, path, onRequest]);
   return (
     <span className="ml-1 inline-flex items-center gap-1">
-      <CopyPathButton path={path} />
+      <CopyPathButton path={copyPath ?? path} />
       {pending && <span className="text-2xs text-muted-foreground">Loading…</span>}
       {file.state === "binary" && <span className="text-2xs text-muted-foreground">Binary</span>}
       {file.state === "too-large" && (

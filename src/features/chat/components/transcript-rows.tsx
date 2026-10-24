@@ -951,7 +951,7 @@ export const TurnFooterRowView = memo(function TurnFooterRowView({
     // so revealing it never moves anything.
     <Column className={cn("pt-1", responseRowId ? "relative pb-11" : "pb-4")}>
       {edited ? (
-        <ChangedFilesCard turnKey={row.turnKey} files={row.files} />
+        <ChangedFilesCard turnKey={row.turnKey} tabId={tabId} files={row.files} />
       ) : (
         <div className="atlas-marker w-full text-base text-[var(--muted-foreground)]">
           <span className="flex w-4 shrink-0 justify-center">

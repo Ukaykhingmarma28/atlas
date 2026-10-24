@@ -45,6 +45,7 @@ import { memorySetup } from "./memory-setup";
 import { northwind } from "./northwind";
 import { pullRequestScenarios } from "./pull-request";
 import { sessionContext } from "./session-context";
+import { sessionProjects } from "./session-projects";
 import { sidebar } from "./sidebar";
 import { timelineEmpty } from "./timeline-empty";
 
@@ -105,6 +106,7 @@ const all: Scenario[] = [
   memorySetup,
   sessionContext,
   ...pullRequestScenarios,
+  sessionProjects,
   sidebar,
   timelineEmpty,
   keymapFirstRun,

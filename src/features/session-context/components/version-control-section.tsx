@@ -270,9 +270,18 @@ function ChangesRow({ tabId, projectPath }: { tabId: string | null; projectPath:
   if (session.rows.length > 0 && session.sessionId) {
     const sessionId = session.sessionId;
     const first = session.rows[0].path;
+    // Across every root the session wrote in; the title breaks it down by
+    // project, grouped as the changed-files card and the diff panel group.
+    const title = [
+      "This session's changes",
+      ...session.byRoot.map(
+        (g) =>
+          `${g.label}: ${g.files} ${g.files === 1 ? "file" : "files"}, +${g.added} −${g.removed}`,
+      ),
+    ].join("\n");
     return (
       <ContextRow
-        title="This session's changes"
+        title={title}
         onClick={() =>
           openSessionChanges({
             projectPath,

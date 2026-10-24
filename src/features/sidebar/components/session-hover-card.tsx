@@ -10,7 +10,7 @@
 // (`session-sharing.ts`).
 
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
-import { CircleAlert, GitBranch, MessageSquare, Users } from "lucide-react";
+import { CircleAlert, Eye, GitBranch, MessageSquare, Pencil, Users } from "lucide-react";
 import { agentMeta } from "@/features/agents/lib/agent-meta";
 import { useChatStore } from "@/features/chat/stores/chat-store";
 import { useChatCommentsStore } from "@/features/chat/stores/chat-comments-store";
@@ -76,6 +76,19 @@ function SessionHoverCardBody({
           <ProjectBadge name={session.projectName} className="size-3 text-3xs" />
           <div className="min-w-0 truncate text-secondary-foreground">{session.projectName}</div>
         </div>
+        {session.attachedProjects.map((project) => (
+          <div key={project.path} className="flex min-w-0 items-center gap-2" title={project.path}>
+            {project.access === "read_write" ? (
+              <Pencil aria-label="Read and write" className="size-3 shrink-0" />
+            ) : (
+              <Eye aria-label="Read only" className="size-3 shrink-0" />
+            )}
+            <div className="min-w-0 truncate text-secondary-foreground">{project.displayName}</div>
+            <div className="shrink-0">
+              {project.access === "read_write" ? "read & write" : "read only"}
+            </div>
+          </div>
+        ))}
         <div className="flex min-w-0 items-center gap-2">
           <SessionAgentIcon agent={session.agent} className="grayscale opacity-60" />
           <div className="min-w-0 truncate text-secondary-foreground">

@@ -5,6 +5,7 @@
 
 import type { TurnFile } from "@/types/agent";
 import { toRepoRelative } from "./open-turn-diff";
+import { groupByRoot, placeFile, type SessionRoot } from "./session-roots";
 
 export interface DiffStat {
   added: number;
@@ -63,6 +64,50 @@ export function changedFilesOf(files: readonly TurnFile[], repoPath: string): Ch
     });
   }
   return out;
+}
+
+/** One root's share of a turn's files: the card's group, under a header. */
+export interface ChangedGroup {
+  /** The root's path, or `OTHER_GROUP`. */
+  key: string;
+  label: string;
+  root: SessionRoot | null;
+  /** Paths relative to this group's root; "Other" keeps them absolute. */
+  files: ChangedFile[];
+  stat: DiffStat;
+}
+
+/**
+ * The files a turn changed, grouped by the root that holds each
+ * (`session-roots.ts`), each path relative to its own root. One group whose
+ * root is the main project is the ungrouped card.
+ */
+export function changedFilesByRoot(
+  files: readonly TurnFile[],
+  roots: readonly SessionRoot[],
+): ChangedGroup[] {
+  const edits = files.filter((f) => f.kind === "edit");
+  return groupByRoot(edits, roots, (f) => f.path).map((group) => {
+    const changed = group.items.map((f): ChangedFile => {
+      const placed = placeFile(f.path, roots);
+      const moved = f.movedFrom ? placeFile(f.movedFrom, roots) : null;
+      return {
+        path: placed.rel || placed.abs,
+        source: f.path,
+        added: f.added,
+        removed: f.removed,
+        created: f.created === true,
+        ...(moved ? { movedFrom: moved.rel || moved.abs } : {}),
+      };
+    });
+    return {
+      key: group.key,
+      label: group.label,
+      root: group.root,
+      files: changed,
+      stat: sumStats(changed),
+    };
+  });
 }
 
 export function sumStats(files: readonly DiffStat[]): DiffStat {

@@ -54,8 +54,11 @@ export function sessionRowLabel(input: {
   title: string;
   statusLabel: string | null;
   projectName: string | null;
+  /** The attached projects' names, joined; empty when none. */
+  attachedNames?: string;
 }): string {
-  return [input.title, input.statusLabel, input.projectName].filter(Boolean).join(", ");
+  const attached = input.attachedNames ? `attached: ${input.attachedNames}` : null;
+  return [input.title, input.statusLabel, input.projectName, attached].filter(Boolean).join(", ");
 }
 
 /** "now", "5m", "3h", "2d", "4w" — the row's compact age. */

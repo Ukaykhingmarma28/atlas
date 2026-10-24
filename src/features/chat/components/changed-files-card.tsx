@@ -10,7 +10,16 @@
 // touched hundreds of files shows the first `ROW_LIMIT` rows until asked.
 
 import { memo, useMemo, useState, type MouseEvent } from "react";
-import { ChevronRight, ChevronsDownUp, ChevronsUpDown, FileDiff } from "lucide-react";
+import {
+  ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  Eye,
+  FileDiff,
+  FolderGit2,
+  FolderInput,
+  Pencil,
+} from "lucide-react";
 import type { TurnFile } from "@/types/agent";
 import { cn } from "@/lib/utils";
 import { copyText } from "@/lib/clipboard";
@@ -28,17 +37,22 @@ import { FileIcon } from "@/features/icon-theme/components/file-icon";
 import { openReviewFile } from "@/features/git/lib/open-review-file";
 import {
   buildChangedFilesTree,
-  changedFilesOf,
+  changedFilesByRoot,
   folderPaths,
   formatDiffCount,
   splitForMiddleTruncate,
   sumStats,
   visibleRows,
   type ChangedFile,
+  type ChangedNode,
   type ChangedRow,
+  type DiffStat,
 } from "../lib/changed-files-tree";
 import { isAbsolutePath, joinPath, openTurnDiff } from "../lib/open-turn-diff";
 import { HEADER_INSET } from "../lib/row-metrics";
+import { needsGroupHeaders, type SessionRoot } from "../lib/session-roots";
+import { useSessionRoots } from "../hooks/use-session-roots";
+import { useChatStore } from "../stores/chat-store";
 import { useChangedFilesStore } from "../stores/changed-files-store";
 
 /** Rows drawn before "Show all": a card is a summary, not the file list. */
@@ -106,29 +120,67 @@ export function DiffCounts({
   );
 }
 
+/** A group's share of the card: its root and the tree of its files. */
+interface CardGroup {
+  key: string;
+  label: string;
+  root: SessionRoot | null;
+  /** What a relative path in this group is relative to; "" for "Other". */
+  base: string;
+  stat: DiffStat;
+  tree: ChangedNode[];
+}
+
 export const ChangedFilesCard = memo(function ChangedFilesCard({
   turnKey,
+  tabId,
   files: turnFiles,
 }: {
   /** The turn's stable key (`stableTurnKey`): what the card opens, and
    *  what its expand-all answer is remembered by across relaunches. */
   turnKey: string;
+  /** The chat the turn is in: its session's attached projects decide the
+   *  groups. Without it the card is the main project's alone. */
+  tabId?: string;
   /** The turn's frozen `turnSummary.files`; reads are left out here. */
   files: readonly TurnFile[];
 }) {
   const repoPath = useAppStore((s) => s.currentProject?.path ?? "");
-  const files = useMemo(() => changedFilesOf(turnFiles, repoPath), [turnFiles, repoPath]);
+  const sessionId = useChatStore((s) => (tabId ? (s.sessions[tabId]?.acpSessionId ?? null) : null));
+  const roots = useSessionRoots(sessionId, repoPath);
+  // A turn inside the main project only (the common case) keeps the one
+  // ungrouped tree; one that reached into an attached project, or outside
+  // every root, gets a group per root.
+  const groups = useMemo(() => changedFilesByRoot(turnFiles, roots), [turnFiles, roots]);
+  const grouped = needsGroupHeaders(groups);
+  const files = useMemo(() => groups.flatMap((g) => g.files), [groups]);
   const total = useMemo(() => sumStats(files), [files]);
-  const tree = useMemo(() => buildChangedFilesTree(files), [files]);
-  const hasFolders = tree.some((n) => n.kind === "dir");
+  const cardGroups = useMemo<CardGroup[]>(
+    () =>
+      groups.map((g) => ({
+        key: g.key,
+        label: g.label,
+        root: g.root,
+        base: g.root?.path ?? "",
+        stat: g.stat,
+        tree: buildChangedFilesTree(g.files),
+      })),
+    [groups],
+  );
+  const hasFolders = cardGroups.some((g) => g.tree.some((n) => n.kind === "dir"));
 
   const allExpanded = useChangedFilesStore((s) => s.expanded[turnKey] === true);
   const { setExpanded } = useChangedFilesStore.use.actions();
   // What the card measures before it has ever been laid out (see `cardStyle`).
+  // A group header is one row.
   const firstRows = useMemo(() => {
-    const n = visibleRows(tree, NO_OVERRIDES, allExpanded).length;
-    return n > ROW_LIMIT ? ROW_LIMIT + 1 : n;
-  }, [tree, allExpanded]);
+    let rows = 0;
+    for (const g of cardGroups) {
+      const n = visibleRows(g.tree, NO_OVERRIDES, allExpanded).length;
+      rows += (n > ROW_LIMIT ? ROW_LIMIT + 1 : n) + (grouped ? 1 : 0);
+    }
+    return rows;
+  }, [cardGroups, allExpanded, grouped]);
 
   return (
     <div
@@ -175,18 +227,61 @@ export const ChangedFilesCard = memo(function ChangedFilesCard({
         </div>
       </div>
       <div className="p-2">
-        <ChangedFilesTree
-          // A new expand-all answer starts the folders afresh, as it says.
-          key={allExpanded ? "all" : "folded"}
-          turnKey={turnKey}
-          repoPath={repoPath}
-          tree={tree}
-          allExpanded={allExpanded}
-        />
+        {cardGroups.map((g) => (
+          <div
+            key={g.key}
+            role={grouped ? "group" : undefined}
+            aria-label={grouped ? g.label : undefined}
+          >
+            {grouped && <GroupHeader group={g} />}
+            <ChangedFilesTree
+              // A new expand-all answer starts the folders afresh, as it says.
+              key={allExpanded ? "all" : "folded"}
+              turnKey={turnKey}
+              repoPath={g.base}
+              tree={g.tree}
+              allExpanded={allExpanded}
+            />
+          </div>
+        ))}
       </div>
     </div>
   );
 });
+
+/** A root's header in a grouped card: the project's name, how the session
+ *  may use it, and its share of the counts. The root's path is its title. */
+function GroupHeader({ group }: { group: CardGroup }) {
+  const Icon = group.root ? FolderGit2 : FolderInput;
+  const access = group.root?.access;
+  return (
+    <div
+      className="flex h-7 min-w-0 items-center gap-2 px-2 text-xs font-medium text-secondary-foreground"
+      title={group.root ? group.root.path : "Files outside the session's projects"}
+    >
+      <Icon size={14} className="shrink-0 text-muted-foreground" aria-hidden />
+      <span className="min-w-0 truncate">{group.label}</span>
+      {group.root?.kind === "main" && (
+        <span className="shrink-0 text-2xs font-normal text-muted-foreground">Main</span>
+      )}
+      {access && (
+        <span className="inline-flex shrink-0 text-muted-foreground">
+          {access === "read_write" ? (
+            <Pencil size={11} aria-label="Read and write" />
+          ) : (
+            <Eye size={11} aria-label="Read only" />
+          )}
+        </span>
+      )}
+      <DiffCounts
+        added={group.stat.added}
+        removed={group.stat.removed}
+        layout="aligned"
+        className="ml-auto text-2xs"
+      />
+    </div>
+  );
+}
 
 const ChangedFilesTree = memo(function ChangedFilesTree({
   turnKey,
