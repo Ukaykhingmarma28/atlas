@@ -922,6 +922,9 @@ impl ThreadMetadataStore {
         number: u32,
         snapshot: &PullRequestSnapshot,
     ) -> usize {
+        // Collected on purpose: the read guard must drop before
+        // `update_silently` takes the write lock, or this deadlocks.
+        #[allow(clippy::needless_collect)]
         let holders: Vec<ThreadId> = read(&self.inner.cache)
             .threads
             .values()
@@ -1023,13 +1026,17 @@ impl ThreadMetadataStore {
         })
     }
 
-    /// Unpin it. It stays where its other state puts it (active, normally).
+    /// Unpin it. It stays where its other state puts it (active, normally),
+    /// and its idle clock starts over from now: the pin held it out of the
+    /// sweep, and unpinning is not "settle this".
     pub fn unpin(&self, thread_id: ThreadId) -> bool {
+        let now = Utc::now();
         self.update(thread_id, |thread| {
             if !thread.is_pinned() {
                 return false;
             }
             clear_pin(thread);
+            thread.unpinned_at = Some(now);
             true
         })
     }
@@ -1072,6 +1079,21 @@ impl ThreadMetadataStore {
     pub fn wake(&self, thread_id: ThreadId) -> bool {
         let now = Utc::now();
         self.update(thread_id, |thread| wake(thread, now))
+    }
+
+    /// Take back a snooze the user just set — the Undo on "Session snoozed".
+    /// Unlike [`Self::wake`] it leaves no "woke" mark and no idle-clock
+    /// restart: the snooze never happened, as far as the session's state
+    /// goes. Answers whether it was snoozed.
+    pub fn unsnooze(&self, thread_id: ThreadId) -> bool {
+        self.update(thread_id, |thread| {
+            if !thread.is_snoozed() {
+                return false;
+            }
+            thread.snoozed_until = None;
+            thread.snoozed_at = None;
+            true
+        })
     }
 
     /// The session raised its hand at `at`: a permission request, a question
@@ -1557,13 +1579,18 @@ fn sent_to_recently(thread: &ThreadMetadata, now: DateTime<Utc>) -> bool {
 }
 
 /// The store's half of the idle sweep's rule; the host adds "not busy".
+///
+/// Idleness is measured from [`ThreadMetadata::idle_since`], so a session
+/// just woken from a snooze or just unpinned gets a full window first. The
+/// un-settle guard still compares against real activity: an un-settle says
+/// "not done", and only something happening since can change that.
 fn due_for_settling(thread: &ThreadMetadata, cutoff: DateTime<Utc>) -> bool {
     let last = thread.last_activity();
     thread.session_id.is_some()
         && thread.settled_at.is_none()
         && !thread.is_pinned()
         && !thread.is_snoozed()
-        && last < cutoff
+        && thread.idle_since() < cutoff
         && thread.unsettled_at.is_none_or(|at| at <= last)
 }
 

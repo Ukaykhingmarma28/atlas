@@ -115,6 +115,11 @@ pub struct ThreadMetadata {
     /// key. Minted by the frontend; the store only keeps it. `None` sorts
     /// after every keyed pin.
     pub pin_order: Option<Arc<str>>,
+    /// When the session was last unpinned; `None` when it never was. A pin
+    /// holds a session out of the idle sweep, so the release starts its idle
+    /// clock over ([`ThreadMetadata::idle_since`]) — otherwise a session
+    /// pinned for a week would settle the minute it is unpinned.
+    pub unpinned_at: Option<DateTime<Utc>>,
     /// When the snoozed session wakes on its own. `None` when it is not
     /// snoozed. Cleared — the session woken — when the time comes, when it
     /// raises its hand ([`ThreadMetadata::raises_hand`]), or when the user
@@ -165,6 +170,7 @@ impl ThreadMetadata {
             unsettled_at: None,
             pinned_at: None,
             pin_order: None,
+            unpinned_at: None,
             snoozed_until: None,
             snoozed_at: None,
             last_snooze_wake_at: None,
@@ -227,6 +233,20 @@ impl ThreadMetadata {
     pub fn last_activity(&self) -> DateTime<Utc> {
         self.interacted_at
             .map_or(self.updated_at, |at| at.max(self.updated_at))
+    }
+
+    /// What the idle sweep measures from: the last activity, or the moment
+    /// the session was last released back into the sweep — woken from a
+    /// snooze or unpinned — whichever is later. A snooze or a pin holds a
+    /// session out of the sweep; when it ends the session must get a full
+    /// idle window again, not be settled on the next tick for time it spent
+    /// held.
+    pub fn idle_since(&self) -> DateTime<Utc> {
+        let last = self.last_activity();
+        [self.last_snooze_wake_at, self.unpinned_at]
+            .into_iter()
+            .flatten()
+            .fold(last, DateTime::max)
     }
 
     pub fn title(&self) -> Option<Arc<str>> {
