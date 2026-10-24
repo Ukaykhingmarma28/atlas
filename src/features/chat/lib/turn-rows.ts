@@ -80,6 +80,8 @@ export interface UserRow extends RowBase {
   /** The images sent with the prompt, shown as tiles above the bubble. */
   attachments: readonly ImageAttachment[];
   timestamp: string;
+  /** `timestamp` is only when Atlas replayed the message; show no clock. */
+  timestampApproximate?: true;
 }
 
 /** The `ChatMessage.id` behind a user row. Row ids are minted as
@@ -99,6 +101,12 @@ export interface ProseRow extends RowBase {
   showHeader: boolean;
   model: string | null;
   timestamp: string;
+  /** `timestamp` is only when Atlas replayed the message; show no clock. */
+  timestampApproximate?: true;
+  /** Set on the turn's last response when the turn ends on a footer row: its
+   *  hover footer (copy, branch, pin, time) moves below the changed-files card,
+   *  to the end of the response, and this row reserves no gap for it. */
+  footerBelow?: true;
 }
 
 export interface ThinkingRow extends RowBase {
@@ -293,6 +301,14 @@ export interface TurnFooterRow extends RowBase {
   messageId: string;
   hasSuggestions: boolean;
   contextChip: boolean;
+  /** The turn's last response, whose hover footer this row draws after the
+   *  card (that prose row carries `footerBelow`). Flat fields rather than one
+   *  object so the shallow row comparison keeps a settled footer row stable. */
+  responseRowId?: string;
+  responseText?: string;
+  responseTimestamp?: string;
+  /** False when the response's header line already shows the time. */
+  responseShowTimestamp?: boolean;
 }
 
 /** Something outside the conversation cut into this turn (`TurnInterruption`).
@@ -1158,6 +1174,7 @@ function projectSegment(
       expanded: opts.expanded.has(`u:${m.id}`),
       attachments: m.attachments ?? NO_ATTACHMENTS,
       timestamp: m.timestamp,
+      ...(m.timestampApproximate && { timestampApproximate: true as const }),
     });
 
     turns.push({
@@ -1317,6 +1334,7 @@ function projectSegment(
           showHeader: !headerShown,
           model: msg.model ?? null,
           timestamp: msg.timestamp,
+          ...(msg.timestampApproximate && { timestampApproximate: true as const }),
         });
         headerShown = true;
       }
@@ -1381,6 +1399,17 @@ function projectSegment(
     }
 
     if (footerMsg?.turnSummary) {
+      // The response's footer goes at the end of the response, below the
+      // card, so it is the last thing the turn shows (see `ProseRow.footerBelow`).
+      let response: ProseRow | null = null;
+      for (let r = rows.length - 1; r >= rowStart; r--) {
+        const row = rows[r];
+        if (row.kind === RowKind.Prose) {
+          if (!row.streaming) response = row;
+          break;
+        }
+      }
+      if (response) response.footerBelow = true;
       rows.push({
         kind: RowKind.TurnFooter,
         id: `f:${footerMsg.id}`,
@@ -1392,6 +1421,13 @@ function projectSegment(
         messageId: footerMsg.id,
         hasSuggestions: (footerMsg.suggestions?.chips.length ?? 0) > 0,
         contextChip: !!footerMsg.contextUsage || !!footerMsg.usage,
+        ...(response && {
+          responseRowId: response.id,
+          responseText: response.text,
+          responseTimestamp: response.timestamp,
+          // No clock where the header has one, or where the time is a replay's.
+          responseShowTimestamp: !response.showHeader && !response.timestampApproximate,
+        }),
       });
     }
 
@@ -1574,6 +1610,9 @@ function foldWork(
 /** Faint "N ago" divider marking a real pause between turns. */
 function maybeGapSeparator(rows: Row[], messages: ChatMessage[], i: number, turnId: string): void {
   if (i === 0) return;
+  // A replayed message's time is when Atlas replayed it, so a pause measured
+  // against it is no pause the conversation had.
+  if (messages[i].timestampApproximate || messages[i - 1].timestampApproximate) return;
   const gap =
     new Date(messages[i].timestamp).getTime() - new Date(messages[i - 1].timestamp).getTime();
   if (gap <= TURN_GAP_MS) return;

@@ -184,6 +184,7 @@ pub fn run_message(
         model,
         images: Vec::new(),
         timestamp,
+        timestamp_approximate: false,
         worked_ms: None,
         stop_reason: None,
     }
@@ -210,6 +211,7 @@ pub fn tool_message(
         model,
         images: Vec::new(),
         timestamp,
+        timestamp_approximate: false,
         worked_ms: None,
         stop_reason: None,
     }
@@ -535,6 +537,7 @@ pub fn snapshot_messages(
                     model: None,
                     images,
                     timestamp: at,
+                    timestamp_approximate: false,
                     worked_ms: None,
                     stop_reason: None,
                 })
@@ -571,6 +574,13 @@ pub fn snapshot_messages(
             AgentThreadEntry::Elicitation(_)
             | AgentThreadEntry::CompletedPlan(_)
             | AgentThreadEntry::ContextCompaction(_) => {}
+        }
+        // A replayed entry's time is when Atlas replayed it; say so rather
+        // than pass it off as when it was said.
+        if thread.entry_time_approximate(ix) {
+            for message in &mut out[before..] {
+                message.timestamp_approximate = true;
+            }
         }
         entry_of.resize(entry_of.len() + (out.len() - before), ix);
     }

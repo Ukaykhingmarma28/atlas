@@ -534,6 +534,10 @@ impl AcpConnection {
         session_id: acp::SessionId,
         work_dirs: Vec<PathBuf>,
         title: Option<Arc<str>>,
+        // `session/load` replays the stored conversation as updates;
+        // `session/resume` does not. What a replay appends carries no real
+        // time (ACP has none per message), so the thread marks it.
+        replays_history: bool,
         rpc_call: impl FnOnce(
             ConnectionTo<Agent>,
             acp::SessionId,
@@ -558,6 +562,15 @@ impl AcpConnection {
         let (mcp_offer, mcp_servers) = self.mcp_offer(&directories.cwd, Some(&session_id));
         let meta = session_mcp::preapproval_meta(&mcp_servers, mcp_offer.ask_first());
         let thread = self.new_thread(session_id.clone(), work_dirs, title);
+        // The replay ends at the user's first prompt, not when the load
+        // answers: an external agent's replay frames can still be queued on the
+        // dispatch task by then (see `resume_stored_session`).
+        if replays_history {
+            thread
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .begin_replay();
+        }
 
         self.sessions.pending_begin(session_id.clone());
         self.sessions.insert(
@@ -1070,6 +1083,7 @@ impl AgentConnection for AcpConnection {
                     session_id,
                     work_dirs,
                     title,
+                    true,
                     |conn, id, dirs, mcp_servers, meta| {
                         async move {
                             let mut request = acp::LoadSessionRequest::new(id, dirs.cwd);
@@ -1118,6 +1132,7 @@ impl AgentConnection for AcpConnection {
                     session_id,
                     work_dirs,
                     title,
+                    false,
                     |conn, id, dirs, mcp_servers, meta| {
                         async move {
                             let mut request = acp::ResumeSessionRequest::new(id, dirs.cwd);

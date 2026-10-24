@@ -519,6 +519,8 @@ interface ChatActions {
         role: MessageRole;
         content: string;
         timestamp?: string;
+        /** The timestamp is a replay's, not when the message was said. */
+        timestampApproximate?: boolean;
         /** Producing model recovered from the snapshot/transcript, so the
          *  per-message badge survives session reloads. */
         model?: string | null;
@@ -1571,6 +1573,7 @@ export const useChatStore = createSelectors(
                 fileChanges: [],
                 plan: null,
                 timestamp: m.timestamp ?? new Date().toISOString(),
+                ...(m.timestampApproximate ? { timestampApproximate: true } : {}),
                 ...(m.role === "assistant" && m.model ? { model: m.model } : {}),
                 ...(m.attachments?.length ? { attachments: m.attachments } : {}),
                 ...(m.role === "assistant" && m.workedMs !== undefined
@@ -2467,6 +2470,7 @@ function applyDeltaToDraft(s: ChatDraft, env: AgentDelta): void {
             }))
           : null,
         timestamp: m.timestamp,
+        ...(m.timestamp_approximate ? { timestampApproximate: true } : {}),
         mode: m.mode,
       };
       if (appended.role === "assistant") stampProducingModel(session, appended);

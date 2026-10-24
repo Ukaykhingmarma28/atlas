@@ -988,7 +988,15 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
         // (`user-row-actions.tsx`), which is hidden until the row is hovered.
         // The fling hover-suspension in `use-transcript-scroll.ts` keeps hover
         // styles from firing as rows pass under a resting pointer mid-scroll.
-        <div key={row.id} className="atlas-row group group/row" data-row-id={row.id}>
+        // `data-footer-below` marks a response whose hover footer is drawn by
+        // the turn footer row after it; hovering the response reveals it too
+        // (`globals.css`).
+        <div
+          key={row.id}
+          className="atlas-row group group/row"
+          data-row-id={row.id}
+          data-footer-below={row.kind === RowKind.Prose && row.footerBelow ? "" : undefined}
+        >
           <RowView
             row={row}
             tabId={tabId}
@@ -1198,7 +1206,14 @@ function RowView({
     case RowKind.WorkHeader:
       return <WorkHeaderRowView row={row} onToggle={onExpandTurn} />;
     case RowKind.TurnFooter:
-      return <TurnFooterRowView row={row} />;
+      return (
+        <TurnFooterRowView
+          row={row}
+          tabId={tabId}
+          pinScopeKey={pinScopeKey}
+          canBranch={row.responseRowId !== undefined && row.responseRowId === canBranchRowId}
+        />
+      );
     case RowKind.Interruption:
       return (
         <InterruptionRowView

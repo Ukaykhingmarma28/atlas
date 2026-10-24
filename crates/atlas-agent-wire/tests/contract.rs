@@ -331,6 +331,9 @@ fn sample_message() -> Message {
         images: Vec::new(),
         // Fixed, not `now()`: the golden pins the serialized timestamp.
         timestamp: "2026-01-02T03:04:05Z".parse().unwrap(),
+        // Set, so the golden pins the key; `optional_fields_are_omitted…`
+        // pins its absence when false.
+        timestamp_approximate: true,
         worked_ms: Some(252_000),
         stop_reason: Some("cancelled".into()),
     }
@@ -416,6 +419,7 @@ fn golden() -> BTreeMap<&'static str, serde_json::Value> {
                     "plan": [],
                     "model": "anthropic/claude",
                     "timestamp": "2026-01-02T03:04:05Z",
+                    "timestamp_approximate": true,
                     "worked_ms": 252_000,
                     "stop_reason": "cancelled",
                 },
@@ -741,9 +745,12 @@ fn optional_fields_are_omitted_rather_than_null() {
     let mut message = sample_message();
     message.worked_ms = None;
     message.stop_reason = None;
+    message.timestamp_approximate = false;
     let value = serde_json::to_value(&message).unwrap();
     assert!(value.get("worked_ms").is_none());
     assert!(value.get("stop_reason").is_none());
+    // A timed message (every live one) serializes exactly as before the flag.
+    assert!(value.get("timestamp_approximate").is_none());
 
     let mut tool_call = sample_tool_call();
     tool_call.raw_output = None;

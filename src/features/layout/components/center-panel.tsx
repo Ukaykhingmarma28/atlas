@@ -451,8 +451,9 @@ function ColumnPanel({
  * glance which pane is the work and which holds references beside it:
  *
  * - **main** (the first column): no `+` and no close. With one tab it shows no
- *   strip at all — the tab's title is the breadcrumb's last segment. A strip
- *   appears only once there is something to switch between. Its right end toggles the surfaces pane.
+ *   strip at all — the tab's title is the breadcrumb's last segment, except an
+ *   editor's, which its own crumb row names. A strip appears only once there
+ *   is something to switch between. Its right end toggles the surfaces pane.
  * - **surface**: tabs then `+`, left-aligned, and an expand toggle at the
  *   right. It is hidden from the main pane's toggle, never closed with an ×,
  *   so hiding it never throws its tabs into the main pane.
@@ -505,7 +506,7 @@ const TabColumn = memo(function TabColumn({
         breadcrumb={main && chrome.breadcrumb}
         trailing={chrome.trailing}
       >
-        {main && chrome.breadcrumb && !showStrip && activeTab && (
+        {main && chrome.breadcrumb && !showStrip && activeTab && namedInWindowBar(activeTab) && (
           <>
             <span aria-hidden className="shrink-0 text-sm text-disabled">
               /
@@ -559,6 +560,13 @@ const TabColumn = memo(function TabColumn({
     </div>
   );
 });
+
+/** Whether the window bar names the main pane's tab after the project. An
+ *  editor tab doesn't: its breadcrumb row already ends at the file, with its
+ *  icon and unsaved dot, so the bar keeps only the project. */
+function namedInWindowBar(tab: Tab): boolean {
+  return tab.type !== "editor";
+}
 
 /** The main pane's title, the breadcrumb's last segment. A chat names its
  *  session (the chat store is keyed by tab id) rather than the tab's generic

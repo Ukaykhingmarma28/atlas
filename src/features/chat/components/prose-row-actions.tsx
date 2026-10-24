@@ -12,6 +12,11 @@
 // Left-aligned rather than right: a response starts at the column's left
 // edge and the footer belongs under it, where the reader's eye is when the
 // answer ends. Mirrored from the prompt's, so the timestamp is last here.
+//
+// A turn's last response does not draw its own: when the turn ends on a
+// changed-files card (or a "files read" line), the footer comes after that,
+// at the end of the whole response, drawn by `TurnFooterRowView` from the
+// same props (`ProseRow.footerBelow` in `turn-rows.ts`).
 
 import { useCallback, useMemo } from "react";
 import { GitBranch } from "lucide-react";
@@ -37,6 +42,7 @@ export function ProseRowActions({
   pinScopeKey,
   canBranch,
   showTimestamp,
+  className,
 }: {
   tabId: string;
   /** `ChatMessage.id` — the row id is `p:<messageId>`. */
@@ -52,6 +58,9 @@ export function ProseRowActions({
   /** False when the row's header line already shows the time — one response
    *  does not need two clocks. */
   showTimestamp: boolean;
+  /** Placement override for a host that reserves its gap elsewhere (the turn
+   *  footer row puts the footer above its own bottom padding). */
+  className?: string;
 }) {
   const pinned = useChatPinsStore((s) =>
     (s.pins[pinScopeKey] ?? []).some((p) => p.messageId === messageId),
@@ -83,7 +92,9 @@ export function ProseRowActions({
           // buttons, the first square's edge on the prose's left edge.
           "absolute bottom-0 left-6 z-popover flex w-max items-center gap-2 pt-1",
           discussed ? "visible" : FOOTER_REVEAL,
+          className,
         )}
+        data-response-footer
       >
         <div className="flex items-center gap-0.5">
           {actions.inline.map((action) =>

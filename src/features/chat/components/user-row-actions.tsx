@@ -389,6 +389,7 @@ export function UserRowActions({
   canRetry,
   messageId,
   timestamp,
+  timestampApproximate = false,
   pinScopeKey,
   toggleAbove,
 }: {
@@ -408,6 +409,9 @@ export function UserRowActions({
   /** The message's own timestamp — the durable half of a pin's key, since ids
    *  are re-minted on every history load (`resolvePinIndex`). */
   timestamp: string;
+  /** The timestamp is only when Atlas replayed the message (an agent's
+   *  history replay carries no time): the footer shows no clock. */
+  timestampApproximate?: boolean;
   /** Pin scope for this thread, resolved by the transcript — see `pinScope`.
    *  Rows must not read the chat store themselves (house rule 3). */
   pinScopeKey: string;
@@ -493,7 +497,7 @@ export function UserRowActions({
           discussed ? "visible" : FOOTER_REVEAL,
         )}
       >
-        <MessageTimestamp timestamp={timestamp} />
+        {!timestampApproximate && <MessageTimestamp timestamp={timestamp} />}
         <div className="flex items-center gap-0.5">
           {actions.inline.map((action) =>
             action === "retry" ? (

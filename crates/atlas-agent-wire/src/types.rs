@@ -275,6 +275,12 @@ pub struct Message {
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub images: Vec<MessageImage>,
     pub timestamp: DateTime<Utc>,
+    /// True when `timestamp` is only when Atlas replayed the message, not when
+    /// it was said: an agent's `session/load` replay carries no per-message
+    /// time. The renderer shows no clock for such a message. Omitted when
+    /// false, so every timed message serializes exactly as before.
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub timestamp_approximate: bool,
     /// How long the turn this message ends ran, in ms, on the monotonic clock
     /// (see `turn_finished.worked_ms`). Set only on a snapshot's last assistant message of a turn
     /// the thread saw start and stop; the live stream carries the same figure

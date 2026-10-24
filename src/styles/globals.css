@@ -2052,12 +2052,29 @@ html[data-word-wrap="off"] .prose-chat pre {
   color: inherit;
   font-size: inherit;
 }
-.prose-chat a {
-  color: var(--primary);
-  text-decoration: underline;
+/* A link in rendered markdown reads by colour alone and is underlined only
+   under the pointer or keyboard focus. The colour is the info hue rather than
+   `--primary`: several themes' primary is near the text colour (the default
+   light theme's is near-black), and without an underline at rest a link has to
+   be told apart by hue. The underline is a dotted rule drawn as a background
+   rather than `text-decoration`, so it runs under the service mark
+   (`.atlas-link__icon`, an inline-block that text-decoration skips) as well as
+   the text. Focus still gets the global `:focus-visible` ring on top. File
+   chips are spans (`.atlas-file-chip`), not anchors, so none of this reaches
+   them. Session messages are `.atlas-prose`; other markdown is `.prose-chat`. */
+.prose-chat a,
+.atlas-prose a {
+  color: var(--atlas-status-info-foreground);
+  text-decoration: none;
 }
-.prose-chat a:hover {
-  opacity: 0.8;
+.prose-chat a:hover,
+.prose-chat a:focus-visible,
+.atlas-prose a:hover,
+.atlas-prose a:focus-visible {
+  background-image: radial-gradient(circle, currentcolor 0.75px, transparent 1px);
+  background-position: left bottom;
+  background-repeat: repeat-x;
+  background-size: 4px 2px;
 }
 .prose-chat strong {
   font-weight: 600;
@@ -2281,13 +2298,6 @@ html[data-word-wrap="off"] .prose-chat pre {
   margin: 6px 0;
 }
 
-.atlas-prose a {
-  color: var(--primary);
-  text-decoration: underline;
-}
-.atlas-prose a:hover {
-  opacity: 0.8;
-}
 .atlas-prose strong {
   font-weight: 600;
 }
@@ -2386,6 +2396,16 @@ html[data-word-wrap="off"] .prose-chat pre {
      materialization — during a fling nearly every row is in the skipped
      state and the viewport goes FULLY black until the gesture settles.
      Strictly worse than the blanking it was meant to fix. */
+}
+
+/* A turn's last response and its changed-files card are separate rows, but
+   one response: its hover footer sits after the card, in the turn footer row
+   (`TurnFooterRowView`), and hovering the response's text reveals it as
+   hovering the card does. An attribute on the row wrapper and a sibling
+   combinator, not `:has()`, so a hover invalidates only the next row. */
+.atlas-row[data-footer-below]:hover + .atlas-row [data-response-footer] {
+  pointer-events: auto;
+  opacity: 1;
 }
 
 /* The workspace rail. One monochrome gradient — brighter at the top, falling

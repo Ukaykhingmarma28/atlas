@@ -24,6 +24,8 @@ export function snapshotMessageToWire(m: SessionMessage) {
     role: m.role === "system" ? ("system" as const) : m.role,
     content: m.content,
     timestamp: m.timestamp,
+    // A replayed message's time is when Atlas replayed it, not when it was said.
+    ...(m.timestamp_approximate ? { timestampApproximate: true } : {}),
     model: m.model ?? null,
     // The turn's timing, on the message that ends it — so "Worked for" and
     // "Stopped after" survive a reload.
