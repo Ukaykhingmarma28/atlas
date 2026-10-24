@@ -109,9 +109,12 @@ export function BaseRefPicker({
           <Button
             variant="ghost"
             size="sm"
+            // The ref is the point of the control, so the head branch beside
+            // it is what gives way in a narrow panel, not this.
+            className="shrink-0"
             aria-label={`Change comparison target. Currently ${current ?? "the base branch"}`}
           >
-            <span className="max-w-48 min-w-0 truncate">{current ?? "base"}</span>
+            <span className="max-w-40 min-w-0 truncate">{current ?? "base"}</span>
             <ChevronDown size={12} className="shrink-0 text-muted-foreground" />
           </Button>
         }
