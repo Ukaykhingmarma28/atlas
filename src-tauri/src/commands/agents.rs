@@ -663,9 +663,11 @@ fn auto_settle_tick(app: &AppHandle, host: &Arc<AgentHost>) {
     }
     // Each candidate is judged by its own project's transcripts, read now:
     // the session watcher only covers the project the sidebar has open.
-    match host.auto_settle_idle(
+    let keep_pull_requests = crate::state::atlas_config::read(app).auto_settle_keep_pull_requests;
+    match host.auto_settle_idle_keeping(
         chrono::Duration::days(i64::from(days)),
         &super::session_watcher::activity_in,
+        keep_pull_requests,
     ) {
         Ok(0) => {}
         Ok(settled) => {
@@ -962,6 +964,8 @@ pub fn install_manager(app: &AppHandle) {
         app.clone(),
     ));
     super::session_pull_requests::sweep_leftover_checkouts_later(host.clone(), data_dir.clone());
+    // Pull request watches wake their sessions' agents, window hidden or not.
+    super::pull_request_watch::start(app.clone(), host.clone());
 
     // Shared memory: every write is announced to the webview (the Shared tab
     // re-pulls on it), session start/end are recorded in the scope's sessions
@@ -1081,10 +1085,18 @@ pub fn install_manager(app: &AppHandle) {
                 .with_access(Arc::new(super::session_projects::HostAccessBroker(
                     Arc::downgrade(&host),
                 )))
-                // `link_pull_request` too: the agent ties the pull requests it
-                // opens to its session.
+                // The pull request tools too: the agent ties the pull requests
+                // it opens to its session, and watches them.
                 .with_pull_requests(Arc::new(
-                    super::session_pull_requests::HostPullRequestBroker(Arc::downgrade(&host)),
+                    super::session_pull_requests::HostPullRequestBroker {
+                        host: Arc::downgrade(&host),
+                        wakes_on: {
+                            let app = app.clone();
+                            Arc::new(move || {
+                                crate::state::atlas_config::read(&app).pull_request_watch_wakes
+                            })
+                        },
+                    },
                 )),
         );
         // Every agent that can take the server is handed it on each session
@@ -2116,7 +2128,6 @@ pub async fn agents_send(
     // resource when the agent takes embedded context, a text block otherwise.
     pasted_texts: Option<Vec<PastedText>>,
     host: State<'_, Arc<AgentHost>>,
-    sharing: State<'_, MemorySharingState>,
     app: AppHandle,
 ) -> Result<(), String> {
     // `agent_turn_started` is NOT emitted here. It used to be, but this runs
@@ -2129,23 +2140,83 @@ pub async fn agents_send(
     // side-channel drained by the next send. Held here and folded into the
     // content at the one send below, so nothing can strand images for some
     // later turn to pick up.
-    let images = attachments.unwrap_or_default();
-    let links = resource_links.unwrap_or_default();
-    let pastes = pasted_texts.unwrap_or_default();
-
-    // Resolve the project cwd. Unknown session → fail with the SAME error
-    // shape `manager.send` produces, without attempting a send that would
-    // skip session registration (one condition, one behavior — L5).
-    // Meta only — the full snapshot deep-clones the whole transcript under the
-    // SessionState mutex the streaming actor locks per chunk, and this path
-    // reads three small fields.
-    let Ok(snapshot) = host.snapshot_meta(&key) else {
-        return Err(HostError::unknown_session().to_string());
+    let outgoing = OutgoingPrompt {
+        text,
+        images: attachments.unwrap_or_default(),
+        links: resource_links.unwrap_or_default(),
+        pastes: pasted_texts.unwrap_or_default(),
     };
-    let current_model = snapshot.current_model.clone();
-    let plugin_id = snapshot.plugin_id.clone();
-    let cwd = snapshot.cwd;
+    send_prompt(&app, host.inner(), &key, outgoing, PromptOrigin::User)
+}
 
+/// Who a prompt is from. The user's own words count as the user's
+/// interaction with the session; a prompt Atlas sends on its own (a pull
+/// request watch waking the agent) is recorded everywhere else the same way,
+/// but is not the user, so it neither marks the session interacted with nor
+/// un-settles it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PromptOrigin {
+    User,
+    PullRequestWatch,
+}
+
+/// A prompt on its way to the agent: the text, and what rides with it.
+#[derive(Debug, Default)]
+pub(crate) struct OutgoingPrompt {
+    pub text: String,
+    pub images: Vec<ImageAttachment>,
+    pub links: Vec<ResourceLinkSpec>,
+    pub pastes: Vec<PastedText>,
+}
+
+impl OutgoingPrompt {
+    /// Just text, as a wake sends.
+    pub fn text(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            ..Self::default()
+        }
+    }
+}
+
+/// Where a prompt is written down before it goes to the agent. A trait so
+/// the order and the conditions ([`record_prompt`]) are testable without a
+/// Tauri app; [`AppBooks`] is the real one.
+pub(crate) trait PromptBooks {
+    /// Session capture: the prompt, and the session bound to its scope.
+    fn capture(
+        &self,
+        session_id: &str,
+        cwd: &str,
+        plugin_id: &str,
+        model: Option<&str>,
+        text: &str,
+    );
+    /// The user interacted with the session (`interacted_at`).
+    fn interaction(&self, session_id: &str);
+    /// Atlas's own transcript of the session.
+    fn transcript(&self, session_id: &str, cwd: &str, plugin_id: &str, text: &str);
+    /// Whether memory sharing is on for `cwd`.
+    fn sharing_enabled(&self, cwd: &str) -> bool;
+    /// Register the session so its deltas are captured into the scope's record.
+    fn register_memory(&self, session_id: &str, cwd: &str, plugin_id: &str);
+}
+
+/// What a prompt is recorded against: the session's cheap metadata.
+pub(crate) struct PromptMeta<'a> {
+    pub cwd: &'a str,
+    pub plugin_id: &'a str,
+    pub model: Option<&'a str>,
+}
+
+/// Write `text` down in every book, in the order the send path always has.
+pub(crate) fn record_prompt(
+    books: &dyn PromptBooks,
+    session_id: &str,
+    meta: &PromptMeta<'_>,
+    text: &str,
+    origin: PromptOrigin,
+) {
     // Session capture: record the prompt and bind the session.
     //
     // This has to happen here rather than in the delta middleware, because the
@@ -2160,37 +2231,21 @@ pub async fn agents_send(
     // the former ("claude-code", "codex", the native agent's id) is both what a
     // reader wants to see on a timeline row and what tells capture whether this
     // is an ACP-hosted agent or the native one.
-    app.state::<super::capture::CaptureState>().note_prompt(
-        &key.session_id,
-        &cwd,
-        &plugin_id,
-        current_model.as_deref(),
-        &text,
-    );
+    books.capture(session_id, meta.cwd, meta.plugin_id, meta.model, text);
 
     // The user just sent something. `interacted_at` is the only field the
     // thread's own events cannot supply — a queued message never reaches the
-    // agent.
-    if let Some(history) = host.history() {
-        history.note_interaction(
-            &acp::SessionId::new(key.session_id.as_str()),
-            chrono::Utc::now(),
-        );
+    // agent. A wake is not the user.
+    if origin == PromptOrigin::User {
+        books.interaction(session_id);
     }
 
     // Atlas's own transcript, for every agent. Recorded here for the same
     // reason capture is: the user's prompt is never emitted as a delta, so a
     // delta-only recorder produces transcripts that start mid-answer and have
     // no title.
-    if !cwd.is_empty() {
-        app.state::<Arc<super::agent_transcript::TranscriptState>>()
-            .note_prompt(
-                &key.session_id,
-                &cwd,
-                &plugin_id,
-                &text,
-                chrono::Utc::now().to_rfc3339(),
-            );
+    if !meta.cwd.is_empty() {
+        books.transcript(session_id, meta.cwd, meta.plugin_id, text);
     }
 
     // Register this session so the capture path (`TauriDeltaSink::emit`) can
@@ -2198,16 +2253,104 @@ pub async fn agents_send(
     // agent untouched: a slash command stays at byte 0 (Claude Code resolves
     // one only there), and nothing Atlas wrote can be echoed back as the
     // user's words.
-    if !cwd.is_empty() && sharing.is_enabled(&cwd) {
-        app.state::<SharedMemoryStore>()
-            .register_session(&key.session_id, &cwd, &plugin_id);
+    if !meta.cwd.is_empty() && books.sharing_enabled(meta.cwd) {
+        books.register_memory(session_id, meta.cwd, meta.plugin_id);
     }
+}
+
+/// The app's books.
+struct AppBooks<'a> {
+    app: &'a AppHandle,
+    host: &'a AgentHost,
+}
+
+impl PromptBooks for AppBooks<'_> {
+    fn capture(
+        &self,
+        session_id: &str,
+        cwd: &str,
+        plugin_id: &str,
+        model: Option<&str>,
+        text: &str,
+    ) {
+        self.app
+            .state::<super::capture::CaptureState>()
+            .note_prompt(session_id, cwd, plugin_id, model, text);
+    }
+
+    fn interaction(&self, session_id: &str) {
+        if let Some(history) = self.host.history() {
+            history.note_interaction(&acp::SessionId::new(session_id), chrono::Utc::now());
+        }
+    }
+
+    fn transcript(&self, session_id: &str, cwd: &str, plugin_id: &str, text: &str) {
+        self.app
+            .state::<Arc<super::agent_transcript::TranscriptState>>()
+            .note_prompt(
+                session_id,
+                cwd,
+                plugin_id,
+                text,
+                chrono::Utc::now().to_rfc3339(),
+            );
+    }
+
+    fn sharing_enabled(&self, cwd: &str) -> bool {
+        self.app.state::<MemorySharingState>().is_enabled(cwd)
+    }
+
+    fn register_memory(&self, session_id: &str, cwd: &str, plugin_id: &str) {
+        self.app
+            .state::<SharedMemoryStore>()
+            .register_session(session_id, cwd, plugin_id);
+    }
+}
+
+/// Send `outgoing` to the session `key` as a turn: recorded in every book
+/// ([`record_prompt`]), then started. The one way a prompt reaches an agent,
+/// whether the user typed it ([`agents_send`]) or Atlas sends it on its own
+/// (a pull request watch's wake, `AgentHost::wake`).
+pub(crate) fn send_prompt(
+    app: &AppHandle,
+    host: &Arc<AgentHost>,
+    key: &SessionKey,
+    outgoing: OutgoingPrompt,
+    origin: PromptOrigin,
+) -> Result<(), String> {
+    let OutgoingPrompt {
+        text,
+        images,
+        links,
+        pastes,
+    } = outgoing;
+
+    // Resolve the project cwd. Unknown session → fail with the SAME error
+    // shape `manager.send` produces, without attempting a send that would
+    // skip session registration (one condition, one behavior — L5).
+    // Meta only — the full snapshot deep-clones the whole transcript under the
+    // SessionState mutex the streaming actor locks per chunk, and this path
+    // reads three small fields.
+    let Ok(snapshot) = host.snapshot_meta(key) else {
+        return Err(HostError::unknown_session().to_string());
+    };
+    record_prompt(
+        &AppBooks { app, host },
+        &key.session_id,
+        &PromptMeta {
+            cwd: &snapshot.cwd,
+            plugin_id: &snapshot.plugin_id,
+            model: snapshot.current_model.as_deref(),
+        },
+        &text,
+        origin,
+    );
     let embedded_context = !pastes.is_empty()
         && host
-            .prompt_embedded_context(&key)
+            .prompt_embedded_context(key)
             .map_err(|e| e.to_string())?;
     host.send(
-        &key,
+        key,
         prompt::with_pasted_texts(
             prompt::with_resource_links(prompt::compose(text, images), links),
             pastes,
@@ -2282,9 +2425,12 @@ async fn build_bootstrap(
     }
 }
 
+/// The user stopped the session's turn. Also drops a pull request watch's
+/// wake held for it and ends its watches: a Stop means "stop", and a wake
+/// landing right after it would start the agent straight back up.
 #[tauri::command]
 pub fn agents_cancel(key: SessionKey, host: State<'_, Arc<AgentHost>>) -> Result<(), String> {
-    host.cancel(&key).map_err(|e| e.to_string())
+    host.stop(&key).map_err(|e| e.to_string())
 }
 
 /// Tear down a session's backend state when its tab closes or the project
@@ -3097,5 +3243,136 @@ mod coalesce_tests {
             .expect("the forwarder ends with its store")
             .unwrap();
         assert_eq!(emitted.load(Ordering::SeqCst), 2, "no event for the close");
+    }
+}
+
+#[cfg(test)]
+mod prompt_books_tests {
+    use std::cell::RefCell;
+
+    use super::{record_prompt, PromptBooks, PromptMeta, PromptOrigin};
+
+    /// Every book write, in order, with what it was given.
+    #[derive(Default)]
+    struct Recording {
+        sharing: bool,
+        writes: RefCell<Vec<String>>,
+    }
+
+    impl PromptBooks for Recording {
+        fn capture(
+            &self,
+            session_id: &str,
+            cwd: &str,
+            plugin_id: &str,
+            model: Option<&str>,
+            text: &str,
+        ) {
+            self.writes.borrow_mut().push(format!(
+                "capture {session_id} {cwd} {plugin_id} {} {text}",
+                model.unwrap_or("-")
+            ));
+        }
+        fn interaction(&self, session_id: &str) {
+            self.writes
+                .borrow_mut()
+                .push(format!("interaction {session_id}"));
+        }
+        fn transcript(&self, session_id: &str, cwd: &str, plugin_id: &str, text: &str) {
+            self.writes
+                .borrow_mut()
+                .push(format!("transcript {session_id} {cwd} {plugin_id} {text}"));
+        }
+        fn sharing_enabled(&self, _cwd: &str) -> bool {
+            self.sharing
+        }
+        fn register_memory(&self, session_id: &str, cwd: &str, plugin_id: &str) {
+            self.writes
+                .borrow_mut()
+                .push(format!("memory {session_id} {cwd} {plugin_id}"));
+        }
+    }
+
+    fn meta(cwd: &str) -> PromptMeta<'_> {
+        PromptMeta {
+            cwd,
+            plugin_id: "claude-code",
+            model: Some("opus"),
+        }
+    }
+
+    /// The user's prompt is written exactly as `agents_send` always wrote it:
+    /// capture first, then the interaction, the transcript, and the memory
+    /// registration where sharing is on.
+    #[test]
+    fn a_user_prompt_writes_every_book_in_order() {
+        let books = Recording {
+            sharing: true,
+            ..Recording::default()
+        };
+        record_prompt(&books, "s1", &meta("/work"), "fix it", PromptOrigin::User);
+        assert_eq!(
+            books.writes.into_inner(),
+            vec![
+                "capture s1 /work claude-code opus fix it",
+                "interaction s1",
+                "transcript s1 /work claude-code fix it",
+                "memory s1 /work claude-code",
+            ]
+        );
+    }
+
+    #[test]
+    fn without_sharing_no_memory_registration() {
+        let books = Recording::default();
+        record_prompt(&books, "s1", &meta("/work"), "hi", PromptOrigin::User);
+        assert_eq!(
+            books.writes.into_inner(),
+            vec![
+                "capture s1 /work claude-code opus hi",
+                "interaction s1",
+                "transcript s1 /work claude-code hi",
+            ]
+        );
+    }
+
+    /// A session with no folder is captured and counts as interacted with,
+    /// but has no transcript and no memory scope to register in.
+    #[test]
+    fn without_a_folder_only_capture_and_the_interaction() {
+        let books = Recording {
+            sharing: true,
+            ..Recording::default()
+        };
+        record_prompt(&books, "s1", &meta(""), "hi", PromptOrigin::User);
+        assert_eq!(
+            books.writes.into_inner(),
+            vec!["capture s1  claude-code opus hi", "interaction s1"]
+        );
+    }
+
+    /// A watch's wake is written like any prompt, except that it is not the
+    /// user interacting with the session.
+    #[test]
+    fn a_wake_is_recorded_but_is_not_the_user() {
+        let books = Recording {
+            sharing: true,
+            ..Recording::default()
+        };
+        record_prompt(
+            &books,
+            "s1",
+            &meta("/work"),
+            "Update on pull request #7",
+            PromptOrigin::PullRequestWatch,
+        );
+        assert_eq!(
+            books.writes.into_inner(),
+            vec![
+                "capture s1 /work claude-code opus Update on pull request #7",
+                "transcript s1 /work claude-code Update on pull request #7",
+                "memory s1 /work claude-code",
+            ]
+        );
     }
 }

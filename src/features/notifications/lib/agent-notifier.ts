@@ -321,6 +321,26 @@ export function notifyAgentEvent(env: AgentDelta): void {
   }
 }
 
+/** Atlas woke the agent of ACP session `sessionId` about a watched pull
+ *  request. Only for a session with an open tab — there is nowhere else to
+ *  jump to; its turn's own finish notifies as any turn's does. */
+export function notifyPullRequestWatch(sessionId: string, summary: string, at: string): void {
+  try {
+    const found = findSession(sessionId);
+    if (!found) return;
+    const { ctx, projectId } = buildCtx(found.tabId, found.session, sessionId);
+    const decision = decideAgentNotification(
+      { type: "pull_request_watch", summary, nonce: at },
+      ctx,
+      envFor(found.tabId, projectId),
+      useSettingsStore.getState().settings,
+    );
+    if (decision) deliverNotification(decision);
+  } catch (err) {
+    console.warn("pull request watch notification failed:", err);
+  }
+}
+
 /** An agent refused to bind or run for want of sign-in, outside a turn failure
  *  (a bind failure on open). Same notification and episode as a failed turn's. */
 export function notifyAgentSignInRequired(tabId: string, agentType: string): void {

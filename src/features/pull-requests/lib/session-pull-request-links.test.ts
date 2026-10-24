@@ -39,6 +39,7 @@ function link(
     source: "manual",
     linkedAt: "2026-10-01T00:00:00Z",
     snapshot: snap === null ? null : snapshot(snap),
+    watching: false,
     ...over,
   };
 }

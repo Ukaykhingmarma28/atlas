@@ -122,6 +122,10 @@ export interface PullRequestLink {
   linkedAt: string;
   /** `null` until the host has been read. */
   snapshot: PullRequestLinkSnapshot | null;
+  /** Atlas is watching it for the session, and wakes the session's agent
+   *  when a check fails, the checks pass, someone comments or the branch
+   *  conflicts. */
+  watching: boolean;
 }
 
 /** The host's last reported state for a linked pull request. */

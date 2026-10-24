@@ -249,6 +249,20 @@ export const NOTIFICATION_CATALOG = {
     toast: { variant: "default", durationMs: ATTENTION_TOAST_MS },
     groupKey: targetGroupKey,
   },
+  // A watched pull request changed and Atlas woke the session's agent about
+  // it (`pull_request_watch.rs`). News, not a request: the agent is already
+  // on it, so it is quiet and drops while the session is on screen, where the
+  // wake's own row says the same.
+  "pull-request-watch": {
+    label: "Pull request watch updates",
+    tier: "outcome",
+    source: "agent",
+    channels: ALL_CHANNELS,
+    whenLooking: "drop",
+    sound: null,
+    toast: { variant: "default", durationMs: DONE_TOAST_MS },
+    groupKey: targetGroupKey,
+  },
   // A finish is quiet: the banner carries no sound (permission and failures do).
   "agent-done": {
     label: "Agent finished",

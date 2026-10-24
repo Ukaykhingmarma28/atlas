@@ -333,20 +333,93 @@ async fn without_a_broker_an_access_request_is_refused() {
     client.cancel().await.ok();
 }
 
-/// Records what `link_pull_request` asked for.
-struct RecordingLinks(std::sync::Mutex<Vec<(String, Option<String>, u64)>>);
+/// Records what `link_pull_request` asked for, and the other pull request
+/// tools in `others` as `(what, number)`.
+struct RecordingLinks(
+    std::sync::Mutex<Vec<(String, Option<String>, u64)>>,
+    std::sync::Mutex<Vec<(&'static str, u64)>>,
+);
 
-impl crate::commands::session_pull_requests::PullRequestLinkBroker for RecordingLinks {
+impl RecordingLinks {
+    fn new() -> Self {
+        Self(
+            std::sync::Mutex::new(Vec::new()),
+            std::sync::Mutex::new(Vec::new()),
+        )
+    }
+
+    fn answer(&self, what: &'static str, number: u64) -> BoxedAnswer {
+        self.1.lock().unwrap().push((what, number));
+        Box::pin(async move { Ok(format!("{what} #{number}")) })
+    }
+}
+
+type BoxedAnswer = futures::future::BoxFuture<'static, Result<String, String>>;
+
+impl crate::commands::session_pull_requests::PullRequestBroker for RecordingLinks {
     fn link(
         &self,
         _session_id: String,
         cwd: String,
         repository: Option<String>,
         number: u64,
-    ) -> futures::future::BoxFuture<'static, Result<String, String>> {
+    ) -> BoxedAnswer {
         self.0.lock().unwrap().push((cwd, repository, number));
         Box::pin(async move { Ok(format!("Linked #{number}")) })
     }
+
+    fn unlink(&self, _: String, _: String, _: Option<String>, number: u64) -> BoxedAnswer {
+        self.answer("unlink", number)
+    }
+
+    fn list(&self, _: String) -> BoxedAnswer {
+        self.answer("list", 0)
+    }
+
+    fn watch(
+        &self,
+        _: String,
+        _: String,
+        _: Option<String>,
+        number: u64,
+        watching: bool,
+    ) -> BoxedAnswer {
+        self.answer(if watching { "watch" } else { "unwatch" }, number)
+    }
+}
+
+/// Each pull request tool reaches its own broker call; a call without a
+/// target never does.
+#[tokio::test(flavor = "multi_thread")]
+async fn each_pull_request_tool_reaches_its_broker_call() {
+    let dir = project(&[("a.txt", "x\n")]);
+    let links = Arc::new(RecordingLinks::new());
+    let host =
+        running_host_with(CodeTools::new(enabled(true)).with_pull_requests(links.clone())).await;
+    let client = client_in(&host, dir.path()).await;
+
+    for (tool, args, want) in [
+        ("watch_pull_request", json!({ "number": 3 }), "watch #3"),
+        (
+            "unwatch_pull_request",
+            json!({ "url": "https://github.com/acme/shop/pull/4" }),
+            "unwatch #4",
+        ),
+        ("unlink_pull_request", json!({ "number": 5 }), "unlink #5"),
+        ("list_session_pull_requests", json!({}), "list #0"),
+    ] {
+        let (err, text) = call(&client, tool, args).await;
+        assert!(!err, "{tool}: {text}");
+        assert_eq!(text, want);
+    }
+    let (err, text) = call(&client, "watch_pull_request", json!({})).await;
+    assert!(err && text.starts_with("watch_pull_request:"), "{text}");
+
+    assert_eq!(
+        links.1.lock().unwrap().clone(),
+        vec![("watch", 3), ("unwatch", 4), ("unlink", 5), ("list", 0)]
+    );
+    client.cancel().await.ok();
 }
 
 /// `link_pull_request` reaches the host's broker with the session's
@@ -355,7 +428,7 @@ impl crate::commands::session_pull_requests::PullRequestLinkBroker for Recording
 #[tokio::test(flavor = "multi_thread")]
 async fn a_link_request_reaches_the_broker_with_the_pull_request_it_names() {
     let dir = project(&[("a.txt", "x\n")]);
-    let links = Arc::new(RecordingLinks(std::sync::Mutex::new(Vec::new())));
+    let links = Arc::new(RecordingLinks::new());
     let host =
         running_host_with(CodeTools::new(enabled(true)).with_pull_requests(links.clone())).await;
     let client = client_in(&host, dir.path()).await;

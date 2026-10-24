@@ -75,8 +75,10 @@ import { primeNativeNotificationPermission } from "@/lib/native-notify";
 import {
   isStaleAgentTurn,
   notifyAgentEvent,
+  notifyPullRequestWatch,
   resolveAgentPermission,
 } from "@/features/notifications/lib/agent-notifier";
+import { listenSessionPromptInjected } from "@/features/chat/lib/injected-prompt";
 import { initSourceOpenedClearing } from "@/features/notifications/lib/source-opened";
 import { notifyChatEnvelope } from "@/features/notifications/lib/chat-notifier";
 import { noteAtlasSignedIn, notifyAtlasSignedOut } from "@/features/notifications/lib/app-notifier";
@@ -188,6 +190,23 @@ export function App() {
           onClick: () => openSettingsSection("chat", "autoSettleAfterDays"),
         },
       });
+    });
+    return () => void off.then((f) => f());
+  }, []);
+
+  // A prompt Atlas sent an agent on its own (a watched pull request woke
+  // it): its tab draws it as its own row, and a session off screen says so.
+  useEffect(() => {
+    const off = listenSessionPromptInjected((e) => {
+      useChatStore
+        .getState()
+        .actions.addInjectedPrompt(
+          e.sessionId,
+          e.text,
+          { source: e.source, summary: e.summary },
+          e.at,
+        );
+      notifyPullRequestWatch(e.sessionId, e.summary, e.at);
     });
     return () => void off.then((f) => f());
   }, []);

@@ -521,6 +521,10 @@ export interface ChatMessage {
    *  row (`InterruptionRowView`), so it is never copied, exported or quoted as
    *  if the agent had said it. */
   interruption?: TurnInterruption;
+  /** Set on a user-role message Atlas sent the agent on its own — a pull
+   *  request watch's wake — rather than one the user typed. The transcript
+   *  draws it as its own row (`InjectedRowView`). */
+  injected?: import("@/features/chat/lib/injected-prompt").InjectedPrompt;
   /** Model that produced this assistant message, stamped when the message is
    *  created (and backstopped at turn end). The badge renders ONLY this —
    *  never live session state — so a later model or agent switch can't

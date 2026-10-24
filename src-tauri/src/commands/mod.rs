@@ -76,6 +76,7 @@ pub mod plans;
 pub mod project_scripts;
 pub mod project_session;
 pub mod project_settings;
+pub mod pull_request_watch;
 pub mod pull_requests;
 pub mod quit_guard;
 pub mod recent_files;

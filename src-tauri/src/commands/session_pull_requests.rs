@@ -150,6 +150,8 @@ pub struct PullRequestLinkWire {
     pub linked_at: String,
     /// `None` until the host has been read.
     pub snapshot: Option<PullRequestSnapshotWire>,
+    /// Atlas is watching it for the session (`pull_request_watch`).
+    pub watching: bool,
 }
 
 /// The host's last reported state for a linked pull request.
@@ -192,6 +194,7 @@ impl From<&PullRequestLink> for PullRequestLinkWire {
                 comment_count: s.comment_count,
                 synced_at: s.synced_at.to_rfc3339(),
             }),
+            watching: link.is_watched(),
         }
     }
 }
@@ -270,6 +273,71 @@ pub fn session_pull_requests_unlink(
     })
 }
 
+/// Start or stop watching `repository#number` for the session — the user's
+/// eye toggle. While watched, Atlas wakes the session's agent when a check
+/// fails, the checks pass, someone comments or the branch conflicts
+/// (`pull_request_watch`). The link must exist; a settled session, a merged
+/// pull request, or "Let agents watch pull requests" switched off refuses a
+/// watch with `invalid`.
+#[tauri::command(async)]
+pub fn session_pull_requests_watch(
+    thread_id: String,
+    repository: String,
+    number: u32,
+    watching: bool,
+    host: State<'_, Arc<AgentHost>>,
+    app: tauri::AppHandle,
+) -> Result<SessionPullRequestsChange, PrError> {
+    let thread_id = parse_thread_id(&thread_id)?;
+    let store = store_of(host.inner())?;
+    if watching {
+        let wakes_on = crate::state::atlas_config::read(&app).pull_request_watch_wakes;
+        check_watchable(store, thread_id, &repository, number, wakes_on)?;
+    }
+    let changed = store.set_pull_request_watch(thread_id, &repository, number, watching);
+    Ok(SessionPullRequestsChange {
+        pull_requests: links_wire(&store.pull_requests(thread_id)),
+        changed,
+    })
+}
+
+/// Why `repository#number` cannot be watched for the session, if it cannot.
+fn check_watchable(
+    store: &ThreadMetadataStore,
+    thread_id: ThreadId,
+    repository: &str,
+    number: u32,
+    wakes_on: bool,
+) -> Result<(), PrError> {
+    if !wakes_on {
+        return Err(PrError::invalid(
+            "Watching pull requests is switched off in Settings.",
+        ));
+    }
+    let thread = store
+        .thread(thread_id)
+        .ok_or_else(|| PrError::invalid("This session has no history row."))?;
+    if thread.is_settled() {
+        return Err(PrError::invalid(
+            "This session is settled. Unsettle it before watching a pull request.",
+        ));
+    }
+    let link = visible_pull_requests(&thread.pull_requests)
+        .find(|l| l.is(repository, number))
+        .ok_or_else(|| PrError::invalid("That pull request is not linked to this session."))?;
+    if let Some(state) = link
+        .snapshot
+        .as_ref()
+        .map(|s| s.state.as_str())
+        .filter(|s| *s != "open")
+    {
+        return Err(PrError::invalid(format!(
+            "The pull request is {state}, so there is nothing to watch."
+        )));
+    }
+    Ok(())
+}
+
 /// One sweep pass over the sessions `threadIds` (every unsettled session
 /// when absent). `force` reads their links whether due or not — what a turn
 /// end and an explicit refresh ask for. See the module docs.
@@ -278,19 +346,30 @@ pub async fn session_pull_requests_sync(
     thread_ids: Option<Vec<String>>,
     force: Option<bool>,
     host: State<'_, Arc<AgentHost>>,
+    app: tauri::AppHandle,
 ) -> Result<SessionPullRequestsSync, PrError> {
     let wanted: Option<HashSet<ThreadId>> = thread_ids.map(|ids| {
         ids.iter()
             .filter_map(|raw| raw.parse::<ThreadId>().ok())
             .collect()
     });
-    sweep(
+    let report = sweep(
         host.inner(),
         wanted.as_ref(),
         force.unwrap_or(false),
         now_ms(),
     )
-    .await
+    .await?;
+    // A pull request this pass found merged or closed settles its session
+    // now rather than at the watch reactor's next pass.
+    if report.changed > 0 {
+        super::pull_request_watch::settle_finished(
+            host.inner(),
+            crate::state::atlas_config::read(&app).auto_settle_on_merge,
+        )
+        .await;
+    }
+    Ok(report)
 }
 
 // ── the host's side ─────────────────────────────────────────────────────
@@ -438,15 +517,19 @@ pub fn sweep_leftover_checkouts_later(host: Arc<AgentHost>, app_data: std::path:
     });
 }
 
-// ── the agent links one ─────────────────────────────────────────────────
+// ── the agent's pull request tools ──────────────────────────────────────
 
-/// What the code tool server's `link_pull_request` asks the host. A trait so
-/// the tool server stays testable without a host.
-pub trait PullRequestLinkBroker: Send + Sync {
-    /// Link pull request `number` — of `repository` when the agent named one,
-    /// which must be the repository of `cwd`, the session's checkout — to
-    /// session `session_id`. Resolves to the text the agent is told. `Err` is
-    /// a link that could not be made (no such pull request, `gh` signed out).
+/// What the code tool server's pull request tools ask the host. A trait so
+/// the tool server stays testable without a host. Each resolves to the text
+/// the agent is told; `Err` is a request that could not be done (no such
+/// pull request, `gh` signed out, a settled session).
+///
+/// `repository` is the one the agent named, `None` for the session's own:
+/// the linked pull request with that number, else the checkout's
+/// repository.
+pub trait PullRequestBroker: Send + Sync {
+    /// Link pull request `number` to session `session_id`. A named
+    /// repository must be the repository of `cwd`, the session's checkout.
     fn link(
         &self,
         session_id: String,
@@ -454,12 +537,128 @@ pub trait PullRequestLinkBroker: Send + Sync {
         repository: Option<String>,
         number: u64,
     ) -> BoxFuture<'static, Result<String, String>>;
+
+    /// Unlink it. Unlinking one that is not linked succeeds and says so.
+    fn unlink(
+        &self,
+        session_id: String,
+        cwd: String,
+        repository: Option<String>,
+        number: u64,
+    ) -> BoxFuture<'static, Result<String, String>>;
+
+    /// The session's linked pull requests with their last known state, and
+    /// how they stack (by base branch, bottom to top).
+    fn list(&self, session_id: String) -> BoxFuture<'static, Result<String, String>>;
+
+    /// Start (`watching`) or stop watching it. Starting links it first when
+    /// it is not linked; a settled session, a pull request that is not open,
+    /// or watching switched off in Settings refuses.
+    fn watch(
+        &self,
+        session_id: String,
+        cwd: String,
+        repository: Option<String>,
+        number: u64,
+        watching: bool,
+    ) -> BoxFuture<'static, Result<String, String>>;
 }
 
-/// The host's broker. Weak, as `HostAccessBroker` is.
-pub struct HostPullRequestBroker(pub Weak<AgentHost>);
+/// Whether "Let agents watch pull requests" is on, read at each call.
+pub type WakesGate = Arc<dyn Fn() -> bool + Send + Sync>;
 
-impl PullRequestLinkBroker for HostPullRequestBroker {
+/// The host's broker. Weak, as `HostAccessBroker` is.
+pub struct HostPullRequestBroker {
+    pub host: Weak<AgentHost>,
+    pub wakes_on: WakesGate,
+}
+
+impl HostPullRequestBroker {
+    fn session(&self, session_id: &str) -> Result<(Arc<AgentHost>, ThreadId), String> {
+        let host = self.host.upgrade().ok_or("Atlas is shutting down.")?;
+        let thread_id = thread_for_session(&host, session_id)
+            .ok_or("This session has no history row yet; send a message first.")?;
+        Ok((host, thread_id))
+    }
+}
+
+/// The `(repository, number)` a tool call means: the named repository, else
+/// the session's linked pull request with that number, else the checkout's
+/// repository.
+async fn resolve_target(
+    host: &AgentHost,
+    thread_id: ThreadId,
+    cwd: &str,
+    repository: Option<String>,
+    number: u64,
+) -> Result<(String, u32), String> {
+    let number = u32::try_from(number).map_err(|_| format!("#{number} is not a pull request"))?;
+    if let Some(named) = repository {
+        return Ok((named, number));
+    }
+    let linked: Vec<String> = store_of(host)
+        .map(|store| {
+            visible_pull_requests(&store.pull_requests(thread_id))
+                .filter(|l| l.number == number)
+                .map(|l| l.repository.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    if let [only] = linked.as_slice() {
+        return Ok((only.clone(), number));
+    }
+    let checkout = GitHub::open(cwd)
+        .await
+        .map_err(|e| agent_text(&e))?
+        .provider()
+        .repository;
+    Ok((checkout, number))
+}
+
+/// Link `number` for the agent: the named repository checked against the
+/// checkout first. Answers the change and the pull request's title.
+async fn agent_link(
+    host: &AgentHost,
+    thread_id: ThreadId,
+    cwd: &str,
+    repository: Option<&str>,
+    number: u64,
+) -> Result<(SessionPullRequestsChange, String), String> {
+    if let Some(named) = repository {
+        let checkout = GitHub::open(cwd)
+            .await
+            .map_err(|e| agent_text(&e))?
+            .provider()
+            .repository;
+        if !checkout.eq_ignore_ascii_case(named) {
+            return Err(format!(
+                "This session's checkout is {checkout}, not {named}. Only pull requests \
+                 of the session's own repository can be linked."
+            ));
+        }
+    }
+    let change = link_by_number(host, thread_id, cwd, number, PullRequestLinkSource::Agent)
+        .await
+        .map_err(|e| agent_text(&e))?;
+    let title = change
+        .pull_requests
+        .iter()
+        .find(|l| u64::from(l.number) == number)
+        .and_then(|l| l.snapshot.as_ref())
+        .map(|s| format!(" ({})", s.title))
+        .unwrap_or_default();
+    Ok((change, title))
+}
+
+/// ` (title)` for a linked pull request, or nothing.
+fn title_of(link: &PullRequestLink) -> String {
+    link.snapshot
+        .as_ref()
+        .map(|s| format!(" ({})", s.title))
+        .unwrap_or_default()
+}
+
+impl PullRequestBroker for HostPullRequestBroker {
     fn link(
         &self,
         session_id: String,
@@ -467,45 +666,211 @@ impl PullRequestLinkBroker for HostPullRequestBroker {
         repository: Option<String>,
         number: u64,
     ) -> BoxFuture<'static, Result<String, String>> {
-        let host = self.0.clone();
+        let session = self.session(&session_id);
         Box::pin(async move {
-            let host = host.upgrade().ok_or("Atlas is shutting down.")?;
-            let thread_id = thread_for_session(&host, &session_id)
-                .ok_or("This session has no history row yet; send a message first.")?;
-            if let Some(named) = repository.as_deref() {
-                let checkout = GitHub::open(&cwd)
-                    .await
-                    .map_err(|e| agent_text(&e))?
-                    .provider()
-                    .repository;
-                if !checkout.eq_ignore_ascii_case(named) {
-                    return Err(format!(
-                        "This session's checkout is {checkout}, not {named}. Only pull requests \
-                         of the session's own repository can be linked."
-                    ));
-                }
-            }
-            let change =
-                link_by_number(&host, thread_id, &cwd, number, PullRequestLinkSource::Agent)
-                    .await
-                    .map_err(|e| agent_text(&e))?;
-            let title = change
-                .pull_requests
-                .iter()
-                .find(|l| u64::from(l.number) == number)
-                .and_then(|l| l.snapshot.as_ref())
-                .map(|s| format!(" ({})", s.title))
-                .unwrap_or_default();
+            let (host, thread_id) = session?;
+            let (change, title) =
+                agent_link(&host, thread_id, &cwd, repository.as_deref(), number).await?;
             Ok(if change.changed {
                 format!(
                     "Linked pull request #{number}{title} to this session. Atlas shows its state \
-                     and checks beside the session and keeps them current."
+                     and checks beside the session, keeps them current, and settles the session \
+                     when it merges. To be woken when its checks or comments change, call \
+                     watch_pull_request."
                 )
             } else {
                 format!("Pull request #{number}{title} was already linked to this session.")
             })
         })
     }
+
+    fn unlink(
+        &self,
+        session_id: String,
+        cwd: String,
+        repository: Option<String>,
+        number: u64,
+    ) -> BoxFuture<'static, Result<String, String>> {
+        let session = self.session(&session_id);
+        Box::pin(async move {
+            let (host, thread_id) = session?;
+            let (repository, number) =
+                resolve_target(&host, thread_id, &cwd, repository, number).await?;
+            let store = store_of(&host).map_err(|e| agent_text(&e))?;
+            Ok(
+                if store.unlink_pull_request(thread_id, &repository, number) {
+                    format!("Unlinked pull request {repository}#{number} from this session.")
+                } else {
+                    format!("Pull request {repository}#{number} was not linked to this session.")
+                },
+            )
+        })
+    }
+
+    fn list(&self, session_id: String) -> BoxFuture<'static, Result<String, String>> {
+        let session = self.session(&session_id);
+        Box::pin(async move {
+            let (host, thread_id) = session?;
+            let store = store_of(&host).map_err(|e| agent_text(&e))?;
+            Ok(list_text(&store.pull_requests(thread_id)))
+        })
+    }
+
+    fn watch(
+        &self,
+        session_id: String,
+        cwd: String,
+        repository: Option<String>,
+        number: u64,
+        watching: bool,
+    ) -> BoxFuture<'static, Result<String, String>> {
+        let session = self.session(&session_id);
+        let wakes_on = (self.wakes_on)();
+        Box::pin(async move {
+            let (host, thread_id) = session?;
+            if !watching {
+                let (repository, number) =
+                    resolve_target(&host, thread_id, &cwd, repository, number).await?;
+                let store = store_of(&host).map_err(|e| agent_text(&e))?;
+                return Ok(
+                    if store.set_pull_request_watch(thread_id, &repository, number, false) {
+                        format!(
+                            "Stopped watching pull request {repository}#{number}. It stays \
+                             linked to this session."
+                        )
+                    } else {
+                        format!("Atlas was not watching pull request {repository}#{number}.")
+                    },
+                );
+            }
+            if !wakes_on {
+                return Err("Watching pull requests is switched off in Settings.".into());
+            }
+            if store_of(&host)
+                .ok()
+                .and_then(|s| s.thread(thread_id))
+                .is_some_and(|t| t.is_settled())
+            {
+                return Err(
+                    "This session is settled. Unsettle it before watching a pull request.".into(),
+                );
+            }
+            let (repository, number) =
+                resolve_target(&host, thread_id, &cwd, repository, number).await?;
+            let store = store_of(&host).map_err(|e| agent_text(&e))?;
+            let linked = visible_pull_requests(&store.pull_requests(thread_id))
+                .any(|l| l.is(&repository, number));
+            if !linked {
+                agent_link(&host, thread_id, &cwd, Some(&repository), u64::from(number)).await?;
+            }
+            check_watchable(store, thread_id, &repository, number, true)
+                .map_err(|e| agent_text(&e))?;
+            let changed = store.set_pull_request_watch(thread_id, &repository, number, true);
+            let title = store
+                .pull_requests(thread_id)
+                .iter()
+                .find(|l| l.is(&repository, number))
+                .map(title_of)
+                .unwrap_or_default();
+            Ok(if changed {
+                format!(
+                    "Atlas is now watching pull request {repository}#{number}{title}. It reads it \
+                     every two minutes and sends you a message when a check fails, the required \
+                     checks pass, someone else comments or reviews, or the branch starts to \
+                     conflict. Only comments posted from now on wake you, so handle the existing \
+                     ones first, then end your turn."
+                )
+            } else {
+                format!("Atlas was already watching pull request {repository}#{number}{title}.")
+            })
+        })
+    }
+}
+
+/// `list_session_pull_requests`'s answer: one line a pull request, then its
+/// stacks.
+pub(crate) fn list_text(links: &[PullRequestLink]) -> String {
+    let visible: Vec<&PullRequestLink> = visible_pull_requests(links).collect();
+    if visible.is_empty() {
+        return "No pull requests are linked to this session. Call link_pull_request for each \
+                one you open or work on."
+            .into();
+    }
+    let mut out = String::new();
+    for link in &visible {
+        out.push_str(&format!("- {}#{}", link.repository, link.number));
+        if let Some(s) = &link.snapshot {
+            out.push_str(&format!(" \"{}\": {}", s.title, s.state));
+            if s.is_draft {
+                out.push_str(" (draft)");
+            }
+            if let Some(checks) = &s.checks_state {
+                out.push_str(&format!(", checks {checks}"));
+            }
+            if let Some(review) = &s.review_decision {
+                out.push_str(&format!(", review {review}"));
+            }
+            if !s.head_branch.is_empty() {
+                out.push_str(&format!(", {} -> {}", s.head_branch, s.base_branch));
+            }
+        } else {
+            out.push_str(": not read yet");
+        }
+        if link.is_watched() {
+            out.push_str(", watched");
+        }
+        out.push_str(&format!(" {}\n", link.url));
+    }
+    for chain in stacks(&visible) {
+        let numbers: Vec<String> = chain.iter().map(|n| format!("#{n}")).collect();
+        out.push_str(&format!(
+            "Stack (bottom to top): {}\n",
+            numbers.join(" -> ")
+        ));
+    }
+    out.trim_end().to_owned()
+}
+
+/// The pull requests that build on one another, bottom to top: one whose
+/// base branch is another's head branch, in the same repository, sits on
+/// it. Only stacks of two or more.
+pub(crate) fn stacks(links: &[&PullRequestLink]) -> Vec<Vec<u32>> {
+    let branches = |l: &PullRequestLink| {
+        l.snapshot
+            .as_ref()
+            .map(|s| (s.head_branch.clone(), s.base_branch.clone()))
+            .filter(|(head, _)| !head.is_empty())
+    };
+    let parent_of = |link: &PullRequestLink| -> Option<u32> {
+        let (_, base) = branches(link)?;
+        links
+            .iter()
+            .find(|other| {
+                other.number != link.number
+                    && other.repository.eq_ignore_ascii_case(&link.repository)
+                    && branches(other).is_some_and(|(head, _)| head == base)
+            })
+            .map(|other| other.number)
+    };
+    let mut chains = Vec::new();
+    for root in links.iter().filter(|l| parent_of(l).is_none()) {
+        let mut chain = vec![root.number];
+        let mut seen: HashSet<u32> = HashSet::from([root.number]);
+        let mut current = root.number;
+        while let Some(child) = links.iter().find(|l| {
+            !seen.contains(&l.number)
+                && l.repository.eq_ignore_ascii_case(&root.repository)
+                && parent_of(l) == Some(current)
+        }) {
+            seen.insert(child.number);
+            chain.push(child.number);
+            current = child.number;
+        }
+        if chain.len() > 1 {
+            chains.push(chain);
+        }
+    }
+    chains
 }
 
 /// A pull-request failure, in words for the agent.
@@ -939,6 +1304,52 @@ mod tests {
             head_repository: Some("acme/shop".into()),
             is_cross_repository: false,
         }
+    }
+
+    fn stacked(number: u32, head: &str, base: &str) -> PullRequestLink {
+        let mut link = PullRequestLink::new(
+            "acme/shop",
+            number,
+            format!("https://github.com/acme/shop/pull/{number}"),
+            PullRequestLinkSource::Agent,
+        );
+        link.snapshot = Some(PullRequestSnapshot {
+            state: "open".into(),
+            title: format!("Step {number}"),
+            head_branch: head.into(),
+            base_branch: base.into(),
+            is_draft: false,
+            updated_at: None,
+            checks_state: Some("passing".into()),
+            review_decision: None,
+            comment_count: None,
+            synced_at: Utc::now(),
+        });
+        link
+    }
+
+    #[test]
+    fn pull_requests_built_on_one_another_list_as_a_stack_bottom_to_top() {
+        // Linked out of order: #3 sits on #1, #2 on #3; #9 stands alone.
+        let links = [
+            stacked(2, "c", "b"),
+            stacked(9, "other", "main"),
+            stacked(1, "a", "main"),
+            stacked(3, "b", "a"),
+        ];
+        let refs: Vec<&PullRequestLink> = links.iter().collect();
+        assert_eq!(stacks(&refs), vec![vec![1, 3, 2]]);
+        let text = list_text(&links);
+        assert!(text.contains("acme/shop#9 \"Step 9\": open, checks passing, other -> main"));
+        assert!(
+            text.ends_with("Stack (bottom to top): #1 -> #3 -> #2"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn an_empty_list_tells_the_agent_to_link() {
+        assert!(list_text(&[]).contains("link_pull_request"));
     }
 
     #[test]

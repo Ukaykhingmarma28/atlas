@@ -38,7 +38,7 @@ use crate::error::{Error, Result};
 use crate::model::{ThreadId, ThreadMetadata};
 use crate::paths::{PathList, WorktreePaths};
 use crate::projects::{self, AttachedProject, ProjectAccess};
-use crate::pull_requests::{self, PullRequestLink, PullRequestSnapshot};
+use crate::pull_requests::{self, PullRequestLink, PullRequestSnapshot, WatchSync};
 
 /// How many change events a slow subscriber may fall behind before it is told
 /// it lagged. The payload carries no data, so a subscriber that lags simply
@@ -913,6 +913,69 @@ impl ThreadMetadataStore {
         })
     }
 
+    /// Start or stop watching `repository#number` for the session. Answers
+    /// whether anything changed. A settled session starts no watch — it is
+    /// done, and a wake would bring it straight back — and only a visible link
+    /// can be watched; link it first.
+    pub fn set_pull_request_watch(
+        &self,
+        thread_id: ThreadId,
+        repository: &str,
+        number: u32,
+        watching: bool,
+    ) -> bool {
+        let now = Utc::now();
+        self.update(thread_id, |thread| {
+            if watching && thread.is_settled() {
+                return false;
+            }
+            pull_requests::set_watch(&mut thread.pull_requests, repository, number, watching, now)
+        })
+    }
+
+    /// Apply a watch reactor pass to `repository#number`, only while the
+    /// watch it read (`started_at`) is still on — see
+    /// [`PullRequestLink::watch`]. Answers whether it applied; `false` means
+    /// the watch was stopped, restarted, unlinked or its session settled while
+    /// the pass read the host, and the pass must say nothing.
+    ///
+    /// A watch that goes on changes nothing any surface shows, so it writes
+    /// without an event; one that ends announces it.
+    pub fn sync_pull_request_watch(
+        &self,
+        thread_id: ThreadId,
+        repository: &str,
+        number: u32,
+        started_at: DateTime<Utc>,
+        result: WatchSync,
+    ) -> bool {
+        let ends = matches!(result, WatchSync::End { .. });
+        let applied = self.update_silently(thread_id, |thread| {
+            if thread.is_settled() && !ends {
+                return false;
+            }
+            pull_requests::sync_watch(
+                &mut thread.pull_requests,
+                repository,
+                number,
+                started_at,
+                result,
+            )
+        });
+        if applied && ends {
+            self.notify(ThreadStoreEvent::Changed);
+        }
+        applied
+    }
+
+    /// End every watch on the session — the user stopped it. Answers whether
+    /// one was on.
+    pub fn end_pull_request_watches(&self, thread_id: ThreadId) -> bool {
+        self.update(thread_id, |thread| {
+            pull_requests::end_watches(&mut thread.pull_requests)
+        })
+    }
+
     /// Record what the host just said about `repository#number` on every
     /// session linked to it. One event for the lot; none when no snapshot
     /// changed. Answers how many sessions changed.
@@ -955,7 +1018,8 @@ impl ThreadMetadataStore {
     /// is already settled, or that does not exist, is a no-op with no event.
     ///
     /// Settling clears a pin and a snooze: a settled session is neither held
-    /// at the top nor waiting to come back.
+    /// at the top nor waiting to come back. It ends the session's pull request
+    /// watches too: a wake would only bring it back.
     ///
     /// Whether the session may be settled right now (not mid-turn) is the
     /// host's to decide, with one exception decided here, under the lock: a
@@ -975,6 +1039,7 @@ impl ThreadMetadataStore {
             clear_pin(thread);
             thread.snoozed_until = None;
             thread.snoozed_at = None;
+            pull_requests::end_watches(&mut thread.pull_requests);
             true
         })
     }
@@ -1189,10 +1254,22 @@ impl ThreadMetadataStore {
     /// costs a thread lock and possibly a directory scan per session, so it
     /// runs over this short list rather than every row.
     pub fn idle_sessions(&self, cutoff: DateTime<Utc>) -> Vec<(acp::SessionId, PathList)> {
+        self.idle_sessions_keeping(cutoff, false)
+    }
+
+    /// [`Self::idle_sessions`], leaving out every session with a linked pull
+    /// request when `keep_pull_requests` (the `autoSettleKeepPullRequests`
+    /// setting): such a session waits on its pull request, and settles when
+    /// that merges or closes.
+    pub fn idle_sessions_keeping(
+        &self,
+        cutoff: DateTime<Utc>,
+        keep_pull_requests: bool,
+    ) -> Vec<(acp::SessionId, PathList)> {
         read(&self.inner.cache)
             .threads
             .values()
-            .filter(|t| due_for_settling(t, cutoff))
+            .filter(|t| due_for_settling(t, cutoff, keep_pull_requests))
             .filter_map(|t| Some((t.session_id.clone()?, t.folder_paths().clone())))
             .collect()
     }
@@ -1215,8 +1292,20 @@ impl ThreadMetadataStore {
     /// The settled time is the row's last activity, not now: the session
     /// was done then, and that is the order the shelf lists it in.
     pub fn auto_settle_idle(&self, cutoff: DateTime<Utc>, busy: &HashSet<acp::SessionId>) -> usize {
+        self.auto_settle_idle_keeping(cutoff, busy, false)
+    }
+
+    /// [`Self::auto_settle_idle`] with [`Self::idle_sessions_keeping`]'s
+    /// `keep_pull_requests`. A session whose pull request Atlas is watching
+    /// is never settled for being idle either way: an agent is waiting on it.
+    pub fn auto_settle_idle_keeping(
+        &self,
+        cutoff: DateTime<Utc>,
+        busy: &HashSet<acp::SessionId>,
+        keep_pull_requests: bool,
+    ) -> usize {
         let is_due = |t: &ThreadMetadata| {
-            due_for_settling(t, cutoff)
+            due_for_settling(t, cutoff, keep_pull_requests)
                 && t.session_id
                     .as_ref()
                     .is_some_and(|session_id| !busy.contains(session_id))
@@ -1584,12 +1673,26 @@ fn sent_to_recently(thread: &ThreadMetadata, now: DateTime<Utc>) -> bool {
 /// just woken from a snooze or just unpinned gets a full window first. The
 /// un-settle guard still compares against real activity: an un-settle says
 /// "not done", and only something happening since can change that.
-fn due_for_settling(thread: &ThreadMetadata, cutoff: DateTime<Utc>) -> bool {
+///
+/// A watched pull request always keeps its session; any linked one does when
+/// `keep_pull_requests`.
+fn due_for_settling(
+    thread: &ThreadMetadata,
+    cutoff: DateTime<Utc>,
+    keep_pull_requests: bool,
+) -> bool {
     let last = thread.last_activity();
+    let mut links = pull_requests::visible(&thread.pull_requests);
+    let held_by_pull_request = if keep_pull_requests {
+        links.next().is_some()
+    } else {
+        links.any(PullRequestLink::is_watched)
+    };
     thread.session_id.is_some()
         && thread.settled_at.is_none()
         && !thread.is_pinned()
         && !thread.is_snoozed()
+        && !held_by_pull_request
         && thread.idle_since() < cutoff
         && thread.unsettled_at.is_none_or(|at| at <= last)
 }
