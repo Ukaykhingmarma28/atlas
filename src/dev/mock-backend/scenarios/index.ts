@@ -43,6 +43,7 @@ import { keymapFirstRun } from "./keymap-first-run";
 import { knowledge } from "./knowledge";
 import { memorySetup } from "./memory-setup";
 import { northwind } from "./northwind";
+import { pullRequestScenarios } from "./pull-request";
 import { sessionContext } from "./session-context";
 import { sidebar } from "./sidebar";
 import { timelineEmpty } from "./timeline-empty";
@@ -103,6 +104,7 @@ const all: Scenario[] = [
   northwind,
   memorySetup,
   sessionContext,
+  ...pullRequestScenarios,
   sidebar,
   timelineEmpty,
   keymapFirstRun,
