@@ -37,7 +37,7 @@ export function lineageEdges(rows: readonly ThreadRow[], sessionId: string | nul
 }
 
 /** The history rows, re-read whenever the thread store changes. */
-function useThreadHistory(enabled: boolean): ThreadRow[] {
+export function useThreadHistory(enabled: boolean): ThreadRow[] {
   const [rows, setRows] = useState<ThreadRow[]>([]);
   useEffect(() => {
     if (!enabled) return;

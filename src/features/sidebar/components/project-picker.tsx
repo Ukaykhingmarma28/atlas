@@ -12,12 +12,14 @@
 // breadcrumb opens.
 
 import { useState } from "react";
+import { openPullRequestListTab } from "@/features/pull-requests/lib/open-pull-request-list-tab";
 import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import {
   Check,
   ChevronDown,
   ChevronRight,
   Download,
+  GitPullRequest,
   Layers,
   Plus,
   Search,
@@ -212,6 +214,20 @@ export function ProjectPicker({
                   <DropdownMenu.Item onClick={() => onProjectSettings(scoped)} className={ITEM}>
                     <Settings aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
                     <span className="min-w-0 flex-1 truncate">{scoped.name} settings</span>
+                  </DropdownMenu.Item>
+                ) : null}
+                {scoped ? (
+                  <DropdownMenu.Item
+                    onClick={() =>
+                      openPullRequestListTab({ repoPath: scoped.path, name: scoped.name })
+                    }
+                    className={ITEM}
+                  >
+                    <GitPullRequest
+                      aria-hidden
+                      className="size-3.5 shrink-0 text-muted-foreground"
+                    />
+                    <span className="min-w-0 flex-1 truncate">{scoped.name} pull requests</span>
                   </DropdownMenu.Item>
                 ) : null}
                 <DropdownMenu.Item onClick={onImportSessions} className={ITEM}>

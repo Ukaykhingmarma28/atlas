@@ -19,6 +19,8 @@ import {
   GitPullRequestArrow,
   GitPullRequestClosed,
   GitPullRequestDraft,
+  Link2,
+  List,
   Plus,
   RefreshCw,
   type LucideIcon,
@@ -27,9 +29,15 @@ import {
 import { useChatStore } from "@/features/chat/stores/chat-store";
 import { openSessionChanges } from "@/features/git/lib/open-session-changes";
 import { openPullRequestTab } from "@/features/pull-requests/lib/open-pull-request-tab";
+import { openPullRequestListTab } from "@/features/pull-requests/lib/open-pull-request-list-tab";
+import { openLinkPullRequestDialog } from "@/features/pull-requests/components/link-pull-request-dialog";
+import {
+  LINK_SOURCE_LABEL,
+  linkKey,
+} from "@/features/pull-requests/lib/session-pull-request-links";
 import { useGitStore } from "@/features/git/stores/git-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
-import type { PrChecksState, PrListEntry } from "@/features/pull-requests/lib/pull-requests-types";
+import type { PrChecksState } from "@/features/pull-requests/lib/pull-requests-types";
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/ui/dropdown-menu";
 
 import { startCreatePr, useCreatePrDraft } from "../lib/create-pr";
@@ -41,7 +49,11 @@ import {
   revealSourceControl,
 } from "../lib/git-actions";
 import { resolveQuickAction, type QuickAction } from "../lib/quick-action";
-import { useSessionPullRequests, type SessionPullRequests } from "../lib/session-pull-requests";
+import {
+  useSessionPullRequests,
+  type SessionPullRequest,
+  type SessionPullRequests,
+} from "../lib/session-pull-requests";
 import { useSessionChanges } from "../lib/use-session-changes";
 import { BranchPicker } from "./branch-picker";
 import {
@@ -77,18 +89,19 @@ export function VersionControlSection({
 function VersionControlRows({ tabId, projectPath }: { tabId: string | null; projectPath: string }) {
   const branch = useGitStore.use.branch();
   const sessionId = useChatStore((s) => (tabId ? (s.sessions[tabId]?.acpSessionId ?? null) : null));
-  const prs = useSessionPullRequests(projectPath, branch || null);
+  const prs = useSessionPullRequests(projectPath, branch || null, sessionId);
   return (
     <ContextSection title="Version control" showHeading={false}>
       <BranchPicker />
       <PullRequestRows projectPath={projectPath} prs={prs} />
+      <PullRequestLinkRows projectPath={projectPath} prs={prs} />
       <QuickActionRow projectPath={projectPath} sessionId={sessionId} prs={prs} />
       <ChangesRow tabId={tabId} projectPath={projectPath} />
     </ContextSection>
   );
 }
 
-function prIcon(pr: PrListEntry): { icon: LucideIcon; className?: string } {
+function prIcon(pr: SessionPullRequest): { icon: LucideIcon; className?: string } {
   if (pr.state === "merged") return { icon: GitMerge, className: "text-primary" };
   if (pr.state === "closed") return { icon: GitPullRequestClosed };
   if (pr.isDraft) return { icon: GitPullRequestDraft };
@@ -102,9 +115,9 @@ const CHECKS: Record<PrChecksState, { icon: LucideIcon; className: string; label
 };
 
 /**
- * The branch's pull requests (`useSessionPullRequests`): the one that matters
- * now, then the rest behind "Show N more". Each opens in its own surface tab
- * (`openPullRequestTab`).
+ * The session's pull requests (`useSessionPullRequests`: its links and the
+ * branch's own): the one that matters now, then the rest behind "Show N
+ * more". Each opens in its own surface tab (`openPullRequestTab`).
  */
 function PullRequestRows({ projectPath, prs }: { projectPath: string; prs: SessionPullRequests }) {
   const [expanded, setExpanded] = useState(false);
@@ -124,7 +137,7 @@ function PullRequestRows({ projectPath, prs }: { projectPath: string; prs: Sessi
   );
 }
 
-function PullRequestRow({ projectPath, pr }: { projectPath: string; pr: PrListEntry }) {
+function PullRequestRow({ projectPath, pr }: { projectPath: string; pr: SessionPullRequest }) {
   const { icon, className } = prIcon(pr);
   const checks = pr.state === "open" && pr.checksState ? CHECKS[pr.checksState] : null;
   return (
@@ -132,7 +145,7 @@ function PullRequestRow({ projectPath, pr }: { projectPath: string; pr: PrListEn
       onClick={() =>
         openPullRequestTab({ repoPath: projectPath, number: pr.number, title: pr.title })
       }
-      title={`${pr.title} — ${pr.url}`}
+      title={`${pr.title} — ${pr.url}${pr.source ? `\n${LINK_SOURCE_LABEL[pr.source]}` : ""}`}
     >
       <RowIcon icon={icon} className={className} />
       <RowLabel>{pr.title}</RowLabel>
@@ -143,6 +156,45 @@ function PullRequestRow({ projectPath, pr }: { projectPath: string; pr: PrListEn
       )}
       <RowMeta>#{pr.number}</RowMeta>
     </ContextRow>
+  );
+}
+
+/** "Link a pull request…" and "View all pull requests", under the rows. */
+function PullRequestLinkRows({
+  projectPath,
+  prs,
+}: {
+  projectPath: string;
+  prs: SessionPullRequests;
+}) {
+  const { threadId, links } = prs;
+  return (
+    <>
+      <ContextRow
+        onClick={() => {
+          if (threadId) {
+            openLinkPullRequestDialog({
+              threadId,
+              repoPath: projectPath,
+              linked: links.map(linkKey),
+            });
+          }
+        }}
+        disabled={!threadId}
+        title={threadId ? undefined : "A pull request can be linked once the session has started."}
+        className="text-muted-foreground"
+      >
+        <Link2 size={14} className="shrink-0" aria-hidden />
+        <RowLabel>Link a pull request…</RowLabel>
+      </ContextRow>
+      <ContextRow
+        onClick={() => openPullRequestListTab({ repoPath: projectPath })}
+        className="text-muted-foreground"
+      >
+        <List size={14} className="shrink-0" aria-hidden />
+        <RowLabel>View all pull requests</RowLabel>
+      </ContextRow>
+    </>
   );
 }
 
