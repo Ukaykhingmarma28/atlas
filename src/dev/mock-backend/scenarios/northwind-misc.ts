@@ -143,7 +143,6 @@ function appState(): AppStateWire {
     currentProject: null,
     recentProjects: [],
     workspaces: [PROJECT],
-    groups: [],
     activeWorkspaceId: PROJECT.id,
     organisations: [
       {
@@ -504,6 +503,7 @@ function seedThreads(): ThreadRow[] {
       branch: s.content.branch,
       // The demo's own sessions: no other process is writing any of them.
       liveElsewhere: false,
+      model: "Claude Sonnet 4.5",
     }));
 }
 

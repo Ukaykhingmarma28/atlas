@@ -1,10 +1,11 @@
-// The sidebar's sessions: the header (search, project filter, add project,
-// new session) over one scroller holding the pinned block, the active list
-// and the Settled shelf.
+// The sidebar's sessions: the project picker (which projects the list shows,
+// the organisation at its foot), the header (search, new session), then one
+// scroller holding the pinned block, the active list,
+// the Snoozed shelf and the Settled shelf.
 //
 // Built for a thousand sessions and more:
 //  - The active list is virtualized; only the rows on screen (plus overscan)
-//    are mounted. The pinned block and the shelf's open page are short by
+//    are mounted. The pinned block and the shelves' open pages are short by
 //    construction and render plainly above and below it, in the same scroller.
 //  - Every row is memoised on primitive props and one stable handler bag.
 //    The handlers read the list at call time through a ref, so nothing the
@@ -66,6 +67,7 @@ import {
   snoozeSession,
   unpinSession,
   unsettleSession,
+  wakeSession,
   type SidebarListSnapshot,
 } from "../lib/sidebar-actions";
 import {
@@ -84,6 +86,7 @@ import {
 import { SessionRowMenu, type SessionMenuActions } from "./session-row-menu";
 import { CollapsibleSectionHeader, SidebarSectionLabel } from "./sidebar-section-header";
 import { SEARCH_RESULTS_ID, SidebarSessionHeader, searchResultId } from "./sidebar-session-header";
+import { ProjectPicker } from "./project-picker";
 import { CustomSnoozeDialogHost } from "./custom-snooze-dialog";
 import { ImportThreadsModal } from "@/features/chat/components/import-threads-modal";
 
@@ -129,7 +132,7 @@ function dropVerbFor(drag: DragState | null): SessionDropVerb | null {
 
 export function SidebarSessions() {
   const { partition, projects, scopeProjectId, isLoading, error } = useSidebarSessions();
-  const { pinned, active, settled } = partition;
+  const { pinned, active, snoozed, settled } = partition;
   const live = useLiveSessions();
   const activeSessionId = useActiveSessionId();
   const hasProject = useAppStore((s) => !!s.currentProject);
@@ -137,16 +140,23 @@ export function SidebarSessions() {
   const newSessionShortcut = useActionShortcut("tabs.newChat")?.label ?? null;
   const renamingThreadId = useSidebarStore.use.renamingThreadId();
   const search = useSidebarStore.use.search();
+  const snoozedExpanded = useSidebarStore.use.snoozedExpanded();
   const settledExpanded = useSidebarStore.use.settledExpanded();
   const settledSearch = useSidebarStore.use.settledSearch();
   const searchFocusRequest = useSidebarStore.use.searchFocusRequest();
   const sidebarActions = useSidebarStore.use.actions();
 
   // ── What the handlers read at call time ─────────────────────────────────
-  const listRef = useRef<SidebarListSnapshot>({ pinned, active, settled, activeSessionId });
+  const listRef = useRef<SidebarListSnapshot>({
+    pinned,
+    active,
+    snoozed,
+    settled,
+    activeSessionId,
+  });
   useLayoutEffect(() => {
-    listRef.current = { pinned, active, settled, activeSessionId };
-  }, [pinned, active, settled, activeSessionId]);
+    listRef.current = { pinned, active, snoozed, settled, activeSessionId };
+  }, [pinned, active, snoozed, settled, activeSessionId]);
   const scopeRef = useRef(scopeProjectId);
   useLayoutEffect(() => {
     scopeRef.current = scopeProjectId;
@@ -165,8 +175,10 @@ export function SidebarSessions() {
   const isSearching = search.trim().length > 0;
   const results = useMemo(
     () =>
-      isSearching ? searchSidebarSessions([...pinned, ...active, ...settled], deferredSearch) : [],
-    [isSearching, pinned, active, settled, deferredSearch],
+      isSearching
+        ? searchSidebarSessions([...pinned, ...active, ...snoozed, ...settled], deferredSearch)
+        : [],
+    [isSearching, pinned, active, snoozed, settled, deferredSearch],
   );
   const [activeResultIndex, setActiveResultIndex] = useState(0);
   const resultsRef = useRef(results);
@@ -179,6 +191,17 @@ export function SidebarSessions() {
     input?.focus();
     input?.select();
   }, [searchFocusRequest]);
+
+  // ── The Snoozed shelf ───────────────────────────────────────────────────
+  // Shut by default. Shut, it still shows the open session, so the row the
+  // window is looking at never vanishes into a closed shelf.
+  const snoozedRows = useMemo(
+    () =>
+      snoozedExpanded
+        ? snoozed
+        : snoozed.filter((row) => row.sessionId !== "" && row.sessionId === activeSessionId),
+    [snoozed, snoozedExpanded, activeSessionId],
+  );
 
   // ── The Settled shelf ───────────────────────────────────────────────────
   const [settledLimit, setSettledLimit] = useState(SETTLED_SHELF_FIRST_PAGE);
@@ -233,6 +256,7 @@ export function SidebarSessions() {
     unsettle: (session) => unsettleSession(session),
     snooze: (session, until) => void snoozeSession(session, until, listRef.current),
     unpin: (session) => void unpinSession(session),
+    wake: (session) => wakeSession(session),
     acknowledgeWoke: (session) => markRead(session),
     startRename: (session) => useSidebarStore.getState().actions.beginRename(session.threadId),
     commitRename: (session, title) => {
@@ -251,6 +275,7 @@ export function SidebarSessions() {
       markUnread,
       markRead,
       snooze: (session, until) => void snoozeSession(session, until, listRef.current),
+      wake: wakeSession,
       settle: (session) => void settleSession(session, listRef.current),
       unsettle: unsettleSession,
       // On the next frame: the menu is still handing focus back, and a field
@@ -357,7 +382,7 @@ export function SidebarSessions() {
         const sessionId = useChatStore.getState().sessions[tabId]?.acpSessionId ?? null;
         const list = listRef.current;
         const session = sessionId
-          ? [...list.pinned, ...list.active, ...list.settled].find(
+          ? [...list.pinned, ...list.active, ...list.snoozed, ...list.settled].find(
               (row) => row.sessionId === sessionId,
             )
           : undefined;
@@ -408,8 +433,10 @@ export function SidebarSessions() {
   // ── Keyboard ────────────────────────────────────────────────────────────
   const orderRef = useRef<string[]>([]);
   useLayoutEffect(() => {
-    orderRef.current = [...pinned, ...active, ...shelfRows].map((row) => row.threadId);
-  }, [pinned, active, shelfRows]);
+    orderRef.current = [...pinned, ...active, ...snoozedRows, ...shelfRows].map(
+      (row) => row.threadId,
+    );
+  }, [pinned, active, snoozedRows, shelfRows]);
 
   const focusRow = useCallback(
     (index: number) => {
@@ -487,7 +514,8 @@ export function SidebarSessions() {
   const offsets = pinnedOffsets(drag, pinned);
   const dropVerb = dropVerbFor(drag);
   const showPinDropZone = drag?.active && drag.from === "active";
-  const isEmpty = !isLoading && pinned.length + active.length + settled.length === 0;
+  const isEmpty =
+    !isLoading && pinned.length + active.length + snoozed.length + settled.length === 0;
   const scopedProject = projects.find((project) => project.id === scopeProjectId) ?? null;
 
   const rowProps = (session: SidebarSession) => {
@@ -505,6 +533,13 @@ export function SidebarSessions() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-1.5">
+      <ProjectPicker
+        projects={projects}
+        scopeProjectId={scopeProjectId}
+        onScopeChange={sidebarActions.setScopeProjectId}
+        onProjectSettings={(project: SidebarProject) => openProjectSettings(project.path)}
+        onImportSessions={() => setImportOpen(true)}
+      />
       <SidebarSessionHeader
         searchInputRef={searchInputRef}
         searchQuery={search}
@@ -520,11 +555,6 @@ export function SidebarSessions() {
           sidebarActions.setSearch("");
           setActiveResultIndex(0);
         }}
-        projects={projects}
-        scopeProjectId={scopeProjectId}
-        onScopeChange={sidebarActions.setScopeProjectId}
-        onProjectSettings={(project: SidebarProject) => openProjectSettings(project.path)}
-        onImportSessions={() => setImportOpen(true)}
         onNewSession={() => openNewAgentChat()}
         newSessionDisabled={!hasProject}
         newSessionShortcut={newSessionShortcut}
@@ -641,6 +671,31 @@ export function SidebarSessions() {
                     );
                   })}
                 </div>
+                {snoozed.length > 0 ? (
+                  <div className="mt-2">
+                    <CollapsibleSectionHeader
+                      expanded={snoozedExpanded}
+                      tone="info"
+                      onClick={() => sidebarActions.setSnoozedExpanded(!snoozedExpanded)}
+                      data-testid="sidebar-snoozed-shelf-toggle"
+                    >
+                      {snoozedExpanded ? "Snoozed" : `Snoozed (${snoozed.length})`}
+                    </CollapsibleSectionHeader>
+                    <ul aria-label="Snoozed sessions" className="flex flex-col">
+                      {snoozedRows.map((session) => (
+                        <SessionRow
+                          key={session.threadId}
+                          {...rowProps(session)}
+                          variant="slim"
+                          isPinned={false}
+                          dragOffset={0}
+                          isDragging={false}
+                          dropVerb={null}
+                        />
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
                 {settled.length > 0 ? (
                   <div className="mt-2">
                     <CollapsibleSectionHeader
@@ -715,7 +770,7 @@ export function SidebarSessions() {
                 {drag?.active && drag.from === "pinned" && drag.pinnedIndex === null ? (
                   <SidebarSectionLabel tone="accent">Drop to unpin</SidebarSectionLabel>
                 ) : null}
-                {error && pinned.length + active.length + settled.length === 0 ? (
+                {error && pinned.length + active.length + snoozed.length + settled.length === 0 ? (
                   <div className="px-2 py-6 text-center text-xs text-error">
                     Couldn't read session history: {error}
                   </div>
@@ -735,8 +790,6 @@ export function SidebarSessions() {
                       </>
                     ) : scopedProject ? (
                       `No sessions in ${scopedProject.name} yet`
-                    ) : partition.snoozedCount > 0 ? (
-                      `Nothing here — ${partition.snoozedCount} snoozed`
                     ) : (
                       <>
                         <span>No sessions yet</span>

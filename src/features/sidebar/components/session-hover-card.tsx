@@ -3,9 +3,11 @@
 // the rows that are merely on screen.
 //
 // Every line is something Atlas has; a line with no data is left out rather
-// than shown empty. The model is known only for a session open in a tab (it
-// is the tab's pick, not something history records), and so are its sharing
-// state and comment count (the comments controller runs per open chat).
+// than shown empty. The model is the row's (Rust records it at each turn
+// start); an open tab's current pick wins, being newer. Sharing and the
+// comment count come from the open tab's comments controller when there is
+// one, and otherwise from one lookup made while the card is open
+// (`session-sharing.ts`).
 
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
 import { CircleAlert, GitBranch, MessageSquare, Users } from "lucide-react";
@@ -16,6 +18,7 @@ import { AGENT_TYPE_BY_SIDEBAR } from "@/features/chat/lib/sidebar-agents";
 import { cn } from "@/lib/utils";
 import type { SidebarSession } from "../lib/sidebar-sessions";
 import type { SessionRowStatus } from "../lib/session-row-status";
+import { useClosedSessionSharing } from "../lib/session-sharing";
 import { ProjectBadge, SessionAgentIcon } from "./session-row-parts";
 import { SessionPullRequestLines } from "./session-pull-request";
 
@@ -40,13 +43,15 @@ function useModelLabel(tabId: string | null): string | null {
   });
 }
 
-/** Sharing and comments for an open session: `null` when it is not open, or
- *  is not a shared session. */
-function useSharing(tabId: string | null): { comments: number } | null {
+/** Sharing and comments: the open tab's, when the session is open, else one
+ *  lookup. `null` when it is not a shared session. */
+function useSharing(session: SidebarSession, tabId: string | null): { comments: number } | null {
   const count = useChatCommentsStore((s) => {
     const tab = tabId ? s.byTab[tabId] : undefined;
     return tab?.target ? tab.commentCount : -1;
   });
+  const closed = useClosedSessionSharing(session.projectPath, session.sessionId, tabId === null);
+  if (tabId === null) return closed;
   return count < 0 ? null : { comments: count };
 }
 
@@ -58,8 +63,8 @@ function SessionHoverCardBody({
   status: SessionRowStatus;
 }) {
   const tabId = useTabForSession(session.sessionId);
-  const model = useModelLabel(tabId);
-  const sharing = useSharing(tabId);
+  const model = useModelLabel(tabId) ?? session.model;
+  const sharing = useSharing(session, tabId);
   const agentLabel = agentMeta(AGENT_TYPE_BY_SIDEBAR[session.agent] ?? session.agent).label;
   return (
     <div className="flex min-w-0 max-w-80 flex-col gap-2 px-1 py-2">

@@ -14,7 +14,6 @@ export const MOCK_PROJECT = {
   id: "ws-mock",
   name: "acme-app",
   path: "/Users/dev/acme-app",
-  groupId: null,
   orgId: MOCK_ORG_ID,
 } satisfies Project;
 
@@ -29,14 +28,12 @@ export const OTHER_PROJECTS = [
     id: "ws-mock-2",
     name: "acme-platform-migration-experiments",
     path: "/Users/dev/acme-platform-migration-experiments",
-    groupId: null,
     orgId: MOCK_ORG_ID,
   },
   {
     id: "ws-mock-3",
     name: "docs",
     path: "/Users/dev/docs",
-    groupId: null,
     orgId: MOCK_ORG_ID,
   },
 ] satisfies Project[];
@@ -51,7 +48,6 @@ export function appState(overrides: Partial<AppStateWire> = {}): AppStateWire {
     currentProject: null,
     recentProjects: [],
     workspaces: ALL_PROJECTS,
-    groups: [],
     activeWorkspaceId: MOCK_PROJECT.id,
     // Sync is ON, and the org carries a `remoteId`: `CommsPanel` renders
     // "not connected" for a local-only org, so a local org would hide the
