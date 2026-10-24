@@ -865,6 +865,7 @@ pub fn run() {
             commands::agents::threads_reorder_pin,
             commands::agents::threads_snooze,
             commands::agents::threads_wake,
+            commands::agents::threads_rename,
             commands::agents::threads_mark_viewed,
             commands::agents::threads_mark_unread,
             commands::agents::agents_snapshot,

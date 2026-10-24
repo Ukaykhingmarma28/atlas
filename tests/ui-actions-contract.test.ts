@@ -126,7 +126,6 @@ const REVIEWED_AGENT_COMMANDS = [
   "panels.right",
   "panels.teamChat",
   "panels.terminal",
-  "panels.agentSidebar",
   "panels.knowledge",
   "panels.zen",
   "tabs.openSurface",

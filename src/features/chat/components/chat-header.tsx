@@ -10,18 +10,14 @@
 // so the row lines up on a single optical baseline. That is the whole design:
 // one height, one border.
 //
-// The session picker reuses `SessionSidebar` in its `dropdown` variant rather
-// than reimplementing the list. Building that list means merging live tabs with
-// three agents' on-disk session listings and suppressing duplicates, and opening
-// a row carries a lot of resume edge-cases — a second implementation would drift
-// from the first within a release.
+// There is no session picker here: every session is in the app sidebar. The
+// title opens it with its search focused, and the left button shows or hides
+// it.
 
 import { forwardRef, memo, useState } from "react";
 import { MenuGlyph } from "@/ui/animated-icon";
-import { Popover } from "@base-ui/react/popover";
 import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import {
-  ChevronDown,
   GitBranch,
   TerminalSquare,
   ClipboardList,
@@ -32,10 +28,10 @@ import {
   Sparkles,
   Check,
   Plus,
+  Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { HintGroup, HintItem } from "@/ui/hint-group";
-import { SessionSidebar } from "./session-sidebar";
 import { ChatPinnedMenu } from "./chat-pinned-menu";
 import type { ChatPin } from "../stores/chat-pins-store";
 
@@ -72,8 +68,7 @@ const OUTLINE = [
 ].join(" ");
 
 interface ChatHeaderProps {
-  tabId: string;
-  /** Shown on the picker trigger. */
+  /** The session's name, on the title pill. */
   title: string;
   roleFilter: RoleFilter;
   onRoleFilterChange: (f: RoleFilter) => void;
@@ -88,9 +83,11 @@ interface ChatHeaderProps {
   /** The thread overview rail — subagents, changes, memories. */
   overviewOpen: boolean;
   onToggleOverview: () => void;
-  /** The chat-history rail on the left (`layout.chatSidebar.visible`). */
+  /** The app sidebar, where the sessions are. */
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
+  /** Open the app sidebar with its session search focused. */
+  onFindSession: () => void;
   /** P3.4: only rendered when the agent advertised `sessionCapabilities.fork`.
    *  Absent for every agent that did not, so the menu never offers a branch
    *  that would fail on the wire. */
@@ -104,7 +101,6 @@ interface ChatHeaderProps {
 export const ChatHeader = memo(ChatHeaderImpl);
 
 function ChatHeaderImpl({
-  tabId,
   title,
   roleFilter,
   onRoleFilterChange,
@@ -118,10 +114,10 @@ function ChatHeaderImpl({
   onToggleOverview,
   sidebarOpen,
   onToggleSidebar,
+  onFindSession,
   onForkSession,
   onNewSession,
 }: ChatHeaderProps) {
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
 
   return (
@@ -132,12 +128,10 @@ function ChatHeaderImpl({
     <div className="relative shrink-0">
       <HintGroup>
         <div className="flex h-[46px] items-center gap-2 px-6">
-          {/* The chat-history rail, on the side it opens — the mirror of the
-              overview button at the other end of the bar. It was reachable
-              only from the command palette and a chord, which is to say it
-              was reachable only by someone who already knew it existed. */}
+          {/* The app sidebar, on the side it opens — the mirror of the
+              overview button at the other end of the bar. */}
           <HeaderCircleButton
-            title={sidebarOpen ? "Hide chat history" : "Chat history"}
+            title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
             onClick={onToggleSidebar}
             aria-pressed={sidebarOpen}
             className={cn(
@@ -151,57 +145,24 @@ function ChatHeaderImpl({
             <Plus size={13} />
           </HeaderCircleButton>
 
-          {/* Session picker */}
-          <Popover.Root open={pickerOpen} onOpenChange={setPickerOpen}>
-            <Popover.Trigger
-              render={
-                /* Same outline as the circles, just pill-shaped. Bare text on a
-                bare header gave no hint that the title was a control at all. */
-                <button
-                  type="button"
-                  className={cn(
-                    "flex min-w-0 max-w-[46%] items-center gap-1.5 rounded-full px-3",
-                    CONTROL_H,
-                    OUTLINE,
-                    "text-sm font-medium leading-none text-[var(--foreground)]",
-                    "cursor-pointer outline-none",
-                  )}
-                  title="Switch session"
-                >
-                  <span className="truncate">{title}</span>
-                  <ChevronDown
-                    size={12}
-                    className={cn(
-                      "shrink-0 text-[var(--muted-foreground)] transition-transform",
-                      pickerOpen && "rotate-180",
-                    )}
-                  />
-                </button>
-              }
-            />
-            <Popover.Portal>
-              <Popover.Positioner className="z-popover" align="start" sideOffset={6}>
-                <Popover.Popup
-                  className={cn(
-                    "overflow-hidden rounded-xl select-none inset-highlight shadow-md",
-                    // Border, translucent fill, blur AND the enter animation all on
-                    // THIS element. Splitting them isolates the layer and kills the
-                    // backdrop blur (see the feedback panel for the same rule).
-                    "border border-[var(--atlas-element-active)] bg-[var(--card)]/95 backdrop-blur-2xl",
-                    // Grows out of its trigger's top-left corner.
-                    "atlas-panel-in-tl",
-                  )}
-                >
-                  {/* The sidebar's own search input is the combo box's filter. */}
-                  <SessionSidebar
-                    tabId={tabId}
-                    variant="dropdown"
-                    onOpened={() => setPickerOpen(false)}
-                  />
-                </Popover.Popup>
-              </Popover.Positioner>
-            </Popover.Portal>
-          </Popover.Root>
+          {/* The session's name. Sessions are found in the app sidebar, so
+              the pill opens it with its search focused, rather than a second
+              copy of the list. */}
+          <button
+            type="button"
+            onClick={onFindSession}
+            className={cn(
+              "flex min-w-0 max-w-[46%] items-center gap-1.5 rounded-full px-3",
+              CONTROL_H,
+              OUTLINE,
+              "text-sm font-medium leading-none text-[var(--foreground)]",
+              "cursor-pointer outline-none",
+            )}
+            title="Find a session"
+          >
+            <span className="truncate">{title}</span>
+            <Search size={12} className="shrink-0 text-[var(--muted-foreground)]" />
+          </button>
 
           <div className="flex-1" />
 

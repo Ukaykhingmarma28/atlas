@@ -1,11 +1,10 @@
 /**
- * The project rail's "+" — Open Folder plus a searchable list of recent
- * projects, adding the chosen one to the sidebar.
+ * The sidebar header's "Add project" — Open Folder plus a searchable list of
+ * recent projects, adding the chosen one to the organisation.
  *
- * Its own file because two surfaces render it: the rail's org row (its home,
- * beside the ⌘K search button) and, historically, the titlebar band. Keeping
- * it in `project-sidebar.tsx` would have made `org-switcher.tsx` import from
- * the very module that renders `<OrgSwitcher/>` — a cycle.
+ * It lives with the projects feature, not the sidebar, because it is a
+ * project action: the sidebar header (`sidebar-session-header.tsx`) only
+ * places it.
  */
 import { useMemo, useState } from "react";
 import { Menu as DropdownMenu } from "@base-ui/react/menu";

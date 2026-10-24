@@ -2528,6 +2528,15 @@ impl AgentHost {
         Ok(history.store().snooze(thread_id, until))
     }
 
+    /// The user renamed the session. An empty name clears the rename, so the
+    /// agent's own title shows again.
+    pub fn rename_thread(&self, thread_id: ThreadId, title: &str) -> Result<()> {
+        self.history_or_err()?
+            .store()
+            .set_title_override(thread_id, title.trim().to_owned());
+        Ok(())
+    }
+
     /// Wake a snoozed session by hand. Answers whether it was snoozed.
     pub fn wake_thread(&self, thread_id: ThreadId) -> Result<bool> {
         Ok(self.history_or_err()?.store().wake(thread_id))

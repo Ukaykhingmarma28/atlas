@@ -324,7 +324,7 @@ describe("ui_focus", () => {
     result(await act("ui_focus", { target: "panel", name: "files", visible: false }));
     expect(layout().tabs.some((t) => t.type === "files")).toBe(false);
     result(await act("ui_focus", { target: "panel", name: "chat_sidebar", visible: false }));
-    expect(layout().chatSidebar.visible).toBe(false);
+    expect(useProjectStore.getState().sidebarOpen).toBe(false);
   });
 
   it("reveals a section of source control", async () => {

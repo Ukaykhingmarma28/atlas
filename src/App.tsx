@@ -52,15 +52,12 @@ import {
   ensureRecentFilesListener,
   type RecentFile,
 } from "@/features/chat/stores/recent-files-store";
-import { useRecentChatsStore } from "@/features/projects/stores/recent-chats-store";
-import { stripInjectedContext } from "@/features/chat/lib/atlas-context";
 import { openNewAgentChat } from "@/features/chat/lib/open-agent-session";
 import { settleAndAdvance } from "@/features/chat/lib/settle-and-advance";
 import { requestCloseTab } from "@/features/chat/lib/close-tab";
 import { pruneContextUsageCache } from "@/features/chat/lib/context-usage-cache";
 import { isScrollHot } from "@/lib/scroll-hot";
 import { useAppProfile } from "@/lib/app-profile";
-import { basename } from "@/lib/paths";
 import {
   hydrateAgentRegistry,
   setAgentUpdatePhase,
@@ -451,8 +448,8 @@ export function App() {
   }, [bootRemoteOrgId, bootSignedIn]);
 
   // NOTE: we intentionally do NOT wipe localStorage on boot anymore. Several
-  // stores legitimately persist there via zustand `persist` — the project
-  // "Chats" list (`atlas-recent-chats`), layout prefs (`atlas-layout-prefs`),
+  // stores legitimately persist there via zustand `persist` — the
+  // sidebar's scope and Settled shelf (`atlas-sidebar`), layout prefs (`atlas-layout-prefs`),
   // the review provider/model selection — and a blanket clear was silently
   // dropping all of them on every restart. Each store carries its own
   // `version`/`migrate`, so stale keys from old builds are handled per-store.
@@ -617,7 +614,6 @@ export function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [filePickerOpen, setFilePickerOpen] = useState(false);
   const {
-    toggleChatSidebar,
     addTab,
     setActiveTab,
     activateTabByIndex,
@@ -785,7 +781,6 @@ export function App() {
       }
       if (pendingDeltas.length === 0) {
         oldestBufferedAt = null;
-        drainRecentChats();
         return;
       }
       // Mid-fling, hold the batch: applying it re-renders ChatPanel →
@@ -803,7 +798,6 @@ export function App() {
         return;
       }
       oldestBufferedAt = null;
-      drainRecentChats();
       const deltas = pendingDeltas.slice();
       pendingDeltas.length = 0;
       toolDeltaPos.clear();
@@ -922,47 +916,6 @@ export function App() {
       pendingDeltas.push(env);
     };
 
-    // Sessions that saw activity since the last flush. A SET, drained once per
-    // frame: `record` writes through zustand `persist`, so each call is a
-    // synchronous JSON.stringify + localStorage.setItem on the main thread, and
-    // its `updatedAt: Date.now()` guarantees the state differs every time — so
-    // every subscriber re-renders too. Calling it on the raw event meant a
-    // tool-heavy turn paid both dozens of times a second, outside the very
-    // buffer that exists to stop exactly this.
-    const pendingRecentChats = new Set<string>();
-
-    // Record a chat into the sidebar "Chats" (recently-invoked) list whenever a
-    // session sees meaningful activity. Resolves project + title from the chat
-    // session that owns this acpSessionId.
-    const recordRecentChat = (acpSessionId: string) => {
-      const sessions = useChatStore.getState().sessions;
-      for (const [tabId, s] of Object.entries(sessions)) {
-        if (s.acpSessionId !== acpSessionId) continue;
-        const path = s.workingDirectory;
-        if (!path) return;
-        useRecentChatsStore.getState().actions.record({
-          tabId,
-          projectPath: path,
-          projectName: basename(path),
-          // Strip any Atlas-injected memory scaffolding the title may carry
-          // (resumed sessions); a dirty fragment cleans to "" → fall back.
-          title: stripInjectedContext(s.title) || "Session",
-          status: s.status,
-          agentType: s.agentType,
-          acpSessionId: s.acpSessionId,
-          updatedAt: Date.now(),
-        });
-        return;
-      }
-    };
-
-    /** Write out one record per session that saw activity this frame. */
-    const drainRecentChats = () => {
-      if (pendingRecentChats.size === 0) return;
-      for (const id of pendingRecentChats) recordRecentChat(id);
-      pendingRecentChats.clear();
-    };
-
     listenAgents((env) => {
       if (cancelled) return;
       const actions = useChatStore.getState().actions;
@@ -1000,13 +953,6 @@ export function App() {
           });
         }
         return;
-      }
-      if (
-        env.kind === "status" ||
-        env.kind === "message_appended" ||
-        env.kind === "turn_finished"
-      ) {
-        pendingRecentChats.add(env.session_id);
       }
       switch (env.kind) {
         case "text_chunk":
@@ -1354,7 +1300,6 @@ export function App() {
     // ⌘⇧C — team chat, a surface tab that follows you between projects.
     "panels.teamChat": toggleTeamChat,
     "panels.terminal": toggleTerminal,
-    "panels.agentSidebar": toggleChatSidebar,
     // ⌥J — Knowledge, a destination: opens it, or goes back to the session
     // when it is the one on screen.
     "panels.knowledge": () => toggleDestination("knowledge"),

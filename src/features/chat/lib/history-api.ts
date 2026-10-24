@@ -199,6 +199,12 @@ export function wakeSession(threadId: string): Promise<boolean> {
   return invoke<boolean>("threads_wake", { threadId });
 }
 
+/** Rename a session. An empty title clears the rename, and the agent's own
+ *  title shows again. */
+export function renameThread(threadId: string, title: string): Promise<void> {
+  return invoke<void>("threads_rename", { threadId, title });
+}
+
 /**
  * The chat tab running `sessionId` was opened or focused. Keyed by the live
  * session, which is what a tab knows. Debounced by the caller

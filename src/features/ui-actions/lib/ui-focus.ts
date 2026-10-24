@@ -5,6 +5,7 @@
  */
 
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
+import { useProjectStore } from "@/features/projects/stores/project-store";
 import {
   revealSourceControl,
   sourceControlShown,
@@ -40,8 +41,10 @@ function panelVisible(name: Panel): boolean {
       return teamChatShown(s);
     case "source_control":
       return sourceControlShown(s);
+    // The name predates the one app sidebar, where the sessions now live;
+    // the agent-facing tool keeps it.
     case "chat_sidebar":
-      return s.chatSidebar.visible;
+      return useProjectStore.getState().sidebarOpen;
     case "timeline_sidebar":
       return s.timelinePanel.showSidebar;
     case "terminal":
@@ -62,7 +65,7 @@ function togglePanel(name: Panel): void {
     case "source_control":
       return toggleSourceControl();
     case "chat_sidebar":
-      return a.toggleChatSidebar();
+      return useProjectStore.getState().actions.toggleSidebar();
     case "timeline_sidebar":
       return a.toggleTimelineSidebar();
     case "terminal": {

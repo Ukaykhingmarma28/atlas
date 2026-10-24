@@ -103,10 +103,11 @@ export const ACTIONS = [
   },
   {
     id: "workspace.toggleSidebar",
-    title: "Toggle project sidebar",
+    title: "Toggle sidebar",
     category: "Project",
     when: "global",
-    defaults: ["cmd+shift+."],
+    // ⌘⌥J was the session sidebar's; the sessions live in this one now.
+    defaults: ["cmd+shift+.", "cmd+alt+j"],
   },
   {
     id: "app.settings",
@@ -196,13 +197,6 @@ export const ACTIONS = [
     category: "Panels",
     when: "global",
     defaults: ["cmd+j"],
-  },
-  {
-    id: "panels.agentSidebar",
-    title: "Toggle agent sidebar",
-    category: "Panels",
-    when: "global",
-    defaults: ["cmd+alt+j"],
   },
   {
     id: "panels.knowledge",
