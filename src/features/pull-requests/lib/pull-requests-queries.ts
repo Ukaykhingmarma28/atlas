@@ -13,8 +13,10 @@
 // side revalidates with an ETag), so the poll is cheaper than it looks.
 
 import {
+  useInfiniteQuery,
   useMutation,
   useQuery,
+  type InfiniteData,
   useQueryClient,
   type QueryClient,
   type UseQueryResult,
@@ -37,7 +39,6 @@ import {
   prReplyToThread,
   prRequestReviewers,
   prResolveThread,
-  prSetFilesViewed,
   prSetLabels,
   prSubmitReview,
   prTimeline,
@@ -51,7 +52,6 @@ import type {
   PrDiffResult,
   PrError,
   PrFilesViewed,
-  PrFileViewedChange,
   PrLabelCandidates,
   PrReviewerCandidates,
   PrListQuery,
@@ -99,6 +99,11 @@ export const pullRequestKeys = {
     ["pull-requests", cwd, "pull", number, "commits", cursor] as const,
   diff: (cwd: string, number: number, cursor: string | null, commit: string | null) =>
     ["pull-requests", cwd, "pull", number, "diff", cursor, commit] as const,
+  /** Every page of the diff read so far, as one infinite read. */
+  diffPages: (cwd: string, number: number, commit: string | null) =>
+    ["pull-requests", cwd, "pull", number, "diff-pages", commit] as const,
+  commitPages: (cwd: string, number: number) =>
+    ["pull-requests", cwd, "pull", number, "commit-pages"] as const,
   filesViewed: (cwd: string, number: number) =>
     ["pull-requests", cwd, "pull", number, "files-viewed"] as const,
   reviewerCandidates: (cwd: string, number: number) =>
@@ -256,6 +261,53 @@ export function usePrDiff(
   });
 }
 
+/**
+ * The diff a page at a time: whole on the first page while GitHub will send
+ * it whole, else a hundred files per page, the next asked for as the reader
+ * nears the end (`fetchNextPage`). A refresh re-reads every loaded page, and
+ * an unchanged page keeps its identity, so its files keep their parse.
+ */
+export function usePrDiffPages(cwd: string, number: number, commit: string | null) {
+  return useInfiniteQuery<
+    PrDiffResult,
+    PrError,
+    InfiniteData<PrDiffResult, string | null>,
+    readonly unknown[],
+    string | null
+  >({
+    retry: shouldRetryPrError,
+    retryDelay: (attempt: number) => prRetryDelay(attempt),
+    queryKey: pullRequestKeys.diffPages(cwd, number, commit),
+    queryFn: ({ pageParam }) => prDiff(cwd, number, pageParam, commit),
+    initialPageParam: null,
+    getNextPageParam: (last) => last.nextCursor,
+    staleTime: commit ? STALE.commitDiff : STALE.diff,
+    // Every loaded page would be re-read: refreshed by the panel, an agent's
+    // turn end, or a write that moves the code, never on a timer or focus.
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/** The commits, newest last as GitHub lists them, a page at a time. */
+export function usePrCommitPages(cwd: string, number: number) {
+  return useInfiniteQuery<
+    PrCommitsPage,
+    PrError,
+    InfiniteData<PrCommitsPage, string | null>,
+    readonly unknown[],
+    string | null
+  >({
+    ...COMMON,
+    queryKey: pullRequestKeys.commitPages(cwd, number),
+    queryFn: ({ pageParam }) => prCommits(cwd, number, pageParam),
+    initialPageParam: null,
+    getNextPageParam: (last) => last.nextCursor,
+    staleTime: STALE.activity,
+    refetchInterval: false,
+  });
+}
+
 export function usePrFilesViewed(cwd: string | null, number: number | null): Result<PrFilesViewed> {
   return useQuery<PrFilesViewed, PrError>({
     ...COMMON,
@@ -308,19 +360,28 @@ export function invalidatePullRequestQueries(client: QueryClient, cwd: string): 
 
 // ── writes ──────────────────────────────────────────────────────────────
 
+/** Reads a write cannot change unless it moves the code: the diff (pages of
+ *  up to a hundred files each, refetched whole) and the viewed marks. */
+const CODE_READS = new Set(["diff", "diff-pages", "files-viewed"]);
+
 /** A write on one pull request; on success its reads (and the checkout's
- *  listings) are marked stale. */
+ *  listings) are marked stale. Only a write that can move the code (`code`)
+ *  also re-reads the diff: a reply refetching a 200-file diff would be
+ *  pages of requests for nothing. */
 function usePrMutation<V>(
   cwd: string,
   number: number,
   run: (vars: V) => Promise<void>,
-  options: { listings?: boolean } = {},
+  options: { listings?: boolean; code?: boolean } = {},
 ) {
   const client = useQueryClient();
   return useMutation<void, PrError, V>({
     mutationFn: run,
     onSuccess: async () => {
-      await client.invalidateQueries({ queryKey: pullRequestKeys.pull(cwd, number) });
+      await client.invalidateQueries({
+        queryKey: pullRequestKeys.pull(cwd, number),
+        predicate: options.code ? undefined : (query) => !CODE_READS.has(String(query.queryKey[4])),
+      });
       if (options.listings) {
         await client.invalidateQueries({ queryKey: ["pull-requests", cwd, "list"] });
       }
@@ -331,6 +392,7 @@ function usePrMutation<V>(
 export function usePrActionMutation(cwd: string, number: number) {
   return usePrMutation<PrActionInput>(cwd, number, (input) => prAction(cwd, number, input), {
     listings: true,
+    code: true,
   });
 }
 
@@ -397,31 +459,4 @@ export function usePrLabelsMutation(cwd: string, number: number) {
     ({ labels, applied }) => prSetLabels(cwd, number, labels, applied),
     { listings: true },
   );
-}
-
-/** Ticking files viewed updates the cache at once and rolls back on failure:
- *  a reader clearing files one after another should not wait on GitHub. */
-export function usePrSetFilesViewedMutation(cwd: string, number: number) {
-  const client = useQueryClient();
-  const key = pullRequestKeys.filesViewed(cwd, number);
-  return useMutation<void, PrError, PrFileViewedChange[], { previous?: PrFilesViewed }>({
-    mutationFn: (files) => prSetFilesViewed(cwd, number, files),
-    onMutate: async (files) => {
-      await client.cancelQueries({ queryKey: key });
-      const previous = client.getQueryData<PrFilesViewed>(key);
-      if (previous) {
-        const next = new Map(previous.files.map((f) => [f.path, f.state]));
-        for (const f of files) next.set(f.path, f.viewed ? "viewed" : "unviewed");
-        client.setQueryData<PrFilesViewed>(key, {
-          ...previous,
-          files: [...next].map(([path, state]) => ({ path, state })),
-        });
-      }
-      return { previous };
-    },
-    onError: (_error, _files, context) => {
-      if (context?.previous) client.setQueryData(key, context.previous);
-    },
-    onSettled: () => client.invalidateQueries({ queryKey: key }),
-  });
 }

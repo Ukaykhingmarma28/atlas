@@ -25,6 +25,11 @@ import { canPerform } from "../lib/pull-request-logic";
 import { usePrCommentMutation, usePrSubmitReviewMutation } from "../lib/pull-requests-queries";
 import type { PrDetail, PrReviewVerdict } from "../lib/pull-requests-types";
 import { useInlineConfirm } from "../lib/use-inline-confirm";
+import {
+  reviewKeyOf,
+  usePendingReviewComments,
+  usePullRequestReviewStore,
+} from "../stores/pull-request-review-store";
 import { readableFailure } from "../lib/use-pull-request-actions";
 import { TEXTAREA_CLASS } from "./pull-request-markdown";
 
@@ -89,6 +94,9 @@ export function PullRequestComposer({
   const postComment = usePrCommentMutation(repoPath, detail.number);
   const submitReview = usePrSubmitReviewMutation(repoPath, detail.number);
   const confirm = useInlineConfirm(`${repoPath}:${detail.number}:composer`);
+  // Line comments written in the Code tab, sent with the review.
+  const pending = usePendingReviewComments(repoPath, detail.number);
+  const removePending = usePullRequestReviewStore.use.actions().removeMany;
 
   const canComment = detail.capabilities.comment && detail.viewerPermissions.comment;
   const verdicts = VERDICTS.filter(
@@ -135,14 +143,24 @@ export function PullRequestComposer({
     }
   };
 
-  const reviewReady = (v: PrReviewVerdict) => v === "approve" || summary.trim().length > 0;
+  const reviewReady = (v: PrReviewVerdict) =>
+    v === "approve" || summary.trim().length > 0 || (v === "comment" && pending.length > 0);
   const sendReview = () => {
     if (!verdict || !reviewReady(verdict.value) || submitReview.isPending) return;
     const body = summary;
+    const sent = pending;
     submitReview.mutate(
-      { verdict: verdict.value, body, comments: [] },
+      {
+        verdict: verdict.value,
+        body,
+        comments: sent.map(({ path, position, body }) => ({ path, position, body })),
+      },
       {
         onSuccess: () => {
+          removePending(
+            reviewKeyOf(repoPath, detail.number),
+            sent.map((c) => c.id),
+          );
           // A summary revised while this one was in flight is kept for next time.
           setSummary((current) => (current === body ? "" : current));
           setOpen(false);
@@ -156,7 +174,7 @@ export function PullRequestComposer({
     );
   };
 
-  const started = summary.trim().length > 0;
+  const started = summary.trim().length > 0 || pending.length > 0;
 
   return (
     <Popover
@@ -166,13 +184,17 @@ export function PullRequestComposer({
         setOpen(next);
       }}
     >
-      <span className="flex rounded-full bg-background shadow-md">
+      <span className="relative flex rounded-full bg-background shadow-md">
         <PopoverTrigger
           render={
             <IconButton
               icon={MessageSquare}
               label={
-                mode === "review" && !canComment ? "Review pull request" : "Comment on pull request"
+                pending.length > 0
+                  ? `Review pull request, ${pending.length} pending line ${pending.length === 1 ? "comment" : "comments"}`
+                  : mode === "review" && !canComment
+                    ? "Review pull request"
+                    : "Comment on pull request"
               }
               variant="outline"
               size="lg"
@@ -180,6 +202,14 @@ export function PullRequestComposer({
             />
           }
         />
+        {pending.length > 0 ? (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-3xs font-medium text-primary-foreground tabular-nums"
+          >
+            {pending.length}
+          </span>
+        ) : null}
       </span>
       <PopoverContent
         side="top"
@@ -292,6 +322,13 @@ export function PullRequestComposer({
                 if (!event.repeat) sendReview();
               }}
             />
+            {pending.length > 0 ? (
+              <p className="text-2xs text-muted-foreground">
+                {pending.length === 1
+                  ? "1 line comment from the Code tab goes with this review."
+                  : `${pending.length} line comments from the Code tab go with this review.`}
+              </p>
+            ) : null}
             <div className="flex flex-wrap items-center justify-end gap-2">
               {verdicts.length > 1 ? (
                 <div className="mr-auto">

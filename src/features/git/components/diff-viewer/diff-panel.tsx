@@ -1,34 +1,12 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
-import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
-import type { CodeViewDiffItem, FileDiffContentsLoader, FileDiffMetadata } from "@pierre/diffs";
-import type { CodeViewHandle } from "@pierre/diffs/react";
-import {
-  AlertCircle,
-  ArrowRight,
-  ChevronDown,
-  ChevronRight,
-  ChevronsDownUp,
-  ChevronsUpDown,
-  Columns2,
-  FolderTree,
-  Info,
-  Pilcrow,
-  RefreshCw,
-  Rows3,
-  Settings2,
-  WrapText,
-} from "lucide-react";
+import type { FileDiffContentsLoader } from "@pierre/diffs";
+import { ArrowRight, ChevronDown } from "lucide-react";
 import { openReviewFile } from "../../lib/open-review-file";
 import { Button } from "@/ui/button";
-import { IconButton } from "@/ui/icon-button";
-import { Segmented } from "@/ui/segmented";
-import { useScopedHotkeys } from "@/features/keybindings/lib/use-scoped-hotkeys";
-import { Hint } from "@/ui/tooltip";
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
@@ -40,15 +18,11 @@ import {
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 import { formatTime } from "@/lib/format-time";
-import { cn } from "@/lib/utils";
 import type { EditTurn } from "@/features/chat/lib/turn-edits";
-import { useSettingsStore } from "@/features/settings/stores/settings-store";
-import { useWordWrap } from "@/features/settings/lib/use-word-wrap";
 import { useSessionFiles } from "@/features/chat/lib/session-files";
 import { getDiffFileContents, getDiffPreview, type DiffSource } from "../../lib/git-review-api";
-import { buildFileDiffContentVersion, fnv1a32 } from "../../lib/diff-rendering";
-import { FileViewedContext, FileViewedToggle, type FileViewedState } from "./file-viewed-toggle";
-import { invalidateReviewFiles, useReviewFiles, type ReviewFile } from "../../lib/use-review-files";
+import { fnv1a32 } from "../../lib/diff-rendering";
+import { invalidateReviewFiles, useReviewFiles } from "../../lib/use-review-files";
 import {
   combineReviews,
   useAttachedRootReviews,
@@ -56,27 +30,20 @@ import {
 } from "../../lib/use-root-review";
 import { useSessionRoots } from "@/features/chat/hooks/use-session-roots";
 import { isAbsolutePath } from "@/features/chat/lib/open-turn-diff";
-import { useDiffJump } from "../../lib/diff-jump";
 import {
   useSessionEditTurns,
   useTurnEdits,
   useTurnReviewFiles,
 } from "../../lib/use-turn-review-files";
-import {
-  collapsedSetOf,
-  LATEST_TURN,
-  useDiffPanelStore,
-  type DiffLayout,
-  type DiffScope,
-  type ViewedMark,
-} from "../../stores/diff-panel-store";
+import { LATEST_TURN, useDiffPanelStore, type DiffScope } from "../../stores/diff-panel-store";
 import { useGitStore } from "../../stores/git-store";
-import { StyledCodeView } from "./styled-code-view";
-import { DiffFileTree } from "./diff-file-tree";
-import { CopyPathButton } from "./copy-path-button";
 import { DiffPanelSkeleton } from "./diff-panel-skeleton";
-import { DiffFindBar, type DiffFindHandle } from "./diff-find-bar";
-import { formatCompactCount } from "../../lib/format-compact-count";
+import {
+  DiffEmpty,
+  DiffPanelView,
+  useDiffIgnoreWhitespace,
+  type DiffViewSource,
+} from "./diff-panel-view";
 
 /**
  * The review diff: every changed file of the working tree or the branch,
@@ -86,8 +53,12 @@ import { formatCompactCount } from "../../lib/format-compact-count";
  * a complete file list; `useReviewFiles` fills in the files the cap left out,
  * one at a time as their rows come into view. Beside a session there is also
  * the turn scope, which reads no git at all: one turn's own edits, diffed from
- * the texts its tool calls carried (`use-turn-review-files.ts`). Rendering: `StyledCodeView`,
- * which tokenizes in a worker pool and never on this thread.
+ * the texts its tool calls carried (`use-turn-review-files.ts`). Rendering:
+ * `DiffPanelView`, through `StyledCodeView`, which tokenizes in a worker pool
+ * and never on this thread.
+ *
+ * Given a `source` (a pull request's, `pull-request-code-tab.tsx`), the panel
+ * reads no git and shows that instead.
  */
 
 const SCOPE_LABEL: Record<DiffScope, string> = {
@@ -97,136 +68,8 @@ const SCOPE_LABEL: Record<DiffScope, string> = {
   "branch-range": "Branch",
 };
 
-const LAYOUT_OPTIONS = [
-  { value: "unified", label: "Stacked diff view", icon: <Rows3 size={12} />, iconOnly: true },
-  { value: "split", label: "Split diff view", icon: <Columns2 size={12} />, iconOnly: true },
-] as const;
-
-/** `+12 −3`, in the diff palette's colours, compact past a thousand. */
-const DiffStat = memo(function DiffStat({
-  additions,
-  deletions,
-  className,
-}: {
-  additions: number;
-  deletions: number;
-  className?: string;
-}) {
-  return (
-    <span
-      role="group"
-      aria-label={`${additions} additions, ${deletions} deletions`}
-      className={cn("inline-flex items-center gap-1 font-mono text-2xs tabular-nums", className)}
-    >
-      <span aria-hidden className="text-[var(--atlas-diff-added-text)]">
-        +{formatCompactCount(additions)}
-      </span>
-      <span aria-hidden className="text-[var(--atlas-diff-removed-text)]">
-        −{formatCompactCount(deletions)}
-      </span>
-    </span>
-  );
-});
-
 /** The scope menu's value for the turn the panel follows. */
 const turnValue = (turn: string) => `turn:${turn}`;
-
-/** Hide the viewer's own +/- counts: it counts only what has loaded, and a
- *  pending file would read +0 −0. The header shows the backend's numstat. */
-const HIDE_VIEWER_COUNTS = "[data-additions-count], [data-deletions-count] { display: none; }";
-
-const itemIdOf = (file: ReviewFile) => `${file.stat.oldPath ?? ""}\0${file.stat.path}`;
-
-/** The tree beside the diff: its width is saved under this. */
-const TREE_LAYOUT_ID = "git-review-diff-tree";
-
-/** A file header's counts, written the way the viewer writes its own: removals
- *  first, and a side with nothing in it left out (`-8`, `-36 +1`, `+12`). The
- *  viewer's own are hidden ({@link HIDE_VIEWER_COUNTS}) because they count
- *  only what has loaded; these are the backend's numstat. */
-const HeaderStat = memo(function HeaderStat({
-  additions,
-  deletions,
-}: {
-  additions: number;
-  deletions: number;
-}) {
-  const showDeletions = deletions > 0 || additions === 0;
-  const showAdditions = additions > 0 || deletions === 0;
-  return (
-    <span
-      role="group"
-      aria-label={`${additions} additions, ${deletions} deletions`}
-      className="inline-flex items-center gap-1 font-mono text-xs tabular-nums"
-    >
-      {showDeletions && (
-        <span aria-hidden className="text-[var(--atlas-diff-removed-text)]">
-          -{formatCompactCount(deletions)}
-        </span>
-      )}
-      {showAdditions && (
-        <span aria-hidden className="text-[var(--atlas-diff-added-text)]">
-          +{formatCompactCount(additions)}
-        </span>
-      )}
-    </span>
-  );
-});
-
-/** The fold chevron takes the colour of the change, as the round icon beside
- *  it does: added, removed, or modified (a rename included). */
-function chevronToneOf(fileDiff: FileDiffMetadata): string {
-  switch (fileDiff.type) {
-    case "new":
-      return "text-[var(--atlas-diff-added-text)]";
-    case "deleted":
-      return "text-[var(--atlas-diff-removed-text)]";
-    case "change":
-    case "rename-pure":
-    case "rename-changed":
-      return "text-[var(--atlas-diff-modified-text)]";
-    default:
-      return "text-muted-foreground";
-  }
-}
-
-/** Per-object memo of the content hash: re-hashing every line of every file on
- *  every render would cost more than the render. A parsed file's cache key
- *  already is its content hash (`withContentCacheKey`), so it is reused. */
-const versionCache = new WeakMap<FileDiffMetadata, number>();
-function contentVersion(fileDiff: FileDiffMetadata): number {
-  let v = versionCache.get(fileDiff);
-  if (v === undefined) {
-    v = fileDiff.cacheKey ? fnv1a32(fileDiff.cacheKey) : buildFileDiffContentVersion(fileDiff);
-    versionCache.set(fileDiff, v);
-  }
-  return v;
-}
-
-/** What a "Viewed" mark remembers of a file: its diff's content, free of the
- *  scope-specific cache key, so the capped patch and a lazily loaded one of
- *  the same change agree. `null` until the diff has loaded. */
-const signatureCache = new WeakMap<FileDiffMetadata, number>();
-function viewedSignature(file: ReviewFile): number | null {
-  if (file.state !== "ready") return null;
-  let sig = signatureCache.get(file.fileDiff);
-  if (sig === undefined) {
-    sig = buildFileDiffContentVersion(file.fileDiff);
-    signatureCache.set(file.fileDiff, sig);
-  }
-  return sig;
-}
-
-const NO_VIEWED: Record<string, ViewedMark> = {};
-
-/** Marked viewed, and the diff now on screen is not the one that was read. A
- *  mark from another whitespace mode, or made before the diff loaded, cannot
- *  tell, so it is not called stale. */
-function isStaleMark(mark: ViewedMark | undefined, file: ReviewFile | undefined, ws: boolean) {
-  if (!mark || !file || mark.sig === null || mark.ws !== ws) return false;
-  const sig = viewedSignature(file);
-  return sig !== null && sig !== mark.sig;
-}
 
 export interface DiffPanelProps {
   /** The tab this panel is, so `requestDiffJump` can steer it. */
@@ -238,22 +81,33 @@ export interface DiffPanelProps {
   actions?: ReactNode;
   /** Heads the header. */
   leading?: ReactNode;
-  /**
-   * A "Viewed" box on every file header and an "X / N viewed" count: a pull
-   * request's review, where the reader works through the files. Off beside a
-   * session, whose diff is read, not signed off.
-   */
-  viewedMarks?: boolean;
+  /** Show this instead of the repository's changes: a pull request's files,
+   *  with its Viewed marks and review threads. */
+  source?: DiffViewSource;
 }
 
-export function DiffPanel({
+export function DiffPanel({ source, ...props }: DiffPanelProps) {
+  if (source) {
+    return (
+      <DiffPanelView
+        tabId={props.tabId}
+        repoPath={props.repoPath}
+        source={source}
+        leading={props.leading}
+        actions={props.actions}
+      />
+    );
+  }
+  return <GitDiffPanel {...props} />;
+}
+
+function GitDiffPanel({
   tabId,
   repoPath,
   sessionId = null,
   actions,
   leading,
-  viewedMarks: viewedMarksOn = false,
-}: DiffPanelProps) {
+}: Omit<DiffPanelProps, "source">) {
   // The git scopes the menu lists as items; `turn` has its own entries.
   const scopes: DiffScope[] = sessionId
     ? ["session", "working-tree", "branch-range"]
@@ -265,16 +119,8 @@ export function DiffPanel({
       : scopes[0];
   const turnChoice = useDiffPanelStore((s) => s.turn[tabId] ?? LATEST_TURN);
   const baseRef = useDiffPanelStore((s) => s.baseRef[repoPath] ?? null);
-  const layout = useDiffPanelStore.use.layout();
-  // The global `wordWrap` setting: the button below flips it for file tabs too.
-  const { wrap: wordWrap, toggle: toggleWordWrap } = useWordWrap();
-  const fileTreeOpen = useDiffPanelStore.use.fileTreeOpen();
-  const storedWhitespace = useDiffPanelStore.use.ignoreWhitespace();
-  const settingWhitespace = useSettingsStore((s) => s.settings.diffIgnoreWhitespace);
-  const ignoreWhitespace = storedWhitespace ?? settingWhitespace;
-  const collapseByDefault = useSettingsStore((s) => s.settings.diffFilesCollapsed);
+  const ignoreWhitespace = useDiffIgnoreWhitespace();
   const actionsApi = useDiffPanelStore.use.actions();
-
   const preview = useQuery({
     queryKey: ["git-diff-preview", repoPath, baseRef, ignoreWhitespace],
     queryFn: () => getDiffPreview(repoPath, { baseRef: baseRef ?? undefined, ignoreWhitespace }),
@@ -433,97 +279,6 @@ export function DiffPanel({
       : selectedTurn && selectedTurn !== latestTurn
         ? `Turn ${selectedTurn.number}`
         : SCOPE_LABEL.turn;
-  const itemIds = useMemo(() => files.map(itemIdOf), [files]);
-  const defaultCollapsed = useMemo<ReadonlySet<string>>(
-    () => new Set(collapseByDefault && itemIds.length > 1 ? itemIds : []),
-    [collapseByDefault, itemIds],
-  );
-  const storedCollapsed = useDiffPanelStore((s) => s.collapsed[collapseScopeKey]);
-  const collapsed = useMemo(
-    () => collapsedSetOf(storedCollapsed, defaultCollapsed),
-    [storedCollapsed, defaultCollapsed],
-  );
-  const updateCollapsed = useCallback(
-    (update: (current: ReadonlySet<string>) => ReadonlySet<string>) =>
-      actionsApi.updateCollapsed(collapseScopeKey, defaultCollapsed, update),
-    [actionsApi, collapseScopeKey, defaultCollapsed],
-  );
-  const toggleFile = useCallback(
-    (id: string) =>
-      updateCollapsed((current) => {
-        const next = new Set(current);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        return next;
-      }),
-    [updateCollapsed],
-  );
-  const allCollapsed = itemIds.length > 0 && itemIds.every((id) => collapsed.has(id));
-  const toggleAll = () => updateCollapsed(() => (allCollapsed ? new Set() : new Set(itemIds)));
-
-  const fileById = useMemo(() => new Map(files.map((f) => [itemIdOf(f), f])), [files]);
-  const fileByPath = useMemo(() => new Map(files.map((f) => [f.stat.path, f])), [files]);
-
-  // ── Viewed: per scope and path, remembered across relaunches. Only where
-  // the panel offers it (`viewedMarks`): elsewhere no mark is read, so none
-  // reaches a header or an item's version. ──
-  const viewedMarks = useDiffPanelStore((s) =>
-    viewedMarksOn ? (s.viewed[collapseScopeKey] ?? NO_VIEWED) : NO_VIEWED,
-  );
-  const isViewed = useCallback((path: string) => path in viewedMarks, [viewedMarks]);
-  const isStale = useCallback(
-    (path: string) => isStaleMark(viewedMarks[path], fileByPath.get(path), ignoreWhitespace),
-    [viewedMarks, fileByPath, ignoreWhitespace],
-  );
-  const setViewed = useCallback(
-    (id: string, path: string, viewed: boolean) => {
-      const file = fileByPath.get(path);
-      actionsApi.setViewed(
-        collapseScopeKey,
-        path,
-        viewed ? { sig: file ? viewedSignature(file) : null, ws: ignoreWhitespace } : null,
-      );
-      // Marking a file viewed folds it; unmarking opens it again.
-      updateCollapsed((current) => {
-        if (current.has(id) === viewed) return current;
-        const next = new Set(current);
-        if (viewed) next.add(id);
-        else next.delete(id);
-        return next;
-      });
-    },
-    [actionsApi, collapseScopeKey, fileByPath, ignoreWhitespace, updateCollapsed],
-  );
-  const viewedState = useMemo<FileViewedState>(
-    () => ({ isViewed, isStale, setViewed }),
-    [isViewed, isStale, setViewed],
-  );
-  const viewedCount = useMemo(
-    () => files.reduce((n, f) => (f.stat.path in viewedMarks ? n + 1 : n), 0),
-    [files, viewedMarks],
-  );
-
-  const items = useMemo<CodeViewDiffItem[]>(
-    () =>
-      files.map((file) => {
-        const id = itemIdOf(file);
-        const folded = file.state !== "ready" || collapsed.has(id);
-        const path = file.stat.path;
-        const mark = viewedMarks[path];
-        const viewedMark = mark ? (isStaleMark(mark, file, ignoreWhitespace) ? "s" : "v") : "";
-        return {
-          id,
-          type: "diff",
-          fileDiff: file.fileDiff,
-          collapsed: folded,
-          version: fnv1a32(
-            `${contentVersion(file.fileDiff)}:${folded ? 1 : 0}:${file.state}:${viewedMark}`,
-          ),
-        };
-      }),
-    [files, collapsed, viewedMarks, ignoreWhitespace],
-  );
-
   // Expanding the unchanged lines around a hunk needs both whole sides.
   const sourceRef = useRef(source);
   sourceRef.current = source;
@@ -565,322 +320,99 @@ export function DiffPanel({
     [repoPath],
   );
 
-  // ── Revealing a file: from the tree, or from outside (`requestDiffJump`) ──
-  // The handle is held with the scope key its viewer was mounted for: the
-  // viewer remounts per scope, and a jump that changes scope must not land on
-  // the handle of the viewer it replaced.
-  const [mounted, setMounted] = useState<{
-    key: string;
-    handle: CodeViewHandle<undefined, undefined>;
-  } | null>(null);
-  const setViewer = useCallback(
-    (handle: CodeViewHandle<undefined, undefined> | null) =>
-      setMounted((current) =>
-        handle
-          ? { key: collapseScopeKey, handle }
-          : current?.key === collapseScopeKey
-            ? null
-            : current,
-      ),
-    [collapseScopeKey],
-  );
-  const viewer = mounted?.key === collapseScopeKey ? mounted.handle : null;
-  const [selected, setSelected] = useState<string | null>(null);
-  const reveal = useCallback(
-    (requested: string) => {
-      // A jump from outside names the file as its source does (absolute, for
-      // a file outside the main project); the list keys it per root.
-      const path = files.some((f) => f.stat.path === requested)
-        ? requested
-        : combined.keyOf(requested);
-      const file = files.find((f) => f.stat.path === path);
-      if (!file) return false;
-      const id = itemIdOf(file);
-      setSelected(path);
-      if (file.state === "pending") requestFile(path);
-      updateCollapsed((current) => {
-        if (!current.has(id)) return current;
-        const next = new Set(current);
-        next.delete(id);
-        return next;
-      });
-      viewer?.scrollTo({ type: "item", id, align: "start" });
-      return true;
-    },
-    [files, combined, requestFile, updateCollapsed, viewer],
-  );
-  // ── Find (⌘F), scoped to this tab: the session beside it keeps its own ──
-  const [find, setFind] = useState({ open: false, focus: 0 });
-  const findRef = useRef<DiffFindHandle>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const openFind = useCallback(() => setFind((f) => ({ open: true, focus: f.focus + 1 })), []);
-  const closeFind = useCallback(() => {
-    setFind((f) => ({ ...f, open: false }));
-    rootRef.current?.focus({ preventScroll: true });
-  }, []);
-  const canFind = files.length > 0;
-  const unloaded = useMemo(() => files.filter((f) => f.state === "pending").length, [files]);
-  useScopedHotkeys({
-    tabId,
-    handlers: {
-      "diff.find": () => {
-        if (!canFind) return false;
-        openFind();
-      },
-    },
-  });
-  // Stable: what it reads is rebuilt whenever a file loads, and the find bar
-  // must not see a new callback each time.
-  const unfoldDeps = useRef({ fileById, requestFile, updateCollapsed });
-  unfoldDeps.current = { fileById, requestFile, updateCollapsed };
-  const unfold = useCallback((id: string) => {
-    const { fileById, requestFile, updateCollapsed } = unfoldDeps.current;
-    const file = fileById.get(id);
-    if (file?.state === "pending") requestFile(file.stat.path);
-    updateCollapsed((current) => {
-      if (!current.has(id)) return current;
-      const next = new Set(current);
-      next.delete(id);
-      return next;
-    });
-  }, []);
-  // Each file's render remounts rows; the open find repaints over them.
-  const repaintFind = useCallback(() => findRef.current?.repaint(), []);
-
-  const jump = useDiffJump(tabId);
-  const handledJump = useRef<number | null>(null);
-  useEffect(() => {
-    if (!jump || handledJump.current === jump.nonce || !viewer) return;
-    if (reveal(jump.path)) handledJump.current = jump.nonce;
-  }, [jump, reveal, viewer]);
-
-  const totals = useMemo(() => {
-    let additions = 0;
-    let deletions = 0;
-    for (const f of files) {
-      additions += f.stat.additions ?? 0;
-      deletions += f.stat.deletions ?? 0;
-    }
-    return { additions, deletions };
-  }, [files]);
-
   const branches = useGitStore((s) => (s.repoPath === repoPath ? s.branchesFull : null));
-
-  // The tree's width, remembered across sessions.
-  const { defaultLayout, onLayoutChanged } = useDefaultLayout({ id: TREE_LAYOUT_ID });
-
   const headRef = branches?.find((b) => b.isCurrent)?.name ?? "HEAD";
-  // One row: what is shown on the left (scope or turn, and the refs a branch
-  // diff compares), how it is shown on the right. Layout, wrap and whitespace
-  // sit inline while the panel has room and fold into one menu when it does
-  // not.
-  const header = (
-    <div className="@container flex h-control-lg shrink-0 items-center gap-2 border-b border-border-subtle px-2">
-      {leading}
-      <div className="flex min-w-0 flex-1 items-center gap-3">
-        <DropdownMenu onOpenChange={(open) => setScopeMenuOpen(open)}>
-          <DropdownMenuTrigger
-            render={
-              <Button variant="secondary" size="sm" aria-label={`Diff scope: ${scopeLabel}`}>
-                <span className="max-w-40 truncate">{scopeLabel}</span>
-                <ChevronDown size={12} className="shrink-0 text-muted-foreground" />
-              </Button>
-            }
-          />
-          <DropdownMenuContent align="start" sideOffset={4}>
-            <DropdownMenuRadioGroup
-              value={
-                scope !== "turn" ? scope : selectedTurn === latestTurn ? turnValue(LATEST_TURN) : ""
-              }
-              onValueChange={(value) => {
-                const v = String(value);
-                if (v.startsWith("turn:")) actionsApi.setTurn(tabId, v.slice(5));
-                else actionsApi.setScope(tabId, v as DiffScope);
-              }}
+
+  // What is shown: scope or turn on the left, and the refs a branch diff
+  // compares. How it is shown is the view's.
+  const picker = (
+    <DropdownMenu onOpenChange={(open) => setScopeMenuOpen(open)}>
+      <DropdownMenuTrigger
+        render={
+          <Button variant="secondary" size="sm" aria-label={`Diff scope: ${scopeLabel}`}>
+            <span className="max-w-40 truncate">{scopeLabel}</span>
+            <ChevronDown size={12} className="shrink-0 text-muted-foreground" />
+          </Button>
+        }
+      />
+      <DropdownMenuContent align="start" sideOffset={4}>
+        <DropdownMenuRadioGroup
+          value={
+            scope !== "turn" ? scope : selectedTurn === latestTurn ? turnValue(LATEST_TURN) : ""
+          }
+          onValueChange={(value) => {
+            const v = String(value);
+            if (v.startsWith("turn:")) actionsApi.setTurn(tabId, v.slice(5));
+            else actionsApi.setScope(tabId, v as DiffScope);
+          }}
+        >
+          {scopes.map((s) => (
+            <DropdownMenuRadioItem key={s} value={s} closeOnClick>
+              {SCOPE_LABEL[s]}
+            </DropdownMenuRadioItem>
+          ))}
+          {sessionId && (
+            <DropdownMenuRadioItem
+              value={turnValue(LATEST_TURN)}
+              disabled={!latestTurn}
+              closeOnClick
             >
-              {scopes.map((s) => (
-                <DropdownMenuRadioItem key={s} value={s} closeOnClick>
-                  {SCOPE_LABEL[s]}
-                </DropdownMenuRadioItem>
-              ))}
-              {sessionId && (
-                <DropdownMenuRadioItem
-                  value={turnValue(LATEST_TURN)}
-                  disabled={!latestTurn}
-                  closeOnClick
-                >
-                  {SCOPE_LABEL.turn}
-                </DropdownMenuRadioItem>
-              )}
-            </DropdownMenuRadioGroup>
-            {sessionId && (
-              <TurnSubmenu
-                turns={turns}
-                selected={scope === "turn" ? selectedTurn : null}
-                onPick={(turnId) => actionsApi.setTurn(tabId, turnId)}
-              />
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        {viewedMarksOn && files.length > 0 && (
-          <span className="min-w-0 shrink truncate text-xs text-muted-foreground tabular-nums">
-            {viewedCount} / {files.length} viewed
-          </span>
-        )}
-        {scope === "branch-range" && (
-          <div
-            className="flex min-w-0 items-center gap-2 overflow-hidden text-xs text-muted-foreground"
-            aria-label={`Comparing ${headRef} against ${source?.baseRef ?? "the base branch"}`}
-          >
-            <span className="max-w-48 min-w-0 truncate">{headRef}</span>
-            <ArrowRight size={12} className="shrink-0" aria-hidden />
-            <BaseRefPicker
-              current={source?.baseRef ?? null}
-              chosen={baseRef}
-              branches={branches?.filter((b) => !b.isCurrent).map((b) => b.name) ?? []}
-              onPick={(ref) => actionsApi.setBaseRef(repoPath, ref)}
-            />
-          </div>
-        )}
-      </div>
-      <div className="flex shrink-0 items-center gap-1">
-        {files.length > 0 && (
-          <DiffStat
-            additions={totals.additions}
-            deletions={totals.deletions}
-            className="mr-1 hidden @sm:inline-flex"
+              {SCOPE_LABEL.turn}
+            </DropdownMenuRadioItem>
+          )}
+        </DropdownMenuRadioGroup>
+        {sessionId && (
+          <TurnSubmenu
+            turns={turns}
+            selected={scope === "turn" ? selectedTurn : null}
+            onPick={(turnId) => actionsApi.setTurn(tabId, turnId)}
           />
         )}
-        {/* A turn's edits are a record, not the disk: nothing to refresh. */}
-        {scope !== "turn" && (
-          <Hint label="Refresh diff">
-            <IconButton
-              size="sm"
-              icon={RefreshCw}
-              label="Refresh diff"
-              disabled={preview.isFetching}
-              onClick={() => {
-                void refetch();
-                attachedReview.refetch();
-              }}
-            />
-          </Hint>
-        )}
-        {files.length > 0 && (
-          <Hint label={allCollapsed ? "Expand all files" : "Collapse all files"}>
-            <IconButton
-              size="sm"
-              icon={allCollapsed ? ChevronsUpDown : ChevronsDownUp}
-              label={allCollapsed ? "Expand all files" : "Collapse all files"}
-              onClick={toggleAll}
-            />
-          </Hint>
-        )}
-        <DropdownMenu>
-          <Hint label="Diff options">
-            <DropdownMenuTrigger
-              render={
-                <IconButton
-                  size="sm"
-                  icon={Settings2}
-                  label="Diff options"
-                  className="@md:hidden"
-                />
-              }
-            />
-          </Hint>
-          <DropdownMenuContent align="end" sideOffset={4} className="w-48">
-            <DropdownMenuRadioGroup
-              value={layout}
-              onValueChange={(value) => actionsApi.setLayout(value as DiffLayout)}
-            >
-              <DropdownMenuRadioItem value="unified" closeOnClick>
-                Stacked
-              </DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="split" closeOnClick>
-                Split
-              </DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuCheckboxItem checked={wordWrap} onCheckedChange={toggleWordWrap}>
-              Wrap lines
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={ignoreWhitespace}
-              onCheckedChange={(checked) => actionsApi.setIgnoreWhitespace(checked)}
-            >
-              Hide whitespace changes
-            </DropdownMenuCheckboxItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <div className="hidden items-center gap-1 @md:flex">
-          <Segmented
-            size="sm"
-            aria-label="Diff layout"
-            value={layout}
-            onValueChange={actionsApi.setLayout}
-            options={LAYOUT_OPTIONS}
-          />
-          <Hint label={wordWrap ? "Disable word wrap" : "Enable word wrap"}>
-            <IconButton
-              size="sm"
-              icon={WrapText}
-              label="Word wrap"
-              aria-pressed={wordWrap}
-              onClick={toggleWordWrap}
-            />
-          </Hint>
-          <Hint label={ignoreWhitespace ? "Show whitespace changes" : "Hide whitespace changes"}>
-            <IconButton
-              size="sm"
-              icon={Pilcrow}
-              label="Hide whitespace changes"
-              aria-pressed={ignoreWhitespace}
-              onClick={() => actionsApi.setIgnoreWhitespace(!ignoreWhitespace)}
-            />
-          </Hint>
-        </div>
-        {files.length > 0 && (
-          <Hint label={fileTreeOpen ? "Hide file tree" : "Show file tree"}>
-            <IconButton
-              size="sm"
-              icon={FolderTree}
-              label="Show file tree"
-              aria-pressed={fileTreeOpen}
-              onClick={() => actionsApi.setFileTreeOpen(!fileTreeOpen)}
-            />
-          </Hint>
-        )}
-        {actions}
-      </div>
-    </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
+  const info =
+    scope === "branch-range" ? (
+      <div
+        className="flex min-w-0 items-center gap-2 overflow-hidden text-xs text-muted-foreground"
+        aria-label={`Comparing ${headRef} against ${source?.baseRef ?? "the base branch"}`}
+      >
+        <span className="max-w-48 min-w-0 truncate">{headRef}</span>
+        <ArrowRight size={12} className="shrink-0" aria-hidden />
+        <BaseRefPicker
+          current={source?.baseRef ?? null}
+          chosen={baseRef}
+          branches={branches?.filter((b) => !b.isCurrent).map((b) => b.name) ?? []}
+          onPick={(ref) => actionsApi.setBaseRef(repoPath, ref)}
+        />
+      </div>
+    ) : null;
 
   // The turn scope reads the session's record, not git: none of the
   // repository's states below apply to it.
   const git = scope !== "turn";
-  let body: ReactNode;
+  let placeholder: ReactNode = null;
   if (!git && !selectedTurn) {
-    body = (
-      <Empty>
+    placeholder = (
+      <DiffEmpty>
         {turns.length > 0
           ? "That turn isn't in this session any more."
           : "No turn in this session has changed a file yet."}
-      </Empty>
+      </DiffEmpty>
     );
   } else if (!git && files.length === 0) {
-    body = <Empty>This turn's edits have nothing to show.</Empty>;
+    placeholder = <DiffEmpty>This turn's edits have nothing to show.</DiffEmpty>;
   } else if (git && !repoPath) {
-    body = <Empty>Open a project to review its changes.</Empty>;
+    placeholder = <DiffEmpty>Open a project to review its changes.</DiffEmpty>;
   } else if (git && preview.isError) {
-    body = <Empty>Couldn't read the diff: {String(preview.error)}</Empty>;
+    placeholder = <DiffEmpty>Couldn't read the diff: {String(preview.error)}</DiffEmpty>;
   } else if (git && !preview.data) {
-    body = <DiffPanelSkeleton />;
+    placeholder = <DiffPanelSkeleton />;
   } else if (git && preview.data?.sources.length === 0 && files.length === 0) {
-    body = <Empty>This project isn't a git repository.</Empty>;
+    placeholder = <DiffEmpty>This project isn't a git repository.</DiffEmpty>;
   } else if (files.length === 0) {
-    body = (
-      <Empty>
+    placeholder = (
+      <DiffEmpty>
         {scope === "session"
           ? only && only.size > 0
             ? "Nothing uncommitted is left from this session."
@@ -888,288 +420,64 @@ export function DiffPanel({
           : scope === "branch-range"
             ? `No changes against ${source?.baseRef ?? "the base branch"}.`
             : "No uncommitted changes."}
-      </Empty>
-    );
-  } else {
-    body = (
-      <Group
-        id={TREE_LAYOUT_ID}
-        orientation="horizontal"
-        defaultLayout={defaultLayout}
-        onLayoutChanged={onLayoutChanged}
-        className="min-h-0 flex-1"
-      >
-        <Panel id="review-diff-files" className="min-w-0">
-          <div
-            className="relative h-full min-h-0 min-w-0"
-            onClickCapture={(event) => {
-              // A file's name opens the file; the rest of its header row folds
-              // it. Its buttons keep their own actions: the chevron in
-              // particular must not also reach the row, or the two folds
-              // cancel out.
-              const path = event.nativeEvent.composedPath();
-              for (const node of path) {
-                if (node instanceof HTMLButtonElement || node instanceof HTMLAnchorElement) return;
-                // The find bar floats over the viewer; its clicks are its own.
-                if (node instanceof HTMLElement && node.hasAttribute("data-diff-find")) return;
-                if (node instanceof HTMLElement && node.hasAttribute("data-viewed-toggle")) return;
-              }
-              const title = path.find(
-                (n): n is HTMLElement => n instanceof HTMLElement && n.hasAttribute("data-title"),
-              );
-              const header = path.find(
-                (n): n is HTMLElement =>
-                  n instanceof HTMLElement && n.hasAttribute("data-diffs-header"),
-              );
-              if (!header) return;
-              const name = (title ?? header.querySelector("[data-title]"))?.textContent?.trim();
-              const file = name ? fileByPath.get(name) : undefined;
-              if (!file) return;
-              if (!title) {
-                if (file.state === "ready") toggleFile(itemIdOf(file));
-                return;
-              }
-              // A deleted file has nothing on disk to open; its diff is all
-              // there is of it.
-              if (file.stat.status === "deleted") return;
-              // As a right-panel file tab, or the system editor for a file
-              // outside the project.
-              void openReviewFile(
-                combined.keys.get(file.stat.path)?.abs ?? `${repoPath}/${file.stat.path}`,
-              );
-            }}
-          >
-            <FileViewedContext value={viewedMarksOn ? viewedState : null}>
-              <StyledCodeView
-                // Remounted only when what it shows is a different diff (another
-                // scope or base). A refresh after an edit updates items in place,
-                // keeping the scroll position and every unchanged file's tokens.
-                key={collapseScopeKey}
-                viewerRef={setViewer}
-                className="h-full min-h-0 overflow-auto"
-                items={items}
-                fallback={<DiffPanelSkeleton />}
-                extraCSS={HIDE_VIEWER_COUNTS}
-                options={{
-                  diffStyle: layout,
-                  overflow: wordWrap ? "wrap" : "scroll",
-                  stickyHeaders: true,
-                  // Whole lines tinted, no word-level boxes inside them: a
-                  // review reads the line, and the boxes fight the syntax colour.
-                  lineDiffType: "none",
-                  onPostRender: repaintFind,
-                  // Unchanged lines around a hunk come from git, which knows
-                  // nothing of a past turn's texts.
-                  loadDiffFiles: git ? loadDiffFiles : undefined,
-                }}
-                renderHeaderPrefix={(item) => {
-                  const file = fileById.get(item.id);
-                  if (!file) return null;
-                  return (
-                    <CollapseToggle
-                      id={item.id}
-                      path={file.stat.path}
-                      collapsed={item.collapsed === true}
-                      disabled={file.state !== "ready"}
-                      tone={chevronToneOf(file.fileDiff)}
-                      onToggle={toggleFile}
-                    />
-                  );
-                }}
-                renderHeaderFilenameSuffix={(item) => {
-                  const file = fileById.get(item.id);
-                  if (!file) return null;
-                  return (
-                    <FileStatus
-                      file={file}
-                      copyPath={combined.keys.get(file.stat.path)?.rel}
-                      onRequest={requestFile}
-                      onRetry={retry}
-                      turn={!git}
-                    />
-                  );
-                }}
-                renderHeaderMetadata={(item) => {
-                  const stat = fileById.get(item.id)?.stat;
-                  if (!stat) return null;
-                  return (
-                    <FileViewedToggle
-                      id={item.id}
-                      path={stat.path}
-                      stat={
-                        stat.additions === null ? null : (
-                          <HeaderStat additions={stat.additions} deletions={stat.deletions ?? 0} />
-                        )
-                      }
-                    />
-                  );
-                }}
-              />
-            </FileViewedContext>
-            {/* After the viewer: its item updates land first (`DiffFindBar`). */}
-            {find.open && (
-              <DiffFindBar
-                ref={findRef}
-                viewer={viewer}
-                items={items}
-                onUnfold={unfold}
-                onClose={closeFind}
-                focusRequest={find.focus}
-                unloaded={unloaded}
-              />
-            )}
-          </div>
-        </Panel>
-        {fileTreeOpen && (
-          <>
-            <Separator className="w-px bg-border-subtle transition-colors hover:bg-primary data-[separator=active]:bg-primary cursor-col-resize" />
-            <Panel
-              id="review-diff-tree"
-              defaultSize="34"
-              minSize="16"
-              maxSize="50"
-              className="flex min-w-0 flex-col"
-            >
-              <DiffFileTree
-                files={treeFiles}
-                groups={combined.grouped ? combined.groups : undefined}
-                root={repoPath}
-                selectedPath={selected}
-                onSelect={reveal}
-              />
-            </Panel>
-          </>
-        )}
-      </Group>
+      </DiffEmpty>
     );
   }
 
-  return (
-    <div
-      ref={rootRef}
-      tabIndex={-1}
-      data-diff-panel
-      className="flex h-full min-h-0 flex-col bg-[var(--atlas-editor-background)] outline-none"
-    >
-      {header}
-      {body}
-    </div>
+  const keysRef = useRef(combined);
+  keysRef.current = combined;
+  const copyPathOf = useCallback((path: string) => keysRef.current.keys.get(path)?.rel, []);
+  const resolvePath = useCallback((path: string) => keysRef.current.keyOf(path), []);
+  const openFile = useCallback(
+    (file: { stat: { path: string; status: string } }) => {
+      // A deleted file has nothing on disk to open; its diff is all there is of it.
+      if (file.stat.status === "deleted") return;
+      // As a right-panel file tab, or the system editor for a file outside the project.
+      void openReviewFile(
+        keysRef.current.keys.get(file.stat.path)?.abs ?? `${repoPath}/${file.stat.path}`,
+      );
+    },
+    [repoPath],
   );
-}
-
-function Empty({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex flex-1 items-center justify-center px-6 text-center text-xs text-muted-foreground">
-      {children}
-    </div>
+  const tree = useMemo(
+    () => ({ files: treeFiles, groups: combined.grouped ? combined.groups : undefined }),
+    [treeFiles, combined.grouped, combined.groups],
   );
-}
 
-const CollapseToggle = memo(function CollapseToggle({
-  id,
-  path,
-  collapsed,
-  disabled,
-  tone,
-  onToggle,
-}: {
-  id: string;
-  path: string;
-  collapsed: boolean;
-  disabled: boolean;
-  /** The change's colour (`chevronToneOf`). */
-  tone: string;
-  onToggle: (id: string) => void;
-}) {
-  // A plain button rather than `IconButton`: the glyph wears the change's
-  // colour, which the primitive's ghost look would override.
-  const Chevron = collapsed ? ChevronRight : ChevronDown;
   return (
-    <Hint label={collapsed ? "Expand diff" : "Collapse diff"}>
-      <button
-        type="button"
-        aria-label={collapsed ? `Expand ${path}` : `Collapse ${path}`}
-        aria-expanded={!collapsed}
-        disabled={disabled}
-        onClick={(event) => {
-          event.stopPropagation();
-          onToggle(id);
-        }}
-        className={cn(
-          "-ms-0.5 inline-flex size-control-xs shrink-0 cursor-pointer items-center justify-center rounded transition-colors duration-fast hover:bg-element-hover disabled:cursor-not-allowed disabled:opacity-50",
-          tone,
-        )}
-      >
-        <Chevron size={16} aria-hidden />
-      </button>
-    </Hint>
-  );
-});
-
-/** The header's tail: copy, and what is wrong with the file if anything. A
- *  pending file's row asks for its contents when it mounts, which is when the
- *  viewer has scrolled it into its render window. */
-function FileStatus({
-  file,
-  copyPath,
-  onRequest,
-  onRetry,
-  turn = false,
-}: {
-  file: ReviewFile;
-  /** What "Copy path" copies: the path in the file's own root. */
-  copyPath?: string;
-  onRequest: (path: string) => void;
-  onRetry: (path: string) => void;
-  /** A turn's file: diffed from its texts, so "no changes" is not "now". */
-  turn?: boolean;
-}) {
-  const { path } = file.stat;
-  const pending = file.state === "pending";
-  useEffect(() => {
-    if (pending) onRequest(path);
-  }, [pending, path, onRequest]);
-  return (
-    <span className="ml-1 inline-flex items-center gap-1">
-      <CopyPathButton path={copyPath ?? path} />
-      {pending && <span className="text-2xs text-muted-foreground">Loading…</span>}
-      {file.state === "binary" && <span className="text-2xs text-muted-foreground">Binary</span>}
-      {file.state === "too-large" && (
-        <span className="text-2xs text-muted-foreground">Too large to show</span>
-      )}
-      {file.state === "empty" && (
-        <span className="text-2xs text-muted-foreground">
-          {turn ? "No changes" : "No changes now"}
-        </span>
-      )}
-      {file.excerpt && (
-        <Hint label="Only the lines the agent replaced are known, not the whole file. Line numbers count from the excerpt.">
-          <span className="rounded border border-border px-1 text-2xs text-muted-foreground">
-            Excerpt
-          </span>
-        </Hint>
-      )}
-      {file.state === "error" && (
-        <Hint label="Couldn't load this file. Retry">
-          <IconButton
-            size="xs"
-            icon={AlertCircle}
-            label="Retry loading diff"
-            onClick={(event) => {
-              event.stopPropagation();
-              onRetry(path);
-            }}
-          />
-        </Hint>
-      )}
-      {file.truncated && (
-        <Hint label="Too large to show in full: only the first hunks are shown. Counts include every change.">
-          <span className="inline-flex text-muted-foreground" aria-label="Partial diff">
-            <Info size={12} />
-          </span>
-        </Hint>
-      )}
-    </span>
+    <DiffPanelView
+      tabId={tabId}
+      repoPath={repoPath}
+      leading={leading}
+      actions={actions}
+      source={{
+        key: collapseScopeKey,
+        files,
+        tree,
+        requestFile,
+        retry,
+        // Unchanged lines around a hunk come from git, which knows nothing of
+        // a past turn's texts.
+        loadDiffFiles: git ? loadDiffFiles : undefined,
+        picker,
+        info,
+        // A turn's edits are a record, not the disk: nothing to refresh.
+        refresh: git
+          ? {
+              busy: preview.isFetching,
+              run: () => {
+                void refetch();
+                attachedReview.refetch();
+              },
+            }
+          : null,
+        placeholder,
+        copyPathOf,
+        resolvePath,
+        openFile,
+        turn: !git,
+      }}
+    />
   );
 }
 

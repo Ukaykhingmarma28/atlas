@@ -45,9 +45,9 @@ export interface DiffFindHandle {
 
 interface DiffFindBarProps {
   ref?: Ref<DiffFindHandle>;
-  viewer: CodeViewHandle<undefined, undefined> | null;
+  viewer: CodeViewHandle<unknown, undefined> | null;
   /** The viewer's items, as the panel gives them to it. */
-  items: readonly CodeViewDiffItem[];
+  items: readonly CodeViewDiffItem<unknown>[];
   /** Unfold a file so a match in it can be shown. */
   onUnfold: (id: string) => void;
   onClose: () => void;
@@ -81,7 +81,7 @@ const EMPTY: Results = {
 
 /** The file at the top of the viewport: the mounted one starting last at or
  *  above the scroll position. Mounted items come in no particular order. */
-function topItemId(viewer: CodeViewHandle<undefined, undefined> | null): string | null {
+function topItemId(viewer: CodeViewHandle<unknown, undefined> | null): string | null {
   const instance = viewer?.getInstance();
   if (!instance) return null;
   const scrollTop = instance.getScrollTop();

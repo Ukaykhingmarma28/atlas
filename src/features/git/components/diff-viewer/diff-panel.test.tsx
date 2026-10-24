@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { ReviewFile } from "../../lib/use-review-files";
 
 // No Tauri here: the settings store subscribes to config changes at import,
@@ -70,23 +70,54 @@ const { DEFAULT_SETTINGS } = await import("@/features/settings/lib/app-settings"
 const { useLayoutStore } = await import("@/features/layout/stores/layout-store");
 const { isMac } = await import("@/lib/platform");
 const { useDiffPanelStore } = await import("../../stores/diff-panel-store");
+const { DiffPanelView } = await import("./diff-panel-view");
+type DiffViewSource = import("./diff-panel-view").DiffViewSource;
 
 const updateSettings = vi.fn((partial: Partial<typeof DEFAULT_SETTINGS>) =>
   useSettingsStore.setState((s) => ({ settings: { ...s.settings, ...partial } })),
 );
 
-function renderPanel({ viewedMarks = false }: { viewedMarks?: boolean } = {}) {
+function renderPanel() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <DiffPanel tabId="review" repoPath="/repo" viewedMarks={viewedMarks} />
+      <DiffPanel tabId="review" repoPath="/repo" />
+    </QueryClientProvider>,
+  );
+}
+
+// A source that keeps viewed marks the way the pull request's Code tab does:
+// whoever owns the marks says what is viewed and what went stale.
+const setViewedSpy = vi.fn();
+function ViewedHarness({ stale = false }: { stale?: boolean }) {
+  const [marks, setMarks] = useState<Record<string, boolean>>({});
+  const source: DiffViewSource = {
+    key: "pr:1",
+    files: [FILE],
+    picker: null,
+    viewed: {
+      isViewed: (path) => marks[path] === true,
+      isStale: (path) => stale && marks[path] === true,
+      setViewed: (path, viewed) => {
+        setViewedSpy(path, viewed);
+        setMarks((m) => ({ ...m, [path]: viewed }));
+      },
+    },
+  };
+  return <DiffPanelView tabId="review" repoPath="/repo" source={source} />;
+}
+function renderViewedPanel(props: { stale?: boolean } = {}) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <ViewedHarness {...props} />
     </QueryClientProvider>,
   );
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useDiffPanelStore.setState({ viewed: {}, collapsed: {} });
+  useDiffPanelStore.setState({ folds: {} });
   useSettingsStore.setState({
     settings: { ...DEFAULT_SETTINGS },
     actions: { ...useSettingsStore.getState().actions, updateSettings },
@@ -189,7 +220,7 @@ describe("DiffPanel viewed files", () => {
     });
 
   it("counts viewed files, and a tick folds the file", async () => {
-    renderPanel({ viewedMarks: true });
+    renderViewedPanel();
     await screen.findByTestId("viewer");
     expect(screen.getByRole("checkbox", { name: "Viewed" })).toBeTruthy();
     expect(viewedCount()).toBe("0 / 1 viewed");
@@ -198,28 +229,19 @@ describe("DiffPanel viewed files", () => {
     tick();
     expect(viewedCount()).toBe("1 / 1 viewed");
     expect(screen.getByTestId("item").dataset.collapsed).toBe("true");
-    const marks = Object.values(useDiffPanelStore.getState().viewed)[0];
-    expect(Object.keys(marks ?? {})).toEqual(["src/long.ts"]);
+    expect(setViewedSpy).toHaveBeenLastCalledWith("src/long.ts", true);
 
     // Unticking opens it again.
     tick();
     expect(viewedCount()).toBe("0 / 1 viewed");
     expect(screen.getByTestId("item").dataset.collapsed).toBe("false");
+    expect(setViewedSpy).toHaveBeenLastCalledWith("src/long.ts", false);
   });
 
-  it("reads as changed when the file's diff moved since it was viewed", async () => {
-    renderPanel({ viewedMarks: true });
+  it("reads as changed when the source says the file moved since it was viewed", async () => {
+    renderViewedPanel({ stale: true });
     await screen.findByTestId("viewer");
     tick();
-    // The mark as if made against another version of the diff.
-    act(() => {
-      const viewed = useDiffPanelStore.getState().viewed;
-      const [scope, marks] = Object.entries(viewed)[0]!;
-      const mark = marks["src/long.ts"]!;
-      useDiffPanelStore.setState({
-        viewed: { [scope]: { "src/long.ts": { ...mark, sig: (mark.sig ?? 0) + 1 } } },
-      });
-    });
     expect(
       screen.getByRole("checkbox", { name: /changed since you marked it viewed/i }),
     ).toBeTruthy();

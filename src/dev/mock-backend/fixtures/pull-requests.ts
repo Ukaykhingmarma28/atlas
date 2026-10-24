@@ -960,42 +960,229 @@ function timeline(number: number, cursor: string | null): PrTimelinePage {
 }
 
 // ── files and diffs ─────────────────────────────────────────────────────────
+//
+// Each file is laid out once (`layoutOf`): its old and new text and the hunks
+// between them, so the patch `pr_diff` sends and the sides
+// `pr_diff_file_contents` sends agree, and a hunk's collapsed context expands
+// into the same lines. #420's 214 files add up to its +18,402 −16,977.
 
 const DIRS = ["src/checkout", "src/checkout/steps", "src/cart", "src/ui", "tests/checkout"];
+const CATALOGUE_DIRS = [
+  "src/catalogue/product",
+  "src/catalogue/product/gallery",
+  "src/catalogue/listing",
+  "src/catalogue/filters",
+  "src/catalogue/price",
+  "src/ui/tokens",
+  "tests/catalogue",
+];
+const CATALOGUE_NAMES = [
+  "product-card",
+  "product-title",
+  "price-tag",
+  "badge-row",
+  "gallery-strip",
+  "swatch-picker",
+  "size-grid",
+  "stock-note",
+  "listing-grid",
+  "filter-chip",
+  "sort-menu",
+  "rating-stars",
+  "promo-banner",
+];
 
-function filesOf(number: number): PrDiffFile[] {
-  const detail = find(number).detail;
-  return Array.from({ length: detail.changedFiles }, (_, i): PrDiffFile => {
-    const dir = DIRS[i % DIRS.length];
-    const status = i === 0 ? "added" : i === 1 ? "renamed" : i === 2 ? "removed" : "modified";
-    return {
-      path: i === 7 ? `${dir}/logo-${i}.png` : `${dir}/module-${i}.ts`,
-      previousPath: status === "renamed" ? `${dir}/old-module-${i}.ts` : null,
-      status,
-      additions: status === "removed" ? 0 : 8 + (i % 13),
-      deletions: status === "added" ? 0 : i % 6,
-      // A binary file, and one past the host's patch limit.
-      hasPatch: i !== 7 && i !== 11,
-    };
-  });
+/** Spread `total` over `n` files by a deterministic weight, the last one
+ *  taking the rounding, so the files add up to the pull request's counts. */
+function spread(total: number, n: number, salt: number, zeroAt: (i: number) => boolean): number[] {
+  const weights = Array.from({ length: n }, (_, i) =>
+    zeroAt(i) ? 0 : 1 + ((Math.imul(i + 1, 2_654_435_761 + salt) >>> 0) % 1000) / 250,
+  );
+  const sum = weights.reduce((a, b) => a + b, 0);
+  const counts = weights.map((w) => Math.floor((w / sum) * total));
+  const rest = total - counts.reduce((a, b) => a + b, 0);
+  let last = n - 1;
+  while (last > 0 && zeroAt(last)) last--;
+  counts[last] += rest;
+  return counts;
 }
 
-function hunkFor(file: PrDiffFile): string {
-  if (file.status === "added") {
-    return `@@ -0,0 +1,3 @@\n+export const created = true;\n+\n+export default created;\n`;
+const fileCache = new Map<number, PrDiffFile[]>();
+
+function filesOf(number: number): PrDiffFile[] {
+  const cached = fileCache.get(number);
+  if (cached) return cached;
+  const detail = find(number).detail;
+  const n = detail.changedFiles;
+  const big = number === 420;
+  const statusOf = (i: number): PrDiffFile["status"] =>
+    i === 0 ? "added" : i === 1 ? "renamed" : i === 2 ? "removed" : "modified";
+  // A binary file, and one past the host's patch limit.
+  const withheld = (i: number) => i === 7 || i === 11;
+  const adds = big
+    ? spread(detail.additions, n, 7, (i) => statusOf(i) === "removed")
+    : Array.from({ length: n }, (_, i) => (statusOf(i) === "removed" ? 0 : 8 + (i % 13)));
+  const dels = big
+    ? spread(detail.deletions, n, 13, (i) => statusOf(i) === "added")
+    : Array.from({ length: n }, (_, i) => (statusOf(i) === "added" ? 0 : i % 6));
+  const files = Array.from({ length: n }, (_, i): PrDiffFile => {
+    const status = statusOf(i);
+    const dir = big ? CATALOGUE_DIRS[i % CATALOGUE_DIRS.length] : DIRS[i % DIRS.length];
+    const name = big
+      ? `${CATALOGUE_NAMES[i % CATALOGUE_NAMES.length]}-${i}${dir.startsWith("tests") ? ".test" : ""}.tsx`
+      : `module-${i}.ts`;
+    return {
+      path: i === 7 ? `${dir}/logo-${i}.png` : `${dir}/${name}`,
+      previousPath: status === "renamed" ? `${dir}/old-${name}` : null,
+      status,
+      additions: adds[i],
+      deletions: dels[i],
+      hasPatch: !withheld(i),
+    };
+  }).sort((a, b) => a.path.localeCompare(b.path));
+  fileCache.set(number, files);
+  return files;
+}
+
+interface Hunk {
+  oldStart: number;
+  oldCount: number;
+  newStart: number;
+  newCount: number;
+  lines: string[];
+}
+
+interface Layout {
+  oldText: string;
+  newText: string;
+  hunks: Hunk[];
+}
+
+/** Changed lines per run, and unchanged lines between runs: past six (three
+ *  of context each side) they make separate hunks, with a collapsed gap. */
+const RUN = 14;
+const GAP = 18;
+const CONTEXT = 3;
+
+const layouts = new Map<string, Layout>();
+
+function codeLine(kind: "same" | "old" | "new", n: number, seed: number): string {
+  const k = (n + seed) % 9;
+  if (kind === "same") {
+    return [
+      `export function Row${n}({ item }: RowProps) {`,
+      `  const label = useLabel(item.id);`,
+      `  if (!item.visible) return null;`,
+      `  return (`,
+      `    <div className="row" data-id={item.id}>`,
+      `      <span>{label}</span>`,
+      `    </div>`,
+      `  );`,
+      `}`,
+    ][k];
   }
-  if (file.status === "removed") return `@@ -1,2 +0,0 @@\n-export const gone = true;\n-\n`;
+  if (kind === "old") {
+    return [
+      `  padding: "${6 + (n % 5)}px ${10 + (n % 3)}px",`,
+      `  color: palette.slate${(n % 9) + 1}00,`,
+      `  fontSize: ${12 + (n % 4)},`,
+      `  gap: ${4 + (n % 6)},`,
+      `  borderRadius: ${2 + (n % 4)},`,
+      `  marginTop: ${n % 12},`,
+      `  lineHeight: "${18 + (n % 6)}px",`,
+      `  background: palette.shade${n % 9},`,
+      `  boxShadow: shadows.card${n % 4},`,
+    ][k];
+  }
   return [
-    "@@ -10,6 +10,8 @@ export function step() {",
-    "   const state = machine.current;",
-    "-  if (state === 'failed') retry();",
-    "+  if (state === 'failed') {",
-    "+    machine.send({ type: 'retry' });",
-    "+  }",
-    "   return state;",
-    " }",
-    "",
-  ].join("\n");
+    `  padding: token("space.${n % 5}", "space.${2 + (n % 3)}"),`,
+    `  color: token("text.subtle"),`,
+    `  fontSize: token("type.${["xs", "sm", "md", "lg"][n % 4]}"),`,
+    `  gap: token("space.${n % 6}"),`,
+    `  borderRadius: token("radius.${["sm", "md", "lg", "xl"][n % 4]}"),`,
+    `  marginTop: token("space.${n % 12}"),`,
+    `  lineHeight: token("leading.${["tight", "snug", "normal"][n % 3]}"),`,
+    `  background: token("surface.sunken"),`,
+    `  boxShadow: token("elevation.${n % 4}"),`,
+  ][k];
+}
+
+function layoutOf(file: PrDiffFile): Layout {
+  const cached = layouts.get(file.path);
+  if (cached) return cached;
+  const seed = file.path.length;
+  const oldLines: string[] = [];
+  const newLines: string[] = [];
+  const hunks: Hunk[] = [];
+  let same = 0;
+  const pushSame = (count: number) => {
+    for (let i = 0; i < count; i++) {
+      const line = codeLine("same", same++, seed);
+      oldLines.push(line);
+      newLines.push(line);
+    }
+  };
+  if (file.status === "added" || file.status === "removed") {
+    const count = file.status === "added" ? file.additions : file.deletions;
+    const lines = Array.from({ length: count }, (_, i) =>
+      codeLine(file.status === "added" ? "new" : "old", i, seed),
+    );
+    if (file.status === "added") newLines.push(...lines);
+    else oldLines.push(...lines);
+    hunks.push({
+      oldStart: file.status === "added" ? 0 : 1,
+      oldCount: file.status === "added" ? 0 : count,
+      newStart: file.status === "added" ? 1 : 0,
+      newCount: file.status === "added" ? count : 0,
+      lines: lines.map((l) => (file.status === "added" ? `+${l}` : `-${l}`)),
+    });
+  } else {
+    let removeLeft = file.deletions;
+    let addLeft = file.additions;
+    let changed = 0;
+    pushSame(8);
+    while (removeLeft > 0 || addLeft > 0) {
+      const removing = Math.min(RUN, removeLeft);
+      const adding = Math.min(RUN, addLeft);
+      const before = Math.min(CONTEXT, same);
+      const oldStart = oldLines.length - before + 1;
+      const newStart = newLines.length - before + 1;
+      const lines = oldLines.slice(oldLines.length - before).map((l) => ` ${l}`);
+      for (let i = 0; i < removing; i++) {
+        const line = codeLine("old", changed + i, seed);
+        oldLines.push(line);
+        lines.push(`-${line}`);
+      }
+      for (let i = 0; i < adding; i++) {
+        const line = codeLine("new", changed + i, seed);
+        newLines.push(line);
+        lines.push(`+${line}`);
+      }
+      changed += Math.max(removing, adding);
+      removeLeft -= removing;
+      addLeft -= adding;
+      const gap = removeLeft > 0 || addLeft > 0 ? GAP : 6;
+      pushSame(gap);
+      const after = Math.min(CONTEXT, gap);
+      for (const line of newLines.slice(newLines.length - gap, newLines.length - gap + after)) {
+        lines.push(` ${line}`);
+      }
+      hunks.push({
+        oldStart,
+        oldCount: before + removing + after,
+        newStart,
+        newCount: before + adding + after,
+        lines,
+      });
+    }
+  }
+  const layout = {
+    oldText: oldLines.length ? `${oldLines.join("\n")}\n` : "",
+    newText: newLines.length ? `${newLines.join("\n")}\n` : "",
+    hunks,
+  };
+  layouts.set(file.path, layout);
+  return layout;
 }
 
 function patchFor(files: PrDiffFile[]): string {
@@ -1010,13 +1197,34 @@ function patchFor(files: PrDiffFile[]): string {
         `--- ${f.status === "added" ? "/dev/null" : `a/${old}`}`,
         `+++ ${f.status === "removed" ? "/dev/null" : `b/${f.path}`}`,
       );
-      return `${head.join("\n")}\n${f.hasPatch ? hunkFor(f) : ""}`;
+      const body = f.hasPatch
+        ? layoutOf(f)
+            .hunks.map(
+              (h) =>
+                `@@ -${h.oldStart},${h.oldCount} +${h.newStart},${h.newCount} @@\n${h.lines.join("\n")}\n`,
+            )
+            .join("")
+        : "";
+      return `${head.join("\n")}\n${body}`;
     })
     .join("");
 }
 
-function diff(number: number, cursor: string | null, commit: string | null): PrDiffResult {
+/** The files one commit touched: a slice of the pull request's, by its place
+ *  in the history. */
+function commitFiles(number: number, commit: string): PrDiffFile[] {
+  const commits = commitsOf(number);
+  const at = Math.max(
+    0,
+    commits.findIndex((c) => c.oid === commit),
+  );
   const files = filesOf(number);
+  const step = Math.max(1, commits.length);
+  return files.filter((_, i) => i % step === at % step || i % 17 === at % 17).slice(0, 14);
+}
+
+function diff(number: number, cursor: string | null, commit: string | null): PrDiffResult {
+  const files = commit ? commitFiles(number, commit) : filesOf(number);
   // A small pull request arrives whole, like the host's one-piece diff.
   if (!cursor && !commit && files.length <= 100) {
     return {
@@ -1028,7 +1236,7 @@ function diff(number: number, cursor: string | null, commit: string | null): PrD
     };
   }
   const page = cursor ? Number(cursor) : 1;
-  const slice = (commit ? files.slice(0, 4) : files).slice((page - 1) * 100, page * 100);
+  const slice = files.slice((page - 1) * 100, page * 100);
   const omitted = slice
     .filter((f) => !f.hasPatch && f.additions + f.deletions > 0)
     .map((f) => ({ path: f.path, additions: f.additions, deletions: f.deletions }));
@@ -1036,20 +1244,139 @@ function diff(number: number, cursor: string | null, commit: string | null): PrD
     patch: patchFor(slice),
     files: slice,
     truncated: omitted.length > 0,
-    nextCursor: !commit && page * 100 < files.length ? String(page + 1) : null,
+    nextCursor: page * 100 < files.length ? String(page + 1) : null,
     omittedFileStats: omitted,
   };
 }
 
+function fileContents(number: number, newPath: string): PrDiffFileContents {
+  if (newPath.endsWith(".png")) fail({ kind: "unsupported", message: "This file is binary." });
+  const file = filesOf(number).find((f) => f.path === newPath);
+  if (!file) fail({ kind: "notFound" });
+  const layout = layoutOf(file);
+  return { oldContents: layout.oldText, newContents: layout.newText };
+}
+
+/** A line inside a file's first hunk, on the side asked: where a review
+ *  thread on #420 sits, so it lands on the diff. */
+function lineInDiff(
+  index: number,
+  side: "left" | "right",
+  offset = 4,
+): { path: string; line: number } {
+  const file = filesOf(420)[index];
+  const hunk = layoutOf(file).hunks[0];
+  return {
+    path: file.path,
+    line: (side === "left" ? hunk.oldStart : hunk.newStart) + offset,
+  };
+}
+
+/** #420's review threads: on lines of the first and later pages, one on the
+ *  old side, one resolved, one outdated (off the diff). */
+function catalogueThreads(): PrReviewThread[] {
+  const at = (
+    id: string,
+    index: number,
+    side: "left" | "right",
+    comments: PrThreadComment[],
+    extra: Partial<PrReviewThread> = {},
+  ): PrReviewThread => ({
+    id,
+    ...lineInDiff(index, side),
+    side,
+    isResolved: false,
+    isOutdated: false,
+    comments,
+    commentCount: comments.length,
+    nextCommentsCursor: null,
+    canResolve: true,
+    ...extra,
+  });
+  return [
+    at("PRRT_420_spacing", 3, "right", [
+      threadComment(
+        "RC_420_1",
+        REVIEWER,
+        "`space.2` is 8px; this was 6px. Is the extra 2px intended here?",
+        30,
+      ),
+      threadComment("RC_420_2", DEV, "Yes, the design review rounded every 6 up to 8.", 28),
+    ]),
+    at("PRRT_420_colour", 9, "left", [
+      threadComment(
+        "RC_420_3",
+        VIEWER,
+        "This colour was hand-tuned for the sale badge; check `text.subtle` keeps the contrast.",
+        26,
+      ),
+    ]),
+    at(
+      "PRRT_420_radius",
+      24,
+      "right",
+      [
+        threadComment(
+          "RC_420_4",
+          REVIEWER,
+          "Nit: `radius.md` reads better than `radius.lg` on a card this small.",
+          22,
+        ),
+      ],
+      { isResolved: true },
+    ),
+    at("PRRT_420_page2", 150, "right", [
+      threadComment(
+        "RC_420_5",
+        REVIEWER,
+        "This file is past the first page of the diff, so this thread appears once it loads.",
+        12,
+      ),
+    ]),
+    {
+      id: "PRRT_420_outdated",
+      path: filesOf(420)[40].path,
+      line: null,
+      side: "right",
+      isResolved: false,
+      isOutdated: true,
+      comments: [
+        threadComment("RC_420_6", REVIEWER, "Did this hover state go away on purpose?", 50),
+      ],
+      commentCount: 1,
+      nextCommentsCursor: null,
+      canResolve: true,
+    },
+  ];
+}
+
 const viewed = new Map<number, Map<string, PrFileViewed["state"]>>();
 
+/** #420 starts part-way through a review: the first files viewed, two of them
+ *  pushed to since (`dismissed`, which reads as "Changed"). */
+function seededMarks(number: number): Map<string, PrFileViewed["state"]> {
+  let marks = viewed.get(number);
+  if (!marks) {
+    marks = new Map();
+    if (number === 420) {
+      const files = filesOf(420);
+      for (const i of [0, 2, 4, 5, 6, 8]) marks.set(files[i].path, "viewed");
+      for (const i of [1, 10]) marks.set(files[i].path, "dismissed");
+    }
+    viewed.set(number, marks);
+  }
+  return marks;
+}
+
 function filesViewed(number: number): PrFilesViewed {
-  const marks = viewed.get(number) ?? new Map();
+  const marks = seededMarks(number);
   return {
     files: filesOf(number).map((f) => ({ path: f.path, state: marks.get(f.path) ?? "unviewed" })),
     truncated: false,
   };
 }
+
+threads.set(420, catalogueThreads());
 
 // A 1×1 PNG, so an image renders without a network.
 const PIXEL =
@@ -1195,26 +1522,21 @@ export const pullRequestsHandlers: TypedHandlers<PullRequestsResponses> = {
     return { comments: thread.id === "PRRT_412_long" ? LONG_THREAD_REST : [], nextCursor: null };
   },
   pr_timeline: ({ number, cursor }) => timeline(Number(number), (cursor as string | null) ?? null),
-  pr_commits: ({ number }) => ({ commits: commitsOf(Number(number)), nextCursor: null }),
-  pr_diff: ({ number, cursor, commit }) =>
-    diff(Number(number), (cursor as string | null) ?? null, (commit as string | null) ?? null),
-  pr_diff_file_contents: ({ changeType, newPath }) => {
-    if (String(newPath).endsWith(".png"))
-      fail({ kind: "unsupported", message: "This file is binary." });
-    const before =
-      "export function step() {\n  const state = machine.current;\n  if (state === 'failed') retry();\n  return state;\n}\n";
-    const after = before.replace(
-      "  if (state === 'failed') retry();\n",
-      "  if (state === 'failed') {\n    machine.send({ type: 'retry' });\n  }\n",
-    );
+  // Pages of 25, so a long history pages in the Code tab's picker.
+  pr_commits: ({ number, cursor }) => {
+    const all = commitsOf(Number(number));
+    const start = cursor ? Number(cursor) : 0;
     return {
-      oldContents: changeType === "new" ? "" : before,
-      newContents: changeType === "deleted" ? "" : after,
+      commits: all.slice(start, start + 25),
+      nextCursor: start + 25 < all.length ? String(start + 25) : null,
     };
   },
+  pr_diff: ({ number, cursor, commit }) =>
+    diff(Number(number), (cursor as string | null) ?? null, (commit as string | null) ?? null),
+  pr_diff_file_contents: ({ number, newPath }) => fileContents(Number(number), String(newPath)),
   pr_files_viewed: ({ number }) => filesViewed(Number(number)),
   pr_set_files_viewed: ({ number, files }) => {
-    const marks = viewed.get(Number(number)) ?? new Map();
+    const marks = seededMarks(Number(number));
     for (const f of (files ?? []) as Array<{ path: string; viewed: boolean }>) {
       marks.set(f.path, f.viewed ? "viewed" : "unviewed");
     }
