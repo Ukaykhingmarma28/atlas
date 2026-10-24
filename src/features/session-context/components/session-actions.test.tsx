@@ -25,8 +25,8 @@ vi.mock("@/features/artifacts/lib/read-session-detail", () => ({
   })),
 }));
 
-const { SessionBody } = await import("./session-overview-session");
-const { useChatCommentsStore } = await import("../stores/chat-comments-store");
+const { SessionActions } = await import("./session-actions");
+const { useChatCommentsStore } = await import("@/features/chat/stores/chat-comments-store");
 const { useArtifactsStore } = await import("@/features/artifacts/stores/artifacts-store");
 const { useLayoutStore } = await import("@/features/layout/stores/layout-store");
 
@@ -39,10 +39,10 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-describe("SessionBody", () => {
+describe("SessionActions", () => {
   it("turns the cloud actions off for an unsynced thread, and keeps Find on", () => {
     const onOpenSearch = vi.fn();
-    render(<SessionBody tabId="t1" projectPath="/p" onOpenSearch={onOpenSearch} />);
+    render(<SessionActions tabId="t1" projectPath="/p" onOpenSearch={onOpenSearch} />);
     for (const b of screen.getAllByRole("button", { name: /Share this project/ })) {
       expect(b.getAttribute("aria-disabled")).toBe("true");
       expect(b.hasAttribute("disabled")).toBe(false);
@@ -53,7 +53,7 @@ describe("SessionBody", () => {
   });
 
   it("opens the thread's session in the Timeline once it is synced", async () => {
-    render(<SessionBody tabId="t1" projectPath="/p" />);
+    render(<SessionActions tabId="t1" projectPath="/p" />);
     await act(async () => {
       useChatCommentsStore
         .getState()
@@ -69,7 +69,7 @@ describe("SessionBody", () => {
   });
 
   it("does nothing on a click while off", () => {
-    render(<SessionBody tabId="t1" projectPath="/p" />);
+    render(<SessionActions tabId="t1" projectPath="/p" />);
     for (const b of screen.getAllByRole("button", { name: /Share this project/ })) {
       fireEvent.click(b);
     }

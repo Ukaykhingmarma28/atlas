@@ -1,13 +1,14 @@
-// How much of the session overview card shows, by the height it has.
+// How much of the session Details card shows, by the height it has.
 //
 // The card is one of two forms (docked beside the transcript, or a popover
-// under its title-bar button; see `session-overview-store.ts`), and in both it
+// under its title-bar button; see `session-details-store.ts`), and in both it
 // is capped at the height above the composer. Rather than scroll the moment
 // it outgrows that, it first sheds what matters least, in steps:
 //
-//   full       every card, the Session card with its project rows
-//   compact    the Session card keeps its actions and drops the project rows
-//   essential  the live work only: subagents, changes, memories
+//   full       every section, the Session section with its project rows
+//   compact    drops the Projects section and the Session section's project
+//              rows; keeps the workspace, version control and actions
+//   essential  the session's own record only: changes, lineage, memory
 //
 // Each step's natural height is measured while it is showing, and the fullest
 // step that fits is chosen. A step not yet measured counts as fitting, so the

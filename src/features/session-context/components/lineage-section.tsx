@@ -6,8 +6,8 @@
 // session, in its tab if one shows it. The agents come from the transcript:
 // live ones list first, expanded; finished ones fold under a collapsed
 // "Previous agents (N)" header; each list pages six at a time, then twelve,
-// behind "Show N more". The title carries the running count
-// ("Lineage · 2 running"), and the header's ⋯ menu offers the fork itself,
+// behind "Show N more". The heading carries the running count
+// ("2 running") and folds the section; its ⋯ menu offers the fork itself,
 // gated on the agent advertising it exactly as the chat header's menu is.
 
 import { useMemo, useState, type ReactNode } from "react";
@@ -63,7 +63,13 @@ export function LineageSection({
   if (children.length === 0 && edges.length === 0 && !canFork) return null;
   return (
     <ContextSection
-      title={running > 0 ? `Lineage · ${running} running` : "Lineage"}
+      title="Lineage"
+      // The child agents' running count while any runs, else how many there
+      // were: the figure that changes while you watch.
+      collapse={{
+        id: "lineage",
+        badge: running > 0 ? `${running} running` : children.length > 0 ? `${children.length}` : "",
+      }}
       actions={canFork ? <LineageMenu tabId={tabId} /> : null}
     >
       {edges.map((edge) => (

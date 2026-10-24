@@ -25,7 +25,7 @@ import {
   useSaveProjectScripts,
 } from "../lib/project-scripts";
 import type { ProjectScript, ProjectScriptIcon } from "../lib/session-context-api";
-import { useSessionContextStore, type ScriptEditorRequest } from "../stores/session-context-store";
+import { useSessionDetailsStore, type ScriptEditorRequest } from "../stores/session-details-store";
 import { PROJECT_SCRIPT_ICONS, ProjectScriptGlyph } from "./project-script-icons";
 
 const ICON_OPTIONS = PROJECT_SCRIPT_ICONS.map((entry) => ({
@@ -35,7 +35,7 @@ const ICON_OPTIONS = PROJECT_SCRIPT_ICONS.map((entry) => ({
 }));
 
 export function ProjectScriptDialogHost() {
-  const request = useSessionContextStore.use.scriptEditor();
+  const request = useSessionDetailsStore.use.scriptEditor();
   if (!request) return null;
   // Keyed so a second request starts from its own script, not the last form.
   return (
@@ -51,7 +51,7 @@ function ProjectScriptDialog({ request }: { request: ScriptEditorRequest }) {
   const { projectPath, script } = request;
   const scripts = useProjectScripts(projectPath).data ?? [];
   const save = useSaveProjectScripts();
-  const close = () => useSessionContextStore.getState().actions.editScript(null);
+  const close = () => useSessionDetailsStore.getState().actions.editScript(null);
   const [name, setName] = useState(script?.name ?? "");
   const [icon, setIcon] = useState<ProjectScriptIcon>(script?.icon ?? "play");
   const [command, setCommand] = useState(script?.command ?? "");

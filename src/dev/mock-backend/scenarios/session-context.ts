@@ -1,4 +1,4 @@
-// The session context card with every group filled: a feature branch with an
+// The session Details card with every section filled: a feature branch with an
 // upstream, three pull requests from it (the open one with passing checks,
 // then a merged and a closed one behind "Show 2 more"), two project scripts,
 // and a session that was branched from another and has two branches of its
@@ -115,7 +115,7 @@ const transcript = [
 
 export const sessionContext: Scenario = {
   name: "session-context",
-  description: "The session context card, every group filled: PRs, scripts, lineage.",
+  description: "The session Details card, every section filled: PRs, scripts, lineage.",
   init: () => {
     seedCurrentBranch(BRANCH);
     live = null;

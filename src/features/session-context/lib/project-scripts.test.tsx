@@ -23,7 +23,7 @@ vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 import { ProjectScriptConfirmHost } from "../components/project-script-confirm";
 import { ProjectScriptsControl } from "../components/project-scripts-control";
-import { useSessionContextStore } from "../stores/session-context-store";
+import { useSessionDetailsStore } from "../stores/session-details-store";
 import { commandSummary, projectScriptTerminalLine, runProjectScript } from "./project-scripts";
 import type { ProjectScript } from "./session-context-api";
 
@@ -44,7 +44,7 @@ beforeEach(() => {
   invoke.mockReset();
   invoke.mockImplementation(async () => null);
   openCommandTerminal.mockClear();
-  useSessionContextStore.setState({ scriptConfirm: null });
+  useSessionDetailsStore.setState({ scriptConfirm: null });
 });
 afterEach(() => cleanup());
 
@@ -77,7 +77,7 @@ describe("running a project script", () => {
   it("asks before running a script nobody approved", () => {
     runProjectScript(PROJECT, setup, "/worktrees/pr-42");
     expect(openCommandTerminal).not.toHaveBeenCalled();
-    expect(useSessionContextStore.getState().scriptConfirm).toEqual({
+    expect(useSessionDetailsStore.getState().scriptConfirm).toEqual({
       projectPath: PROJECT,
       script: setup,
       cwd: "/worktrees/pr-42",
@@ -93,7 +93,7 @@ describe("running a project script", () => {
   });
 
   it("shows the whole command, and Run approves it before running", async () => {
-    useSessionContextStore.setState({
+    useSessionDetailsStore.setState({
       scriptConfirm: { projectPath: PROJECT, script: setup, cwd: PROJECT },
     });
     const client = new QueryClient();
@@ -111,7 +111,7 @@ describe("running a project script", () => {
       command: setup.command,
     });
     expect(openCommandTerminal).toHaveBeenCalledTimes(1);
-    expect(useSessionContextStore.getState().scriptConfirm).toBeNull();
+    expect(useSessionDetailsStore.getState().scriptConfirm).toBeNull();
   });
 
   it("runs nothing when the approval cannot be recorded", async () => {
@@ -119,7 +119,7 @@ describe("running a project script", () => {
       if (cmd === "project_scripts_approve") throw new Error("disk full");
       return null;
     });
-    useSessionContextStore.setState({
+    useSessionDetailsStore.setState({
       scriptConfirm: { projectPath: PROJECT, script: setup, cwd: PROJECT },
     });
     render(
@@ -133,7 +133,7 @@ describe("running a project script", () => {
   });
 
   it("Cancel runs nothing", () => {
-    useSessionContextStore.setState({
+    useSessionDetailsStore.setState({
       scriptConfirm: { projectPath: PROJECT, script: setup, cwd: PROJECT },
     });
     render(
@@ -159,6 +159,6 @@ describe("running a project script", () => {
     expect((await screen.findByText(setup.command)).className).toContain("font-mono");
     fireEvent.click(screen.getByText("Setup"));
     expect(openCommandTerminal).not.toHaveBeenCalled();
-    expect(useSessionContextStore.getState().scriptConfirm?.script.id).toBe("setup");
+    expect(useSessionDetailsStore.getState().scriptConfirm?.script.id).toBe("setup");
   });
 });

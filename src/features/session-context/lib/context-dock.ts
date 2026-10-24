@@ -1,4 +1,4 @@
-// Where the docked session context card goes, and the room the transcript
+// Where the docked session Details card goes, and the room the transcript
 // leaves for it.
 //
 // The rule the user asked for: showing or hiding the card is a toggle and

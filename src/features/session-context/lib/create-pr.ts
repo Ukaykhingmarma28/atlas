@@ -18,7 +18,7 @@ import { prCreate, prCreateDraft } from "@/features/pull-requests/lib/pull-reque
 import { invalidatePullRequestQueries } from "@/features/pull-requests/lib/pull-requests-queries";
 import type { PrCreated, PrCreateInput } from "@/features/pull-requests/lib/pull-requests-types";
 
-import { useSessionContextStore } from "../stores/session-context-store";
+import { useSessionDetailsStore } from "../stores/session-details-store";
 import { publishBranch, pushBranch } from "./git-actions";
 
 /** The prefill for the current branch; its `baseBranch` is also how the
@@ -56,7 +56,7 @@ export async function startCreatePr(
       toast.error("A pull request cannot be opened from a detached HEAD.");
       return;
     }
-    useSessionContextStore.getState().actions.requestCreatePr({
+    useSessionDetailsStore.getState().actions.requestCreatePr({
       projectPath,
       draft,
       prefill,

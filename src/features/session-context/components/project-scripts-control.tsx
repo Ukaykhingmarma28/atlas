@@ -25,7 +25,7 @@ import {
   runProjectScript,
   useProjectScripts,
 } from "../lib/project-scripts";
-import { useSessionContextStore } from "../stores/session-context-store";
+import { useSessionDetailsStore } from "../stores/session-details-store";
 import { ContextRow, ContextSplitRow, RowIcon, RowLabel } from "./context-rows";
 import { ProjectScriptGlyph } from "./project-script-icons";
 
@@ -38,7 +38,7 @@ export function ProjectScriptsControl({
   cwd?: string;
 }) {
   const scripts = useProjectScripts(projectPath).data ?? [];
-  const editScript = useSessionContextStore.use.actions().editScript;
+  const editScript = useSessionDetailsStore.use.actions().editScript;
   const primary = primaryProjectScript(scripts, preferredProjectScriptId(projectPath));
 
   if (!primary) {

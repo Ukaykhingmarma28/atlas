@@ -1,3 +1,5 @@
+// Kept for later: the session terminal drawer is unmounted (no UI reaches it) until the terminal rework. Not dead code; do not delete.
+//
 // A session's terminal drawer: shells under the composer, in the session's
 // working directory, that stay with the session.
 //

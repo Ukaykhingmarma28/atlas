@@ -87,6 +87,11 @@ export const ORG_SCOPED_TYPES: ReadonlySet<TabType> = new Set<TabType>([
  *    it will not resize below that.
  *  - `destination`: a full-page view that takes the area right of the rail,
  *    one at a time, while the session runs underneath.
+ *  - `surface-or-destination`: either, by how it was opened, and one at a
+ *    time across both forms: opening it in one form moves it out of the
+ *    other. For a tool that passes the surface test AND is a place in its own
+ *    right (team chat, amended into ADR-0024). `minWidth` is its floor as a
+ *    surface.
  *
  * The test: do you use it WHILE working in a session, and does it have a
  * useful form at column width (about 320–600px)? Yes to both is a surface; no
@@ -99,7 +104,8 @@ export const ORG_SCOPED_TYPES: ReadonlySet<TabType> = new Set<TabType>([
 export type Placement =
   | { kind: "session" }
   | { kind: "surface"; minWidth: number }
-  | { kind: "destination" };
+  | { kind: "destination" }
+  | { kind: "surface-or-destination"; minWidth: number };
 
 export const TAB_PLACEMENT = {
   chat: { kind: "session" },
@@ -124,7 +130,10 @@ export const TAB_PLACEMENT = {
   // natural shape.
   "session-pull-requests": { kind: "surface", minWidth: 320 },
   "source-control": { kind: "surface", minWidth: 300 },
-  "team-chat": { kind: "surface", minWidth: 320 },
+  // A surface beside a session (a reply while the agent works) and a
+  // destination of its own (reading the team's conversations full width).
+  // ADR-0024's 2026-10-24 amendment.
+  "team-chat": { kind: "surface-or-destination", minWidth: 320 },
   "comms-draft": { kind: "surface", minWidth: 320 },
   log: { kind: "surface", minWidth: 300 },
   pdf: { kind: "surface", minWidth: 320 },
@@ -144,22 +153,49 @@ export const TAB_PLACEMENT = {
   spaces: { kind: "destination" },
 } as const satisfies Record<TabType, Placement>;
 
-/** The tab types that are destinations, as a type, so a map keyed by it (the
- *  destination screen's panels, their titles) must cover every one. */
+type PlacementKind<K extends TabType> = (typeof TAB_PLACEMENT)[K]["kind"];
+
+/** The tab types that can show as a destination (only, or as one of two
+ *  forms), as a type, so a map keyed by it (the destination screen's panels,
+ *  their titles) must cover every one. */
 export type DestinationType = {
-  [K in TabType]: (typeof TAB_PLACEMENT)[K]["kind"] extends "destination" ? K : never;
+  [K in TabType]: PlacementKind<K> extends "destination" | "surface-or-destination" ? K : never;
 }[TabType];
 
+/** The tab types that are only ever destinations: never a column's tab. */
+export type DestinationOnlyType = {
+  [K in TabType]: PlacementKind<K> extends "destination" ? K : never;
+}[TabType];
+
+/** The tab types that open in either form (`surface-or-destination`). */
+export type DualPlacementType = {
+  [K in TabType]: PlacementKind<K> extends "surface-or-destination" ? K : never;
+}[TabType];
+
+/** Whether `type` can show on the destination screen, in either placement. */
 export function isDestination(type: TabType): type is DestinationType {
   const p: Placement = TAB_PLACEMENT[type];
+  return p.kind === "destination" || p.kind === "surface-or-destination";
+}
+
+/** Whether `type` is only ever a destination: never in a column, never in
+ *  the per-project editor state. What the layout store routes by. */
+export function isDestinationOnly(type: TabType): type is DestinationOnlyType {
+  const p: Placement = TAB_PLACEMENT[type];
   return p.kind === "destination";
+}
+
+/** Whether `type` opens in either form, by how it was opened. */
+export function isDualPlacement(type: TabType): type is DualPlacementType {
+  const p: Placement = TAB_PLACEMENT[type];
+  return p.kind === "surface-or-destination";
 }
 
 /** The narrowest a column showing `type` may be, in CSS pixels; `null` for a
  *  type that never sits in a surfaces column. */
 export function surfaceMinWidth(type: TabType): number | null {
   const p: Placement = TAB_PLACEMENT[type];
-  return p.kind === "surface" ? p.minWidth : null;
+  return p.kind === "surface" || p.kind === "surface-or-destination" ? p.minWidth : null;
 }
 
 /**

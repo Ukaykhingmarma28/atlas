@@ -5,6 +5,7 @@ import {
   Gauge,
   Layers,
   Map,
+  MessagesSquare,
   Network,
   type LucideIcon,
 } from "lucide-react";
@@ -33,6 +34,8 @@ export const DESTINATIONS: Record<DestinationType, DestinationMeta> = {
   memory: { title: "Memory", icon: BrainCircuit },
   canvas: { title: "Spaces", icon: Map },
   spaces: { title: "Space", icon: Frame },
+  // Also a surface (`surface-or-destination`); `team-chat.ts` picks the form.
+  "team-chat": { title: "Team chat", icon: MessagesSquare },
 };
 
 type LayoutSnapshot = ReturnType<typeof useLayoutStore.getState>;
@@ -42,9 +45,10 @@ export function destinationShown(s: LayoutSnapshot, type: DestinationType): bool
   return s.destinationShown && s.destination?.type === type;
 }
 
-/** Open `type` (its singleton id; a Space opens through `openSpace`). */
+/** Open `type` on the destination screen (its singleton id; a Space opens
+ *  through `openSpace`). A type that is also a surface leaves its column. */
 export function openDestination(type: Exclude<DestinationType, "spaces">): void {
-  useLayoutStore.getState().actions.addTab({
+  useLayoutStore.getState().actions.showDestination({
     id: type,
     type,
     title: DESTINATIONS[type].title,

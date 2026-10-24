@@ -151,10 +151,6 @@ const REVIEWED_AGENT_COMMANDS = [
   // Moves the open session to the Settled shelf; it stays listed, and the
   // same command (or Undo) brings it back. Refused mid-turn by the backend.
   "chat.settleSession",
-  // Shows or hides the open session's terminal drawer. Opening one starts a
-  // shell in the session's directory, as `tabs.newTerminal` does; closing it
-  // only hides it, and its shells keep running.
-  "chat.toggleTerminalDrawer",
   "view.zoomIn",
   "view.zoomOut",
   "view.zoomReset",

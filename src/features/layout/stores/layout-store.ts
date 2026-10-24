@@ -9,8 +9,10 @@ import {
   ORG_SCOPED_TYPES,
   TAB_TYPES,
   WINDOW_TYPES,
-  isDestination,
+  isDestinationOnly,
+  isDualPlacement,
   migrateTabType,
+  type DualPlacementType,
   type TabType,
 } from "@/lib/constants";
 import type { LayoutTemplate } from "../templates";
@@ -103,11 +105,6 @@ interface LayoutState {
    *  collapsing the main pane instead. Not persisted: a relaunch starts with
    *  both on screen. */
   surfaces: SurfacesMode;
-  /** Where the surfaces pane docks: beside the session (`right`, the
-   *  default) or under it (`bottom`). Persisted: it is how the reader likes
-   *  to work. Changing it flips the split's orientation in place, so nothing
-   *  in either pane remounts. */
-  surfacesDock: SurfacesDock;
   /**
    * The destination (ADR-0024): a full-page view taking the area right of the
    * rail, one at a time, never a tab in a column. `destinationShown` false is
@@ -117,6 +114,10 @@ interface LayoutState {
    */
   destination: Tab | null;
   destinationShown: boolean;
+  /** The form each `surface-or-destination` type was last shown in (team
+   *  chat): what its own shortcut reopens it as. Persisted: it is how the
+   *  reader likes to use it. */
+  lastForm: Partial<Record<DualPlacementType, PlacementForm>>;
   // Back/forward stack of tab ids — entries are pushed every time the user
   // navigates to a tab; back() / forward() rewind/advance an index.
   tabHistory: string[];
@@ -124,7 +125,8 @@ interface LayoutState {
 }
 
 export type SurfacesMode = "shown" | "hidden" | "expanded";
-export type SurfacesDock = "right" | "bottom";
+/** Which of its two forms a `surface-or-destination` type is in. */
+export type PlacementForm = "surface" | "destination";
 
 /** The source-control surface's sections, in the order its header shows them. */
 export const SOURCE_CONTROL_SECTIONS = ["changes", "git-graph", "github"] as const;
@@ -134,8 +136,6 @@ interface LayoutActions {
   actions: {
     /** Show, hide or expand the surfaces pane (see `surfaces`). */
     setSurfaces: (mode: SurfacesMode) => void;
-    /** Dock the surfaces pane beside or under the session (see `surfacesDock`). */
-    setSurfacesDock: (dock: SurfacesDock) => void;
     toggleKnowledgeSidebar: () => void;
     toggleKnowledgeInspector: () => void;
     setKnowledgeSidebarWidth: (width: number) => void;
@@ -155,6 +155,10 @@ interface LayoutActions {
     setActiveTab: (id: string) => void;
     /** Back to the session from a destination; it stays mounted, hidden. */
     hideDestination: () => void;
+    /** Open `tab` on the destination screen. A destination-only type is the
+     *  same as `addTab`; a `surface-or-destination` type (team chat) leaves
+     *  its column for it, so the window still holds one. */
+    showDestination: (tab: Tab) => void;
     setTabDirty: (id: string, dirty: boolean) => void;
     /** Rename a tab, e.g. once a pull request's title has loaded. */
     setTabTitle: (id: string, title: string) => void;
@@ -237,9 +241,9 @@ const initialState: LayoutState = {
   zen: false,
   zenPrev: null,
   surfaces: "shown",
-  surfacesDock: "right",
   destination: null,
   destinationShown: false,
+  lastForm: {},
   tabHistory: ["welcome-chat"],
   tabHistoryIndex: 0,
 };
@@ -441,7 +445,7 @@ export function restoredTabType(saved: string): TabType | null {
   if (type === null || ORG_SCOPED_TYPES.has(type) || WINDOW_TYPES.has(type)) return null;
   // A destination is never a column tab (ADR-0024). Files saved before then
   // carry Knowledge or Timeline tabs; they do not come back as columns.
-  if (isDestination(type)) return null;
+  if (isDestinationOnly(type)) return null;
   return type;
 }
 
@@ -517,7 +521,7 @@ export function applyViewKeepingWindowTabs(s: LayoutState, v: ProjectView): void
     }));
   applyView(s, {
     ...v,
-    tabs: v.tabs.filter((t) => !WINDOW_TYPES.has(t.type) && !isDestination(t.type)),
+    tabs: v.tabs.filter((t) => !WINDOW_TYPES.has(t.type) && !isDestinationOnly(t.type)),
   });
   for (const c of carried) {
     const gid =
@@ -526,6 +530,57 @@ export function applyViewKeepingWindowTabs(s: LayoutState, v: ProjectView): void
     if (c.active || !s.activeByGroup[gid]) s.activeByGroup[gid] = c.tab.id;
   }
   reconcileGroups(s);
+}
+
+/**
+ * Put `tab` on the destination screen (ADR-0024). One at a time: the same kind
+ * reopens in place, keeping its mounted state; a Space is per conversation,
+ * so another one replaces it. A `surface-or-destination` type leaves its
+ * column first, so the window never holds it twice.
+ */
+function enterDestination(s: LayoutState, tab: Tab): void {
+  if (isDualPlacement(tab.type)) {
+    const inColumn = s.tabs.find((t) => t.type === tab.type);
+    if (inColumn) removeColumnTab(s, inColumn.id);
+    s.lastForm[tab.type] = "destination";
+  }
+  const perConversation = tab.type === "spaces";
+  const same =
+    s.destination?.type === tab.type && (!perConversation || s.destination.id === tab.id);
+  s.destination = same
+    ? { ...s.destination!, title: tab.title, data: tab.data }
+    : { ...tab, groupId: undefined };
+  s.destinationShown = true;
+}
+
+/** Take `id` out of its column, as closing it would: its neighbour takes
+ *  over, an emptied surfaces column collapses, an emptied last column gets
+ *  the welcome session back. */
+function removeColumnTab(s: LayoutState, id: string): void {
+  const idx = s.tabs.findIndex((t) => t.id === id);
+  if (idx === -1) return;
+  const grp = groupOf(s.tabs[idx]);
+  const groupIdxInGroup = s.tabs.filter((t) => groupOf(t) === grp).findIndex((t) => t.id === id);
+  s.tabs.splice(idx, 1);
+  const remaining = s.tabs.filter((t) => groupOf(t) === grp);
+  if (remaining.length === 0) {
+    if (s.groupOrder.length > 1) {
+      // The column emptied — collapse the split.
+      s.groupOrder = s.groupOrder.filter((g) => g !== grp);
+      delete s.activeByGroup[grp];
+      if (s.focusedGroupId === grp) s.focusedGroupId = s.groupOrder[0];
+      if (s.groupOrder.length === 1) s.surfaces = "shown";
+    } else {
+      // Last column emptied — restore the permanent welcome chat.
+      s.tabs.push(WELCOME_TAB(grp));
+      s.activeByGroup[grp] = "welcome-chat";
+    }
+  } else if (s.activeByGroup[grp] === id) {
+    // Activate the neighbour at the same slot within the column.
+    const next = remaining[Math.min(groupIdxInGroup, remaining.length - 1)];
+    s.activeByGroup[grp] = next.id;
+  }
+  syncActiveMirror(s);
 }
 
 export const useLayoutStore = createSelectors(
@@ -572,21 +627,19 @@ export const useLayoutStore = createSelectors(
             }),
           addTab: (tab, groupId) =>
             set((s) => {
-              // A destination never enters a column (ADR-0024). One at a time:
-              // the same kind reopens in place, keeping its mounted state; a
-              // Space is per conversation, so another one replaces it.
-              if (isDestination(tab.type)) {
-                const perConversation = tab.type === "spaces";
-                const same =
-                  s.destination?.type === tab.type &&
-                  (!perConversation || s.destination.id === tab.id);
-                s.destination = same
-                  ? { ...s.destination!, title: tab.title, data: tab.data }
-                  : { ...tab, groupId: undefined };
-                s.destinationShown = true;
+              // A destination never enters a column (ADR-0024).
+              if (isDestinationOnly(tab.type)) {
+                enterDestination(s, tab);
                 return;
               }
               s.destinationShown = false;
+              // A `surface-or-destination` type opened as a tab is the surface
+              // form: it leaves the destination screen for the column, so the
+              // window still holds one.
+              if (isDualPlacement(tab.type)) {
+                if (s.destination?.type === tab.type) s.destination = null;
+                s.lastForm[tab.type] = "surface";
+              }
               // Source control and team chat are one per window, and Files one
               // per project (these tabs are the project's), wherever the open
               // one is.
@@ -678,35 +731,9 @@ export const useLayoutStore = createSelectors(
                 s.destinationShown = false;
                 return;
               }
-              const idx = s.tabs.findIndex((t) => t.id === id);
-              if (idx === -1) return;
-              const tab = s.tabs[idx];
-              if (!tab.closable) return;
-              const grp = groupOf(tab);
-              const groupIdxInGroup = s.tabs
-                .filter((t) => groupOf(t) === grp)
-                .findIndex((t) => t.id === id);
-              s.tabs.splice(idx, 1);
-
-              const remaining = s.tabs.filter((t) => groupOf(t) === grp);
-              if (remaining.length === 0) {
-                if (s.groupOrder.length > 1) {
-                  // The column emptied — collapse the split.
-                  s.groupOrder = s.groupOrder.filter((g) => g !== grp);
-                  delete s.activeByGroup[grp];
-                  if (s.focusedGroupId === grp) s.focusedGroupId = s.groupOrder[0];
-                  if (s.groupOrder.length === 1) s.surfaces = "shown";
-                } else {
-                  // Last column emptied — restore the permanent welcome chat.
-                  s.tabs.push(WELCOME_TAB(grp));
-                  s.activeByGroup[grp] = "welcome-chat";
-                }
-              } else if (s.activeByGroup[grp] === id) {
-                // Activate the neighbour at the same slot within the column.
-                const next = remaining[Math.min(groupIdxInGroup, remaining.length - 1)];
-                s.activeByGroup[grp] = next.id;
-              }
-              syncActiveMirror(s);
+              const tab = s.tabs.find((t) => t.id === id);
+              if (!tab?.closable) return;
+              removeColumnTab(s, id);
             }),
           moveTab: (id, toIndex) =>
             set((s) => {
@@ -727,6 +754,11 @@ export const useLayoutStore = createSelectors(
           hideDestination: () =>
             set((s) => {
               s.destinationShown = false;
+            }),
+          showDestination: (tab) =>
+            set((s) => {
+              if (isDestinationOnly(tab.type) || isDualPlacement(tab.type))
+                enterDestination(s, tab);
             }),
           setActiveTab: (id) =>
             set((s) => {
@@ -809,10 +841,6 @@ export const useLayoutStore = createSelectors(
                 s.focusedGroupId = s.groupOrder[1];
               }
               syncActiveMirror(s);
-            }),
-          setSurfacesDock: (dock) =>
-            set((s) => {
-              s.surfacesDock = dock;
             }),
           setFocusedGroup: (groupId) =>
             set((s) => {
@@ -1159,7 +1187,7 @@ export const useLayoutStore = createSelectors(
           bashPanel: s.bashPanel,
           plansPanel: s.plansPanel,
           timelinePanel: s.timelinePanel,
-          surfacesDock: s.surfacesDock,
+          lastForm: s.lastForm,
         }),
         // One-level-deep merge so persisted slices overlay the defaults
         // without dropping any fields added in newer versions (the
@@ -1201,7 +1229,7 @@ export const useLayoutStore = createSelectors(
             })
             .filter(
               (t) =>
-                validTypes.has(t.type) && !isRetiredTab(t) && !isDestination(t.type as TabType),
+                validTypes.has(t.type) && !isRetiredTab(t) && !isDestinationOnly(t.type as TabType),
             );
           // Seeded into the tab set here so the first `loadProjectView` (or the
           // projectless shell) carries it like any open team chat.
@@ -1227,7 +1255,7 @@ export const useLayoutStore = createSelectors(
           return {
             ...current,
             ...rest,
-            surfacesDock: rest.surfacesDock === "bottom" ? "bottom" : "right",
+            lastForm: { ...rest.lastForm },
             tabs,
             activeTabId,
             sourceControl,

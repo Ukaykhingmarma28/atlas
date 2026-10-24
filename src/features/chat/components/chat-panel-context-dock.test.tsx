@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 //
-// The session context card docks beside the transcript on a wide panel, and
+// The session Details card docks beside the transcript on a wide panel, and
 // showing or hiding it must not move the transcript column or the composer.
 // The room is reserved from the panel's width, open or closed, and the card is
 // an absolute layer drawn into it. This renders the real panel with the app's
@@ -32,14 +32,11 @@ vi.mock("./permission-modal", () => ({ PermissionModal: Null }));
 vi.mock("./chat-comments-controller", () => ({ ChatCommentsController: Null }));
 vi.mock("./session-elicitation", () => ({ SessionElicitation: Null }));
 vi.mock("./transcript", () => ({ Transcript: Null }));
-vi.mock("./session-overview-panel", () => ({
-  SessionOverviewCard: () => <div data-testid="overview-card" />,
-}));
-vi.mock("@/features/session-context/components/session-context-popover", () => ({
-  SessionContextBody: Null,
+vi.mock("@/features/session-context/components/session-details-card", () => ({
+  SessionDetailsCard: () => <div data-testid="details-card" />,
 }));
 
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   CONTEXT_CARD_CLEARANCE,
@@ -47,12 +44,15 @@ import {
   CONTEXT_CARD_WIDTH,
   resolveContextDock,
 } from "@/features/session-context/lib/context-dock";
-import { useSessionContextStore } from "@/features/session-context/stores/session-context-store";
+import { useSessionDetailsStore } from "@/features/session-context/stores/session-details-store";
+import { sessionScope } from "../lib/session-scope";
 import { useChatStore } from "../stores/chat-store";
-import { overviewScope, useSessionOverviewStore } from "../stores/session-overview-store";
 import { ChatPanel } from "./chat-panel";
 
 const TAB = "tab-1";
+const SCOPE = sessionScope(TAB, undefined);
+const reset = () =>
+  useSessionDetailsStore.setState({ open: {}, popoverFor: null, dockable: {}, view: "main" });
 const COLUMN = 760;
 let WIDTH = 1000;
 
@@ -85,8 +85,7 @@ beforeEach(() => {
       { id: "m1", role: "user", content: "hi", timestamp: 0 },
     ] as unknown as (typeof s.sessions)[typeof TAB]["messages"];
   });
-  useSessionOverviewStore.setState({ open: {}, popoverFor: null });
-  useSessionContextStore.setState({ openFor: null, dockable: {}, dockOpen: {}, view: "main" });
+  reset();
 });
 afterEach(() => {
   document.documentElement.style.removeProperty("--atlas-chat-column");
@@ -118,7 +117,7 @@ function frame(root: HTMLElement) {
   };
 }
 
-const card = (root: HTMLElement) => root.querySelector("[data-session-context-dock]");
+const card = (root: HTMLElement) => root.querySelector("[data-session-details-dock]");
 
 /** A `padding-*` / `margin-*` px value out of an inline style, 0 when unset. */
 function px(style: string | null, prop: string): number {
@@ -137,7 +136,7 @@ function columnBox(width: number, rowStyle: string | null) {
   return { left: start, right: start + column, column };
 }
 
-describe("the docked session context card in the chat panel", () => {
+describe("the docked Details card in the chat panel", () => {
   it("never moves the column at any width, whether it docks, narrows, slides or stays centred", () => {
     document.documentElement.style.setProperty("--atlas-chat-column", `${COLUMN}px`);
     // happy-dom does not inherit custom properties into computed style, so
@@ -155,10 +154,10 @@ describe("the docked session context card in the chat panel", () => {
     const branches = new Set<string>();
     for (const width of [900, 1100, 1200, 1440]) {
       WIDTH = width;
-      useSessionContextStore.setState({ openFor: null, dockable: {}, dockOpen: {}, view: "main" });
+      reset();
       const { container, unmount } = mount();
       const expected = resolveContextDock(width, COLUMN);
-      const docked = useSessionContextStore.getState().dockable[TAB] === true;
+      const docked = useSessionDetailsStore.getState().dockable[TAB] === true;
       expect(docked, `docked at ${width}`).toBe(expected.docked);
       branches.add(
         !expected.docked
@@ -183,12 +182,12 @@ describe("the docked session context card in the chat panel", () => {
         );
       }
 
-      act(() => useSessionContextStore.getState().actions.toggle(TAB));
+      act(() => useSessionDetailsStore.getState().actions.toggle(SCOPE));
       expect(card(container) !== null, `card at ${width}`).toBe(expected.docked);
       expect(frame(container), `open at ${width}`).toEqual(closed);
       expect(columnBox(width, frame(container).row.style)).toEqual(before);
 
-      act(() => useSessionContextStore.getState().actions.toggle(TAB));
+      act(() => useSessionDetailsStore.getState().actions.toggle(SCOPE));
       expect(card(container)).toBeNull();
       expect(frame(container), `closed again at ${width}`).toEqual(closed);
       unmount();
@@ -201,7 +200,7 @@ describe("the docked session context card in the chat panel", () => {
     const { container } = mount();
     const { reserve } = resolveContextDock(WIDTH, Number.POSITIVE_INFINITY);
     expect(reserve).toBeGreaterThan(0);
-    expect(useSessionContextStore.getState().dockable[TAB]).toBe(true);
+    expect(useSessionDetailsStore.getState().dockable[TAB]).toBe(true);
 
     const closed = frame(container);
     // Reserved while closed: the room exists before the card does.
@@ -209,33 +208,12 @@ describe("the docked session context card in the chat panel", () => {
     expect(closed.composer.style).toContain(`margin-right: ${reserve}px`);
     expect(card(container)).toBeNull();
 
-    act(() => useSessionContextStore.getState().actions.toggle(TAB));
+    act(() => useSessionDetailsStore.getState().actions.toggle(SCOPE));
     expect(card(container)).not.toBeNull();
     expect(frame(container)).toEqual(closed);
 
-    act(() => useSessionContextStore.getState().actions.toggle(TAB));
+    act(() => useSessionDetailsStore.getState().actions.toggle(SCOPE));
     expect(card(container)).toBeNull();
-    expect(frame(container)).toEqual(closed);
-  });
-
-  it("shares its room with the session overview: both dock, nothing moves", async () => {
-    const { container } = mount();
-    const { reserve } = resolveContextDock(WIDTH, Number.POSITIVE_INFINITY);
-    const closed = frame(container);
-    expect(closed.row.style).toContain(`padding-right: ${reserve}px`);
-
-    act(() => useSessionOverviewStore.getState().actions.toggle(overviewScope(TAB, undefined)));
-    expect(await screen.findByTestId("overview-card")).toBeTruthy();
-    // The overview opening does not take the room from the context card.
-    expect(useSessionContextStore.getState().dockable[TAB]).toBe(true);
-    expect(frame(container)).toEqual(closed);
-
-    act(() => useSessionContextStore.getState().actions.toggle(TAB));
-    // Both in the one lane, the overview first.
-    const lane = container.querySelector("[data-session-dock-lane]")!;
-    expect(lane.querySelector("[data-session-overview-dock]")).not.toBeNull();
-    expect(lane.querySelector("[data-session-context-dock]")).not.toBeNull();
-    expect(lane.firstElementChild?.hasAttribute("data-session-overview-dock")).toBe(true);
     expect(frame(container)).toEqual(closed);
   });
 });

@@ -1,3 +1,5 @@
+// Kept for later: the session terminal drawer is unmounted (no UI reaches it) until the terminal rework. Not dead code; do not delete.
+//
 // The session terminal drawer's actions, and the arithmetic of its height.
 //
 // The drawer's open flag and height are in `session-drawer-store`; its
@@ -6,7 +8,7 @@
 // rather than in either store (stores never call each other).
 
 import { useChatStore } from "@/features/chat/stores/chat-store";
-import { overviewScope } from "@/features/chat/stores/session-overview-store";
+import { sessionScope } from "@/features/chat/lib/session-scope";
 import { projectIdForTab, projectPathForTab } from "@/features/chat/lib/tab-project";
 import { sessionWorkPath } from "@/features/session-context/lib/session-work-path";
 import { useTerminalStore } from "../stores/terminal-store";
@@ -14,9 +16,9 @@ import { drawerTabId, useSessionDrawerStore } from "../stores/session-drawer-sto
 
 export { DRAWER_TAB_PREFIX, drawerTabId, isDrawerTab } from "../stores/session-drawer-store";
 
-/** The session scope a chat tab shows right now (`overviewScope`). */
+/** The session scope a chat tab shows right now (`sessionScope`). */
 export function drawerScopeForTab(chatTabId: string): string {
-  return overviewScope(chatTabId, useChatStore.getState().sessions[chatTabId]?.acpSessionId);
+  return sessionScope(chatTabId, useChatStore.getState().sessions[chatTabId]?.acpSessionId);
 }
 
 // ── Height ────────────────────────────────────────────────────────────────
@@ -88,7 +90,7 @@ export function closeSessionDrawer(chatTabId: string): void {
   window.dispatchEvent(new CustomEvent("atlas:chat-focus", { detail: { tabId: chatTabId } }));
 }
 
-/** The title-bar button and the shortcut. Returns whether it is now open. */
+/** The session ⋯ menu's Terminal item and the shortcut. Returns whether it is now open. */
 export function toggleSessionDrawer(chatTabId: string): boolean {
   const open = !!useSessionDrawerStore.getState().open[drawerScopeForTab(chatTabId)];
   if (open) closeSessionDrawer(chatTabId);
@@ -112,5 +114,5 @@ export function discardSessionDrawer(scope: string): void {
 /** A live session id's drawer, for callers that know the session, not the
  *  tab (the sidebar's delete). */
 export function discardSessionDrawerFor(acpSessionId: string): void {
-  if (acpSessionId) discardSessionDrawer(overviewScope("", acpSessionId));
+  if (acpSessionId) discardSessionDrawer(sessionScope("", acpSessionId));
 }

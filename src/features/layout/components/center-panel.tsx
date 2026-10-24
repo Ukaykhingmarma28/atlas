@@ -16,12 +16,7 @@ import { PaneHeader } from "@/components/titlebar";
 import { columnChrome } from "../lib/shell-edges";
 import { OPEN_SURFACE_MENU_EVENT, SURFACES, openSurface, surfaceForKey } from "../lib/surfaces";
 import { Group, Panel, Separator, useDefaultLayout, usePanelRef } from "react-resizable-panels";
-import {
-  useLayoutStore,
-  type Tab,
-  type ProjectView,
-  type SurfacesDock,
-} from "../stores/layout-store";
+import { useLayoutStore, type Tab, type ProjectView } from "../stores/layout-store";
 import { useProjectStore } from "@/features/projects/stores/project-store";
 // Chat is the default landing surface — always loaded so the first paint
 // shows the agent UI without a Suspense flash.
@@ -121,23 +116,11 @@ import { useChatStore } from "@/features/chat/stores/chat-store";
 import { sessionDisplayTitle } from "@/features/chat/lib/session-title";
 import { SessionHeaderSlot } from "@/features/chat/components/session-header-slot";
 import { useShallow } from "zustand/react/shallow";
-import {
-  MessageSquare,
-  Plus,
-  House,
-  PanelBottom,
-  PanelRight,
-  Maximize2,
-  Minimize2,
-  MessagesSquare,
-} from "lucide-react";
+import { MessageSquare, Plus, House, Maximize2, Minimize2 } from "lucide-react";
 import { readPullRequestTabData } from "@/features/pull-requests/lib/open-pull-request-tab";
 import { readPullRequestListTabData } from "@/features/pull-requests/lib/open-pull-request-list-tab";
 import { readSessionPullRequestsTabData } from "@/features/pull-requests/lib/open-session-pull-requests-tab";
 import { PROJECTLESS_TYPES, surfaceMinWidth, type TabType } from "@/lib/constants";
-import { teamChatShown, toggleTeamChat } from "../lib/team-chat";
-import { SessionContextButton } from "@/features/session-context/components/session-context-button";
-import { unlockHint, useTeamAccess } from "@/features/comms/lib/team-chat-access";
 import { useSettingsNav } from "@/features/settings/stores/settings-nav-store";
 
 const GROUP_OF = (t: Tab) => t.groupId ?? "main";
@@ -292,8 +275,6 @@ const ProjectColumns = memo(function ProjectColumns({
   runningTabIds: Set<string>;
 }) {
   const surfaces = useLayoutStore.use.surfaces();
-  const dock = useLayoutStore.use.surfacesDock();
-  const bottom = dock === "bottom";
   const split = view.groupOrder.length > 1;
   // The first column is the main pane; every one after it is the surfaces
   // pane. Hidden or expanded, a column is collapsed to zero width rather than
@@ -304,14 +285,7 @@ const ProjectColumns = memo(function ProjectColumns({
   const firstShown = shown.indexOf(true);
   const lastShown = shown.lastIndexOf(true);
   const solo = firstShown === lastShown;
-  // Docked at the bottom, the split runs top to bottom: the top row carries
-  // both ends of the window bar, and the rows under it carry neither. The
-  // orientation flips in place (same Group, same keyed panels), so placing
-  // the pane never remounts a session, a terminal or an editor.
-  const edges = (i: number) =>
-    bottom
-      ? { atLeft: i === firstShown, atRight: i === firstShown }
-      : { atLeft: i === firstShown, atRight: i === lastShown };
+  const edges = (i: number) => ({ atLeft: i === firstShown, atRight: i === lastShown });
   // A fresh two-column split opens 65/35, not even: the column you split from
   // is the one you were working in (a chat, beside its changes), and the new
   // one is a reference beside it. Only a default — the library uses it when it
@@ -326,7 +300,7 @@ const ProjectColumns = memo(function ProjectColumns({
   return (
     <Group
       id={layoutId}
-      orientation={bottom ? "vertical" : "horizontal"}
+      orientation="horizontal"
       defaultLayout={defaultLayout}
       onLayoutChanged={onLayoutChanged}
       className="h-full bg-background"
@@ -337,7 +311,7 @@ const ProjectColumns = memo(function ProjectColumns({
             <Separator
               className={cn(
                 "bg-border hover:bg-primary data-[separator=active]:bg-primary transition-colors",
-                bottom ? "h-px cursor-row-resize" : "w-px cursor-col-resize",
+                "w-px cursor-col-resize",
                 // Kept in the tree, like the collapsed column beside it; inert
                 // while either side is collapsed.
                 !(shown[i - 1] && shown[i]) && "pointer-events-none invisible",
@@ -348,9 +322,7 @@ const ProjectColumns = memo(function ProjectColumns({
             id={gid}
             shown={shown[i]}
             defaultSize={pairSizes?.[i]}
-            // A surface's pixel floor is a width; docked at the bottom the
-            // split sizes heights, so it keeps the percentage floor.
-            minSize={i === 0 || bottom ? undefined : columnMinSize(view, gid)}
+            minSize={i === 0 ? undefined : columnMinSize(view, gid)}
           >
             <TabColumn
               groupId={gid}
@@ -444,11 +416,14 @@ function ColumnPanel({
  * - **main** (the first column): no `+` and no close. With one tab it shows no
  *   strip at all — the tab's title is the breadcrumb's last segment, except an
  *   editor's, which its own crumb row names. A strip appears only once there
- *   is something to switch between. Its right end toggles the surfaces pane.
+ *   is something to switch between. Its right end carries the session's own
+ *   controls on a session tab (Details, terminal, ⋯), and on the window's
+ *   right edge the window's group (the panel toggle, the account).
  * - **surface**: tabs then `+`, left-aligned; the pane's last column ends in
  *   maximize and the two placement toggles (`PanelPlacementControls`). The
- *   pane is hidden from there or docked under the session, never closed with
- *   an ×, so hiding it never throws its tabs into the main pane.
+ *   pane is shown and hidden by the window group's panel toggle
+ *   (`RightPanelToggle`), never closed with an ×, so hiding it never throws
+ *   its tabs into the main pane.
  */
 const TabColumn = memo(function TabColumn({
   groupId,
@@ -531,20 +506,14 @@ const TabColumn = memo(function TabColumn({
           <div className="flex min-w-fit flex-1 items-center gap-0.5">
             {!main && <SurfaceAdd groupId={groupId} />}
             <span className="flex-1" />
-            {/* The session's own controls (its ⋯ menu, the overview button),
-                portalled in by its chat panel. Only for a session tab: any
-                other tab leaves this end of the bar as it is. */}
+            {/* The session's group (Details, terminal, ⋯), portalled in by
+                its chat panel. Only for a session tab: any other tab leaves
+                this end of the bar as it is. The window's group (the panel
+                toggle, the account) comes after, in the header at the
+                window's right edge (`TopbarTrailing`). */}
             {activeTab?.type === "chat" && (
               <SessionHeaderSlot key={activeTab.id} tabId={activeTab.id} />
             )}
-            {main && <TeamChatToggle />}
-            {main && (
-              // The session's details: workspace, branch and PR, changes,
-              // lineage, capture. Keyed by the chat tab when the main column
-              // shows one; otherwise it covers the active project only.
-              <SessionContextButton tabId={activeTab?.type === "chat" ? activeTab.id : null} />
-            )}
-            {main && <SurfacesToggle groupOrder={view.groupOrder} />}
             {placementControls && <PanelPlacementControls />}
           </div>
         </HintGroup>
@@ -583,87 +552,18 @@ function MainTitle({ tab }: { tab: Tab }) {
   );
 }
 
-/** The main pane's toggle for the surfaces pane: opens one (on the
- *  launcher) when there is none, else shows it; its tabs keep running while
- *  hidden. Only while the pane is off screen: once it is up, the toggle lives
- *  at the end of the pane's own strip (`PanelPlacementControls`), with the
- *  pane's other layout controls. */
-function SurfacesToggle({ groupOrder }: { groupOrder: string[] }) {
-  const surfaces = useLayoutStore.use.surfaces();
-  const dock = useLayoutStore.use.surfacesDock();
-  const hint = useActionShortcut("tabs.openSurface")?.label;
-  const open = groupOrder.length > 1 && surfaces !== "hidden";
-  if (open) return null;
-  const label = "Show surfaces";
-  return (
-    <HintItem label={hint ? `${label} (${hint})` : label}>
-      <IconButton
-        icon={dock === "bottom" ? PanelBottom : PanelRight}
-        label={label}
-        size="sm"
-        iconSize="md"
-        aria-pressed={false}
-        onClick={() => {
-          const { setSurfaces, setFocusedGroup, addGroup } = useLayoutStore.getState().actions;
-          if (groupOrder.length === 1) {
-            setFocusedGroup(groupOrder[0]);
-            addGroup();
-          } else setSurfaces("shown");
-        }}
-      />
-    </HintItem>
-  );
-}
-
-/** Team chat (⌘⇧C), a surface tab. Here as well as in the rail so it is in
- *  sight, not only behind the rail. Locked (signed out, or a local
- *  organization) it stays, greyed, saying what unlocks it. */
-function TeamChatToggle() {
-  const open = useLayoutStore(teamChatShown);
-  const access = useTeamAccess();
-  const shortcut = useActionShortcut("panels.teamChat")?.label;
-  const locked = unlockHint(access, "team chat");
-  const label = locked ?? (open ? "Hide team chat" : "Show team chat");
-  return (
-    <HintItem label={shortcut && !locked ? `${label} (${shortcut})` : label}>
-      <IconButton
-        icon={MessagesSquare}
-        label={label}
-        size="sm"
-        iconSize="md"
-        aria-pressed={!locked && open}
-        disabled={!!locked}
-        focusableWhenDisabled
-        onClick={toggleTeamChat}
-      />
-    </HintItem>
-  );
-}
-
 /**
- * The end of the surfaces pane's strip: maximize, then where the pane docks.
- *
- * - **Maximize** gives the pane the whole centre (the session collapses, still
- *   mounted), so the strip sits at the window's top; again restores it.
- * - **Bottom / right** dock the pane under or beside the session. The lit one
- *   is where it is now: pressing it hides the pane (the main pane's toggle
- *   brings it back), pressing the other moves it there.
+ * The end of the surfaces pane's strip: Maximize, which gives the pane the
+ * whole centre (the session collapses, still mounted), so the strip sits at
+ * the window's top; again restores it. It is the strip's only control: the
+ * pane is shown and hidden by the window group's panel toggle
+ * (`RightPanelToggle`), and it always sits on the right.
  */
 function PanelPlacementControls() {
   const surfaces = useLayoutStore.use.surfaces();
-  const dock = useLayoutStore.use.surfacesDock();
-  const { setSurfaces, setSurfacesDock } = useLayoutStore.use.actions();
+  const { setSurfaces } = useLayoutStore.use.actions();
   const maximized = surfaces === "expanded";
   const maximizeLabel = maximized ? "Restore panel size" : "Maximize panel";
-  const place = (target: SurfacesDock) => {
-    if (dock === target && !maximized) setSurfaces("hidden");
-    else {
-      setSurfacesDock(target);
-      setSurfaces("shown");
-    }
-  };
-  const bottomLabel = dock === "bottom" ? "Hide panel" : "Dock panel at the bottom";
-  const rightLabel = dock === "right" ? "Hide panel" : "Dock panel on the right";
   return (
     <>
       <HintItem label={maximizeLabel}>
@@ -674,26 +574,6 @@ function PanelPlacementControls() {
           iconSize="md"
           aria-pressed={maximized}
           onClick={() => setSurfaces(maximized ? "shown" : "expanded")}
-        />
-      </HintItem>
-      <HintItem label={bottomLabel}>
-        <IconButton
-          icon={PanelBottom}
-          label={bottomLabel}
-          size="sm"
-          iconSize="md"
-          aria-pressed={dock === "bottom"}
-          onClick={() => place("bottom")}
-        />
-      </HintItem>
-      <HintItem label={rightLabel}>
-        <IconButton
-          icon={PanelRight}
-          label={rightLabel}
-          size="sm"
-          iconSize="md"
-          aria-pressed={dock === "right"}
-          onClick={() => place("right")}
         />
       </HintItem>
     </>

@@ -1,5 +1,5 @@
-// Branch, pull requests, the one git action worth a click, and what changed —
-// the Version Control group.
+// Branch, pull requests and the one git action worth a click: the Version
+// control group. What changed is the Details card's own Changes section.
 //
 // Reads the git store, which mirrors the ACTIVE project's repository. The
 // section renders only when that repository is this session's project, so a
@@ -9,8 +9,7 @@
 // worktree (`sessionWorkPath`) — is not the repository the git store mirrors.
 // Its branch, the push / pull / publish verbs and Create PR would all act on
 // the project's own checkout, so they are left out there; what stays is
-// what belongs to the session itself: its linked pull requests and its
-// changes.
+// what belongs to the session itself: its linked pull requests.
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -23,7 +22,6 @@ import {
   CircleX,
   CloudDownload,
   CloudUpload,
-  FileDiff,
   GitCommitHorizontal,
   GitMerge,
   GitPullRequest,
@@ -38,7 +36,6 @@ import {
 } from "lucide-react";
 
 import { useChatStore } from "@/features/chat/stores/chat-store";
-import { openSessionChanges } from "@/features/git/lib/open-session-changes";
 import { openPullRequestTab } from "@/features/pull-requests/lib/open-pull-request-tab";
 import { openPullRequestListTab } from "@/features/pull-requests/lib/open-pull-request-list-tab";
 import { openSessionPullRequestsTab } from "@/features/pull-requests/lib/open-session-pull-requests-tab";
@@ -57,7 +54,6 @@ import {
   linkKey,
 } from "@/features/pull-requests/lib/session-pull-request-links";
 import { useGitStore } from "@/features/git/stores/git-store";
-import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import type { PrChecksState } from "@/features/pull-requests/lib/pull-requests-types";
 import {
   ContextMenu,
@@ -82,7 +78,6 @@ import {
   type SessionPullRequest,
   type SessionPullRequests,
 } from "../lib/session-pull-requests";
-import { useSessionChanges } from "../lib/use-session-changes";
 import { BranchPicker } from "./branch-picker";
 import {
   ContextRow,
@@ -129,7 +124,6 @@ function WorktreeRows({ tabId, projectPath }: { tabId: string | null; projectPat
     <ContextSection title="Version control" showHeading={false}>
       <PullRequestRows projectPath={projectPath} prs={prs} />
       <PullRequestLinkRows projectPath={projectPath} prs={prs} />
-      <ChangesRow tabId={tabId} projectPath={projectPath} sessionOnly />
     </ContextSection>
   );
 }
@@ -144,7 +138,6 @@ function VersionControlRows({ tabId, projectPath }: { tabId: string | null; proj
       <PullRequestRows projectPath={projectPath} prs={prs} />
       <PullRequestLinkRows projectPath={projectPath} prs={prs} />
       <QuickActionRow projectPath={projectPath} sessionId={sessionId} prs={prs} />
-      <ChangesRow tabId={tabId} projectPath={projectPath} />
     </ContextSection>
   );
 }
@@ -454,77 +447,5 @@ function QuickActionRow({
       {action.kind === "push" && <RowMeta>{ahead} ↑</RowMeta>}
       {action.kind === "pull" && <RowMeta>{behind} ↓</RowMeta>}
     </ContextSplitRow>
-  );
-}
-
-/**
- * The session's changes when this is a chat (what the agent did), else the
- * working tree's (what Source Control would commit). The first opens the
- * session's changes tab, the second Source Control.
- */
-function ChangesRow({
-  tabId,
-  projectPath,
-  sessionOnly = false,
-}: {
-  tabId: string | null;
-  projectPath: string;
-  /** Leave out the working tree's changes (they are the project's). */
-  sessionOnly?: boolean;
-}) {
-  const session = useSessionChanges(tabId, projectPath);
-  const workingTree = useGitStore((s) => s.files.length);
-
-  if (session.rows.length > 0 && session.sessionId) {
-    const sessionId = session.sessionId;
-    const first = session.rows[0].path;
-    // Across every root the session wrote in; the title breaks it down by
-    // project, grouped as the changed-files card and the diff panel group.
-    const title = [
-      "This session's changes",
-      ...session.byRoot.map(
-        (g) =>
-          `${g.label}: ${g.files} ${g.files === 1 ? "file" : "files"}, +${g.added} −${g.removed}`,
-      ),
-    ].join("\n");
-    return (
-      <ContextRow
-        title={title}
-        onClick={() =>
-          openSessionChanges({
-            projectPath,
-            sessionId,
-            file: first,
-            title: tabId
-              ? useLayoutStore.getState().tabs.find((t) => t.id === tabId)?.title
-              : undefined,
-          })
-        }
-      >
-        <RowIcon icon={FileDiff} />
-        <RowLabel>Changes</RowLabel>
-        {session.added !== null && session.removed !== null ? (
-          <RowMeta className="font-mono">
-            <span className="text-success">+{session.added}</span>{" "}
-            <span className="text-error">−{session.removed}</span>
-          </RowMeta>
-        ) : (
-          <RowMeta>
-            {session.rows.length} {session.rows.length === 1 ? "file" : "files"}
-          </RowMeta>
-        )}
-      </ContextRow>
-    );
-  }
-
-  if (workingTree === 0 || sessionOnly) return null;
-  return (
-    <ContextRow title="Uncommitted changes in the working tree" onClick={revealSourceControl}>
-      <RowIcon icon={FileDiff} />
-      <RowLabel>Changes</RowLabel>
-      <RowMeta>
-        {workingTree} {workingTree === 1 ? "file" : "files"}
-      </RowMeta>
-    </ContextRow>
   );
 }

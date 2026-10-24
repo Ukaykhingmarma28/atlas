@@ -1,7 +1,7 @@
 // Where a session's title-bar controls go.
 //
 // The session's controls (search, the role filter, pins, the Bash and Plans
-// panels, the overview button) belong to the chat panel: it owns every piece
+// panels, the Details button) belong to the chat panel: it owns every piece
 // of state they read and write. But they show in the window's title bar, at
 // the right end of the column header that names the session, which the layout
 // draws and the chat panel is not part of. So the column header renders an

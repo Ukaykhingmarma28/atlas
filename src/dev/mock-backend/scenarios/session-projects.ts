@@ -3,7 +3,7 @@
 // project, in `docs`, and in a scratch folder outside every project.
 //
 // What it shows:
-// - the session context card's Projects group (main first, then each attached
+// - the Details card's Projects section (main first, then each attached
 //   project with its branch, uncommitted counts, access badge and ⋯ menu);
 // - the changed-files card grouped by root, with an "Other" group;
 // - the diff panel's turn scope grouped the same way, and its Uncommitted

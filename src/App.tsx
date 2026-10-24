@@ -54,7 +54,6 @@ import {
 } from "@/features/chat/stores/recent-files-store";
 import { openNewAgentChat } from "@/features/chat/lib/open-agent-session";
 import { settleAndAdvance } from "@/features/chat/lib/settle-and-advance";
-import { toggleSessionDrawer } from "@/features/terminal/lib/session-drawer";
 import { requestCloseTab } from "@/features/chat/lib/close-tab";
 import { pruneContextUsageCache } from "@/features/chat/lib/context-usage-cache";
 import { isScrollHot } from "@/lib/scroll-hot";
@@ -142,6 +141,8 @@ import { createWakeRefresher } from "@/features/auth/lib/refresh-on-wake";
 import { useMembersStore } from "@/features/organisations/stores/members-store";
 import { ConnectDialog } from "@/features/auth/components/connect-dialog";
 import { LinkPullRequestDialogHost } from "@/features/pull-requests/components/link-pull-request-dialog";
+import { SessionDetailsDialogs } from "@/features/session-context/components/session-details-dialogs";
+import { openCapture } from "@/features/session-context/lib/open-capture";
 import { clampScale, SCALE_STEP, DEFAULT_SCALE } from "@/features/settings/lib/ui-scale";
 import { listenModelDone } from "@/features/settings/lib/models-api";
 import { useModelsStore } from "@/features/settings/stores/models-store";
@@ -1371,13 +1372,6 @@ export function App() {
       if (!tab || tab.type !== "chat") return;
       settleAndAdvance(tab.id);
     },
-    // ⌘⇧J — the open session's terminal drawer, under its composer.
-    "chat.toggleTerminalDrawer": () => {
-      const layout = useLayoutStore.getState();
-      const tab = layout.tabs.find((t) => t.id === layout.activeTabId);
-      if (!tab || tab.type !== "chat") return;
-      toggleSessionDrawer(tab.id);
-    },
     // ⌘T — open a surface. A single column grows a pane beside
     // it whose launcher takes a bare letter; a split window opens the focused
     // column's `+` menu, which takes the same letters.
@@ -1435,10 +1429,9 @@ export function App() {
       useSettingsNav.getState().open ? closeSettings() : openSettingsSection(),
     // The org's Usage dashboard, a destination: the same key goes back.
     "usage.open": () => toggleDestination("usage"),
-    // Session Capture (the popover behind the titlebar's project pill). Local
-    // `captureOpen` state lives in `ProjectLabel`, so this reaches it via the
-    // same `atlas:open-capture` event the command palette entry dispatches.
-    "app.capture": () => window.dispatchEvent(new CustomEvent("atlas:open-capture")),
+    // Session Capture: the session's Details card at its capture view, or the
+    // project label's capture popover where no session is in the main column.
+    "app.capture": openCapture,
     // ── Interface zoom ──
     "view.zoomIn": zoomIn,
     "view.zoomOut": zoomOut,
@@ -1476,6 +1469,7 @@ export function App() {
       <StopAgentsDialog />
       <ConfirmDialog />
       <LinkPullRequestDialogHost />
+      <SessionDetailsDialogs />
       <RemoveAgentDialog />
       <BrowserOverlayWatcher />
       <ThemeEditorHost />

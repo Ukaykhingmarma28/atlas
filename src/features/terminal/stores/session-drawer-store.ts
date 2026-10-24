@@ -1,10 +1,12 @@
+// Kept for later: the session terminal drawer is unmounted (no UI reaches it) until the terminal rework. Not dead code; do not delete.
+//
 // A session's terminal drawer: whether it is open, how tall it is, and which
 // drawer has the keyboard.
 //
-// Its own store, like the session overview's: opening the drawer, dragging its
+// Its own store, like the session Details card's: opening the drawer, dragging its
 // edge or typing in it must not re-render the chat panel or a single
 // transcript row. The chat panel never subscribes here; the drawer and the
-// title-bar toggle subscribe for themselves.
+// session ⋯ menu's Terminal item subscribe for themselves.
 //
 // The drawer's TERMINALS are not here. They are an ordinary terminal tab in
 // `terminal-store` (id `drawerTabId(scope)`), so the session registry that
@@ -14,7 +16,7 @@
 // leaves the terminal store: the last one closed, the session deleted, or its
 // project discarded.
 //
-// Keyed by SESSION scope (`overviewScope`: the ACP session once bound, the tab
+// Keyed by SESSION scope (`sessionScope`: the ACP session once bound, the tab
 // until then), not by tab: "new agent" and opening a session from history
 // both reuse a tab, and the drawer belongs to the session it was opened in.
 

@@ -14,6 +14,8 @@ import { ChevronDown, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/ui/dropdown-menu";
 
+import { useSessionDetailsStore, type CollapsibleSection } from "../stores/session-details-store";
+
 /** One row's box: a 32px row, a 10px inset and gap. */
 const ROW =
   "flex h-8 w-full min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-left text-sm font-medium text-secondary-foreground outline-none transition-colors";
@@ -44,36 +46,74 @@ export function RowMeta({ children, className }: { children: ReactNode; classNam
 
 /**
  * A titled group. `showHeading={false}` keeps the title for screen readers
- * only — the Workspace and Version Control groups read as rows with no
- * heading, and only Lineage shows one.
+ * only: the Workspace and Version control groups read as rows with no
+ * heading.
+ *
+ * `collapse` makes the heading a disclosure the reader can fold, remembered
+ * across sessions (`collapsed` in the Details store). Its `badge` (a count,
+ * "2 running") stays beside the title folded or not: that count is the whole
+ * value of a folded section.
  */
 export function ContextSection({
   title,
   showHeading = true,
   separated = true,
   actions,
+  collapse,
   children,
 }: {
   title: string;
   showHeading?: boolean;
   separated?: boolean;
   actions?: ReactNode;
+  collapse?: { id: CollapsibleSection; badge?: string; badgeTitle?: string };
   children: ReactNode;
 }) {
+  const collapsed = useSessionDetailsStore((s) => (collapse ? !!s.collapsed[collapse.id] : false));
   return (
     <section
       aria-label={title}
+      data-details-section={collapse?.id}
       className={cn("px-1.5 pt-1.5 pb-1.5", separated && "border-t border-border")}
     >
       {showHeading && (
         <div className="flex min-h-7 min-w-0 items-center justify-between gap-2 px-2.5">
-          <h3 className="min-w-0 truncate text-2xs font-medium text-muted-foreground select-none">
-            {title}
-          </h3>
+          {collapse ? (
+            <button
+              type="button"
+              aria-expanded={!collapsed}
+              onClick={() => useSessionDetailsStore.getState().actions.toggleSection(collapse.id)}
+              className="-mx-1 flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-1 py-0.5 text-left outline-none transition-colors hover:text-foreground focus-visible:bg-element-hover"
+            >
+              <h3 className="min-w-0 truncate text-2xs font-medium text-muted-foreground select-none">
+                {title}
+              </h3>
+              {collapse.badge && (
+                <span
+                  title={collapse.badgeTitle}
+                  className="shrink-0 text-2xs text-muted-foreground tabular-nums"
+                >
+                  {collapse.badge}
+                </span>
+              )}
+              <ChevronDown
+                size={12}
+                aria-hidden
+                className={cn(
+                  "shrink-0 text-muted-foreground transition-transform duration-fast",
+                  collapsed && "-rotate-90",
+                )}
+              />
+            </button>
+          ) : (
+            <h3 className="min-w-0 truncate text-2xs font-medium text-muted-foreground select-none">
+              {title}
+            </h3>
+          )}
           {actions ? <div className="flex shrink-0 items-center gap-1">{actions}</div> : null}
         </div>
       )}
-      {children}
+      {!collapsed && children}
     </section>
   );
 }

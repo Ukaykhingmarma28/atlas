@@ -9,7 +9,8 @@ import { matchesAction } from "@/features/keybindings/lib/use-scoped-hotkeys";
 import { useChatStore } from "../stores/chat-store";
 import { pinScope, resolvePinIndex, type ChatPin } from "../stores/chat-pins-store";
 import { useDetailPanelStore } from "../stores/detail-panel-store";
-import { overviewScope, useSessionOverviewStore } from "../stores/session-overview-store";
+import { sessionScope } from "../lib/session-scope";
+import { useSessionDetailsStore } from "@/features/session-context/stores/session-details-store";
 import { useSessionHeaderSlot } from "../stores/session-header-slot-store";
 import { appendNextStepsDirective } from "../lib/next-steps";
 import { agents, ensureAgent, resetAgent } from "../lib/agents-api";
@@ -111,7 +112,6 @@ import { usePaneFind } from "../lib/use-pane-find";
 import { MessageInput } from "./message-input";
 import { AgentUpdateBar } from "./agent-update-bar";
 import { SessionHeaderControls } from "./session-header";
-import { SessionTerminalDrawer } from "@/features/terminal/components/session-terminal-drawer";
 import { adoptSessionDrawer } from "@/features/terminal/lib/session-drawer";
 import { SessionDockLane } from "./session-dock-lane";
 import { forkSessionToNewTab } from "../lib/fork-session";
@@ -133,13 +133,6 @@ function memorySince(sessionId: string): number {
     memorySinceBySession.set(sessionId, at);
   }
   return at;
-}
-
-/** Focus is in the session's terminal drawer, which sits inside this panel
- *  but is a shell: its keys (Shift+Tab completion and the rest) are the
- *  shell's, not the composer's. */
-function inTerminalDrawer(el: HTMLElement): boolean {
-  return el.closest("[data-session-terminal-drawer]") !== null;
 }
 import { PermissionModal } from "./permission-modal";
 import { ChatCommentsController } from "./chat-comments-controller";
@@ -175,7 +168,7 @@ import { PanelSkeleton } from "@/components/panel-skeleton";
 import { logEvent } from "@/features/log/lib/log";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/features/app/stores/app-store";
-import { useContextDock } from "@/features/session-context/components/session-context-dock";
+import { useContextDock } from "@/features/session-context/lib/use-context-dock";
 import { loadCachedAcpModels } from "../lib/acp-models-cache";
 import { resolveEffectiveMode, applyModeOnResume, holdUnrestoredMode } from "../lib/resume-mode";
 import { snapshotMessageToWire } from "../lib/snapshot-message";
@@ -315,13 +308,14 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   const [plansPanelOpen, setPlansPanelOpen] = useState(false);
   // Narrow boolean — changes only when the detail panel opens or closes.
   const detailOpen = useDetailPanelStore((s) => !!s.targets[tabId]);
-  // The session overview's key. This panel reads no overview state at all:
-  // the title-bar button and the dock lane subscribe for themselves, so a
-  // toggle re-renders them and never this panel or the transcript. Keyed by
-  // the SESSION, not the tab: "new agent" and history both reuse this tab,
-  // and a tab-keyed card followed the user into every session it showed.
-  const overviewKey = overviewScope(tabId, session?.acpSessionId);
-  const { adopt: adoptOverview } = useSessionOverviewStore.use.actions();
+  // The session's scope, the key of its Details card and terminal drawer.
+  // This panel reads no Details state at all: the title-bar button and the
+  // dock lane subscribe for themselves, so a toggle re-renders them and never
+  // this panel or the transcript. Keyed by the SESSION, not the tab: "new
+  // agent" and history both reuse this tab, and a tab-keyed card followed the
+  // user into every session it showed.
+  const scope = sessionScope(tabId, session?.acpSessionId);
+  const { adopt: adoptDetails } = useSessionDetailsStore.use.actions();
   // The title-bar slot this session's controls portal into, while its column
   // shows it (`session-header-slot-store.ts`).
   const headerSlot = useSessionHeaderSlot(tabId);
@@ -330,11 +324,12 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   // scope, where the tab's next session would inherit it.
   useEffect(() => {
     if (!session?.acpSessionId) return;
-    adoptOverview(overviewScope(tabId, undefined), overviewKey);
-    // The terminal drawer too: shells opened before the first message are
-    // the session's, and stay open and running across the bind.
-    adoptSessionDrawer(overviewScope(tabId, undefined), overviewKey);
-  }, [adoptOverview, tabId, session?.acpSessionId, overviewKey]);
+    adoptDetails(sessionScope(tabId, undefined), scope);
+    // The terminal drawer too (unmounted until the terminal rework, so this
+    // moves nothing today): shells opened before the first message are the
+    // session's, and stay open and running across the bind.
+    adoptSessionDrawer(sessionScope(tabId, undefined), scope);
+  }, [adoptDetails, tabId, session?.acpSessionId, scope]);
 
   // A turn's diff, in the review panel beside the session. Driven by a window
   // event rather than a prop chain so a row opening it re-renders nothing in
@@ -372,16 +367,15 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   // Cmd+F find — scoped to this pane + tab (see usePaneFind).
   const [searchPaletteOpen, setSearchPaletteOpen] = usePaneFind(tabId);
   const rootRef = useRef<HTMLDivElement>(null);
-  // The session context card docks at this column's top-right when the panel
-  // is wide enough (`session-context-dock.tsx`), and so does the session
-  // overview card. The room they need is reserved from the panel's width
-  // alone, open or not, so toggling either card never moves the transcript
-  // or the composer. Off on an empty session, which has no column to clear:
-  // both cards are their buttons' popovers there.
+  // The Details card docks at this column's top-right when the panel is wide
+  // enough (`use-context-dock.ts`). The room it needs is reserved from the
+  // panel's width alone, open or not, so toggling the card never moves the
+  // transcript or the composer. Off on an empty session, which has no column
+  // to clear: the card is its button's popover there.
   const conversationRef = useRef<HTMLDivElement>(null);
   const contextDock = useContextDock(tabId, conversationRef, (session?.messages.length ?? 0) > 0);
   // The transcript's box, under the title bar and down to the composer: the
-  // overview popover is capped at its height.
+  // Details popover is capped at its height.
   const stageRef = useRef<HTMLDivElement>(null);
 
   // Scroll-to-bottom state is owned here so the floating button can live
@@ -937,7 +931,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
       if (!matchesAction(e, "chat.toggleModelPicker")) return;
       const root = rootRef.current;
       const active = document.activeElement as HTMLElement | null;
-      if (!root || !active || !root.contains(active) || inTerminalDrawer(active)) return;
+      if (!root || !active || !root.contains(active)) return;
       e.preventDefault();
       e.stopPropagation();
       requestModelPicker(tabId);
@@ -954,7 +948,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
       const root = rootRef.current;
       const active = document.activeElement as HTMLElement | null;
       // Only intercept when focus is somewhere inside this chat panel.
-      if (!root || !active || !root.contains(active) || inTerminalDrawer(active)) return;
+      if (!root || !active || !root.contains(active)) return;
       e.preventDefault();
       e.stopPropagation();
       // The store action both cycles the mode AND propagates it to the bound
@@ -1568,7 +1562,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
           createPortal(
             <SessionHeaderControls
               tabId={tabId}
-              overviewKey={overviewKey}
+              scope={scope}
               docked={contextDock.docked}
               stageRef={stageRef}
               onOpenSearch={onOpenSearchStable}
@@ -1640,11 +1634,11 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
                 </Suspense>
               </div>
             </div>
-            {/* The docked cards: an absolute layer over the transcript's
+            {/* The docked Details card: an absolute layer over the transcript's
                 top-right, in room the row above already leaves. */}
             <SessionDockLane
               tabId={tabId}
-              overviewKey={overviewKey}
+              scope={scope}
               docked={contextDock.docked}
               onOpenSearch={onOpenSearchStable}
             />
@@ -1654,7 +1648,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
         <div
           data-chat-composer-stack
           className="relative"
-          // The docked cards' room, reserved the way the row above reserves
+          // The docked card's room, reserved the way the row above reserves
           // it, so the composer stays centred under the column. From the
           // panel's width alone: opening or closing a card never moves it.
           //
@@ -1699,10 +1693,6 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
             stopping={!!session.stopping}
           />
         </div>
-        {/* The session's terminal drawer, under the composer. Two strings in,
-            its own subscriptions: closed it renders nothing, and nothing in
-            it ever re-renders this panel. */}
-        <SessionTerminalDrawer tabId={tabId} scope={overviewKey} />
       </div>
 
       {bashPanelOpen && (
@@ -1727,7 +1717,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
       )}
 
       {/* Cloud comments: the resolver runs for the pane's lifetime. It is
-          what tells the overview's Session card whether this thread is synced,
+          what tells the Details card's Session section whether this session is synced,
           and what feeds comments to the transcript rows and the comments popup. */}
       <ChatCommentsController tabId={tabId} />
 

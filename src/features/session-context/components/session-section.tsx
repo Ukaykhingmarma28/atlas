@@ -1,10 +1,10 @@
-// Atlas-only rows: who is answering, what it has cost, and whether the
-// session is being recorded. They sit here because this overlay is the one
-// place a session's context is gathered.
+// The Details card's Session section: who is answering, what it has cost,
+// whether the session is being recorded, and at its foot where the project
+// lives and the session's own actions (comments, share, Timeline, find).
 //
-// Usage and Capture drill in: each replaces the rows with the surface Atlas
-// already has for it (`UsagePopup`, `CapturePopover`), rather than a second,
-// smaller copy of either.
+// Usage and Capture drill in: each replaces the sections with the surface
+// Atlas already has for it (`UsagePopup`, `CapturePopover`), rather than a
+// second, smaller copy of either.
 
 import { ChevronRight, Gauge, Radar } from "lucide-react";
 
@@ -17,25 +17,37 @@ import { useSessionUsage } from "@/features/chat/lib/use-session-usage";
 import { useChatStore } from "@/features/chat/stores/chat-store";
 
 import type { CaptureState } from "../lib/use-capture-state";
-import { useSessionContextStore } from "../stores/session-context-store";
+import { useSessionDetailsStore } from "../stores/session-details-store";
 import { ContextRow, ContextSection, RowIcon, RowLabel, RowMeta } from "./context-rows";
+import { SessionActions } from "./session-actions";
 
 export function SessionSection({
   tabId,
   capture,
   projectPath,
+  onOpenSearch,
+  showProject,
 }: {
-  tabId: string | null;
+  tabId: string;
   capture: CaptureState;
   projectPath: string | null;
+  onOpenSearch?: () => void;
+  /** The project rows at the foot; dropped when the card is short of height. */
+  showProject: boolean;
 }) {
-  const isChat = useChatStore((s) => (tabId ? !!s.sessions[tabId] : false));
-  if (!isChat && !projectPath) return null;
   return (
     <ContextSection title="Session" showHeading={false}>
-      {isChat && tabId && <AgentRow tabId={tabId} />}
-      {isChat && tabId && <UsageRow tabId={tabId} />}
+      <AgentRow tabId={tabId} />
+      <UsageRow tabId={tabId} />
       {projectPath && <CaptureRow capture={capture} />}
+      <div className="pt-1.5">
+        <SessionActions
+          tabId={tabId}
+          projectPath={projectPath}
+          onOpenSearch={onOpenSearch}
+          showProject={showProject}
+        />
+      </div>
     </ContextSection>
   );
 }
@@ -61,7 +73,7 @@ function AgentRow({ tabId }: { tabId: string }) {
 
 function UsageRow({ tabId }: { tabId: string }) {
   const { pill } = useSessionUsage(tabId, false);
-  const show = useSessionContextStore.use.actions().show;
+  const show = useSessionDetailsStore.use.actions().show;
   return (
     <ContextRow onClick={() => show("usage")} title="Context, tokens, cost and what Atlas recorded">
       <span className="flex size-3.5 shrink-0 items-center justify-center text-muted-foreground">
@@ -81,7 +93,7 @@ function UsageRow({ tabId }: { tabId: string }) {
 }
 
 function CaptureRow({ capture }: { capture: CaptureState }) {
-  const show = useSessionContextStore.use.actions().show;
+  const show = useSessionDetailsStore.use.actions().show;
   const { binding, health, tone } = capture;
   const status = !binding
     ? "Off"

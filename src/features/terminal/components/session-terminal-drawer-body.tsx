@@ -1,3 +1,5 @@
+// Kept for later: the session terminal drawer is unmounted (no UI reaches it) until the terminal rework. Not dead code; do not delete.
+//
 // The open drawer: a resizable box around an ordinary `TerminalPanel`
 // (variant `drawer`) over the drawer's terminal tab — the same panes, side
 // list, block renderer, xterm and PTY IPC as a terminal tab. Loaded on the
@@ -34,7 +36,7 @@ import { TerminalPanel } from "./terminal-panel";
 export interface SessionTerminalDrawerProps {
   /** The chat tab the drawer sits in. */
   tabId: string;
-  /** The session it belongs to (`overviewScope`). */
+  /** The session it belongs to (`sessionScope`). */
   scope: string;
 }
 

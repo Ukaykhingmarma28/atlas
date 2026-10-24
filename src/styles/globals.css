@@ -128,6 +128,10 @@
   --animate-fade-in: fade-in 0.15s var(--ease-out-strong);
   --animate-fade-out: fade-out 0.12s var(--ease-out-strong);
   --animate-scale-in: scale-in 0.15s var(--ease-out-strong);
+  /* A card growing out of the button that opened it (the session Details
+     popover): a smaller step than `scale-in`, since the card is large and a
+     5% scale on it reads as a zoom, not a grow. */
+  --animate-card-in: card-in 0.15s var(--ease-out-strong);
   --animate-scale-out: scale-out 0.12s var(--ease-out-strong);
   --animate-slide-in-right: slide-in-right 0.18s var(--ease-drawer);
 
@@ -230,6 +234,16 @@
     from {
       opacity: 0;
       transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  @keyframes card-in {
+    from {
+      opacity: 0;
+      transform: scale(0.97);
     }
     to {
       opacity: 1;
@@ -1897,6 +1911,7 @@
      too. Only the name is swapped — duration, easing, delay and fill-mode stay.
      `animate-fade-in` / `.atlas-fade-in` are already opacity-only. */
   [class*="animate-scale-in"],
+  [class*="animate-card-in"],
   [class*="animate-slide-in-right"],
   .atlas-pill-in,
   .atlas-panel-in-br,

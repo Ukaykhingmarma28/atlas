@@ -21,10 +21,10 @@ import { Input } from "@/ui/input";
 import { Switch } from "@/ui/switch";
 
 import { submitCreatePr } from "../lib/create-pr";
-import { useSessionContextStore, type CreatePrRequest } from "../stores/session-context-store";
+import { useSessionDetailsStore, type CreatePrRequest } from "../stores/session-details-store";
 
 export function CreatePrDialogHost() {
-  const request = useSessionContextStore.use.createPr();
+  const request = useSessionDetailsStore.use.createPr();
   if (!request) return null;
   return (
     <CreatePrDialog
@@ -42,7 +42,7 @@ function CreatePrDialog({ request }: { request: CreatePrRequest }) {
   const [body, setBody] = useState(prefill.body);
   const [draft, setDraft] = useState(request.draft);
   const [busy, setBusy] = useState(false);
-  const close = () => useSessionContextStore.getState().actions.requestCreatePr(null);
+  const close = () => useSessionDetailsStore.getState().actions.requestCreatePr(null);
 
   const submit = async () => {
     if (!title.trim() || busy) return;

@@ -2,7 +2,19 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { TAB_PLACEMENT, TAB_TYPES, type Placement, type TabType } from "@/lib/constants";
+import {
+  TAB_PLACEMENT,
+  TAB_TYPES,
+  WINDOW_TYPES,
+  isDestination,
+  isDestinationOnly,
+  isDualPlacement,
+  surfaceMinWidth,
+  type DestinationType,
+  type DualPlacementType,
+  type Placement,
+  type TabType,
+} from "@/lib/constants";
 import { LAYOUT_TEMPLATES } from "@/features/layout/templates";
 
 /**
@@ -19,6 +31,11 @@ import { LAYOUT_TEMPLATES } from "@/features/layout/templates";
  * A full page squeezed into a column is what this ADR exists to stop. If you
  * need a destination beside the session, the answer is a peek (a compact
  * view designed for a column), not an entry in one of these lists.
+ *
+ * The 2026-10-24 amendment adds `surface-or-destination`, for a tool that
+ * passes the surface test and is also a place of its own (team chat). Such a
+ * type may be offered as a surface; it must also be one per window, since
+ * opening it in one form moves it out of the other.
  */
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -26,7 +43,11 @@ const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf-8");
 
 const placement = (type: TabType): Placement => TAB_PLACEMENT[type];
 const DESTINATIONS = TAB_TYPES.filter((t) => placement(t).kind === "destination");
-const SURFACES_ = TAB_TYPES.filter((t) => placement(t).kind === "surface");
+const DUAL = TAB_TYPES.filter((t) => placement(t).kind === "surface-or-destination");
+const SURFACES_ = TAB_TYPES.filter((t) => {
+  const kind = placement(t).kind;
+  return kind === "surface" || kind === "surface-or-destination";
+});
 
 describe("tab placement (ADR-0024)", () => {
   it("has a non-trivial set of each kind (parser smoke test)", () => {
@@ -37,12 +58,33 @@ describe("tab placement (ADR-0024)", () => {
 
   it("every surface declares a believable minimum width", () => {
     for (const type of SURFACES_) {
-      const p = placement(type);
-      if (p.kind !== "surface") continue;
+      const min = surfaceMinWidth(type);
       // Below 200px nothing lays out; above 600px it is not a column tool.
-      expect(p.minWidth, type).toBeGreaterThanOrEqual(200);
-      expect(p.minWidth, type).toBeLessThanOrEqual(600);
+      expect(min, type).toBeGreaterThanOrEqual(200);
+      expect(min, type).toBeLessThanOrEqual(600);
     }
+  });
+
+  it("a type in both forms is a destination type, never destination-only, and one per window", () => {
+    expect(DUAL).toContain("team-chat");
+    for (const type of DUAL) {
+      expect(isDualPlacement(type), type).toBe(true);
+      expect(isDestination(type), type).toBe(true);
+      expect(isDestinationOnly(type), type).toBe(false);
+      expect(WINDOW_TYPES.has(type), `${type} must be one per window`).toBe(true);
+    }
+    for (const type of DESTINATIONS) {
+      expect(isDestinationOnly(type), type).toBe(true);
+      expect(isDualPlacement(type), type).toBe(false);
+    }
+  });
+
+  it("the placement types partition the tab types the same way the predicates do", () => {
+    // Compile-time: each line fails `tsc` if the derived union drifts.
+    const dual: DualPlacementType = "team-chat";
+    const asDestination: DestinationType = dual;
+    const timeline: DestinationType = "artifacts";
+    expect([asDestination, timeline]).toEqual(["team-chat", "artifacts"]);
   });
 
   it("the ⌘T list offers surfaces only", () => {

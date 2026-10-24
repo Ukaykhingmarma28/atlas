@@ -24,10 +24,10 @@ import {
 } from "@/ui/dialog";
 
 import { approveAndRunProjectScript, projectScriptsKey } from "../lib/project-scripts";
-import { useSessionContextStore, type ScriptConfirmRequest } from "../stores/session-context-store";
+import { useSessionDetailsStore, type ScriptConfirmRequest } from "../stores/session-details-store";
 
 export function ProjectScriptConfirmHost() {
-  const request = useSessionContextStore.use.scriptConfirm();
+  const request = useSessionDetailsStore.use.scriptConfirm();
   if (!request) return null;
   return (
     <ProjectScriptConfirm
@@ -41,7 +41,7 @@ export function ProjectScriptConfirm({ request }: { request: ScriptConfirmReques
   const { projectPath, script, cwd } = request;
   const client = useQueryClient();
   const [busy, setBusy] = useState(false);
-  const close = () => useSessionContextStore.getState().actions.confirmScript(null);
+  const close = () => useSessionDetailsStore.getState().actions.confirmScript(null);
 
   const run = async () => {
     if (busy) return;

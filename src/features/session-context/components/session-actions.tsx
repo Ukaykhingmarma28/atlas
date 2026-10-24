@@ -1,7 +1,7 @@
 /**
- * The body of the session overview's Session card (the panel's `Section`
- * frames it): where this session's project lives, and the session's own
- * actions — comments, share, open in the Timeline, find. The card never
+ * The foot of the Details card's Session section: where this session's
+ * project lives (shared as, folder, origin, root commit), and the session's
+ * own actions: comments, share, open in the Timeline, find. The card never
  * repeats the session's name; the title bar shows it.
  *
  * Comments and Share are the Timeline reader's own morphs, not copies. They
@@ -46,19 +46,19 @@ import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 import { cn } from "@/lib/utils";
 import { HintGroup, HintItem } from "@/ui/hint-group";
-import { jumpToCommentAnchor } from "../lib/jump-to-comment";
+import { jumpToCommentAnchor } from "@/features/chat/lib/jump-to-comment";
 import {
   useChatCommentsStore,
   useCommentCount,
   type CommentTargetIds,
-} from "../stores/chat-comments-store";
+} from "@/features/chat/stores/chat-comments-store";
 
 /** `--morph-close-dur` plus a beat: the portal outlives the shrink. */
 const MORPH_UNMOUNT_MS = 300;
 
 type Popup = "comments" | "share";
 
-export function SessionBody({
+export function SessionActions({
   tabId,
   projectPath,
   onOpenSearch,
@@ -120,20 +120,22 @@ export function SessionBody({
     });
   };
 
-  // The card's frame and title are the panel's `Section`, like every other
-  // card's; this is its body: the project, then a footer — what the actions
-  // act on ("Session") on the left, every action together on the right.
+  // The project, then a footer: what the actions act on ("Session") on the
+  // left, every action together on the right.
   return (
     <>
       {showProject && (
-        <div className="space-y-1.5 px-2 pt-0.5">
+        <div className="space-y-1.5 px-2.5 pt-0.5">
           <ProjectFacts projectPath={projectPath} />
         </div>
       )}
 
       <HintGroup>
         <div
-          className={cn("flex items-center gap-1.5 px-2 pb-0.5", showProject ? "pt-2.5" : "pt-0.5")}
+          className={cn(
+            "flex items-center gap-1.5 px-2.5 pb-0.5",
+            showProject ? "pt-2.5" : "pt-0.5",
+          )}
         >
           <span className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
             <MessageCircleDashedCheck size={12} className="shrink-0" aria-hidden />
@@ -174,7 +176,7 @@ export function SessionBody({
           // Pinned by its top-right corner to the button's, so the box grows
           // down and to the left — into the conversation, not off the window.
           <div
-            data-session-overview-portal
+            data-session-details-portal
             className="fixed z-popover"
             style={
               {

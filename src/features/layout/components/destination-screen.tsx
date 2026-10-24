@@ -35,6 +35,11 @@ const CanvasPanel = lazy(() =>
 const MemoryPanel = lazy(() =>
   import("@/features/memory/components/memory-panel").then((m) => ({ default: m.MemoryPanel })),
 );
+// Team chat is also a surface; as a destination it is the same panel, full
+// width (ADR-0024's amendment).
+const CommsPanel = lazy(() =>
+  import("@/features/comms/components/comms-panel").then((m) => ({ default: m.CommsPanel })),
+);
 const SpacesTab = lazy(() =>
   import("@/features/spaces/components/spaces-tab").then((m) => ({ default: m.SpacesTab })),
 );
@@ -124,6 +129,8 @@ function DestinationBody({ tab, type }: { tab: Tab; type: DestinationType }) {
       return <CanvasPanel />;
     case "spaces":
       return <SpacesTab convId={tab.data.convId as string} />;
+    case "team-chat":
+      return <CommsPanel />;
     default: {
       const _exhaustive: never = type;
       return _exhaustive;

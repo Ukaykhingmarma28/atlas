@@ -38,7 +38,8 @@ import { isLinux, isMac, isWindows } from "@/lib/platform";
 import { MenuBar } from "@/features/menu/components/menu-bar";
 import { OrgSwitcher } from "@/features/organisations/components/org-switcher";
 import { BreadcrumbButton } from "./breadcrumb-button";
-import { openSessionContext } from "@/features/session-context/stores/session-context-store";
+import { OPEN_CAPTURE_EVENT } from "@/features/session-context/lib/open-capture";
+import { RightPanelToggle } from "@/features/layout/components/right-panel-toggle";
 
 /**
  * The native window, for dragging and zooming. Resolved once per module and
@@ -256,18 +257,35 @@ export function ProjectBreadcrumb() {
 }
 
 /**
- * The bar's right end: the dock while a project is open, then the account,
- * always — it is the one place the avatar lives (the sidebar footer has none).
- * It sits outside the `currentProject` guard on purpose: a fresh install has
- * no project open, and sign-in must be reachable from that empty state.
+ * The bar's right end, the window's group: the dock while it has something to
+ * say, then the right panel toggle while a project is open, then the account,
+ * always. It is the one place the avatar lives (the sidebar footer has none).
+ * The account sits outside the `currentProject` guard on purpose: a fresh
+ * install has no project open, and sign-in must be reachable from that empty
+ * state.
+ *
+ * This group never moves: it is drawn by whichever header is at the window's
+ * right edge, so the panel toggle and the avatar keep their places whether
+ * the panel is shown or not. A gap, nothing louder, sets it apart from the
+ * session's own controls (`SessionHeaderControls`), which come and go with
+ * the tab.
  */
 function TopbarTrailing() {
   const currentProject = useAppStore.use.currentProject();
   return (
     <div
-      className={cn("ml-auto flex shrink-0 items-center gap-1", !(isWindows || isLinux) && "pr-2")}
+      data-window-controls
+      className={cn(
+        "ml-auto flex shrink-0 items-center gap-1 pl-3",
+        !(isWindows || isLinux) && "pr-2",
+      )}
     >
       {currentProject ? <ActionDock /> : null}
+      {currentProject ? (
+        <HintGroup>
+          <RightPanelToggle />
+        </HintGroup>
+      ) : null}
       <AccountButton menuExtra={<HelpSubmenu />} />
       {(isWindows || isLinux) && <WindowControls />}
     </div>
@@ -416,16 +434,21 @@ function ProjectLabel({
     return () => void unlisten.then((stop) => stop());
   }, [captureOpen, readCapture]);
 
-  // Command palette + ⌘⌥C open capture from outside the component tree. It
-  // lives in the session-context overlay now, so they land there.
+  // ⌘⌥C and the palette open capture in the session's Details card; with no
+  // session in the main column they land here (`openCapture`). Every mounted
+  // project draws a label, and the background ones are `display:none`: only
+  // the one on screen opens, or a popover would anchor to a hidden button.
+  const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const onOpenCapture = () => openSessionContext("capture");
-    window.addEventListener("atlas:open-capture", onOpenCapture);
-    return () => window.removeEventListener("atlas:open-capture", onOpenCapture);
-  }, []);
+    const onOpenCapture = () => {
+      if (path && rootRef.current?.offsetParent) setCaptureOpen(true);
+    };
+    window.addEventListener(OPEN_CAPTURE_EVENT, onOpenCapture);
+    return () => window.removeEventListener(OPEN_CAPTURE_EVENT, onOpenCapture);
+  }, [path]);
 
   return (
-    <div className="relative flex min-w-0 shrink items-center">
+    <div ref={rootRef} className="relative flex min-w-0 shrink items-center">
       {/* Breadcrumb: `org / project`, two controls. The org opens the org
           switcher — the same menu as the rail's org row. The project opens
           capture setup: capture is per project, and this is the one control in

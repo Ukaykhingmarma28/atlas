@@ -1,3 +1,5 @@
+// Kept for later: the session terminal drawer is unmounted (no UI reaches it) until the terminal rework. Not dead code; do not delete.
+//
 // A drawer pane's actions while it holds a single terminal.
 //
 // In a terminal tab every pane carries the side list, whose header holds these

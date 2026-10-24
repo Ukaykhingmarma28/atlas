@@ -17,7 +17,7 @@ import { toast } from "sonner";
 
 import { openCommandTerminal, shellQuote } from "@/features/terminal/lib/open-command-terminal";
 
-import { useSessionContextStore } from "../stores/session-context-store";
+import { useSessionDetailsStore } from "../stores/session-details-store";
 import {
   approveProjectScript,
   listProjectScripts,
@@ -113,7 +113,7 @@ export function runProjectScript(
   cwd: string = projectPath,
 ): void {
   if (!script.approved) {
-    useSessionContextStore.getState().actions.confirmScript({ projectPath, script, cwd });
+    useSessionDetailsStore.getState().actions.confirmScript({ projectPath, script, cwd });
     return;
   }
   startProjectScript(projectPath, script, cwd);
