@@ -28,6 +28,7 @@ import { IconButton } from "@/ui/icon-button";
 import { useCaptureState, type CaptureState } from "../lib/use-capture-state";
 import { NO_TAB_KEY, useSessionContextStore } from "../stores/session-context-store";
 import { CreatePrDialogHost } from "./create-pr-dialog";
+import { ProjectScriptConfirmHost } from "./project-script-confirm";
 import { ProjectScriptDialogHost } from "./project-script-dialog";
 import { SessionContextBody } from "./session-context-popover";
 
@@ -74,6 +75,7 @@ export function SessionContextButton({
         />
       )}
       <ProjectScriptDialogHost />
+      <ProjectScriptConfirmHost />
       <CreatePrDialogHost />
     </>
   );
