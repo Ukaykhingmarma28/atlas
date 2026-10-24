@@ -265,16 +265,23 @@ export function ReviewThreadCard({
 /** A line comment in the review in progress, sent with the review. */
 export function PendingCommentCard({
   comment,
+  stale = false,
   onRemove,
 }: {
   comment: PendingReviewComment;
+  /** Its line is no longer in the diff: GitHub would refuse the review. */
+  stale?: boolean;
   onRemove: () => void;
 }) {
   return (
     <div className={cn(CARD_CLASS, "border-dashed")} contentEditable={false} onPointerDown={stop}>
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <MessageSquare aria-hidden className="size-3.5" />
-        <span>Pending: sent when you submit your review</span>
+        <span>
+          {stale
+            ? "Pending, but its line is no longer in the diff: discard it to submit your review"
+            : "Pending: sent when you submit your review"}
+        </span>
         <IconButton
           size="xs"
           icon={Trash2}
@@ -292,20 +299,45 @@ export function PendingCommentCard({
  *  progress, or posted on its own at once. */
 export function DraftCommentCard({
   label,
-  posting,
+  initialText = "",
+  onTextChange,
   onAddToReview,
   onPostNow,
   onCancel,
 }: {
   /** `path:line`, for the box's name. */
   label: string;
-  posting: boolean;
+  /** What was typed before the tab was left, restored. */
+  initialText?: string;
+  onTextChange?: (text: string) => void;
   onAddToReview: (body: string) => void;
-  onPostNow: (body: string) => void;
+  /** Settles once the post has; the card stays locked until then. */
+  onPostNow: (body: string) => Promise<unknown>;
   onCancel: () => void;
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText);
+  // The posting state is the card's own: the diff viewer re-renders an
+  // annotation only when its item's version changes, so a flag passed down
+  // from the tab would never reach it, and a second click would post twice.
+  // The ref closes the gap before the state re-renders.
+  const [posting, setPosting] = useState(false);
+  const postingRef = useRef(false);
   const body = text.trim();
+  const postNow = () => {
+    if (postingRef.current || !body) return;
+    postingRef.current = true;
+    setPosting(true);
+    void onPostNow(body)
+      .catch(() => undefined)
+      .finally(() => {
+        postingRef.current = false;
+        setPosting(false);
+      });
+  };
+  const addToReview = () => {
+    if (postingRef.current || !body) return;
+    onAddToReview(body);
+  };
   return (
     <div className="px-3 py-2 font-sans" contentEditable={false} onPointerDown={stop}>
       <textarea
@@ -317,14 +349,17 @@ export function DraftCommentCard({
         placeholder="Leave a comment"
         aria-label={`Comment on ${label}`}
         className={TEXTAREA_CLASS}
-        onChange={(event) => setText(event.target.value)}
+        onChange={(event) => {
+          setText(event.target.value);
+          onTextChange?.(event.target.value);
+        }}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.preventDefault();
             onCancel();
           } else if (isSubmitChord(event) && body && !event.repeat) {
             event.preventDefault();
-            onAddToReview(body);
+            addToReview();
           }
         }}
       />
@@ -333,15 +368,10 @@ export function DraftCommentCard({
         <Button size="xs" variant="ghost" onClick={onCancel}>
           Cancel
         </Button>
-        <Button
-          size="xs"
-          variant="outline"
-          disabled={!body || posting}
-          onClick={() => onPostNow(body)}
-        >
+        <Button size="xs" variant="outline" disabled={!body || posting} onClick={postNow}>
           {posting ? "Posting…" : "Comment now"}
         </Button>
-        <Button size="xs" disabled={!body || posting} onClick={() => onAddToReview(body)}>
+        <Button size="xs" disabled={!body || posting} onClick={addToReview}>
           Add to review
         </Button>
       </div>

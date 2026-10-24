@@ -11,7 +11,9 @@
 //   (`pr_prepare_checkout`). The main checkout is never switched. The task is
 //   in the composer, not sent; once the session has done the work, the user
 //   pushes it from the session context overlay. Nothing is pushed for them.
-// - "Write guide" — the Guide tab's background run (`guide-run-store.ts`).
+// - "Write guide" — the Guide tab's background run (`guide-run-store.ts`);
+//   on a pull request from a fork, only after the reader confirms, since the
+//   run's agent works in a checkout of the fork author's code.
 
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -49,7 +51,12 @@ export interface PullRequestGuideState {
   /** Whether a guide can be written here (an open or closed pull request
    *  with a known head). */
   canWrite: boolean;
+  /** Starts a run, or for a pull request from a fork asks first
+   *  (`forkConfirm`). */
   write: () => void;
+  /** Set while "Write guide" on a fork's pull request waits for the reader's
+   *  yes: its checkout is the fork author's code. */
+  forkConfirm: { confirm: () => void; cancel: () => void } | null;
 }
 
 export interface PullRequestAgentActions {
@@ -88,6 +95,8 @@ export function usePullRequestAgentActions(target: {
   const { repoPath, number, detail, activity } = target;
   const client = useQueryClient();
   const [pending, setPending] = useState<string | null>(null);
+  // "Write guide" on a pull request from a fork waits for a yes first.
+  const [confirmingFork, setConfirmingFork] = useState(false);
   const agent = actionAgent(repoPath);
 
   const guideQuery = usePrGuide(repoPath, detail?.repository ?? null, number);
@@ -225,6 +234,22 @@ export function usePullRequestAgentActions(target: {
 
   const headSha = detail?.headSha ?? null;
   const running = run?.status === "running";
+  const fromFork = detail?.isCrossRepository === true;
+  const startGuide = () => {
+    if (!detail || running) return;
+    setConfirmingFork(false);
+    void writeGuide({
+      repoPath,
+      detail,
+      activity,
+      agent: agent.agent,
+      agentLabel: agent.label,
+      onSaved: () => {
+        void client.invalidateQueries({ queryKey: guideQueryKey(repoPath, number) });
+        toast.success(`The review guide for #${number} is ready`);
+      },
+    });
+  };
   const guideState: PullRequestGuideState = {
     guide,
     loading: guideQuery.isPending && !!detail?.repository,
@@ -232,20 +257,21 @@ export function usePullRequestAgentActions(target: {
     running,
     stale: guide !== null && headSha !== null && guide.headSha !== headSha,
     canWrite: !!detail && headSha !== null,
+    // A fork's head is code its author controls, agent configuration
+    // included (`AGENTS.md`, hooks, `.mcp.json`), and the guide's agent runs
+    // in a checkout of it: the reader says yes to that first.
     write: () => {
       if (!detail || running) return;
-      void writeGuide({
-        repoPath,
-        detail,
-        activity,
-        agent: agent.agent,
-        agentLabel: agent.label,
-        onSaved: () => {
-          void client.invalidateQueries({ queryKey: guideQueryKey(repoPath, number) });
-          toast.success(`The review guide for #${number} is ready`);
-        },
-      });
+      if (fromFork) setConfirmingFork(true);
+      else startGuide();
     },
+    forkConfirm:
+      confirmingFork && fromFork && !running
+        ? {
+            confirm: startGuide,
+            cancel: () => setConfirmingFork(false),
+          }
+        : null,
   };
 
   return {

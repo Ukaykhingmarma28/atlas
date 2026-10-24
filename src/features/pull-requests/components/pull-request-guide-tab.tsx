@@ -21,6 +21,8 @@ import { openReviewFile } from "@/features/git/lib/open-review-file";
 import { getRenderablePatch, resolveFileDiffPath } from "@/features/git/lib/diff-rendering";
 
 import { stepTourPosition, stopFilePaths } from "../lib/pull-request-guide-tour";
+import type { ToolCallRef } from "@/types/acp";
+
 import type { PullRequestGuide } from "../lib/pull-request-guide-types";
 import { usePrDiff } from "../lib/pull-requests-queries";
 import type { PrDiffResult } from "../lib/pull-requests-types";
@@ -79,12 +81,62 @@ function useGuideDiffFiles(
   };
 }
 
+/** A tool call's input as the agent sent it, whole, or `null` for none. */
+export function toolInputText(toolCall: ToolCallRef): string | null {
+  const raw = toolCall.rawInput ?? (toolCall as Record<string, unknown>).input;
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw === "string") return raw;
+  try {
+    return JSON.stringify(raw, null, 2);
+  } catch {
+    return String(raw);
+  }
+}
+
+/** "Write guide" on a pull request from a fork: the reader's yes first. */
+function ForkConfirm({
+  agentLabel,
+  onConfirm,
+  onCancel,
+}: {
+  agentLabel: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      role="alertdialog"
+      aria-label="Write a guide for a pull request from a fork"
+      className="flex w-full max-w-md flex-col gap-2 rounded-lg border border-warning bg-warning-muted px-3 py-2.5 text-left"
+    >
+      <p className="flex items-center gap-2 text-sm font-medium text-foreground">
+        <TriangleAlert aria-hidden className="size-4 shrink-0 text-warning" />
+        This pull request comes from a fork
+      </p>
+      <p className="text-xs text-secondary-foreground">
+        {agentLabel} will read its code in a checkout of the fork's head. That code is its author's,
+        and can include agent instructions or configuration written to steer {agentLabel}. Check
+        every permission it asks for.
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        <Button size="xs" onClick={onConfirm}>
+          Write guide
+        </Button>
+        <Button size="xs" variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /** A permission the run's session is waiting on, answered inline. */
 function RunPermission({ run }: { run: Extract<GuideRun, { status: "running" }> }) {
   const sessionId = run.session?.session_id ?? null;
   const request = useChatStore((s) => (sessionId ? s.pendingPermissions[sessionId]?.[0] : null));
   if (!request || !run.session) return null;
   const key = run.session;
+  const input = toolInputText(request.toolCall);
   const answer = (optionId: string | null) =>
     void agents
       .respondPermission(
@@ -101,9 +153,19 @@ function RunPermission({ run }: { run: Extract<GuideRun, { status: "running" }> 
         <ShieldQuestion aria-hidden className="size-4 shrink-0 text-warning" />
         {run.agentLabel} asks to run something
       </p>
-      <p className="truncate font-mono text-xs text-secondary-foreground">
+      <p className="font-mono text-xs break-words whitespace-pre-wrap text-secondary-foreground">
         {request.toolCall.title ?? "A tool call"}
       </p>
+      {input !== null ? (
+        // The whole input, untrimmed: the run reads code its author wrote,
+        // so a title alone could hide what is really being asked.
+        <pre
+          aria-label="Tool input"
+          className="max-h-60 overflow-auto rounded border border-border bg-background px-2 py-1.5 font-mono text-2xs leading-snug whitespace-pre-wrap text-secondary-foreground"
+        >
+          {input}
+        </pre>
+      ) : null}
       <div className="flex flex-wrap gap-1.5">
         {request.options.map((option) => (
           <Button
@@ -240,8 +302,15 @@ export function PullRequestGuideTab({
   active: boolean;
   scrollerRef?: (node: HTMLDivElement | null) => void;
 }) {
-  const { guide, loading, run, running, stale, canWrite, write } = agent.guide;
+  const { guide, loading, run, running, stale, canWrite, write, forkConfirm } = agent.guide;
   const failure = run?.status === "failed" ? run.detail : null;
+  const forkPrompt = forkConfirm ? (
+    <ForkConfirm
+      agentLabel={agent.agentLabel}
+      onConfirm={forkConfirm.confirm}
+      onCancel={forkConfirm.cancel}
+    />
+  ) : null;
   const writeButton = (label: string, size: "sm" | "xs") =>
     canWrite ? (
       <Button size={size} variant="outline" disabled={running} onClick={write}>
@@ -278,34 +347,39 @@ export function PullRequestGuideTab({
               : `A guide is a tour of the change: stops through the code in reading order, with the calls only a maintainer can make. ${agent.agentLabel} writes it, reading a checkout of the pull request's head.`)}
         </p>
         {run?.status === "running" ? <RunPermission run={run} /> : null}
-        {writeButton(failure === null ? `Write guide with ${agent.agentLabel}` : "Try again", "sm")}
+        {forkPrompt ??
+          writeButton(
+            failure === null ? `Write guide with ${agent.agentLabel}` : "Try again",
+            "sm",
+          )}
       </div>
     );
   }
 
-  const banner =
-    stale || failure !== null || running ? (
-      <div
-        role="status"
-        className={cn(
-          "flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs",
-          running ? "border-info bg-info-muted" : "border-warning bg-warning-muted",
-        )}
-      >
-        {running ? (
-          <Loader2 aria-hidden className="size-3.5 shrink-0 animate-spin text-info" />
-        ) : (
-          <TriangleAlert aria-hidden className="size-3.5 shrink-0 text-warning" />
-        )}
-        <span className="min-w-0 flex-1 text-foreground">
-          {running
-            ? "Rewriting this guide. You will be told when the new one is ready."
-            : (failure ?? "Written before the latest push.")}
-        </span>
-        {!running ? writeButton("Rewrite", "xs") : null}
-        {run?.status === "running" ? <RunPermission run={run} /> : null}
-      </div>
-    ) : null;
+  const banner = forkPrompt ? (
+    forkPrompt
+  ) : stale || failure !== null || running ? (
+    <div
+      role="status"
+      className={cn(
+        "flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs",
+        running ? "border-info bg-info-muted" : "border-warning bg-warning-muted",
+      )}
+    >
+      {running ? (
+        <Loader2 aria-hidden className="size-3.5 shrink-0 animate-spin text-info" />
+      ) : (
+        <TriangleAlert aria-hidden className="size-3.5 shrink-0 text-warning" />
+      )}
+      <span className="min-w-0 flex-1 text-foreground">
+        {running
+          ? "Rewriting this guide. You will be told when the new one is ready."
+          : (failure ?? "Written before the latest push.")}
+      </span>
+      {!running ? writeButton("Rewrite", "xs") : null}
+      {run?.status === "running" ? <RunPermission run={run} /> : null}
+    </div>
+  ) : null;
 
   return (
     <GuideTour

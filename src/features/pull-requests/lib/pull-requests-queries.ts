@@ -219,6 +219,40 @@ export interface PrTimelineHistory {
   items: PrTimelineItem[];
   /** More history than `TIMELINE_PAGE_LIMIT` pages hold. */
   truncated: boolean;
+  /** Pages read. */
+  pages: number;
+  /** The cursor the newest page was read from, and where its items start:
+   *  what a refresh re-reads (`readTimelineTail`). */
+  tailCursor: string | null;
+  tailStart: number;
+  /** When every page was last read (epoch ms). */
+  fullAt: number;
+}
+
+/** How long a refresh may re-read only the newest page before it reads the
+ *  whole history again (to catch an edit to an older comment made elsewhere). */
+export const TIMELINE_FULL_READ_MS = 15 * 60_000;
+
+async function readPagesFrom(
+  cwd: string,
+  number: number,
+  read: typeof prTimeline,
+  start: { items: PrTimelineItem[]; pages: number; cursor: string | null },
+): Promise<Omit<PrTimelineHistory, "fullAt">> {
+  const items = start.items;
+  let { pages, cursor } = start;
+  let tailCursor = cursor;
+  let tailStart = items.length;
+  while (pages < TIMELINE_PAGE_LIMIT) {
+    tailCursor = cursor;
+    tailStart = items.length;
+    const next: PrTimelinePage = await read(cwd, number, cursor);
+    pages += 1;
+    items.push(...next.items);
+    cursor = next.nextCursor;
+    if (cursor === null) return { items, truncated: false, pages, tailCursor, tailStart };
+  }
+  return { items, truncated: true, pages, tailCursor, tailStart };
 }
 
 /** Every page of the history, oldest first, followed in one read: the tab
@@ -227,16 +261,44 @@ export async function readTimelineHistory(
   cwd: string,
   number: number,
   read: typeof prTimeline = prTimeline,
+  now: number = Date.now(),
 ): Promise<PrTimelineHistory> {
-  const items: PrTimelineItem[] = [];
-  let cursor: string | null = null;
-  for (let page = 0; page < TIMELINE_PAGE_LIMIT; page++) {
-    const next: PrTimelinePage = await read(cwd, number, cursor);
-    items.push(...next.items);
-    cursor = next.nextCursor;
-    if (cursor === null) return { items, truncated: false };
-  }
-  return { items, truncated: true };
+  const history = await readPagesFrom(cwd, number, read, { items: [], pages: 0, cursor: null });
+  return { ...history, fullAt: now };
+}
+
+/**
+ * A refresh of a history already read: the pages before the newest are
+ * kept, and reading resumes from the newest page's cursor. A timeline only
+ * grows at its end (a new comment, review, push), so a comment posted here
+ * costs one page, not fifty.
+ */
+export async function readTimelineTail(
+  cwd: string,
+  number: number,
+  previous: PrTimelineHistory,
+  read: typeof prTimeline = prTimeline,
+): Promise<PrTimelineHistory> {
+  const history = await readPagesFrom(cwd, number, read, {
+    items: previous.items.slice(0, previous.tailStart),
+    pages: Math.max(0, previous.pages - 1),
+    cursor: previous.tailCursor,
+  });
+  return { ...history, fullAt: previous.fullAt };
+}
+
+/** The read a refetch makes: the tail of what is held, or the whole history
+ *  when nothing is held, it was cut off, or the last full read is old. */
+export function readTimelineRefresh(
+  cwd: string,
+  number: number,
+  previous: PrTimelineHistory | undefined,
+  read: typeof prTimeline = prTimeline,
+  now: number = Date.now(),
+): Promise<PrTimelineHistory> {
+  return previous && !previous.truncated && now - previous.fullAt < TIMELINE_FULL_READ_MS
+    ? readTimelineTail(cwd, number, previous, read)
+    : readTimelineHistory(cwd, number, read, now);
 }
 
 export function usePrTimelineHistory(
@@ -244,12 +306,18 @@ export function usePrTimelineHistory(
   number: number | null,
   enabled = true,
 ): Result<PrTimelineHistory> {
+  const client = useQueryClient();
+  const queryKey = pullRequestKeys.timelineHistory(cwd ?? "", number ?? 0);
   return useQuery<PrTimelineHistory, PrError>({
     ...COMMON,
-    queryKey: pullRequestKeys.timelineHistory(cwd ?? "", number ?? 0),
-    queryFn: () => readTimelineHistory(cwd!, number!),
+    queryKey,
+    queryFn: () =>
+      readTimelineRefresh(cwd!, number!, client.getQueryData<PrTimelineHistory>(queryKey)),
     enabled: enabled && !!cwd && !!number,
     staleTime: STALE.activity,
+    // Up to fifty pages behind one read: not on every focus. A write here,
+    // an agent's turn end and the slow poll still refresh it, by its tail.
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -290,7 +358,15 @@ export function usePrDiff(
  * nears the end (`fetchNextPage`). A refresh re-reads every loaded page, and
  * an unchanged page keeps its identity, so its files keep their parse.
  */
-export function usePrDiffPages(cwd: string, number: number, commit: string | null) {
+export function usePrDiffPages(
+  cwd: string,
+  number: number,
+  commit: string | null,
+  /** For a reader that only peeks at what the Code tab loaded (the
+   *  composer's check of pending comments): off until wanted, and no
+   *  re-read of every page just because it mounted. */
+  options: { enabled?: boolean; refetchOnMount?: boolean } = {},
+) {
   return useInfiniteQuery<
     PrDiffResult,
     PrError,
@@ -309,6 +385,8 @@ export function usePrDiffPages(cwd: string, number: number, commit: string | nul
     // turn end, or a write that moves the code, never on a timer or focus.
     refetchInterval: false,
     refetchOnWindowFocus: false,
+    enabled: options.enabled ?? true,
+    refetchOnMount: options.refetchOnMount ?? true,
   });
 }
 

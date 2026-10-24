@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   isLineInFileDiff,
+  offDiffPendingComments,
+  pendingCommentPlacement,
   positionAnchor,
   prDiffFiles,
   resolveReviewPosition,
@@ -147,5 +149,32 @@ describe("resolveReviewPosition", () => {
     const file = fileA();
     const position = resolveReviewPosition(file, 12, "additions")!;
     expect(positionAnchor(position)).toEqual({ line: 12, side: "right" });
+  });
+});
+
+describe("offDiffPendingComments", () => {
+  const files = () => prDiffFiles([page(PATCH_A)], "t", false).files;
+  const comment = (id: string, path: string, newLine: number) => ({
+    id,
+    path,
+    position: { kind: "added" as const, newLine },
+    body: id,
+  });
+  const on = comment("on", "src/a.ts", 12);
+  const moved = comment("moved", "src/a.ts", 40);
+  const gone = comment("gone", "src/gone.ts", 1);
+
+  it("puts a comment whose line or file left the diff off it, once the whole diff is read", () => {
+    expect(offDiffPendingComments([on, moved, gone], files(), true).map((c) => c.id)).toEqual([
+      "moved",
+      "gone",
+    ]);
+  });
+
+  it("does not judge a file on a page not read yet", () => {
+    expect(offDiffPendingComments([gone], files(), false)).toEqual([]);
+    const byPath = new Map(files().map((f) => [f.stat.path, f]));
+    expect(pendingCommentPlacement(gone, byPath, false)).toBe("unknown");
+    expect(pendingCommentPlacement(on, byPath, false)).toBe("on");
   });
 });

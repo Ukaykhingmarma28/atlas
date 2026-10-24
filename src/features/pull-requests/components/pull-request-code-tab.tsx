@@ -50,6 +50,7 @@ import { Hint } from "@/ui/tooltip";
 import { classifyPrError } from "../lib/pr-errors";
 import {
   isLineInFileDiff,
+  pendingCommentPlacement,
   positionAnchor,
   prDiffFiles,
   resolveReviewPosition,
@@ -71,6 +72,7 @@ import type {
   PrReviewPosition,
   PrReviewThread,
 } from "../lib/pull-requests-types";
+import { useAutoNextPage } from "../lib/use-auto-next-page";
 import { readableFailure } from "../lib/use-pull-request-actions";
 import { usePullRequestFilesViewed } from "../lib/use-pull-request-files-viewed";
 import {
@@ -80,6 +82,10 @@ import {
   usePullRequestReviewStore,
   type PendingReviewComment,
 } from "../stores/pull-request-review-store";
+import {
+  patchPullRequestTabDraft,
+  readPullRequestTabDraft,
+} from "../stores/pull-request-tab-draft-store";
 import {
   DraftCommentCard,
   PendingCommentCard,
@@ -186,11 +192,10 @@ export function PullRequestCodeTab({
     if (commit && commitsSettled && !selectedCommit) onCommitChange(null);
   }, [commit, commitsSettled, selectedCommit, onCommitChange]);
   // The picked commit may be on a page not read yet (a link from the
-  // Timeline to an old one): read on until it turns up.
-  useEffect(() => {
-    if (commit && !selectedCommit && commitsQuery.hasNextPage && !commitsQuery.isFetchingNextPage)
-      void commitsQuery.fetchNextPage();
-  }, [commit, selectedCommit, commitsQuery]);
+  // Timeline to an old one): read on until it turns up. A failed page is not
+  // asked for again on its own, or it would be retried as fast as it fails;
+  // the picker's "Show more" asks again.
+  useAutoNextPage(commitsQuery, !!commit && !selectedCommit);
 
   // ── review threads, pending comments and the draft ──────────────────
   const review = {
@@ -203,16 +208,49 @@ export function PullRequestCodeTab({
   const pendingComments = usePendingReviewComments(repoPath, number);
   const reviewActions = usePullRequestReviewStore.use.actions();
   const reviewKey = reviewKeyOf(repoPath, number);
-  const [draft, setDraft] = useState<Draft | null>(null);
+  // The line comment being written, kept per tab (`pull-request-tab-draft-
+  // store.ts`) so leaving the tab and coming back finds it as it was.
+  const [saved] = useState(() => {
+    const line = readPullRequestTabDraft(tabId).lineComment;
+    return line && line.scopeKey === scopeKey ? line : null;
+  });
+  const [draft, setDraftState] = useState<Draft | null>(() =>
+    saved ? { id: saved.id, path: saved.path, position: saved.position, range: saved.range } : null,
+  );
+  const draftTextRef = useRef(saved?.text ?? "");
+  const scopeKeyRef = useRef(scopeKey);
+  scopeKeyRef.current = scopeKey;
+  const setDraft = useCallback(
+    (next: Draft | null) => {
+      setDraftState(next);
+      draftTextRef.current = "";
+      patchPullRequestTabDraft(tabId, {
+        lineComment: next ? { ...next, scopeKey: scopeKeyRef.current, text: "" } : null,
+      });
+    },
+    [tabId],
+  );
+  const setDraftText = useCallback(
+    (text: string) => {
+      draftTextRef.current = text;
+      const line = readPullRequestTabDraft(tabId).lineComment;
+      if (line) patchPullRequestTabDraft(tabId, { lineComment: { ...line, text } });
+    },
+    [tabId],
+  );
   const [selectedLines, setSelectedLines] = useState<Selection>(null);
   // A draft belongs to one diff: another commit or another pull request
   // drops it, rather than attach it to whatever is on screen when sent.
   const [draftScope, setDraftScope] = useState(scopeKey);
   if (draftScope !== scopeKey) {
     setDraftScope(scopeKey);
-    setDraft(null);
+    setDraftState(null);
     setSelectedLines(null);
   }
+  useEffect(() => {
+    const line = readPullRequestTabDraft(tabId).lineComment;
+    if (line && line.scopeKey !== scopeKey) patchPullRequestTabDraft(tabId, { lineComment: null });
+  }, [tabId, scopeKey]);
 
   const placement = useMemo(() => {
     const byPath = new Map<string, PrReviewFile>(files.map((f) => [f.stat.path, f]));
@@ -239,8 +277,16 @@ export function PullRequestCodeTab({
         groupAt(thread.path, thread.side, thread.line).threads.push(thread);
       } else off.push(thread);
     }
+    // A pending comment whose line has left the diff cannot be drawn on it,
+    // and GitHub would refuse a review carrying it: it is listed above the
+    // diff instead, where it can be discarded.
+    const offPending: PendingReviewComment[] = [];
     if (commit === null) {
       for (const comment of pendingComments) {
+        if (pendingCommentPlacement(comment, byPath, !hasNextPage) === "off") {
+          offPending.push(comment);
+          continue;
+        }
         const { side, line } = positionAnchor(comment.position);
         groupAt(comment.path, side, line).pending.push(comment);
       }
@@ -264,8 +310,8 @@ export function PullRequestCodeTab({
       }
       byFile.set(path, { annotations, version: fnv1a32(signature.join("|")).toString(36) });
     }
-    return { byFile, off };
-  }, [files, threads, pendingComments, draft, commit]);
+    return { byFile, off, offPending };
+  }, [files, threads, pendingComments, draft, commit, hasNextPage]);
 
   // ── writing a line comment ───────────────────────────────────────────
   const submitReview = usePrSubmitReviewMutation(repoPath, number);
@@ -287,14 +333,14 @@ export function PullRequestCodeTab({
       }
       setDraft({ id: context.item.id, path: file.stat.path, position, range });
     },
-    [],
+    [setDraft],
   );
   const closeDraft = useCallback(() => {
     setDraft(null);
     setSelectedLines(null);
-  }, []);
+  }, [setDraft]);
 
-  const renderDeps = useRef({
+  const deps = {
     draft,
     review,
     canReact: detail.capabilities.reactions,
@@ -302,22 +348,26 @@ export function PullRequestCodeTab({
     reviewKey,
     reviewActions,
     closeDraft,
-  });
-  renderDeps.current = {
-    draft,
-    review,
-    canReact: detail.capabilities.reactions,
-    submitReview,
-    reviewKey,
-    reviewActions,
-    closeDraft,
+    draftTextRef,
+    setDraftText,
   };
+  const renderDeps = useRef(deps);
+  renderDeps.current = deps;
   const renderAnnotation = useCallback(
     (annotation: LineAnnotation<unknown> | DiffLineAnnotation<unknown>) => {
       const group = annotation.metadata as LineGroup | undefined;
       if (!group) return null;
-      const { draft, review, canReact, submitReview, reviewKey, reviewActions, closeDraft } =
-        renderDeps.current;
+      const {
+        draft,
+        review,
+        canReact,
+        submitReview,
+        reviewKey,
+        reviewActions,
+        closeDraft,
+        draftTextRef,
+        setDraftText,
+      } = renderDeps.current;
       return (
         <div className="py-1">
           {group.threads.map((thread) => (
@@ -339,7 +389,8 @@ export function PullRequestCodeTab({
           {group.draft && draft ? (
             <DraftCommentCard
               label={`${draft.path}:${positionAnchor(draft.position).line}`}
-              posting={submitReview.isPending}
+              initialText={draftTextRef.current}
+              onTextChange={setDraftText}
               onCancel={closeDraft}
               onAddToReview={(body) => {
                 reviewActions.add(reviewKey, {
@@ -351,26 +402,26 @@ export function PullRequestCodeTab({
                 closeDraft();
               }}
               onPostNow={(body) =>
-                submitReview.mutate(
-                  {
+                submitReview
+                  .mutateAsync({
                     verdict: "comment",
                     body: "",
                     comments: [{ path: draft.path, position: draft.position, body }],
-                  },
-                  {
-                    onSuccess: () => {
+                  })
+                  .then(
+                    () => {
                       closeDraft();
                       toast.success("Comment posted");
                     },
-                    onError: (raw) =>
+                    (raw: unknown) => {
                       toast.error("The comment could not be posted", {
                         description: readableFailure(
                           classifyPrError(raw),
                           "GitHub refused the comment.",
                         ),
-                      }),
-                  },
-                )
+                      });
+                    },
+                  )
               }
             />
           ) : null}
@@ -569,9 +620,11 @@ export function PullRequestCodeTab({
     viewed,
     annotations,
     banner:
-      placement.off.length > 0 ? (
+      placement.off.length > 0 || placement.offPending.length > 0 ? (
         <OffDiffThreads
           threads={placement.off}
+          pending={placement.offPending}
+          onDiscardPending={(id) => reviewActions.remove(reviewKey, id)}
           complete={!hasNextPage}
           commit={commit !== null}
           canReply={review.reply}
@@ -692,6 +745,8 @@ const CommitPicker = memo(function CommitPicker({
  *  hunks, in a file not loaded yet, or (on one commit) all of them. */
 function OffDiffThreads({
   threads,
+  pending,
+  onDiscardPending,
   complete,
   commit,
   canReply,
@@ -699,6 +754,9 @@ function OffDiffThreads({
   canReact,
 }: {
   threads: readonly PrReviewThread[];
+  /** Line comments of the review in progress whose line left the diff. */
+  pending: readonly PendingReviewComment[];
+  onDiscardPending: (id: string) => void;
   complete: boolean;
   commit: boolean;
   canReply: boolean;
@@ -715,23 +773,51 @@ function OffDiffThreads({
   const Chevron = open ? ChevronDown : ChevronRight;
   return (
     <div className="shrink-0 border-b border-border-subtle">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-        className="flex w-full cursor-pointer items-center gap-1.5 px-3 py-1.5 text-left text-xs text-muted-foreground hover:text-foreground"
-      >
-        <Chevron aria-hidden className="size-3.5" />
-        <span>
-          {commit
-            ? "Review threads (on all commits)"
-            : complete
-              ? "Review threads not on the diff"
-              : "Review threads not on the diff loaded so far"}
-        </span>
-        <span className="tabular-nums">{threads.length}</span>
-      </button>
-      {open ? (
+      {pending.length > 0 ? (
+        // Always open: GitHub refuses the review until these are discarded.
+        <div className="max-h-72 overflow-auto pb-1">
+          <p className="flex items-center gap-1.5 px-3 pt-1.5 text-xs text-warning">
+            <TriangleAlert aria-hidden className="size-3.5 shrink-0" />
+            {pending.length === 1
+              ? "1 pending line comment is no longer on the diff"
+              : `${pending.length} pending line comments are no longer on the diff`}
+          </p>
+          {pending.map((comment) => (
+            <div key={comment.id}>
+              <p
+                className="truncate px-3 pt-1 font-mono text-2xs text-muted-foreground"
+                title={comment.path}
+              >
+                {comment.path}:{positionAnchor(comment.position).line}
+              </p>
+              <PendingCommentCard
+                comment={comment}
+                stale
+                onRemove={() => onDiscardPending(comment.id)}
+              />
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {threads.length === 0 ? null : (
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+          className="flex w-full cursor-pointer items-center gap-1.5 px-3 py-1.5 text-left text-xs text-muted-foreground hover:text-foreground"
+        >
+          <Chevron aria-hidden className="size-3.5" />
+          <span>
+            {commit
+              ? "Review threads (on all commits)"
+              : complete
+                ? "Review threads not on the diff"
+                : "Review threads not on the diff loaded so far"}
+          </span>
+          <span className="tabular-nums">{threads.length}</span>
+        </button>
+      )}
+      {open && threads.length > 0 ? (
         <div className={cn("max-h-72 space-y-3 overflow-auto pb-2")}>
           {[...byPath].map(([path, list]) => (
             <div key={path}>

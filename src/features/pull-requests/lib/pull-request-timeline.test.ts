@@ -8,7 +8,12 @@ import {
   newestCommitTime,
   type TimelineEvent,
 } from "./pull-request-timeline";
-import { readTimelineHistory, TIMELINE_PAGE_LIMIT } from "./pull-requests-queries";
+import {
+  readTimelineHistory,
+  readTimelineRefresh,
+  TIMELINE_FULL_READ_MS,
+  TIMELINE_PAGE_LIMIT,
+} from "./pull-requests-queries";
 import type {
   PrActivity,
   PrActor,
@@ -368,5 +373,48 @@ describe("readTimelineHistory", () => {
     const history = await readTimelineHistory("/repo", 7, read);
     expect(history.truncated).toBe(true);
     expect(read).toHaveBeenCalledTimes(TIMELINE_PAGE_LIMIT);
+  });
+});
+
+describe("readTimelineRefresh", () => {
+  const ids = (history: { items: { kind: string }[] }) =>
+    history.items.map((i) => ("id" in i ? (i as { id: string }).id : ""));
+  const threePages = () =>
+    vi
+      .fn()
+      .mockResolvedValueOnce({ items: [comment("IC_1", 1)], nextCursor: "p2" })
+      .mockResolvedValueOnce({ items: [comment("IC_2", 2)], nextCursor: "p3" })
+      .mockResolvedValueOnce({ items: [comment("IC_3", 3)], nextCursor: null });
+
+  it("re-reads only the newest page of a history already held", async () => {
+    const held = await readTimelineHistory("/repo", 7, threePages(), 1_000);
+    const read = vi.fn().mockResolvedValueOnce({
+      items: [comment("IC_3", 3), comment("IC_4", 4)],
+      nextCursor: null,
+    });
+    const next = await readTimelineRefresh("/repo", 7, held, read, 2_000);
+    expect(read.mock.calls).toEqual([["/repo", 7, "p3"]]);
+    expect(ids(next)).toEqual(["IC_1", "IC_2", "IC_3", "IC_4"]);
+    expect(next.pages).toBe(3);
+
+    // And again from the same tail: a page that grew a new page goes on.
+    const more = vi
+      .fn()
+      .mockResolvedValueOnce({ items: [comment("IC_3", 3), comment("IC_4", 4)], nextCursor: "p4" })
+      .mockResolvedValueOnce({ items: [comment("IC_5", 5)], nextCursor: null });
+    const after = await readTimelineRefresh("/repo", 7, next, more, 3_000);
+    expect(more.mock.calls.map((c) => c[2])).toEqual(["p3", "p4"]);
+    expect(ids(after)).toEqual(["IC_1", "IC_2", "IC_3", "IC_4", "IC_5"]);
+    expect(after.pages).toBe(4);
+  });
+
+  it("reads the whole history when nothing is held or the last full read is old", async () => {
+    const first = threePages();
+    const held = await readTimelineRefresh("/repo", 7, undefined, first, 0);
+    expect(first).toHaveBeenCalledTimes(3);
+    const again = threePages();
+    await readTimelineRefresh("/repo", 7, held, again, TIMELINE_FULL_READ_MS + 1);
+    expect(again.mock.calls[0]?.[2]).toBeNull();
+    expect(again).toHaveBeenCalledTimes(3);
   });
 });

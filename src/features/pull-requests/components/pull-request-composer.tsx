@@ -2,7 +2,7 @@
 // closing or reopening with it), or a review with a verdict. Drafts live
 // here, not in the popover, so closing it keeps what was typed.
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Check,
@@ -21,8 +21,13 @@ import { Popover, PopoverClose, PopoverContent, PopoverTitle, PopoverTrigger } f
 import { Segmented } from "@/ui/segmented";
 
 import { classifyPrError } from "../lib/pr-errors";
+import { offDiffPendingComments, positionAnchor, prDiffFiles } from "../lib/pull-request-diff";
 import { canPerform } from "../lib/pull-request-logic";
-import { usePrCommentMutation, usePrSubmitReviewMutation } from "../lib/pull-requests-queries";
+import {
+  usePrCommentMutation,
+  usePrDiffPages,
+  usePrSubmitReviewMutation,
+} from "../lib/pull-requests-queries";
 import type { PrDetail, PrReviewVerdict } from "../lib/pull-requests-types";
 import { useInlineConfirm } from "../lib/use-inline-confirm";
 import {
@@ -30,6 +35,12 @@ import {
   usePendingReviewComments,
   usePullRequestReviewStore,
 } from "../stores/pull-request-review-store";
+import {
+  NO_DRAFT,
+  patchPullRequestTabDraft,
+  readPullRequestTabDraft,
+  usePullRequestTabDraftStore,
+} from "../stores/pull-request-tab-draft-store";
 import { readableFailure } from "../lib/use-pull-request-actions";
 import { TEXTAREA_CLASS } from "./pull-request-markdown";
 
@@ -70,11 +81,14 @@ function isSubmitChord(event: React.KeyboardEvent): boolean {
 }
 
 export function PullRequestComposer({
+  tabId,
   repoPath,
   detail,
   pendingAction,
   onCommentAction,
 }: {
+  /** The tab's id: what was typed is kept under it across tab switches. */
+  tabId: string;
   repoPath: string;
   detail: PrDetail;
   pendingAction: string | null;
@@ -85,9 +99,23 @@ export function PullRequestComposer({
 }) {
   const [open, setOpen] = useState(false);
   const [requestedMode, setRequestedMode] = useState<"comment" | "review">("comment");
-  const [comment, setComment] = useState("");
-  const [summary, setSummary] = useState("");
-  const [requestedVerdict, setRequestedVerdict] = useState<PrReviewVerdict>("comment");
+  // What is typed lives in the tab's draft (`pull-request-tab-draft-store`),
+  // so leaving the tab and coming back finds it; sending clears it.
+  // Field by field, so typing a line comment in the Code tab (same entry)
+  // does not re-render the composer.
+  const comment = usePullRequestTabDraftStore((s) => (s.drafts[tabId] ?? NO_DRAFT).comment ?? "");
+  const summary = usePullRequestTabDraftStore((s) => (s.drafts[tabId] ?? NO_DRAFT).summary ?? "");
+  const requestedVerdict = usePullRequestTabDraftStore(
+    (s): PrReviewVerdict => (s.drafts[tabId] ?? NO_DRAFT).verdict ?? "comment",
+  );
+  const setComment = (next: string) => patchPullRequestTabDraft(tabId, { comment: next });
+  const setSummary = (next: string | ((current: string) => string)) =>
+    patchPullRequestTabDraft(tabId, {
+      summary:
+        typeof next === "function" ? next(readPullRequestTabDraft(tabId).summary ?? "") : next,
+    });
+  const setRequestedVerdict = (verdict: PrReviewVerdict) =>
+    patchPullRequestTabDraft(tabId, { verdict });
   const [submitting, setSubmitting] = useState<"comment" | "close" | "reopen" | null>(null);
   const commentRef = useRef<HTMLTextAreaElement>(null);
   const reviewRef = useRef<HTMLTextAreaElement>(null);
@@ -96,7 +124,21 @@ export function PullRequestComposer({
   const confirm = useInlineConfirm(`${repoPath}:${detail.number}:composer`);
   // Line comments written in the Code tab, sent with the review.
   const pending = usePendingReviewComments(repoPath, detail.number);
-  const removePending = usePullRequestReviewStore.use.actions().removeMany;
+  const reviewActions = usePullRequestReviewStore.use.actions();
+  const removePending = reviewActions.removeMany;
+  // Checked against the diff before a review goes: a comment whose line has
+  // left it makes GitHub refuse the whole review. Read from the Code tab's
+  // cache when it is there; only the first page when it is not.
+  const diffPages = usePrDiffPages(repoPath, detail.number, null, {
+    enabled: pending.length > 0,
+    refetchOnMount: false,
+  });
+  const stale = useMemo(() => {
+    const pages = diffPages.data?.pages;
+    if (!pages || pending.length === 0) return [];
+    const { files } = prDiffFiles(pages, `pull-request:${repoPath}:${detail.number}`, false);
+    return offDiffPendingComments(pending, files, !diffPages.hasNextPage);
+  }, [diffPages.data, diffPages.hasNextPage, pending, repoPath, detail.number]);
 
   const canComment = detail.capabilities.comment && detail.viewerPermissions.comment;
   const verdicts = VERDICTS.filter(
@@ -147,6 +189,7 @@ export function PullRequestComposer({
     v === "approve" || summary.trim().length > 0 || (v === "comment" && pending.length > 0);
   const sendReview = () => {
     if (!verdict || !reviewReady(verdict.value) || submitReview.isPending) return;
+    if (stale.length > 0) return;
     const body = summary;
     const sent = pending;
     submitReview.mutate(
@@ -329,6 +372,36 @@ export function PullRequestComposer({
                   : `${pending.length} line comments from the Code tab go with this review.`}
               </p>
             ) : null}
+            {stale.length > 0 ? (
+              <div className="space-y-1.5 rounded border border-warning bg-warning-muted px-2 py-1.5">
+                <p className="text-2xs text-foreground">
+                  {stale.length === 1
+                    ? "This line comment is no longer on the diff, so GitHub would refuse the review. Discard it to submit."
+                    : `These ${stale.length} line comments are no longer on the diff, so GitHub would refuse the review. Discard them to submit.`}
+                </p>
+                <ul className="space-y-1">
+                  {stale.map((c) => (
+                    <li key={c.id} className="flex items-center gap-2 text-2xs">
+                      <span className="min-w-0 flex-1 truncate" title={c.body}>
+                        <span className="font-mono text-muted-foreground">
+                          {c.path}:{positionAnchor(c.position).line}
+                        </span>{" "}
+                        {c.body}
+                      </span>
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        onClick={() =>
+                          reviewActions.remove(reviewKeyOf(repoPath, detail.number), c.id)
+                        }
+                      >
+                        Discard
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             <div className="flex flex-wrap items-center justify-end gap-2">
               {verdicts.length > 1 ? (
                 <div className="mr-auto">
@@ -349,7 +422,12 @@ export function PullRequestComposer({
               <Button
                 size="xs"
                 variant={verdict?.value === "request-changes" ? "destructive" : "default"}
-                disabled={submitReview.isPending || !verdict || !reviewReady(verdict.value)}
+                disabled={
+                  submitReview.isPending ||
+                  !verdict ||
+                  !reviewReady(verdict.value) ||
+                  stale.length > 0
+                }
                 onClick={sendReview}
               >
                 {submitReview.isPending ? "Submitting…" : "Submit review"}

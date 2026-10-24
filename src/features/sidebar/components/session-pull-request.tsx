@@ -9,7 +9,7 @@
 import type { MouseEvent } from "react";
 
 import type { PullRequestLink } from "@/features/chat/lib/history-api";
-import { openPullRequestTab } from "@/features/pull-requests/lib/open-pull-request-tab";
+import { openLinkedPullRequest } from "@/features/pull-requests/lib/open-linked-pull-request";
 import {
   CHECKS_STATE_PRESENTATION,
   STATE_PRESENTATION,
@@ -35,12 +35,9 @@ function linkLabel(link: PullRequestLink): string {
   return `${state.label} pull request #${link.number}${title ? `: ${title}` : ""}`;
 }
 
+/** A link from another repository opens on the host, not as `cwd + number`. */
 function open(cwd: string, link: PullRequestLink): void {
-  openPullRequestTab({
-    repoPath: cwd,
-    number: link.number,
-    title: link.snapshot?.title ?? `#${link.number}`,
-  });
+  void openLinkedPullRequest(cwd, { ...link, title: link.snapshot?.title });
 }
 
 /** The row's badge: the current pull request's state glyph and number, then

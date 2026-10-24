@@ -60,15 +60,14 @@ export function PullRequestMarkdownEditor({
   onSave: (next: string) => void;
   onCancel: () => void;
 }) {
+  // The draft is taken from `value` once, when the editor opens. A refetch
+  // while it is open (a poll, a focus, someone else's edit) must not wipe
+  // what is being typed; it is offered instead (`base` is what the draft
+  // started from).
   const [draft, setDraft] = useState(value);
+  const [base, setBase] = useState(value);
   const [mode, setMode] = useState<"write" | "preview">("write");
-  // The same instance can be handed another text without remounting; start
-  // over from it rather than save the first text onto the second.
-  const [seed, setSeed] = useState(value);
-  if (seed !== value) {
-    setSeed(value);
-    setDraft(value);
-  }
+  const changedUpstream = value !== base && value !== draft && !saving;
   const empty = draft.trim().length === 0;
   const saveDisabled = saving || (empty && !allowEmpty);
 
@@ -90,6 +89,27 @@ export function PullRequestMarkdownEditor({
         }
       }}
     >
+      {changedUpstream ? (
+        <div
+          role="status"
+          className="flex flex-wrap items-center gap-2 rounded border border-warning bg-warning-muted px-2 py-1.5 text-xs text-foreground"
+        >
+          <span className="min-w-0 flex-1">Changed on GitHub while you were editing.</span>
+          <Button
+            size="xs"
+            variant="outline"
+            onClick={() => {
+              setDraft(value);
+              setBase(value);
+            }}
+          >
+            Reload
+          </Button>
+          <Button size="xs" variant="ghost" onClick={() => setBase(value)}>
+            Keep mine
+          </Button>
+        </div>
+      ) : null}
       <Segmented
         aria-label="Editor mode"
         size="sm"

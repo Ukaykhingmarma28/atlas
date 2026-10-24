@@ -69,7 +69,7 @@ function LinkPullRequestDialog({ request }: { request: LinkPullRequestRequest })
   const [linked, setLinked] = useState(() => new Set(request.linked));
 
   const provider = usePrProvider(repoPath).data ?? null;
-  const resolved = resolveLinkInput(reference, provider?.repository ?? null);
+  const resolved = resolveLinkInput(reference, provider);
   // A word that is not a number or a URL searches the open pull requests.
   const search = useDeferredValue(
     resolved.kind === "error" && !/^https?:/i.test(reference.trim()) ? reference.trim() : "",
@@ -105,16 +105,22 @@ function LinkPullRequestDialog({ request }: { request: LinkPullRequestRequest })
   const submit = () => {
     setDirty(true);
     if (resolved.kind === "ok") void link(resolved.number);
-    else if (resolved.kind === "error" && candidates.length === 1) void link(candidates[0]!.number);
+    // A search word that matched one pull request links it; a refused URL
+    // never falls through to whichever pull request happens to be listed.
+    else if (resolved.kind === "error" && search && candidates.length === 1)
+      void link(candidates[0]!.number);
   };
 
-  // A search word is not a mistake; only a malformed URL or number is.
+  // A search word is not a mistake; only a malformed URL or number is. A URL
+  // waiting on the repository says so at once: Link stays off until then.
   const validation =
-    dirty &&
-    resolved.kind === "error" &&
-    (/^https?:/i.test(reference.trim()) || /^#?\d/.test(reference.trim()))
+    resolved.kind === "waiting"
       ? resolved.message
-      : null;
+      : dirty &&
+          resolved.kind === "error" &&
+          (/^https?:/i.test(reference.trim()) || /^#?\d/.test(reference.trim()))
+        ? resolved.message
+        : null;
   const message = validation ?? error;
   const repoKey = provider?.repository ?? "";
 
@@ -154,7 +160,16 @@ function LinkPullRequestDialog({ request }: { request: LinkPullRequestRequest })
               setReference(event.target.value);
             }}
           />
-          {message ? <p className="text-xs text-error">{message}</p> : null}
+          {message ? (
+            <p
+              className={cn(
+                "text-xs",
+                resolved.kind === "waiting" ? "text-muted-foreground" : "text-error",
+              )}
+            >
+              {message}
+            </p>
+          ) : null}
           <div
             role="listbox"
             aria-label="Open pull requests"
