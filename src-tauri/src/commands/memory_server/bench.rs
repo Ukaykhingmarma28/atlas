@@ -159,6 +159,7 @@ fn assistant_says(w: &World, text: &str) {
                 plan: None,
                 model: None,
                 images: vec![],
+                timestamp_approximate: false,
                 worked_ms: None,
                 stop_reason: None,
                 timestamp: chrono::Utc::now(),

@@ -703,7 +703,11 @@ impl SessionProjection {
             }
             AcpThreadEvent::EntryUpdated(ix) => {
                 let mut deltas = self.sync_entries();
-                deltas.extend(self.update_entry(ix));
+                let mut updated = self.update_entry(ix);
+                if lock_thread(&self.thread).entry_time_approximate(ix) {
+                    mark_time_approximate(&mut updated);
+                }
+                deltas.extend(updated);
                 deltas.extend(self.sync_subagents());
                 deltas
             }
@@ -862,6 +866,9 @@ impl SessionProjection {
                 break;
             }
             let (projected, mut new) = self.project_new(&thread, ix);
+            if thread.entry_time_approximate(ix) {
+                mark_time_approximate(&mut new);
+            }
             drop(thread);
             self.entries.push(projected);
             deltas.append(&mut new);
@@ -1445,4 +1452,14 @@ fn lock_thread(thread: &AcpThreadHandle) -> std::sync::MutexGuard<'_, AcpThread>
     thread
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Mark every message these deltas announce as carrying a replay time, not the
+/// time it was said (`AcpThread::entry_time_approximate`).
+fn mark_time_approximate(deltas: &mut [SessionDelta]) {
+    for delta in deltas {
+        if let SessionDelta::MessageAppended { message } = delta {
+            message.timestamp_approximate = true;
+        }
+    }
 }

@@ -1697,6 +1697,7 @@ fn transcript_to_messages(t: super::agent_transcript::StoredTranscript) -> Vec<M
             plan: None,
             model: m.model,
             images: Vec::new(),
+            timestamp_approximate: false,
             worked_ms: None,
             stop_reason: None,
             timestamp: m

@@ -511,6 +511,20 @@ describe("timing: tool-call and turn times ↔ the renderer (#10)", () => {
     }
   });
 
+  it("a message says when its time is only a replay's, on both sides", () => {
+    // An agent's `session/load` replay carries no per-message time, so Rust
+    // flags those messages. A rename on either side compiles, and every
+    // replayed message goes back to showing the replay time as its own.
+    const rust = rustStructFields(rustItem(types, "struct", "Message").body);
+    const ts = tsInterfaceProps(wireTs, "SessionMessage");
+    expect(rust).toContain("timestamp_approximate");
+    expect(ts).toContain("timestamp_approximate");
+    // Both paths that turn a wire message into a ChatMessage carry it: the
+    // snapshot mapper and the live `message_appended` arm.
+    expect(snapshot).toContain("m.timestamp_approximate");
+    expect(store).toContain("m.timestamp_approximate");
+  });
+
   it("turn_finished carries the turn's start and end on both sides", () => {
     const rust = /TurnFinished\s*\{([\s\S]*?)\n\s{4}\},/.exec(delta);
     expect(rust, "the TurnFinished variant").not.toBeNull();

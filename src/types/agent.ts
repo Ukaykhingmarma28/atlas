@@ -447,6 +447,9 @@ export interface ChatMessage {
   fileChanges: FileChange[];
   plan: PlanStep[] | null;
   timestamp: string;
+  /** Set when `timestamp` is only when Atlas replayed the message, not when it
+   *  was said (wire `timestamp_approximate`). The footer shows no clock then. */
+  timestampApproximate?: boolean;
   /**
    * Discriminator for ACP-driven assistant messages. Splits one logical "turn"
    * into a sequence of single-purpose messages so they render in event order

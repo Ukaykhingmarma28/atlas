@@ -72,6 +72,9 @@ export interface SessionMessage {
    *  side omits the key rather than sending an empty list. */
   images?: MessageImage[];
   timestamp: string;
+  /** True when `timestamp` is only when Atlas replayed the message (an agent's
+   *  `session/load` replay carries no per-message time). Absent otherwise. */
+  timestamp_approximate?: boolean;
   /** Wall time of the turn this message ends, in ms. Snapshot only — the live
    *  stream carries it as `turn_finished.started_at_ms`/`ended_at_ms`. Absent
    *  on every message but a turn's last, and on replayed turns. */

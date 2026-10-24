@@ -840,6 +840,41 @@ fn a_snapshot_carries_the_whole_conversation_including_the_user() {
     assert_eq!(ids.len(), messages.len());
 }
 
+/// ACP carries no per-message time, so what an agent's `session/load` replays
+/// is stamped when Atlas heard it. The wire says so, live and in snapshots,
+/// until the user speaks again; from there messages are timed for real.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_replayed_message_says_its_time_is_approximate() {
+    let harness = Harness::start();
+
+    lock(&harness.thread).begin_replay();
+    harness.update(serde_json::json!({
+        "sessionUpdate": "user_message_chunk",
+        "content": { "type": "text", "text": "fix the bug" },
+    }));
+    harness.update(text_chunk("found it"));
+    harness.expect(1);
+    match &harness.recorder.deltas()[0] {
+        SessionDelta::MessageAppended { message } => assert!(message.timestamp_approximate),
+        other => panic!("expected a message, got {other:?}"),
+    }
+
+    lock(&harness.thread).push_user_content_block(
+        None,
+        acp::ContentBlock::Text(acp::TextContent::new("and the test".to_string())),
+    );
+    harness.update(text_chunk("added"));
+    harness.expect(2);
+    match &harness.recorder.deltas()[1] {
+        SessionDelta::MessageAppended { message } => assert!(!message.timestamp_approximate),
+        other => panic!("expected a message, got {other:?}"),
+    }
+
+    let messages = atlas_agent_delta::project::snapshot_messages(&lock(&harness.thread), None);
+    let approximate: Vec<bool> = messages.iter().map(|m| m.timestamp_approximate).collect();
+    assert_eq!(approximate, [true, true, false, false]);
+}
+
 // ------------------------------------------------------- terminal tool calls
 
 /// `echo`, wherever this platform keeps it.

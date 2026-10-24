@@ -1147,8 +1147,15 @@ pub struct AcpThread {
     /// per-message timestamp, so a replayed conversation is stamped at replay
     /// time. That is a limit of the protocol, not a choice — but it is stable
     /// per thread, which is the property the projection actually needed
-    /// (ATL-221).
+    /// (ATL-221). Those entries are counted in `replayed_entries`, so the wire
+    /// can say their time is approximate rather than pass it off as real.
     entry_created_at: Vec<chrono::DateTime<chrono::Utc>>,
+    /// True while the agent replays a stored conversation (`session/load`):
+    /// what arrives then was said earlier, at a time ACP does not carry.
+    replaying: bool,
+    /// How many leading entries came from such a replay. A replay fills a fresh
+    /// thread, so they are always a prefix; `entry_time_approximate` reads it.
+    replayed_entries: usize,
     elicitations: ElicitationStore,
     plan: Plan,
     turn_id: u32,
@@ -1195,6 +1202,8 @@ impl AcpThread {
             title: title.filter(|title| !is_host_machinery_title(title)),
             entries: Vec::new(),
             entry_created_at: Vec::new(),
+            replaying: false,
+            replayed_entries: 0,
             elicitations: ElicitationStore::default(),
             plan: Plan::default(),
             turn_id: 0,
@@ -1333,6 +1342,21 @@ impl AcpThread {
         self.entry_created_at.get(ix).copied()
     }
 
+    /// Whether the time of the entry at `ix` is only when Atlas replayed it,
+    /// not when it was said: true for every entry an agent's `session/load`
+    /// replay produced, since ACP carries no per-message time.
+    pub fn entry_time_approximate(&self, ix: usize) -> bool {
+        ix < self.replayed_entries
+    }
+
+    /// The agent is about to replay a stored conversation into this thread.
+    /// Everything appended until the user's next prompt (or the next turn)
+    /// is marked approximate. Not ended when `session/load` answers: an
+    /// external agent's replay frames can still be queued then.
+    pub fn begin_replay(&mut self) {
+        self.replaying = true;
+    }
+
     pub fn entries(&self) -> &[AgentThreadEntry] {
         &self.entries
     }
@@ -1435,6 +1459,7 @@ impl AcpThread {
         }
         self.entries.truncate(from);
         self.entry_created_at.truncate(from);
+        self.replayed_entries = self.replayed_entries.min(from);
         // A turn whose output was taken back is not one to time any more.
         self.turns.retain(|turn| turn.entries.end <= from);
         // And a turn still open counts from where the thread now ends: left
@@ -1560,6 +1585,9 @@ impl AcpThread {
         self.entries.push(entry);
         self.entry_created_at.push(chrono::Utc::now());
         debug_assert_eq!(self.entries.len(), self.entry_created_at.len());
+        if self.replaying {
+            self.replayed_entries = self.entries.len();
+        }
         // A call can arrive already finished (a replay, a fast tool).
         self.note_settled(self.entries.len() - 1);
         self.emit(AcpThreadEvent::NewEntry);
@@ -1570,6 +1598,8 @@ impl AcpThread {
         client_id: Option<ClientUserMessageId>,
         chunk: acp::ContentBlock,
     ) {
+        // The user speaking now ends any replay: this message is timed.
+        self.replaying = false;
         let is_optimistic = client_id.is_some();
         self.push_user_content_block_with_protocol_id(client_id, is_optimistic, None, chunk, false)
     }
@@ -2219,6 +2249,7 @@ impl AcpThread {
     /// stop.
     pub fn begin_turn(&mut self) -> u32 {
         self.had_error = false;
+        self.replaying = false;
         self.cancel_inner(RequestPermissionOutcome::InterruptedByFollowUp);
         self.turn_id += 1;
         self.running_turn = Some(RunningTurn { id: self.turn_id });
