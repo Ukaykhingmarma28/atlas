@@ -8,7 +8,7 @@
 // opened ones first, then the index's walk order, from the last good walk
 // (cached per project) until the index answers.
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Film, Image as ImageIcon, FileCode, FileX, Music } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "@/features/app/stores/app-store";
@@ -28,6 +28,7 @@ import { classifyFile, type FileKind } from "@/lib/file-types";
 import {
   FILE_SEARCH_RESULT_LIMIT,
   emptyQueryFiles,
+  highlightSegments,
   toFileSearchMatches,
 } from "../lib/file-search-logic";
 import type { CommandPaletteActionItem, CommandPaletteEntry } from "../lib/command-palette-logic";
@@ -129,7 +130,7 @@ export function FileSearch(props: { onClose: () => void; escapeLabel: string }) 
       value: `file:${match.path}`,
       searchTerms: [match.name, match.rel],
       title: <Highlighted value={match.name} indices={match.nameMatchIndices} />,
-      description: <Highlighted value={match.rel} indices={match.relMatchIndices} />,
+      description: match.rel,
       icon: <FileIcon path={match.path} size={16} fallback={kindIcon(classifyFile(match.path))} />,
       run: () => void openFile(match.path),
     }),
@@ -201,23 +202,25 @@ function computeEditorPaths(tabs: ReadonlyArray<{ type: string; data?: unknown }
   return paths;
 }
 
-/** The query's characters in bold, the rest muted — only while a query is
- *  matched; an empty query renders the plain text. */
+/** The name with the query's characters in the foreground colour and the
+ *  rest muted — only while the name holds a match; otherwise the plain text.
+ *  Colour alone marks a match: a weight step widens just the matched glyphs,
+ *  so a name with scattered matches looks unevenly spaced. */
 function Highlighted({ value, indices }: { value: string; indices: ReadonlyArray<number> }) {
   if (indices.length === 0) return <>{value}</>;
-  const parts: ReactNode[] = [];
-  let start = 0;
-  for (const index of indices) {
-    if (start < index) parts.push(value.slice(start, index));
-    parts.push(
-      <strong className="font-semibold text-foreground" key={index}>
-        {value[index]}
-      </strong>,
-    );
-    start = index + 1;
-  }
-  if (start < value.length) parts.push(value.slice(start));
-  return <>{parts}</>;
+  return (
+    <span className="text-muted-foreground" data-testid="file-search-name-highlight">
+      {highlightSegments(value, indices).map((segment, i) =>
+        segment.matched ? (
+          <span className="text-foreground" data-match="" key={i}>
+            {segment.text}
+          </span>
+        ) : (
+          segment.text
+        ),
+      )}
+    </span>
+  );
 }
 
 /** The lucide icon a row draws when the icon theme has none (and under

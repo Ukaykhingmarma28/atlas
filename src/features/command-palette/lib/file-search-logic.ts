@@ -1,5 +1,7 @@
 // ⌘P's rows, as data: the files an empty query lists first, and where a
-// query's characters fall in a name and a path so the row can bold them.
+// query's characters fall in a file's name so the row can pick them out. The
+// directory path underneath stays plain: letters lit at scattered points of a
+// long path read as noise, not as a match.
 //
 // The ranking itself is Rust's (nucleo over the FileIndex, `fileindex_search`):
 // the order the backend returns is kept, and nothing here re-sorts it.
@@ -15,8 +17,44 @@ export interface FileSearchMatch {
   /** Project-relative: the row's second line. */
   readonly rel: string;
   readonly name: string;
+  /** Where the query falls in `name`; empty when it does not fall there. */
   readonly nameMatchIndices: ReadonlyArray<number>;
-  readonly relMatchIndices: ReadonlyArray<number>;
+}
+
+/** A run of `value`'s text, matched or not. */
+export interface HighlightSegment {
+  readonly text: string;
+  readonly matched: boolean;
+}
+
+/**
+ * `value` cut into runs at the matched indices, with adjacent matched
+ * characters kept in one run, so a row renders a few spans rather than one
+ * per letter (and the shaping across a matched run is not broken up).
+ */
+export function highlightSegments(
+  value: string,
+  indices: ReadonlyArray<number>,
+): HighlightSegment[] {
+  const segments: HighlightSegment[] = [];
+  const push = (text: string, matched: boolean) => {
+    if (!text) return;
+    const last = segments[segments.length - 1];
+    if (last && last.matched === matched) {
+      segments[segments.length - 1] = { text: last.text + text, matched };
+    } else {
+      segments.push({ text, matched });
+    }
+  };
+  let start = 0;
+  for (const index of indices) {
+    if (index < start || index >= value.length) continue;
+    push(value.slice(start, index), false);
+    push(value.charAt(index), true);
+    start = index + 1;
+  }
+  push(value.slice(start), false);
+  return segments;
 }
 
 export function fileName(path: string): string {
@@ -64,7 +102,6 @@ export function toFileSearchMatches(
       rel: entry.rel,
       name,
       nameMatchIndices: findMatchIndices(name, query) ?? [],
-      relMatchIndices: findMatchIndices(entry.rel, query) ?? [],
     };
   });
 }

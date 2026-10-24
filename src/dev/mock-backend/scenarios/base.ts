@@ -191,7 +191,6 @@ export const baseHandlers: MockHandlers = {
   ...terminalHandlers,
 
   // ── fire-and-forget housekeeping ────────────────────────────────────────
-  comms_ready: nothing,
   fileindex_close_project: nothing,
   // Mirrored instructions: Rust writes AGENTS.md; nothing to fake in a browser.
   instruction_sync_start: nothing,

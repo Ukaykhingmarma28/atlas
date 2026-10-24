@@ -21,6 +21,8 @@ import {
 import { sourceControlShown, toggleSourceControl } from "@/features/layout/lib/source-control";
 import { teamChatShown, toggleTeamChat } from "@/features/layout/lib/team-chat";
 import { unlockHint, useTeamAccess } from "@/features/comms/lib/team-chat-access";
+import { useCommsStore } from "@/features/comms/stores/comms-store";
+import { hasUnreadConversation } from "@/features/comms/lib/derive";
 
 /** One destination: an icon that lights while its view is on screen. Must
  *  sit inside a `HintGroup`. */
@@ -58,17 +60,29 @@ export function DestinationButton({
 
 const noop = () => {};
 
+/** Team chat; a dot while a conversation has anything unread (the server's
+ *  counts), like the bell's. The selector answers a boolean, so a message
+ *  landing re-renders the button only when the dot itself changes. */
 export function TeamChatButton() {
   const open = useLayoutStore(teamChatShown);
   const access = useTeamAccess();
+  const unread = useCommsStore((s) => hasUnreadConversation(s.reads, s.conversations));
   return (
-    <DestinationButton
-      icon={MessagesSquare}
-      label="Team chat"
-      active={open}
-      locked={unlockHint(access, "team chat")}
-      onClick={access.locked ? (access.unlock ?? noop) : toggleTeamChat}
-    />
+    <span className="relative flex">
+      <DestinationButton
+        icon={MessagesSquare}
+        label="Team chat"
+        active={open}
+        locked={unlockHint(access, "team chat")}
+        onClick={access.locked ? (access.unlock ?? noop) : toggleTeamChat}
+      />
+      {unread && !access.locked && (
+        <span
+          data-testid="team-chat-unread"
+          className="pointer-events-none absolute right-1 top-1 size-1.5 rounded-full bg-foreground"
+        />
+      )}
+    </span>
   );
 }
 

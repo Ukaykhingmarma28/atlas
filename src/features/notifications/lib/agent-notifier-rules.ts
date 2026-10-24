@@ -28,6 +28,7 @@ import {
   permissionBannerActions,
 } from "./permission-actions-rules";
 import type { AppSettings } from "@/features/settings/lib/app-settings";
+import type { ThreadProject, ThreadRow } from "@/features/chat/lib/history-api";
 
 export type AgentCtx = Omit<Extract<NotificationTarget, { type: "session" }>, "type"> & {
   /** The session's title, when it has one. */
@@ -247,6 +248,7 @@ export function classifyAgentEvent(
     type: "session",
     tabId: ctx.tabId,
     sessionId: ctx.sessionId,
+    ...(ctx.threadId ? { threadId: ctx.threadId } : {}),
     projectId: ctx.projectId,
     projectName: ctx.projectName,
     orgId: ctx.orgId,
@@ -351,6 +353,31 @@ export function classifyAgentEvent(
         dedupeKey: `${sid}:${e.nonce}:pull-request-watch`,
       };
   }
+}
+
+/** A session's history row and the paths of the project group it sits in. */
+export interface HistorySession {
+  row: ThreadRow;
+  groupPaths: readonly string[];
+}
+
+/** The history row of a session no tab shows: by Atlas's `threadId`, else by
+ *  the agent's session id. Null when history does not list it. */
+export function findHistorySession(
+  groups: readonly ThreadProject[],
+  threadId: string,
+  sessionId?: string,
+): HistorySession | null {
+  let bySession: HistorySession | null = null;
+  for (const group of groups) {
+    for (const row of group.threads) {
+      if (threadId && row.threadId === threadId) return { row, groupPaths: group.paths };
+      if (!bySession && sessionId && row.sessionId === sessionId) {
+        bySession = { row, groupPaths: group.paths };
+      }
+    }
+  }
+  return bySession;
 }
 
 /** Classify + decide — the whole agent rule set as one pure call. */

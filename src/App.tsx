@@ -206,7 +206,7 @@ export function App() {
           { source: e.source, summary: e.summary },
           e.at,
         );
-      notifyPullRequestWatch(e.sessionId, e.summary, e.at);
+      void notifyPullRequestWatch(e);
     });
     return () => void off.then((f) => f());
   }, []);

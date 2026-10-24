@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   emptyQueryFiles,
   findMatchIndices,
+  highlightSegments,
   normalizeFileQuery,
   relativeTo,
   toFileSearchMatches,
@@ -44,7 +45,42 @@ describe("toFileSearchMatches", () => {
   it("renders a row the backend matched on other grounds without highlights", () => {
     const [match] = toFileSearchMatches([{ path: "/p/x.ts", rel: "x.ts" }], "qq");
     expect(match?.nameMatchIndices).toEqual([]);
-    expect(match?.relMatchIndices).toEqual([]);
+  });
+
+  it("highlights the file name only; the path carries no match positions", () => {
+    const [match] = toFileSearchMatches(
+      [{ path: "/p/src/features/app.tsx", rel: "src/features/app.tsx" }],
+      "app",
+    );
+    expect(match).toEqual({
+      path: "/p/src/features/app.tsx",
+      rel: "src/features/app.tsx",
+      name: "app.tsx",
+      nameMatchIndices: [0, 1, 2],
+    });
+    expect(match).not.toHaveProperty("relMatchIndices");
+  });
+});
+
+describe("highlightSegments", () => {
+  it("joins adjacent matched characters into one run", () => {
+    expect(highlightSegments("button.tsx", [0, 1, 5])).toEqual([
+      { text: "bu", matched: true },
+      { text: "tto", matched: false },
+      { text: "n", matched: true },
+      { text: ".tsx", matched: false },
+    ]);
+  });
+
+  it("returns the whole value as one plain run with no indices", () => {
+    expect(highlightSegments("main.ts", [])).toEqual([{ text: "main.ts", matched: false }]);
+  });
+
+  it("ignores out-of-range and out-of-order indices", () => {
+    expect(highlightSegments("ab", [1, 0, 9])).toEqual([
+      { text: "a", matched: false },
+      { text: "b", matched: true },
+    ]);
   });
 });
 
