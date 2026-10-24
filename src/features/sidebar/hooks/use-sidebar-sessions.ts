@@ -16,6 +16,7 @@ import { useAppStore } from "@/features/app/stores/app-store";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { useActiveOrgProjects } from "@/features/projects/lib/org-scope";
 import { repoPullRequestsKey } from "@/features/git/lib/git-pr-api";
+import { invalidatePullRequestQueries } from "@/features/pull-requests/lib/pull-requests-queries";
 import {
   onThreadsChanged,
   syncProjectThreads,
@@ -77,7 +78,8 @@ export function useActiveSessionId(): string | null {
 }
 
 /** A turn that just ended may have pushed a branch or opened a PR: refresh that
- *  repository's pull requests, the one query every row in it shares. */
+ *  repository's pull requests, the one query every row in it shares, and any
+ *  pull-request surface reads open for it. */
 function useRefreshPullRequestsOnTurnEnd(): void {
   const queryClient = useQueryClient();
   const busyDirs = useChatStore((s) => {
@@ -94,7 +96,9 @@ function useRefreshPullRequestsOnTurnEnd(): void {
     for (const line of previous.current.split("\n")) {
       if (!line || now.has(line)) continue;
       const dir = line.slice(line.indexOf("|") + 1);
-      if (dir) void queryClient.invalidateQueries({ queryKey: repoPullRequestsKey(dir) });
+      if (!dir) continue;
+      void queryClient.invalidateQueries({ queryKey: repoPullRequestsKey(dir) });
+      void invalidatePullRequestQueries(queryClient, dir);
     }
     previous.current = busyDirs;
   }, [busyDirs, queryClient]);

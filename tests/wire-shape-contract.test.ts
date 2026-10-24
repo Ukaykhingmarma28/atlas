@@ -40,6 +40,13 @@ import { fileURLToPath } from "node:url";
  * #12 pins the cite chip (`MentionCitedText`) to the `compose_prompt`
  *    variant it deserializes as (`MentionSpec::CitedText`): a renamed field
  *    there arrives as `None`, and the agent silently loses the note or row.
+ * #13 pins the pull-request surface: every `Pr*` struct and enum in
+ *    `commands/pull_requests/model.rs` against its twin in
+ *    `pull-requests-types.ts`, the error kinds the hand-written serializer
+ *    emits, and every `pr_*` command's argument names against its wrapper.
+ *    The surface is wide (dozens of shapes) and read by UI that does not
+ *    exist yet, so a renamed field would otherwise surface as `undefined`
+ *    long after the change that caused it.
  *
  * Unlike `tests/state-payload-contract.test.ts` (which is specifically the
  * `save_app_state` / `bootstrap_app_state` payload and generalises over many
@@ -553,5 +560,81 @@ describe("cite chip: MentionCitedText ↔ MentionSpec::CitedText (#12)", () => {
     expect(tsFields.sort()).toEqual(rustFields);
     expect(ts).toMatch(/interface MentionCitedText \{\s*kind: "cited_text";/);
     expect(pascalToSnake("CitedText")).toBe("cited_text");
+  });
+});
+
+describe("pull requests: model.rs ↔ pull-requests-types.ts, and every pr_* command (#13)", () => {
+  const model = read("src-tauri", "src", "commands", "pull_requests", "model.rs");
+  const commands = read("src-tauri", "src", "commands", "pull_requests", "mod.rs");
+  const types = read("src", "features", "pull-requests", "lib", "pull-requests-types.ts");
+  const api = read("src", "features", "pull-requests", "lib", "pull-requests-api.ts");
+
+  const structs = [...model.matchAll(/^pub struct (Pr\w+)\s*\{/gm)].map((m) => m[1]);
+  const unitEnums = [...model.matchAll(/^pub enum (Pr\w+)\s*\{/gm)]
+    .map((m) => m[1])
+    // A tagged enum carries fields and is pinned below; `PrError` serializes by hand.
+    .filter((name) => !["PrError", "PrTimelineItem", "PrReviewPosition"].includes(name));
+  const kebab = (s: string) => pascalToSnake(s).replace(/_/g, "-");
+
+  it("finds the structs and enums it pins", () => {
+    expect(structs).toEqual(expect.arrayContaining(["PrDetail", "PrActivity", "PrDiffResult"]));
+    expect(unitEnums).toEqual(expect.arrayContaining(["PrState", "PrAction", "PrCheckStatus"]));
+  });
+
+  it("every struct has the same fields on both sides, camelCased", () => {
+    for (const name of structs) {
+      const { attrs, body } = rustItem(model, "struct", name);
+      expect(attrs, name).toMatch(/rename_all\s*=\s*"camelCase"/);
+      const rustFields = rustStructFields(body).map(snakeToCamel).sort();
+      expect(tsInterfaceProps(types, name).sort(), name).toEqual(rustFields);
+    }
+  });
+
+  it("every value enum has the same kebab-case members on both sides", () => {
+    for (const name of unitEnums) {
+      const { attrs, body } = rustItem(model, "enum", name);
+      expect(attrs, name).toMatch(/rename_all\s*=\s*"kebab-case"/);
+      expect(tsUnionLiterals(types, name).sort(), name).toEqual(
+        rustEnumVariants(body).map(kebab).sort(),
+      );
+    }
+  });
+
+  it("every error kind the serializer writes is a PrErrorKind", () => {
+    const written = [...model.matchAll(/=> \("(\w+)", /g)].map((m) => m[1]);
+    expect(new Set(written)).toEqual(new Set(tsUnionLiterals(types, "PrErrorKind")));
+  });
+
+  it("the tagged enums carry the same variants and fields", () => {
+    for (const name of ["PrTimelineItem", "PrReviewPosition"]) {
+      const { attrs, body } = rustItem(model, "enum", name);
+      expect(attrs, name).toMatch(/tag\s*=\s*"kind"/);
+      const variants = [...body.matchAll(/^\s{4}(\w+)\s*\{/gm)].map((m) => m[1]);
+      expect(variants.length, name).toBeGreaterThan(1);
+      const union = new RegExp(`type\\s+${name}\\s*=([\\s\\S]*?);\\n\\n`).exec(types)![1];
+      for (const variant of variants) {
+        const member = new RegExp(`\\{\\s*kind: "${kebab(variant)}";([^}]*)\\}`).exec(union);
+        expect(member, `${name}::${variant}`).not.toBeNull();
+        const tsFields = [...member![1].matchAll(/(\w+)\??:/g)].map((m) => m[1]).sort();
+        const fieldBody = new RegExp(`${variant}\\s*\\{([^}]*)\\}`).exec(body)![1];
+        const rustFields = fieldBody
+          .split(",")
+          .map((f) => /^\s*(\w+):/.exec(f)?.[1])
+          .filter((f): f is string => !!f)
+          .map(snakeToCamel)
+          .sort();
+        expect(tsFields, `${name}::${variant}`).toEqual(rustFields);
+      }
+    }
+  });
+
+  it("every pr_* command is invoked with exactly its Rust argument names", () => {
+    const names = [...commands.matchAll(/pub async fn (pr_\w+)\s*\(/g)].map((m) => m[1]);
+    expect(names).toEqual(expect.arrayContaining(["pr_list", "pr_detail", "pr_diff", "pr_image"]));
+    for (const name of names) {
+      expect(tsInvokeArgKeys(api, name).sort(), name).toEqual(
+        rustCommandArgKeys(commands, name).sort(),
+      );
+    }
   });
 });

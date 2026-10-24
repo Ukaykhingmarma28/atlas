@@ -94,15 +94,15 @@ Other stores: `project/stores/project-store.ts` (current project, recents), `git
 
 ## Backend (`src-tauri/src/`)
 
-One Rust module per IPC domain under `src-tauri/src/commands/`. `commands/mod.rs` declares 70 `pub mod` domain files:
+One Rust module per IPC domain under `src-tauri/src/commands/`. `commands/mod.rs` declares one `pub mod` per domain (`ls src-tauri/src/commands` for the current set):
 
 | Domain group | Modules |
 |---|---|
 | Agents (ported ACP stack) | agents, agent_host, agent_transcript, agent_analytics, agent_memory, catalog, registry, capture, artifacts_cloud |
 | Agent tool servers | memory_server (ADR-0010), memory_bridge (ADR-0019, ADR-0020), ui_server (ADR-0012) |
 | Terminal / browser / fs | terminal, browser, fs |
-| Git | git, git_graph, git_watcher, git_autofetch, gitdiff, git_ops, git_conflicts, git_snapshot, git_stage_ops |
-| GitHub | github |
+| Git | git, git_graph, git_watcher, git_autofetch, gitdiff, git_ops, git_conflicts, git_snapshot, git_stage_ops, git_pr (a branch's PR badge, via `gh pr list`), git_avatars (author avatars, via `gh api`) |
+| GitHub | github (search and clone reference repositories), pull_requests (the pull-request surface, via `gh api`; see below) |
 | Knowledge | knowledge, knowledge_meta, knowledge_links, knowledge_export, knowledge_graph_layout |
 | Memory | memory_* — graph, pack, policy, sharing, summarize, timeline, delta, inject, compile, indexer, retrieve, capture (the session recorder, read-only), dream, repo (the Agent Memory Repo mirror); plus shared_memory, instruction_sync |
 | Models & usage | models, models_pricing, usage, tool_stats |
@@ -119,6 +119,32 @@ Adding a command is a three-edit rule:
 Miss any of the three and the command either fails to compile or silently 404s from the frontend's `invoke()`.
 
 **Every blocking operation must run inside `tokio::task::spawn_blocking`** — `Command::output`/`Command::spawn`, file I/O over large trees, git subprocess calls, anything not already `async`. The Tauri command runtime is shared with the UI's IPC channel; a blocking call there stalls every other in-flight command and freezes the UI.
+
+### Pull requests
+
+Every GitHub read and write goes through the user's own `gh` login; Atlas never holds or reads a token. The path, top to bottom:
+
+```
+src/features/pull-requests/lib/
+  pull-requests-queries.ts   react-query keys + stale times; turn end → invalidatePullRequestQueries
+  pull-requests-api.ts       one wrapper per pr_* command, behind the gh gate (pr-errors.ts)
+        │ invoke
+src-tauri/src/commands/pull_requests/
+  mod.rs       the pr_* commands, flat args, Result<T, PrError>
+  github.rs    the GitHub driver: which requests an operation takes
+  parse.rs     GitHub's JSON → the provider-neutral types in model.rs
+  queries.rs   the GraphQL documents
+  gh.rs        one `gh api -i` process per request: timeout, permit pool,
+               rate-limit pause, ETag revalidation
+  images.rs    image proxy for bodies/comments (GitHub image hosts only)
+```
+
+- **Provider-neutral.** `model.rs` names no host; what a host can do is data (`PrCapabilities`, `PrViewerPermissions`), so a GitLab driver slots in beside `github.rs` without the UI changing.
+- **Errors say what to do.** `PrError` is `{ kind, message?, retryAt? }` — `notInstalled`, `notAuthenticated`, `rateLimited`, `network`, `notFound`, `unsupported`, `invalid`, `failed`. A missing, signed-out or rate-limited `gh` closes the frontend's gh gate, which holds every repository's reads back for a bounded time and reopens on window focus (a rate limit waits for its reset).
+- **Images.** CSP `img-src` stays closed: `pr_image` fetches an allowlisted GitHub image with the `gh` credential, caches it, and the page shows it as a `blob:` URL (`pr-image.ts`).
+- **Freshness.** Stale times per read (list 30s, detail 60s / merged 10min, checks 15s, files viewed 15s), a five-minute poll while on screen, a refetch on focus, and an invalidation when an agent's turn ends. REST reads revalidate with an ETag, and GitHub does not charge a 304.
+
+The sidebar's PR badge (`git_pr`) is older and separate: one `gh pr list` per repository, shared by every card.
 
 ### Event channels
 
