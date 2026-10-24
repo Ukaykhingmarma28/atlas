@@ -19,10 +19,12 @@ function openFileChip(chip: HTMLElement): void {
   const line = Number(chip.dataset.fileLine) || undefined;
   const column = Number(chip.dataset.fileColumn) || undefined;
   const folder = chip.dataset.mentionKind === "folder";
+  const root = chip.dataset.fileRoot || undefined;
+  const trusted = chip.dataset.fileTrusted === "true";
   // Loaded on the first click: the opener pulls in the layout and file-index
   // code, which the markdown renderer has no reason to carry.
   void import("@/features/explorer/lib/open-path-link")
-    .then((m) => m.openPathLink({ path, line, column, folder }))
+    .then((m) => m.openPathLink({ path, line, column, folder, root, trusted }))
     .catch(() => {});
 }
 

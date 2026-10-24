@@ -507,7 +507,8 @@ function simulateDownload(model: ModelStatus): void {
 // ── project scripts ───────────────────────────────────────────────────────
 
 /** Each project's `[[scripts]]`, as `.atlas/config.toml` would hold them. The
- *  fake project starts with two, so the scripts row shows its split. */
+ *  fake project starts with two, so the scripts row shows its split; the
+ *  second has never been approved, so running it shows the confirmation. */
 const projectScripts = new Map<string, ProjectScript[]>([
   [
     MOCK_PROJECT.path,
@@ -518,13 +519,29 @@ const projectScripts = new Map<string, ProjectScript[]>([
   ],
 ]);
 
+/** As in Rust (`project-script-approvals.json`): project, id and command. */
+const approvedScripts = new Set<string>([`${MOCK_PROJECT.path}\u0000dev\u0000bun run dev`]);
+const approvalKey = (project: string, script: { id: string; command: string }) =>
+  `${project}\u0000${script.id}\u0000${script.command}`;
+const withApproval = (project: string, scripts: ProjectScript[]): ProjectScript[] =>
+  scripts.map((script) => ({
+    ...script,
+    approved: approvedScripts.has(approvalKey(project, script)),
+  }));
+
 // ── handlers ──────────────────────────────────────────────────────────────
 
 export const miscHandlers: MockHandlers = {
   // ── session context (`commands/session_context.rs`, `project_scripts.rs`) ──
   session_environment: (): SessionEnvironment => ({ name: "m4-pro", kind: "local" }),
   project_scripts_list: ({ projectPath }): ProjectScript[] =>
-    projectScripts.get(String(projectPath)) ?? [],
+    withApproval(String(projectPath), projectScripts.get(String(projectPath)) ?? []),
+  project_scripts_approve: ({ projectPath, id, command }) => {
+    approvedScripts.add(
+      approvalKey(String(projectPath), { id: String(id), command: String(command) }),
+    );
+    return null;
+  },
   // As in Rust: trimmed, a blank id derived from the name, ids made unique.
   project_scripts_save: ({ projectPath, scripts }): ProjectScript[] => {
     const seen = new Set<string>();
@@ -540,10 +557,19 @@ export const miscHandlers: MockHandlers = {
       let id = base;
       for (let n = 2; seen.has(id); n++) id = `${base}-${n}`;
       seen.add(id);
-      return { ...script, id, name: script.name.trim(), command: script.command.trim() };
+      return { id, name: script.name.trim(), command: script.command.trim(), icon: script.icon };
     });
+    // As in Rust: what the save brought in was typed in Atlas, so it is approved.
+    const before = new Set(
+      (projectScripts.get(String(projectPath)) ?? []).map((s) => approvalKey("", s)),
+    );
+    for (const script of saved) {
+      if (!before.has(approvalKey("", script))) {
+        approvedScripts.add(approvalKey(String(projectPath), script));
+      }
+    }
     projectScripts.set(String(projectPath), saved);
-    return saved;
+    return withApproval(String(projectPath), saved);
   },
 
   // ── chat history ────────────────────────────────────────────────────────

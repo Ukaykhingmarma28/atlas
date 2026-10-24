@@ -715,21 +715,47 @@ fn command_for(
     }
 }
 
-/// Extensions the OS would *run* rather than open in an app.
-const RUNNABLE_EXTENSIONS: &[&str] = &[
-    "exe", "bat", "cmd", "com", "ps1", "js", "vbs", "lnk", "msi", "app", "command", "tool",
+/// The file types the system's opener may be handed directly: documents,
+/// media and plain-text formats whose default app *shows* them.
+///
+/// An allowlist, not a list of what would run. The set of extensions macOS
+/// and Windows will execute, or hand to something that executes (a
+/// `.terminal` file's CommandString, a `.jar`, a `.webloc` that opens any
+/// URL scheme, `.scr`, `.hta`, `.wsf`, `.cpl`, `.reg`, `.url`, `.appref-ms`,
+/// every scripting language an installer registers…), is open-ended and
+/// grows with what the user installs; a list of what merely *displays* is
+/// short and stays put. Anything else is shown in Finder / Explorer, where
+/// the user decides. Source languages a double-click would run on some
+/// system (`.py`, `.rb`, `.pl`, `.js`, `.sh`) are left out on purpose, as are
+/// macro-enabled Office formats. Web pages are in: a browser opens a local
+/// page in its sandbox.
+const SAFE_SYSTEM_OPEN_EXTENSIONS: &[&str] = &[
+    "txt", "md", "markdown", "rst", "log", "csv", "tsv", "json", "jsonc", "yaml", "yml", "toml",
+    "ini", "xml", "diff", "patch", "rs", "ts", "tsx", "jsx", "mts", "cts", "go", "c", "h", "cc",
+    "cpp", "hpp", "cs", "java", "kt", "swift", "m", "mm", "css", "scss", "sass", "less", "sql",
+    "graphql", "proto", "vue", "svelte", "html", "htm", "png", "jpg", "jpeg", "gif", "webp", "bmp",
+    "tif", "tiff", "heic", "heif", "ico", "svg", "avif", "pdf", "rtf", "doc", "docx", "xls",
+    "xlsx", "ppt", "pptx", "odt", "ods", "odp", "pages", "numbers", "key", "epub", "mp3", "wav",
+    "m4a", "aac", "flac", "ogg", "opus", "mp4", "m4v", "mov", "webm", "mkv", "avi",
 ];
 
-/// Whether handing `path` to the system's opener would run it: a runnable
-/// extension (Windows programs and scripts, a macOS app bundle or a
-/// Terminal `.command`), or on Unix a file with an execute bit.
+/// Whether handing `path` to the system's opener could run something rather
+/// than show it. A file opens only when its extension is on
+/// [`SAFE_SYSTEM_OPEN_EXTENSIONS`] and, on Unix, it carries no execute bit.
+/// A folder opens only when its name has no extension: one that does may be
+/// a bundle the system treats as a program (`Foo.app`, `.prefPane`,
+/// `.workflow`, `.pkg`).
 fn system_open_would_run(path: &Path) -> bool {
-    let by_name = path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
-        RUNNABLE_EXTENSIONS
+    let ext = path.extension().and_then(|e| e.to_str());
+    if path.is_dir() {
+        return ext.is_some();
+    }
+    let safe = ext.is_some_and(|e| {
+        SAFE_SYSTEM_OPEN_EXTENSIONS
             .iter()
-            .any(|r| e.eq_ignore_ascii_case(r))
+            .any(|s| e.eq_ignore_ascii_case(s))
     });
-    if by_name {
+    if !safe {
         return true;
     }
     #[cfg(unix)]
@@ -1322,6 +1348,7 @@ mod tests {
     #[test]
     fn the_system_default_refuses_to_run_what_it_would_execute() {
         for name in [
+            // Windows programs, scripts and shortcuts.
             "setup.exe",
             "run.BAT",
             "x.cmd",
@@ -1331,19 +1358,71 @@ mod tests {
             "x.vbs",
             "x.lnk",
             "x.msi",
+            "x.scr",
+            "x.hta",
+            "x.wsf",
+            "x.jse",
+            "x.vbe",
+            "x.cpl",
+            "x.msc",
+            "x.reg",
+            "x.url",
+            "x.pif",
+            "x.appref-ms",
+            // macOS: a Terminal settings file runs its CommandString, a jar
+            // runs, and the location files open any URL scheme.
             "Calculator.app",
             "go.command",
             "x.tool",
+            "setup.terminal",
+            "x.jar",
+            "x.webloc",
+            "x.inetloc",
+            "x.fileloc",
+            // Interpreted source some system would run on a double-click.
+            "x.py",
+            "x.rb",
+            "x.pl",
+            "x.sh",
+            // Macro-enabled Office formats, and anything unknown.
+            "x.docm",
+            "x.xlsm",
+            "x.whatever",
+            // No extension at all.
+            "Makefile",
         ] {
             assert!(
                 system_open_would_run(Path::new(&format!("/nowhere/{name}"))),
                 "{name}"
             );
         }
-        assert!(!system_open_would_run(Path::new("/nowhere/notes.md")));
+    }
 
+    #[test]
+    fn the_system_default_opens_documents_media_and_text() {
+        for name in [
+            "notes.md",
+            "README.TXT",
+            "data.csv",
+            "photo.JPG",
+            "shot.png",
+            "report.pdf",
+            "deck.pptx",
+            "clip.mov",
+            "main.rs",
+            "page.html",
+        ] {
+            assert!(
+                !system_open_would_run(Path::new(&format!("/nowhere/{name}"))),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_system_default_checks_the_execute_bit_and_bundle_folders() {
         let dir = tempfile::tempdir().unwrap();
-        let script = dir.path().join("build");
+        let script = dir.path().join("build.txt");
         std::fs::write(&script, "#!/bin/sh\n").unwrap();
         assert!(!system_open_would_run(&script));
         #[cfg(unix)]
@@ -1351,9 +1430,17 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
             assert!(system_open_would_run(&script));
-            // A folder's execute bit is search permission, not "run me".
-            assert!(!system_open_would_run(dir.path()));
         }
+        // A plain folder opens in the file manager; its execute bit is search
+        // permission, not "run me".
+        assert!(!system_open_would_run(dir.path()));
+        // A folder with an extension may be a bundle the system runs.
+        let bundle = dir.path().join("Evil.app");
+        std::fs::create_dir(&bundle).unwrap();
+        assert!(system_open_would_run(&bundle));
+        let pane = dir.path().join("Evil.prefPane");
+        std::fs::create_dir(&pane).unwrap();
+        assert!(system_open_would_run(&pane));
     }
 
     #[cfg(unix)]

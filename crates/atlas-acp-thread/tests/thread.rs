@@ -1160,3 +1160,31 @@ fn an_attached_root_widens_reads_and_writes_at_its_access_and_never_joins_the_ow
     assert_eq!(thread.readable_roots(), vec![app.clone()]);
     assert_eq!(thread.writable_roots(), vec![app]);
 }
+
+#[test]
+fn a_replay_ends_when_told_and_live_entries_after_it_are_timed() {
+    let (mut thread, _rx, _conn) = new_thread();
+    thread.begin_replay();
+    thread
+        .handle_session_update(user_chunk("earlier question", Some("m1")))
+        .unwrap();
+    thread
+        .handle_session_update(agent_chunk("earlier answer", Some("a1")))
+        .unwrap();
+    assert!(thread.entry_time_approximate(0));
+    assert!(thread.entry_time_approximate(1));
+
+    // The load answered and its queued frames drained: no prompt yet, but
+    // what the agent says now is live.
+    thread.end_replay();
+    thread
+        .handle_session_update(acp::SessionUpdate::ToolCall(tool_call(
+            "t-live",
+            "Read file",
+            acp::ToolCallStatus::Completed,
+        )))
+        .unwrap();
+    assert_eq!(thread.entries().len(), 3);
+    assert!(thread.entry_time_approximate(1));
+    assert!(!thread.entry_time_approximate(2));
+}

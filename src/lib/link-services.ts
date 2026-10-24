@@ -9,6 +9,15 @@
 //   https://github.com/acme/web                             → github  "acme/web"
 //   https://linear.app/atlas/issue/ATL-978/browser-goes-…   → linear  "ATL-978"
 //   https://example.com/docs                                → web     (the globe, no label)
+//   https://git.acme.dev/acme/web/pulls/42                  → web     "git.acme.dev · acme/web PR #42"
+//
+// A service's icon, and a label that drops the hostname, are for that
+// service's own hosts only: the exact domain and its real subdomains
+// (`gist.github.com`). A name that merely contains one (`github.evil-login.io`,
+// `github.com.evil.io`) is any other site: the globe, and a label that keeps
+// the hostname in view. A forge's route on another host — a self-hosted
+// GitLab or Gitea — still reads short, but always with its host in front,
+// never a bare "PR #42" that would pass for the real thing.
 //
 // Only a link written bare (its text is its address) is shortened: a link
 // with words of its own keeps them. The full address stays in the tooltip, and
@@ -52,23 +61,22 @@ export function resolveExternalWebLink(href: string | null | undefined): URL | n
   }
 }
 
-/** `hostname` is `apex` or a subdomain of it, or (given one) carries `label` as
- *  one of its parts, which is how a self-hosted install is usually named
- *  (`github.acme.com`, `gitlab.internal.dev`). */
-function isHostOf(hostname: string, apex: string, label?: string): boolean {
-  if (hostname === apex || hostname.endsWith(`.${apex}`)) return true;
-  return label !== undefined && hostname.split(".").includes(label);
+/** `hostname` is `apex` or a real subdomain of it. Never a name that only
+ *  contains it: anyone can register `github.evil-login.io`. */
+function isHostOf(hostname: string, apex: string): boolean {
+  return hostname === apex || hostname.endsWith(`.${apex}`);
 }
 
-/** The service a hostname belongs to. */
+/** The service a hostname belongs to: exact hosts and their subdomains only;
+ *  everything else, a self-hosted forge included, is `web`. */
 export function linkServiceOfHost(hostname: string): LinkService {
   const host = hostname.toLowerCase();
-  if (isHostOf(host, "github.com", "github") || isHostOf(host, "githubusercontent.com")) {
+  if (isHostOf(host, "github.com") || isHostOf(host, "githubusercontent.com")) {
     return "github";
   }
-  if (isHostOf(host, "gitlab.com", "gitlab")) return "gitlab";
-  if (isHostOf(host, "bitbucket.org", "bitbucket")) return "bitbucket";
-  if (isHostOf(host, "codeberg.org", "forgejo")) return "forgejo";
+  if (isHostOf(host, "gitlab.com")) return "gitlab";
+  if (isHostOf(host, "bitbucket.org")) return "bitbucket";
+  if (isHostOf(host, "codeberg.org")) return "forgejo";
   if (isHostOf(host, "linear.app")) return "linear";
   if (isHostOf(host, "slack.com")) return "slack";
   if (isHostOf(host, "notion.so") || isHostOf(host, "notion.site")) return "notion";
@@ -96,14 +104,29 @@ function claim(host: string, match: RegExpExecArray | null): ChangeRequestLink |
     : null;
 }
 
+/** Whether `hostname` could be a GitHub install: github.com, or a self-hosted
+ *  one named for it (`github.acme.com`). Only for reading a route — which
+ *  service a link *is* is `linkServiceOfHost`'s exact-host answer. */
+function mayBeGithub(hostname: string): boolean {
+  return isHostOf(hostname, "github.com") || hostname.split(".").includes("github");
+}
+
+/** The same, for Bitbucket: its `/pull-requests/` route is too generic to
+ *  read on any host. */
+function mayBeBitbucket(hostname: string): boolean {
+  return isHostOf(hostname, "bitbucket.org") || hostname.split(".").includes("bitbucket");
+}
+
 /** The pull request a URL names on GitHub, GitLab, Bitbucket, Forgejo/Gitea
  *  or Azure DevOps, or null. Each forge is told apart by its own route, so a
- *  self-hosted install on any hostname is read too. */
+ *  self-hosted install on any hostname is read too. Reading a route says
+ *  nothing about who runs the host: a label for it keeps the host in view
+ *  unless the host is the forge's own (`shortLabel`). */
 export function parseChangeRequestUrl(target: string | URL): ChangeRequestLink | null {
   const url = typeof target === "string" ? resolveExternalWebLink(target) : target;
   if (!url) return null;
   const host = url.hostname.toLowerCase();
-  if (isHostOf(host, "github.com", "github")) {
+  if (mayBeGithub(host)) {
     const match = /^\/([^/]+\/[^/]+)\/pull\/(\d+)(?:\/|$)/u.exec(url.pathname);
     if (match) return claim(host, match);
   }
@@ -111,7 +134,7 @@ export function parseChangeRequestUrl(target: string | URL): ChangeRequestLink |
   if (forgejo) return claim(host, forgejo);
   const gitlab = /^\/([^/]+(?:\/[^/]+)+)\/-\/merge_requests\/(\d+)(?:\/|$)/u.exec(url.pathname);
   if (gitlab) return claim(host, gitlab);
-  if (isHostOf(host, "bitbucket.org", "bitbucket")) {
+  if (mayBeBitbucket(host)) {
     const match = /^\/([^/]+\/[^/]+)\/pull-requests\/(\d+)(?:\/|$)/u.exec(url.pathname);
     if (match) return claim(host, match);
   }
@@ -186,8 +209,17 @@ function shortLabel(service: LinkService, url: URL): Pick<LinkFacts, "short" | "
       const issue = LINEAR_ISSUE.exec(url.pathname);
       return issue ? { short: issue[1].toUpperCase(), commit: false } : none;
     }
+    case "web": {
+      // A forge's route on a host that is not the forge's own (self-hosted,
+      // or a look-alike): the host stays in front, so the label can never
+      // pass for the real service's.
+      const pull = parseChangeRequestUrl(url);
+      return pull
+        ? { short: `${pull.host} · ${pull.repository} PR #${pull.number}`, commit: false }
+        : none;
+    }
     default: {
-      // Any forge's pull request reads the same, wherever it is hosted.
+      // The forge's own host: its pull request reads short.
       const pull = parseChangeRequestUrl(url);
       if (pull) return { short: `PR #${pull.number}`, commit: false };
       const gitlabIssue = /^\/[^/]+(?:\/[^/]+)+\/-\/issues\/([1-9]\d*)\/?$/u.exec(url.pathname);

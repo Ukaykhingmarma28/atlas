@@ -676,6 +676,7 @@ pub fn run() {
             commands::pull_requests::guide::pr_guide_finish,
             commands::project_scripts::project_scripts_list,
             commands::project_scripts::project_scripts_save,
+            commands::project_scripts::project_scripts_approve,
             commands::session_context::session_environment,
             commands::git_avatars::git_repo_avatars,
             commands::git::git_graph_signature,

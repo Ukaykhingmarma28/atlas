@@ -400,6 +400,8 @@ interface ChatActions {
       role: MessageRole,
       content: string,
       attachments?: ImageAttachment[],
+      /** See `ChatMessage.trustedMentionPaths`. */
+      trustedMentionPaths?: string[],
     ) => void;
     appendToolCall: (sessionId: string, toolName: string, input: Record<string, unknown>) => void;
     updateLastAssistantMessage: (sessionId: string, content: string) => void;
@@ -1059,7 +1061,7 @@ export const useChatStore = createSelectors(
           set((s) => {
             s.activeSessionId = id;
           }),
-        addMessage: (sessionId, role, content, attachments) =>
+        addMessage: (sessionId, role, content, attachments, trustedMentionPaths) =>
           set((s) => {
             const session = s.sessions[sessionId];
             if (!session) return;
@@ -1073,6 +1075,7 @@ export const useChatStore = createSelectors(
               role,
               content,
               ...(attachments?.length ? { attachments } : {}),
+              ...(role === "user" && trustedMentionPaths?.length ? { trustedMentionPaths } : {}),
               toolCalls: [],
               fileChanges: [],
               plan: null,

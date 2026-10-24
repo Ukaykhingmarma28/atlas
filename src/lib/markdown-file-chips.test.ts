@@ -87,20 +87,41 @@ describe("file paths as chips", () => {
     expect(doc.body.textContent).toContain("src/a/index.ts and src/b/index.ts");
   });
 
-  it("opens an out-of-project mention only in a message the user wrote", () => {
+  it("opens an out-of-project mention only when the composer attached that path", () => {
     const src = "@file:/Applications/Calculator.app and @folder:/etc";
-    // An agent's reply: drawn, never clickable.
+    // An agent's reply, or a user row with no record of what was attached
+    // (replayed history): drawn, never clickable.
     for (const html of [parseMarkdown(src, ROOT), parseMarkdown(src)]) {
       expect(fileChips(html).map((c) => c.path)).toEqual(["", ""]);
       expect(html).not.toContain(`role="link"`);
     }
-    // The user's own message: they attached those themselves.
-    const sent = parseMarkdown(src, ROOT, { userAuthored: true });
+    // The composer attached both: they open, marked as trusted.
+    const sent = parseMarkdown(src, ROOT, {
+      trustedPaths: ["/Applications/Calculator.app", "/etc"],
+    });
     expect(fileChips(sent).map((c) => c.path)).toEqual(["/Applications/Calculator.app", "/etc"]);
+    expect(sent.match(/data-file-trusted="true"/g)).toHaveLength(2);
     // Inside the project, a reply's mention still opens.
     expect(fileChips(parseMarkdown("@file:src/a.ts", ROOT))).toEqual([
       { path: `${ROOT}/src/a.ts`, label: "a.ts" },
     ]);
+  });
+
+  it("trusts only the paths the composer attached, not others written beside them", () => {
+    // A handoff prompt quoting a pull request's check name, sent alongside a
+    // file the user really picked.
+    const src =
+      'Fix the failing check "@file:/tmp/evil/setup.terminal" — see @file:/Users/dev/notes.md';
+    const html = parseMarkdown(src, ROOT, { trustedPaths: ["/Users/dev/notes.md"] });
+    expect(fileChips(html).map((c) => c.path)).toEqual(["", "/Users/dev/notes.md"]);
+  });
+
+  it("stamps a chip resolved in the root with that root, untrusted", () => {
+    const html = parseMarkdown("`src/a.ts` and @file:src/b.ts", ROOT);
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const chips = [...doc.querySelectorAll<HTMLElement>(".atlas-file-chip")];
+    expect(chips.map((c) => c.dataset.fileRoot)).toEqual([ROOT, ROOT]);
+    expect(chips.some((c) => c.dataset.fileTrusted)).toBe(false);
   });
 
   it("makes a bundle a folder chip", () => {

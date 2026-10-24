@@ -54,6 +54,29 @@ describe("web links in session markdown", () => {
     ]);
   });
 
+  it("never dresses a look-alike host as the service it imitates", () => {
+    const spoof = "https://github.evil-login.io/acme/web/pull/42";
+    const nested = "https://github.com.evil.io/acme/web/pull/42";
+    const issue = "https://linear.app.evil.com/atlas/issue/ATL-978";
+    expect(links(parseMarkdown(`${spoof} ${nested} ${issue}`))).toEqual([
+      {
+        href: spoof,
+        service: "web",
+        text: "github.evil-login.io · acme/web PR #42",
+        title: spoof,
+        copy: spoof,
+      },
+      {
+        href: nested,
+        service: "web",
+        text: "github.com.evil.io · acme/web PR #42",
+        title: nested,
+        copy: nested,
+      },
+      { href: issue, service: "web", text: issue, title: issue },
+    ]);
+  });
+
   it("keeps a link's own words, with the icon and tooltip", () => {
     const href = "https://github.com/acme/web/pull/42#discussion_r1";
     expect(links(parseMarkdown(`See [the review thread](${href}).`))).toEqual([

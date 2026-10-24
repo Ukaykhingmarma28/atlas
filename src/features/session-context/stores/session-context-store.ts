@@ -19,7 +19,8 @@
 // header (and one trigger) per column, and an unkeyed flag would open every
 // one of them at once.
 //
-// The two dialogs the overlay opens (a project script's editor, Create PR)
+// The dialogs the overlay opens (a project script's editor and its first-run
+// confirmation, Create PR)
 // are here too, not in the rows that open them: a popover closes when focus
 // moves into a dialog, and a dialog mounted inside it would close with it.
 
@@ -46,6 +47,15 @@ export interface ScriptEditorRequest {
   script: ProjectScript | null;
 }
 
+/** A project script about to run for the first time (or with a changed
+ *  command): the confirmation that shows its whole command. */
+export interface ScriptConfirmRequest {
+  projectPath: string;
+  script: ProjectScript;
+  /** Where it will run: the project root, or the session's worktree. */
+  cwd: string;
+}
+
 /** The Create PR dialog, opened once the branch is on the remote. */
 export interface CreatePrRequest {
   projectPath: string;
@@ -65,6 +75,7 @@ interface SessionContextState {
   dockOpen: Record<string, boolean>;
   view: SessionContextView;
   scriptEditor: ScriptEditorRequest | null;
+  scriptConfirm: ScriptConfirmRequest | null;
   createPr: CreatePrRequest | null;
   actions: {
     setOpen: (key: string, open: boolean) => void;
@@ -75,6 +86,7 @@ interface SessionContextState {
     show: (view: SessionContextView) => void;
     back: () => void;
     editScript: (request: ScriptEditorRequest | null) => void;
+    confirmScript: (request: ScriptConfirmRequest | null) => void;
     requestCreatePr: (request: CreatePrRequest | null) => void;
   };
 }
@@ -87,6 +99,7 @@ export const useSessionContextStore = createSelectors(
       dockOpen: {},
       view: "main",
       scriptEditor: null,
+      scriptConfirm: null,
       createPr: null,
       actions: {
         setOpen: (key, open) =>
@@ -140,6 +153,10 @@ export const useSessionContextStore = createSelectors(
         editScript: (request) =>
           set((s) => {
             s.scriptEditor = request;
+          }),
+        confirmScript: (request) =>
+          set((s) => {
+            s.scriptConfirm = request;
           }),
         requestCreatePr: (request) =>
           set((s) => {

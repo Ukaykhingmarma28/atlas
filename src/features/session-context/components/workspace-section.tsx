@@ -45,7 +45,15 @@ function useSessionEnvironment() {
   }).data;
 }
 
-export function WorkspaceSection({ projectPath }: { projectPath: string }) {
+export function WorkspaceSection({
+  projectPath,
+  workPath = projectPath,
+}: {
+  projectPath: string;
+  /** Where the session works (`sessionWorkPath`): a pull request session's
+   *  worktree, else the project. What opens, and where scripts run. */
+  workPath?: string;
+}) {
   const name = useProjectStore((s) => s.projects.find((p) => p.path === projectPath)?.name ?? null);
   const folder = name ?? projectPath.split(/[\\/]/).pop() ?? projectPath;
   const environment = useSessionEnvironment();
@@ -55,11 +63,11 @@ export function WorkspaceSection({ projectPath }: { projectPath: string }) {
 
   return (
     <ContextSection title="Workspace" showHeading={false} separated={false}>
-      <ContextRow title={`${environment?.name || "This device"} · ${projectPath}`}>
+      <ContextRow title={`${environment?.name || "This device"} · ${workPath}`}>
         <span className="flex shrink-0 items-center gap-1">
           <RowIcon icon={Laptop} />
-          <Hint label={projectPath}>
-            <span className="inline-flex" tabIndex={0} aria-label={`Project folder ${projectPath}`}>
+          <Hint label={workPath}>
+            <span className="inline-flex" tabIndex={0} aria-label={`Project folder ${workPath}`}>
               <RowIcon icon={Folder} />
             </span>
           </Hint>
@@ -67,22 +75,20 @@ export function WorkspaceSection({ projectPath }: { projectPath: string }) {
         <RowLabel>{environment?.name || folder}</RowLabel>
       </ContextRow>
       <ContextSplitRow
-        onClick={() =>
-          void (editor ? openInEditor(editor.id, projectPath) : revealProject(projectPath))
-        }
+        onClick={() => void (editor ? openInEditor(editor.id, workPath) : revealProject(workPath))}
         menuLabel="Other ways to open the project"
         menu={
           <>
-            <OpenInEditorDropdownItems path={projectPath} separatorAfter />
-            <DropdownMenuItem onClick={() => void revealProject(projectPath)}>
+            <OpenInEditorDropdownItems path={workPath} separatorAfter />
+            <DropdownMenuItem onClick={() => void revealProject(workPath)}>
               <FolderOpen />
               Reveal in {FILE_MANAGER}
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => void openProjectInTerminal(projectPath)}>
+            <DropdownMenuItem onClick={() => void openProjectInTerminal(workPath)}>
               <SquareTerminal />
               Open in Terminal
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => void copyProjectPath(projectPath)}>
+            <DropdownMenuItem onClick={() => void copyProjectPath(workPath)}>
               <Copy />
               Copy path
             </DropdownMenuItem>
@@ -92,7 +98,7 @@ export function WorkspaceSection({ projectPath }: { projectPath: string }) {
         {editor ? <EditorIcon id={editor.id} /> : <RowIcon icon={FolderOpen} />}
         <RowLabel>{editor ? openInLabel(editor) : `Open in ${FILE_MANAGER}`}</RowLabel>
       </ContextSplitRow>
-      <ProjectScriptsControl projectPath={projectPath} />
+      <ProjectScriptsControl projectPath={projectPath} cwd={workPath} />
     </ContextSection>
   );
 }

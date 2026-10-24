@@ -8,7 +8,7 @@
 // this session as its parent. It refreshes on the store's change event, the
 // same signal the sidebar listens to.
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 
 import { onThreadsChanged, threadHistory, type ThreadRow } from "@/features/chat/lib/history-api";
 import { openThread } from "@/features/chat/lib/open-thread";
@@ -36,26 +36,89 @@ export function lineageEdges(rows: readonly ThreadRow[], sessionId: string | nul
   ];
 }
 
-/** The history rows, re-read whenever the thread store changes. */
+// ── One shared history read ──────────────────────────────────────────────────
+//
+// The overlay reads the history twice while it is open (its lineage and its
+// pull requests), and the store's change event fires in bursts: a turn ending
+// renames, retitles and links in quick succession. So every reader shares one
+// copy of the rows, one listener, and one read per burst — never one full
+// history read per reader per event.
+
+/** How long a burst of change events is gathered into one read. */
+export const HISTORY_COALESCE_MS = 150;
+
+const NO_ROWS: ThreadRow[] = [];
+const history = {
+  rows: NO_ROWS,
+  readers: new Set<() => void>(),
+  unlisten: null as Promise<() => void> | null,
+  timer: null as ReturnType<typeof setTimeout> | null,
+  loading: false,
+  /** A change landed while a read was in flight: read again after it. */
+  stale: false,
+};
+
+function readHistory(): void {
+  if (history.loading) {
+    history.stale = true;
+    return;
+  }
+  history.loading = true;
+  void threadHistory()
+    .then((next) => {
+      history.rows = next ?? NO_ROWS;
+      for (const notify of history.readers) notify();
+    })
+    .catch(() => {})
+    .finally(() => {
+      history.loading = false;
+      if (history.stale && history.readers.size > 0) {
+        history.stale = false;
+        readHistory();
+      }
+    });
+}
+
+function scheduleRead(): void {
+  if (history.timer !== null) return;
+  history.timer = setTimeout(() => {
+    history.timer = null;
+    readHistory();
+  }, HISTORY_COALESCE_MS);
+}
+
+function subscribeHistory(notify: () => void): () => void {
+  history.readers.add(notify);
+  if (history.readers.size === 1) {
+    readHistory();
+    history.unlisten = onThreadsChanged(scheduleRead);
+  }
+  return () => {
+    history.readers.delete(notify);
+    if (history.readers.size > 0) return;
+    void history.unlisten?.then((stop) => stop());
+    history.unlisten = null;
+    if (history.timer !== null) clearTimeout(history.timer);
+    history.timer = null;
+    history.stale = false;
+  };
+}
+
+const noSubscription = () => () => {};
+
+/** The history rows, shared by every reader and re-read (once per burst)
+ *  whenever the thread store changes. */
 export function useThreadHistory(enabled: boolean): ThreadRow[] {
-  const [rows, setRows] = useState<ThreadRow[]>([]);
-  useEffect(() => {
-    if (!enabled) return;
-    let live = true;
-    const load = () =>
-      void threadHistory()
-        .then((next) => {
-          if (live) setRows(next ?? []);
-        })
-        .catch(() => {});
-    load();
-    const unlisten = onThreadsChanged(load);
-    return () => {
-      live = false;
-      void unlisten.then((stop) => stop());
-    };
-  }, [enabled]);
-  return rows;
+  return useSyncExternalStore(enabled ? subscribeHistory : noSubscription, () =>
+    enabled ? history.rows : NO_ROWS,
+  );
+}
+
+/** Test seam: forget the shared rows. */
+export function resetThreadHistoryForTests(): void {
+  history.rows = NO_ROWS;
+  history.loading = false;
+  history.stale = false;
 }
 
 export function useSessionLineage(sessionId: string | null): LineageEdge[] {

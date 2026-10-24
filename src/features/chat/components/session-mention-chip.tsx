@@ -40,6 +40,7 @@ import {
 } from "@/components/composer/composer-chip";
 import { SESSION_MENTION } from "../lib/composer-short-forms";
 import { toShortForm, type MentionData } from "../lib/mentions";
+import { markPicked } from "../lib/picked-mentions";
 import { changeProjectAccess, useComposerSessionId } from "../hooks/use-session-projects";
 import { useAttachedProject } from "../stores/session-projects-store";
 
@@ -57,7 +58,10 @@ export function pickedChip(mention: MentionData): SessionChipRecord {
 
 /** The mention a chip stands for, without the composer's own flag. */
 export function mentionOf(record: SessionChipRecord): MentionData {
-  const { picked: _picked, ...mention } = record;
+  const { picked, ...mention } = record;
+  // The flag stays out of the mention, but the send still needs to know
+  // which outside paths the user picked (`picked-mentions.ts`).
+  if (picked) markPicked(mention as MentionData);
   return mention as MentionData;
 }
 

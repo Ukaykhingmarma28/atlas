@@ -13,10 +13,10 @@ describe("linkServiceOfHost", () => {
   it.each([
     ["github.com", "github"],
     ["gist.github.com", "github"],
-    ["github.acme.com", "github"],
+    ["www.github.com", "github"],
     ["raw.githubusercontent.com", "github"],
     ["gitlab.com", "gitlab"],
-    ["gitlab.internal.dev", "gitlab"],
+    ["docs.gitlab.com", "gitlab"],
     ["bitbucket.org", "bitbucket"],
     ["codeberg.org", "forgejo"],
     ["linear.app", "linear"],
@@ -31,6 +31,14 @@ describe("linkServiceOfHost", () => {
     ["notgithub.com", "web"],
     ["linear.app.evil.com", "web"],
     ["localhost", "web"],
+    // A name that contains a service is not that service.
+    ["github.evil-login.io", "web"],
+    ["github.com.evil.io", "web"],
+    ["evilgithub.com", "web"],
+    ["github.acme.com", "web"],
+    ["gitlab.internal.dev", "web"],
+    ["bitbucket.evil.io", "web"],
+    ["forgejo.evil.io", "web"],
   ])("%s → %s", (host, service) => {
     expect(linkServiceOfHost(host)).toBe(service);
   });
@@ -96,6 +104,33 @@ describe("linkFacts", () => {
     ["https://www.npmjs.com/package/react-markdown", "npm", null, false],
     ["https://example.com/docs", "web", null, false],
     ["http://localhost:5173/", "web", null, false],
+    // Look-alike hosts: the globe, and never a bare "PR #42".
+    [
+      "https://github.evil-login.io/acme/web/pull/42",
+      "web",
+      "github.evil-login.io · acme/web PR #42",
+      false,
+    ],
+    [
+      "https://github.com.evil.io/acme/web/pull/42",
+      "web",
+      "github.com.evil.io · acme/web PR #42",
+      false,
+    ],
+    ["https://github.evil-login.io/acme/web/issues/17", "web", null, false],
+    ["https://github.evil-login.io/acme/web/commit/3f9c2d1e8b7a", "web", null, false],
+    ["https://github.evil-login.io/acme/web", "web", null, false],
+    ["https://linear.app.evil.com/atlas/issue/ATL-978", "web", null, false],
+    ["https://evil.io/acme/web/pull/42", "web", null, false],
+    // A self-hosted forge: the host and a path summary.
+    [
+      "https://gitlab.internal.dev/acme/api/-/merge_requests/7",
+      "web",
+      "gitlab.internal.dev · acme/api PR #7",
+      false,
+    ],
+    ["https://git.acme.dev/acme/tools/pulls/5", "web", "git.acme.dev · acme/tools PR #5", false],
+    ["https://gitlab.internal.dev/acme/api/-/issues/8", "web", null, false],
   ])("%s", (href, service, short, commit) => {
     expect(linkFacts(href)).toEqual({ service, short, commit });
   });

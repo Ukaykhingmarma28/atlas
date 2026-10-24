@@ -18,6 +18,7 @@ import {
   type TurnEnd,
 } from "./remember";
 import { projectPathForTab } from "./tab-project";
+import { trustedMentionPaths } from "./picked-mentions";
 
 /** The window event a handoff fires; the composer of `tabId` inserts the
  *  previous conversation as a past-session chip. */
@@ -156,7 +157,13 @@ export function switchAgentForTab(
     // Same shape as the composer's first-while-starting send: bubble first,
     // title from the text, status running, prompt held on the session.
     const { actions } = useChatStore.getState();
-    actions.addMessage(tabId, "user", held.content, held.attachments);
+    actions.addMessage(
+      tabId,
+      "user",
+      held.content,
+      held.attachments,
+      trustedMentionPaths(held.mentions),
+    );
     actions.setSessionTitle(
       tabId,
       held.content.slice(0, 40) + (held.content.length > 40 ? "..." : ""),

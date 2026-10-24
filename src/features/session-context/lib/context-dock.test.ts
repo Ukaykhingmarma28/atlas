@@ -65,12 +65,32 @@ describe("resolveContextDock", () => {
     expect(right).toBeLessThanOrEqual(cardLeft(width) - CONTEXT_CARD_CLEARANCE);
   });
 
-  it("depends on the width alone, so opening the card cannot move the column", () => {
-    // The function takes no open state; the same width is the same layout.
-    for (const width of [900, 1100, 1440, 2000]) {
-      expect(resolveContextDock(width, 760)).toEqual(resolveContextDock(width, 760));
+  it("keeps the column clear of the card, and moves it smoothly as the panel resizes", () => {
+    // A sweep of panel widths in 10px steps: wherever the card docks, the
+    // column ends clear of it and keeps the rail's gutter, and neither edge
+    // nor its width jumps between neighbouring widths — a resize slides the
+    // column, it never snaps it.
+    for (const columnMax of [760, 1080]) {
+      let prev: ReturnType<typeof columnBox> | null = null;
+      for (let width = 900; width <= 2400; width += 10) {
+        if (!resolveContextDock(width, columnMax).docked) {
+          prev = null;
+          continue;
+        }
+        const box = columnBox(width, columnMax);
+        expect(box.right, `right at ${width}`).toBeLessThanOrEqual(
+          cardLeft(width) - CONTEXT_CARD_CLEARANCE,
+        );
+        expect(box.column, `column at ${width}`).toBeLessThanOrEqual(columnMax);
+        if (prev) {
+          expect(Math.abs(box.left - prev.left), `left jump at ${width}`).toBeLessThanOrEqual(10);
+          expect(Math.abs(box.column - prev.column), `width jump at ${width}`).toBeLessThanOrEqual(
+            10,
+          );
+        }
+        prev = box;
+      }
     }
-    expect(resolveContextDock.length).toBe(2);
   });
 });
 

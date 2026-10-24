@@ -40,14 +40,20 @@ let cacheChars = 0;
 const SYNC_LIMIT = 2000;
 
 /**
- * The cache key for a source rendered under a project root, as the user's
- * words or an agent's. Both change the HTML (paths become file chips; only a
- * user's message opens a mention outside the project), so both are part of
- * the key; with neither the key is the source itself, as it always was.
+ * The cache key for a source rendered under a project root, with the outside
+ * paths its author is trusted to have attached. Both change the HTML (paths
+ * become file chips; only a path the composer attached opens outside the
+ * project), so both are part of the key; with neither the key is the source
+ * itself, as it always was.
  */
-function keyOf(src: string, fileRoot: string | undefined, userAuthored?: boolean): string {
-  if (!fileRoot && !userAuthored) return src;
-  return `${userAuthored ? "u" : ""}\u0000${fileRoot ?? ""}\u0000${src}`;
+function keyOf(
+  src: string,
+  fileRoot: string | undefined,
+  trustedPaths?: readonly string[],
+): string {
+  const trusted = trustedPaths?.length ? trustedPaths.join("\u0001") : "";
+  if (!fileRoot && !trusted) return src;
+  return `${trusted}\u0000${fileRoot ?? ""}\u0000${src}`;
 }
 
 function cacheGet(src: string): string | undefined {
@@ -110,16 +116,16 @@ export function primeMarkdownRenderer(): void {
 function renderToHtmlSyncIfReady(
   src: string,
   fileRoot?: string,
-  userAuthored?: boolean,
+  trustedPaths?: readonly string[],
 ): string | null {
-  const key = keyOf(src, fileRoot, userAuthored);
+  const key = keyOf(src, fileRoot, trustedPaths);
   const cached = cacheGet(key);
   if (cached !== undefined) return cached;
   if (!renderMod) {
     void ensureRenderer();
     return null;
   }
-  const html = renderMod.parseMarkdown(src, fileRoot, { userAuthored });
+  const html = renderMod.parseMarkdown(src, fileRoot, { trustedPaths });
   cacheSet(key, html);
   return html;
 }
@@ -129,13 +135,13 @@ function renderToHtmlSyncIfReady(
 async function renderToHtmlAsync(
   src: string,
   fileRoot?: string,
-  userAuthored?: boolean,
+  trustedPaths?: readonly string[],
 ): Promise<string> {
-  const key = keyOf(src, fileRoot, userAuthored);
+  const key = keyOf(src, fileRoot, trustedPaths);
   const cached = cacheGet(key);
   if (cached !== undefined) return cached;
   const m = await ensureRenderer();
-  const html = m.parseMarkdown(src, fileRoot, { userAuthored });
+  const html = m.parseMarkdown(src, fileRoot, { trustedPaths });
   cacheSet(key, html);
   return html;
 }
@@ -156,7 +162,12 @@ let seq = 0;
 // without it each in-flight block sat blank until its own 3s watchdog fired.
 const waiters = new Map<
   number,
-  { source: string; fileRoot?: string; userAuthored?: boolean; finish: (html: string) => void }
+  {
+    source: string;
+    fileRoot?: string;
+    trustedPaths?: readonly string[];
+    finish: (html: string) => void;
+  }
 >();
 // Dedupe concurrent requests for the same source so two visible copies of an
 // identical message don't parse twice.
@@ -186,7 +197,7 @@ function ensureWorker(): Worker | null {
       const stranded = Array.from(waiters.values());
       waiters.clear();
       for (const w of stranded)
-        void renderToHtmlAsync(w.source, w.fileRoot, w.userAuthored).then(w.finish);
+        void renderToHtmlAsync(w.source, w.fileRoot, w.trustedPaths).then(w.finish);
     };
   } catch {
     workerBroken = true;
@@ -289,9 +300,9 @@ function parseLarge(
   source: string,
   priority: number,
   fileRoot?: string,
-  userAuthored?: boolean,
+  trustedPaths?: readonly string[],
 ): Promise<string> {
-  const key = keyOf(source, fileRoot, userAuthored);
+  const key = keyOf(source, fileRoot, trustedPaths);
   const hit = cacheGet(key);
   if (hit !== undefined) return Promise.resolve(hit);
   const existing = pending.get(key);
@@ -320,7 +331,7 @@ function parseLarge(
         source: key,
         priority,
         dispatch: () => {
-          waiters.set(id, { source, fileRoot, userAuthored, finish });
+          waiters.set(id, { source, fileRoot, trustedPaths, finish });
           // Watchdog: if the worker never answers, fall back to a main-thread
           // parse so the message still renders instead of hanging blank. Only
           // a worker that has NEVER answered is presumed dead — a slow parse
@@ -329,10 +340,10 @@ function parseLarge(
           window.setTimeout(() => {
             if (!settled) {
               if (!workerEverAnswered) workerBroken = true;
-              void renderToHtmlAsync(source, fileRoot, userAuthored).then(finish);
+              void renderToHtmlAsync(source, fileRoot, trustedPaths).then(finish);
             }
           }, 3000);
-          w.postMessage({ id, source, fileRoot, userAuthored });
+          w.postMessage({ id, source, fileRoot, trustedPaths });
         },
       });
       pump();
@@ -353,7 +364,7 @@ function parseLarge(
           schedule();
           return;
         }
-        void renderToHtmlAsync(source, fileRoot, userAuthored).then(resolve);
+        void renderToHtmlAsync(source, fileRoot, trustedPaths).then(resolve);
       }
       schedule();
     });
@@ -489,11 +500,13 @@ interface CachedMarkdownProps {
    */
   fileRoot?: string;
   /**
-   * The user wrote this (a sent message): an absolute `@file` mention outside
-   * the project opens too. An agent's reply leaves it unset, so only paths in
-   * the project are clickable there. Part of the cache key.
+   * The absolute paths outside the project the composer itself attached to
+   * this message (`ChatMessage.trustedMentionPaths`): an `@file` mention of
+   * one of them opens. Anything else — an agent's reply, replayed history, a
+   * handoff prompt quoting text from a pull request — leaves it unset, so only
+   * paths in the project are clickable there. Part of the cache key.
    */
-  userAuthored?: boolean;
+  trustedPaths?: readonly string[];
 }
 
 /**
@@ -509,9 +522,9 @@ export function CachedMarkdown({
   unstyled,
   priority = 0,
   fileRoot,
-  userAuthored,
+  trustedPaths,
 }: CachedMarkdownProps) {
-  const key = keyOf(source, fileRoot, userAuthored);
+  const key = keyOf(source, fileRoot, trustedPaths);
   const [html, setHtml] = useState<string | null>(() => {
     const hit = cacheGet(key);
     if (hit !== undefined) return hit;
@@ -526,7 +539,7 @@ export function CachedMarkdown({
     // past (black viewport). Cache hits above still render instantly; a
     // fresh block shows its raw-text placeholder and formats on settle.
     if (source.length <= SYNC_LIMIT && !isScrollHot()) {
-      return renderToHtmlSyncIfReady(source, fileRoot, userAuthored);
+      return renderToHtmlSyncIfReady(source, fileRoot, trustedPaths);
     }
     return null;
   });
@@ -539,7 +552,7 @@ export function CachedMarkdown({
       return;
     }
     if (source.length <= SYNC_LIMIT && !isScrollHot()) {
-      const fresh = renderToHtmlSyncIfReady(source, fileRoot, userAuthored);
+      const fresh = renderToHtmlSyncIfReady(source, fileRoot, trustedPaths);
       if (fresh !== null) {
         if (fresh !== html) setHtml(fresh);
         return;
@@ -549,14 +562,14 @@ export function CachedMarkdown({
     // Large block (or a small one before the renderer lands) → parse off the
     // main thread, then swap in the HTML.
     let cancelled = false;
-    void parseLarge(source, priority, fileRoot, userAuthored).then((result) => {
+    void parseLarge(source, priority, fileRoot, trustedPaths).then((result) => {
       if (!cancelled) setHtml(result);
     });
     return () => {
       cancelled = true;
     };
     // `html` intentionally omitted: re-running on our own setHtml would loop.
-    // `key` covers `source`, `fileRoot` and `userAuthored`.
+    // `key` covers `source`, `fileRoot` and `trustedPaths`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, priority]);
 

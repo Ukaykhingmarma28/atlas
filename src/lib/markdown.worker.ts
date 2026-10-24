@@ -2,10 +2,10 @@
 // off the main thread so a large, code-heavy chat answer never blocks the
 // chat composer's keystrokes (the parse is a long synchronous task — see
 // `feedback-chat-input-idle-lag`). The main thread posts
-// `{ id, source, fileRoot?, userAuthored? }` and gets back `{ id, html }`;
+// `{ id, source, fileRoot?, trustedPaths? }` and gets back `{ id, html }`;
 // correlation + caching live in `markdown-cache.tsx`. `fileRoot` is the
-// session's project root, which turns file paths into chips, and `userAuthored`
-// marks a sent message (`markdown-render.ts`).
+// session's project root, which turns file paths into chips, and `trustedPaths`
+// the outside paths the composer itself attached (`markdown-render.ts`).
 //
 // `self` is typed manually rather than via the `webworker` lib to avoid
 // conflicting with the DOM lib in the project's single tsconfig.
@@ -16,7 +16,7 @@ interface ParseRequest {
   id: number;
   source: string;
   fileRoot?: string;
-  userAuthored?: boolean;
+  trustedPaths?: readonly string[];
 }
 interface ParseResponse {
   id: number;
@@ -29,6 +29,6 @@ const ctx = self as unknown as {
 };
 
 ctx.onmessage = (e) => {
-  const { id, source, fileRoot, userAuthored } = e.data;
-  ctx.postMessage({ id, html: parseMarkdown(source, fileRoot, { userAuthored }) });
+  const { id, source, fileRoot, trustedPaths } = e.data;
+  ctx.postMessage({ id, html: parseMarkdown(source, fileRoot, { trustedPaths }) });
 };

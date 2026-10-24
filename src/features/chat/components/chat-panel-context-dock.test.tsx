@@ -3,9 +3,12 @@
 // The session context card docks beside the transcript on a wide panel, and
 // showing or hiding it must not move the transcript column or the composer.
 // The room is reserved from the panel's width, open or closed, and the card is
-// an absolute layer drawn into it. This renders the real panel and compares
-// every box the column is laid out from — the row it is centred in, the column
-// itself, the composer stack — with the card closed, open, and closed again.
+// an absolute layer drawn into it. This renders the real panel with the app's
+// column width (`--atlas-chat-column: 760px`) at a spread of panel widths —
+// one too narrow to dock (popover), one where the column narrows, one where it
+// slides left, one where it stays centred — and compares every box the column
+// is laid out from (the row it is centred in, the column itself, the composer
+// stack) with the card closed, open, and closed again.
 //
 // The panel's children are stubbed: what is under test is the frame.
 
@@ -36,17 +39,24 @@ vi.mock("@/features/session-context/components/session-context-popover", () => (
 
 import { act, cleanup, render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { resolveContextDock } from "@/features/session-context/lib/context-dock";
+import {
+  CONTEXT_CARD_CLEARANCE,
+  CONTEXT_CARD_GAP,
+  CONTEXT_CARD_WIDTH,
+  resolveContextDock,
+} from "@/features/session-context/lib/context-dock";
 import { useSessionContextStore } from "@/features/session-context/stores/session-context-store";
 import { useChatStore } from "../stores/chat-store";
 import { overviewScope, useThreadOverviewStore } from "../stores/thread-overview-store";
 import { ChatPanel } from "./chat-panel";
 
 const TAB = "tab-1";
-const WIDTH = 1000;
+const COLUMN = 760;
+let WIDTH = 1000;
 
 beforeEach(() => {
   localStorage.clear();
+  WIDTH = 1000;
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -77,6 +87,7 @@ beforeEach(() => {
   useSessionContextStore.setState({ openFor: null, dockable: {}, dockOpen: {}, view: "main" });
 });
 afterEach(() => {
+  document.documentElement.style.removeProperty("--atlas-chat-column");
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -107,7 +118,83 @@ function frame(root: HTMLElement) {
 
 const card = (root: HTMLElement) => root.querySelector("[data-session-context-dock]");
 
+/** A `padding-*` / `margin-*` px value out of an inline style, 0 when unset. */
+function px(style: string | null, prop: string): number {
+  const match = new RegExp(`${prop}:\\s*(-?\\d+(?:\\.\\d+)?)px`).exec(style ?? "");
+  return match ? Number(match[1]) : 0;
+}
+
+/** Where the column lands in a panel `width` wide: centred, at most `COLUMN`
+ *  wide, in the row less its padding — as the browser lays it out. */
+function columnBox(width: number, rowStyle: string | null) {
+  const left = px(rowStyle, "padding-left");
+  const right = px(rowStyle, "padding-right");
+  const box = width - left - right;
+  const column = Math.min(COLUMN, box);
+  const start = left + (box - column) / 2;
+  return { left: start, right: start + column, column };
+}
+
 describe("the docked session context card in the chat panel", () => {
+  it("never moves the column at any width, whether it docks, narrows, slides or stays centred", () => {
+    document.documentElement.style.setProperty("--atlas-chat-column", `${COLUMN}px`);
+    // happy-dom does not inherit custom properties into computed style, so
+    // the panel's read of the variable is answered as a browser would.
+    const real = window.getComputedStyle.bind(window);
+    vi.spyOn(window, "getComputedStyle").mockImplementation((el, pseudo) => {
+      const style = real(el, pseudo);
+      const get = style.getPropertyValue.bind(style);
+      style.getPropertyValue = (prop: string) =>
+        prop === "--atlas-chat-column"
+          ? document.documentElement.style.getPropertyValue(prop)
+          : get(prop);
+      return style;
+    });
+    const branches = new Set<string>();
+    for (const width of [900, 1100, 1200, 1440]) {
+      WIDTH = width;
+      useSessionContextStore.setState({ openFor: null, dockable: {}, dockOpen: {}, view: "main" });
+      const { container, unmount } = mount();
+      const expected = resolveContextDock(width, COLUMN);
+      const docked = useSessionContextStore.getState().dockable[TAB] === true;
+      expect(docked, `docked at ${width}`).toBe(expected.docked);
+      branches.add(
+        !expected.docked
+          ? "popover"
+          : expected.inset > 0
+            ? "narrowed"
+            : expected.reserve > 0
+              ? "slid"
+              : "centred",
+      );
+
+      const closed = frame(container);
+      // Reserved from the width alone, before any card exists.
+      expect(px(closed.row.style, "padding-right"), `reserve at ${width}`).toBe(expected.reserve);
+      expect(px(closed.row.style, "padding-left"), `inset at ${width}`).toBe(expected.inset);
+      expect(px(closed.composer.style, "margin-right")).toBe(expected.reserve);
+      const before = columnBox(width, closed.row.style);
+      if (expected.docked) {
+        // The column ends clear of where the card will be drawn.
+        expect(before.right).toBeLessThanOrEqual(
+          width - CONTEXT_CARD_GAP - CONTEXT_CARD_WIDTH - CONTEXT_CARD_CLEARANCE,
+        );
+      }
+
+      act(() => useSessionContextStore.getState().actions.toggle(TAB));
+      expect(card(container) !== null, `card at ${width}`).toBe(expected.docked);
+      expect(frame(container), `open at ${width}`).toEqual(closed);
+      expect(columnBox(width, frame(container).row.style)).toEqual(before);
+
+      act(() => useSessionContextStore.getState().actions.toggle(TAB));
+      expect(card(container)).toBeNull();
+      expect(frame(container), `closed again at ${width}`).toEqual(closed);
+      unmount();
+    }
+    // Every branch of the reservation was laid out, not just the easy one.
+    expect([...branches].sort()).toEqual(["centred", "narrowed", "popover", "slid"]);
+  });
+
   it("never moves the transcript column or the composer when toggled", () => {
     const { container } = mount();
     const { reserve } = resolveContextDock(WIDTH, Number.POSITIVE_INFINITY);

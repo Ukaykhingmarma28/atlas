@@ -105,3 +105,27 @@ describe("WorkspaceSection", () => {
     expect(screen.getAllByRole("separator").length).toBeGreaterThan(0);
   });
 });
+
+describe("WorkspaceSection in a worktree session", () => {
+  const WORKTREE = "/Users/me/Library/Application Support/atlas/worktrees/acme-pr-42";
+
+  it("opens the session's worktree, not the project's checkout", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <WorkspaceSection projectPath="/work/acme" workPath={WORKTREE} />
+      </QueryClientProvider>,
+    );
+    await settle();
+    fireEvent.click(screen.getByText("Open in Cursor"));
+    await settle();
+    expect(invoke).toHaveBeenCalledWith("external_editor_open", {
+      editor: "cursor",
+      path: WORKTREE,
+      line: null,
+      column: null,
+    });
+    // The scripts still come from the project.
+    expect(invoke).toHaveBeenCalledWith("project_scripts_list", { projectPath: "/work/acme" });
+  });
+});

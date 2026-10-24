@@ -18,6 +18,7 @@ import { UsagePopup } from "@/features/chat/components/usage-popup";
 import { useSessionUsage } from "@/features/chat/lib/use-session-usage";
 import { useChatStore } from "@/features/chat/stores/chat-store";
 
+import { useSessionWorkPath } from "../lib/session-work-path";
 import type { CaptureState } from "../lib/use-capture-state";
 import { useSessionContextStore } from "../stores/session-context-store";
 import { LineageSection } from "./lineage-section";
@@ -62,18 +63,29 @@ export function SessionContextBody({ tabId, projectPath, capture }: SessionConte
 
 function MainView({ tabId, projectPath, capture }: SessionContextBodyProps) {
   const isChat = useChatStore((s) => (tabId ? !!s.sessions[tabId] : false));
+  // A pull request session works in a worktree, not the project's checkout:
+  // the rows that act on files act there.
+  const workPath = useSessionWorkPath(tabId, projectPath) ?? projectPath;
   if (!projectPath && !isChat) {
     return <p className="px-4 py-3 text-xs text-muted-foreground">No project or session here.</p>;
   }
   return (
     <div className="flex flex-col">
-      {projectPath && <WorkspaceSection projectPath={projectPath} />}
+      {projectPath && (
+        <WorkspaceSection projectPath={projectPath} workPath={workPath ?? projectPath} />
+      )}
       {/* Between where the session runs and its version control: the
           folders it works in. */}
       {projectPath && isChat && tabId && (
         <ProjectsSection tabId={tabId} projectPath={projectPath} />
       )}
-      {projectPath && <VersionControlSection tabId={tabId} projectPath={projectPath} />}
+      {projectPath && (
+        <VersionControlSection
+          tabId={tabId}
+          projectPath={projectPath}
+          workPath={workPath ?? projectPath}
+        />
+      )}
       <SessionSection tabId={tabId} capture={capture} projectPath={projectPath} />
       {isChat && tabId && <LineageSection tabId={tabId} projectPath={projectPath} />}
     </div>

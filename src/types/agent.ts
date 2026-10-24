@@ -450,6 +450,12 @@ export interface ChatMessage {
   /** Set when `timestamp` is only when Atlas replayed the message, not when it
    *  was said (wire `timestamp_approximate`). The footer shows no clock then. */
   timestampApproximate?: boolean;
+  /** The absolute `@file:`/`@folder:` values the composer serialised from
+   *  files the user picked for this message. Only these may open outside the
+   *  project when clicked (`markdown-render.ts` `trustedPaths`); a user row
+   *  without them — replayed history, a handoff prompt quoting text from a
+   *  pull request — opens project paths only. Optimistic echo only. */
+  trustedMentionPaths?: string[];
   /**
    * Discriminator for ACP-driven assistant messages. Splits one logical "turn"
    * into a sequence of single-purpose messages so they render in event order

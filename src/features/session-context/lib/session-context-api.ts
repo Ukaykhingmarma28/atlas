@@ -28,14 +28,28 @@ export interface ProjectScript {
   name: string;
   command: string;
   icon: ProjectScriptIcon;
+  /** This exact command has been approved to run on one click (Rust answers;
+   *  ignored on a save). A script from the repository that nobody approved
+   *  here asks first, showing its whole command. */
+  approved?: boolean;
 }
 
 export function listProjectScripts(projectPath: string): Promise<ProjectScript[]> {
   return invoke<ProjectScript[]>("project_scripts_list", { projectPath });
 }
 
+/** Record that the user approved `command` for the script `id`, having been
+ *  shown it. A later change to the command asks again. */
+export function approveProjectScript(
+  projectPath: string,
+  id: string,
+  command: string,
+): Promise<void> {
+  return invoke<void>("project_scripts_approve", { projectPath, id, command });
+}
+
 /** Replace the project's scripts; answers what was written (trimmed, ids
- *  made unique). */
+ *  made unique). Scripts the save brought in come back approved. */
 export function saveProjectScripts(
   projectPath: string,
   scripts: ProjectScript[],
