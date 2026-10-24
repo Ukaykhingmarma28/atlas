@@ -111,6 +111,10 @@ const SCROLL_BOTTOM = 1 << 30;
  *  too, or the first message renders permanently blurred. */
 const TOP_BLUR_RAMP = 34;
 
+/** Without a header over it (the session's own view: its controls are in the
+ *  title bar), only a short soft edge where rows scroll out under the bar. */
+const TOP_EDGE_RAMP = 16;
+
 /** Gap left above an anchored row, so it doesn't sit flush against the top. */
 const ANCHOR_GAP = 24;
 /** The ring a comment jump leaves on the row it landed on, and for how long.
@@ -151,8 +155,10 @@ interface TranscriptProps {
    *  the work header must not read it as the turn being over and fold it. */
   turnInProgress?: boolean;
   agentType?: string;
-  /** Vertical space (px) reserved at the top for the floating header, applied as
-   *  content padding so the first row clears it while still scrolling under. */
+  /** Vertical space (px) reserved at the top for a header floating over the
+   *  transcript, applied as content padding so the first row clears it while
+   *  still scrolling under. `0` (the session view) is no header: just a soft
+   *  top edge. */
   topInset?: number;
   onShowJumpChange?: (visible: boolean, newCount?: number) => void;
   /** What the working indicator says while the session is still binding and
@@ -1046,7 +1052,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
         <div
           ref={contentRef}
           style={{
-            paddingTop: topInset ? topInset + TOP_BLUR_RAMP + 12 : undefined,
+            paddingTop: topInset ? topInset + TOP_BLUR_RAMP + 12 : TOP_EDGE_RAMP + 4,
             paddingBottom: BOTTOM_GAP,
           }}
         >
@@ -1089,7 +1095,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
             plus a short ramp below it. */}
       <GradualBlur
         position="top"
-        height={`${topInset + TOP_BLUR_RAMP}px`}
+        height={`${topInset ? topInset + TOP_BLUR_RAMP : TOP_EDGE_RAMP}px`}
         strength={2.1}
         layers={5}
         // Mostly-opaque behind the bar itself, ramping to clear below it.

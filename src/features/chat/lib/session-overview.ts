@@ -1,4 +1,4 @@
-// Derivations for the thread overview rail.
+// Derivations for the session overview card.
 //
 // Pure, and over the chat store's own data — the rail asks the same thread the
 // transcript does, from a different angle. Nothing here fetches, and nothing

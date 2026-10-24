@@ -7,7 +7,7 @@ import {
   hasChanges,
   mergeChanges,
   tallyChanges,
-} from "./thread-overview";
+} from "./session-overview";
 import type { SessionFile } from "./session-files";
 import type { ChatMessage, TurnFile } from "@/types/agent";
 

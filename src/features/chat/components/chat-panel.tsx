@@ -1,16 +1,17 @@
 import { lazy, Suspense, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   clearAgentQuestion,
   notifyAgentSignInRequired,
 } from "@/features/notifications/lib/agent-notifier";
 import { copyText } from "@/lib/clipboard";
 import { matchesAction } from "@/features/keybindings/lib/use-scoped-hotkeys";
-import { UNTITLED_SESSION, useChatStore } from "../stores/chat-store";
+import { useChatStore } from "../stores/chat-store";
 import { pinScope, resolvePinIndex, type ChatPin } from "../stores/chat-pins-store";
 import { useDetailPanelStore } from "../stores/detail-panel-store";
-import { overviewScope, useThreadOverviewStore } from "../stores/thread-overview-store";
+import { overviewScope, useSessionOverviewStore } from "../stores/session-overview-store";
+import { useSessionHeaderSlot } from "../stores/session-header-slot-store";
 import { appendNextStepsDirective } from "../lib/next-steps";
-import { stripInjectedContext } from "../lib/atlas-context";
 import { agents, ensureAgent, resetAgent } from "../lib/agents-api";
 import { isDeadlineError, progressSince, withDeadline } from "../lib/with-deadline";
 import { drainEdge } from "../lib/drain-gate";
@@ -108,16 +109,14 @@ import { withCitesInline } from "../lib/cited-text";
 import { usePaneFind } from "../lib/use-pane-find";
 import { MessageInput } from "./message-input";
 import { AgentUpdateBar } from "./agent-update-bar";
-import { ChatHeader } from "./chat-header";
-import { useProjectStore } from "@/features/projects/stores/project-store";
-import { findSession } from "@/features/sidebar/lib/find-session";
-import { openNewAgentChat } from "../lib/open-agent-session";
+import { SessionHeaderControls } from "./session-header";
+import { SessionDockLane } from "./session-dock-lane";
 import { forkSessionToNewTab } from "../lib/fork-session";
 import { projectPathForTab } from "../lib/tab-project";
 import { MemoryUpdatedCard } from "@/features/memory/components/memory-updated-card";
 import { OPEN_TURN_DIFF_EVENT, type TurnDiffRequest } from "../lib/open-turn-diff";
 import { showTurnDiff } from "../lib/show-turn-diff";
-import { CONTENT_COLUMN, HEADER_INSET } from "../lib/row-metrics";
+import { CONTENT_COLUMN } from "../lib/row-metrics";
 
 /** When this app run first saw each bound session (ms). The "Memory updated"
  *  card lists only what the session wrote since then, so a session resumed
@@ -159,9 +158,6 @@ import { requestModelPicker } from "../lib/model-picker-events";
 // Diffs + tool output live here rather than inline in the thread — see the
 // module header for why that's a perf decision as much as a UX one.
 const DetailPanel = lazy(() => import("./detail-panel").then((m) => ({ default: m.DetailPanel })));
-const ThreadOverviewPanel = lazy(() =>
-  import("./thread-overview-panel").then((m) => ({ default: m.ThreadOverviewPanel })),
-);
 import { Sparkles, Search, ChevronDown, ArrowRight, GitCompare, FlaskConical } from "lucide-react";
 import { AtlasIcon } from "@/components/atlas-icon";
 import { DitherField } from "@/ui/dither-field";
@@ -169,10 +165,7 @@ import { PanelSkeleton } from "@/components/panel-skeleton";
 import { logEvent } from "@/features/log/lib/log";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/features/app/stores/app-store";
-import {
-  DockedSessionContext,
-  useContextDock,
-} from "@/features/session-context/components/session-context-dock";
+import { useContextDock } from "@/features/session-context/components/session-context-dock";
 import { loadCachedAcpModels } from "../lib/acp-models-cache";
 import { resolveEffectiveMode, applyModeOnResume, holdUnrestoredMode } from "../lib/resume-mode";
 import { snapshotMessageToWire } from "../lib/snapshot-message";
@@ -312,27 +305,19 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   const [plansPanelOpen, setPlansPanelOpen] = useState(false);
   // Narrow boolean — changes only when the detail panel opens or closes.
   const detailOpen = useDetailPanelStore((s) => !!s.targets[tabId]);
-  // Same bargain for the overview rail: one boolean, so a section collapsing
-  // or a child updating inside it re-renders nothing out here. Keyed by the
-  // THREAD, not the tab: "new agent" and history both reuse this tab, and a
-  // tab-keyed rail followed the user into every thread it showed.
+  // The session overview's key. This panel reads no overview state at all:
+  // the title-bar button and the dock lane subscribe for themselves, so a
+  // toggle re-renders them and never this panel or the transcript. Keyed by
+  // the SESSION, not the tab: "new agent" and history both reuse this tab,
+  // and a tab-keyed card followed the user into every session it showed.
   const overviewKey = overviewScope(tabId, session?.acpSessionId);
-  const overviewOpen = useThreadOverviewStore((s) => !!s.open[overviewKey]);
-  // Only read while the rail is open, so a resize drag re-renders this panel
-  // only when there is something to re-align.
-  const overviewWidth = useThreadOverviewStore((s) => (s.open[overviewKey] ? s.width : 0));
-  // The app sidebar holds every session; the header's left button shows or
-  // hides it, and its title opens it with the search focused.
-  const appSidebarOpen = useProjectStore.use.sidebarOpen();
-  const { toggleSidebar: toggleAppSidebar } = useProjectStore.use.actions();
-  const { toggle: toggleOverview, adopt: adoptOverview } = useThreadOverviewStore.use.actions();
-  const onToggleOverviewStable = useCallback(
-    () => toggleOverview(overviewKey),
-    [toggleOverview, overviewKey],
-  );
-  // A rail opened on a queued first send, before the thread bound, belongs
+  const { adopt: adoptOverview } = useSessionOverviewStore.use.actions();
+  // The title-bar slot this session's controls portal into, while its column
+  // shows it (`session-header-slot-store.ts`).
+  const headerSlot = useSessionHeaderSlot(tabId);
+  // A card opened on a queued first send, before the session bound, belongs
   // to the session that bind produced — and must not be left on the tab
-  // scope, where the tab's next thread would inherit it.
+  // scope, where the tab's next session would inherit it.
   useEffect(() => {
     if (session?.acpSessionId) adoptOverview(overviewScope(tabId, undefined), overviewKey);
   }, [adoptOverview, tabId, session?.acpSessionId, overviewKey]);
@@ -374,17 +359,16 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   const [searchPaletteOpen, setSearchPaletteOpen] = usePaneFind(tabId);
   const rootRef = useRef<HTMLDivElement>(null);
   // The session context card docks at this column's top-right when the panel
-  // is wide enough (`session-context-dock.tsx`). The room it needs is reserved
-  // from the panel's width alone, open or not, so toggling the card never
-  // moves the transcript or the composer. Off while the overview rail holds
-  // the right side, and on an empty session, which has no column to clear:
-  // the card is the header button's popover there.
+  // is wide enough (`session-context-dock.tsx`), and so does the session
+  // overview card. The room they need is reserved from the panel's width
+  // alone, open or not, so toggling either card never moves the transcript
+  // or the composer. Off on an empty session, which has no column to clear:
+  // both cards are their buttons' popovers there.
   const conversationRef = useRef<HTMLDivElement>(null);
-  const contextDock = useContextDock(
-    tabId,
-    conversationRef,
-    !overviewOpen && (session?.messages.length ?? 0) > 0,
-  );
+  const contextDock = useContextDock(tabId, conversationRef, (session?.messages.length ?? 0) > 0);
+  // The transcript's box, under the title bar and down to the composer: the
+  // overview popover is capped at its height.
+  const stageRef = useRef<HTMLDivElement>(null);
 
   // Scroll-to-bottom state is owned here so the floating button can live
   // next to the Claude-setup pill above the input (instead of inside
@@ -405,18 +389,6 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   // pre-filtered list keeps that pass single-purpose. Identity is preserved in
   // the (overwhelmingly common) "all" case so the projection memo isn't
   // invalidated on every render.
-  // Header label. Prefer the session's own title; fall back to the first user
-  // message (what the history list shows) so a chat that hasn't been titled yet
-  // still reads as itself rather than "New session".
-  const headerTitle = useMemo(() => {
-    const t = stripInjectedContext(session?.title ?? "").trim();
-    if (t && t !== UNTITLED_SESSION) return t;
-    const first = stripInjectedContext(session?.firstUserContent ?? "")
-      .replace(/\s+/g, " ")
-      .trim();
-    return first.slice(0, 60) || UNTITLED_SESSION;
-  }, [session?.title, session?.firstUserContent]);
-
   const filteredMessages = useMemo(
     () =>
       roleFilter === "all"
@@ -1116,7 +1088,6 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     setPlansPanelOpen((v) => !v);
     setBashPanelOpen(false);
   }, []);
-  const onNewSessionStable = useCallback(() => openNewAgentChat(), []);
   useEffect(() => {
     const cur = session?.status ?? "idle";
     const prev = prevStatusRef.current;
@@ -1576,27 +1547,35 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
         data-chat-drop-zone
         className="relative flex-1 flex flex-col min-w-0"
       >
-        {/* The header FLOATS over the transcript rather than sitting above it in
-            the column. That is what lets the thread scroll underneath and be
-            progressively blurred by the band the transcript draws at its top
-            edge — a `backdrop-filter` can only blur what is painted behind it,
-            and a header that owns its own row has nothing behind it but the
-            panel background. The transcript reserves `HEADER_INSET` of top
-            padding so the first row still starts below the bar. */}
+        {/* The session's controls live in the window's title bar, beside the
+            breadcrumb that names it; there is no header row in here, so the
+            transcript starts right under the bar. */}
+        {headerSlot &&
+          createPortal(
+            <SessionHeaderControls
+              tabId={tabId}
+              overviewKey={overviewKey}
+              docked={contextDock.docked}
+              stageRef={stageRef}
+              onOpenSearch={onOpenSearchStable}
+              roleFilter={roleFilter}
+              onRoleFilterChange={setRoleFilter}
+              pinScopeKey={pinScopeKey}
+              onJumpToPin={onJumpToPinStable}
+              bashPanelOpen={bashPanelOpen}
+              onToggleBash={onToggleBashStable}
+              plansPanelOpen={plansPanelOpen}
+              onTogglePlans={onTogglePlansStable}
+              onForkSession={canFork ? onForkSessionStable : undefined}
+            />,
+            headerSlot,
+          )}
         {session.messages.length === 0 ? (
-          <div className="flex-1 overflow-y-auto">
+          <div ref={stageRef} className="flex-1 overflow-y-auto">
             {session.transcriptLoading ? <LoadingTranscriptState /> : <WelcomeState />}
           </div>
         ) : (
-          <div className="relative flex-1 min-h-0 flex flex-col">
-            {/* Transcript and overview rail share one row, INSIDE the
-                  conversation column. That placement is the whole point: the
-                  header floats across this column, so its right-hand icons
-                  land directly above the rail — the cards read as what those
-                  buttons opened, the way Claude Desktop's do. A rail outside
-                  this column sat a third of the window away from the button
-                  that opened it, with the transcript still centred in the
-                  space between. */}
+          <div ref={stageRef} className="relative flex-1 min-h-0 flex flex-col">
             <div
               data-chat-row
               className="relative flex min-h-0 flex-1 justify-center"
@@ -1612,14 +1591,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
               }
             >
               {/* Capped at the transcript's own column width, so the thread
-                    and the rail read as one composition centred in whatever
-                    space there is. Left to `flex-1` the transcript took the
-                    whole remainder and centred its 760px column inside it,
-                    which opened a gutter between the last word and the first
-                    card — the rail looked parked at the far edge rather than
-                    attached to the thread it describes. Unchanged when the
-                    rail is closed: 760 is what `Column` was already giving
-                    the rows. */}
+                    reads as one column centred in whatever space there is. */}
               <div
                 data-chat-column
                 className="relative flex min-h-0 w-full min-w-0 max-w-(--atlas-chat-column) flex-1 flex-col"
@@ -1633,7 +1605,6 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
                     isStreaming={session.status === "running"}
                     turnInProgress={isBusyAgentStatus(session.status)}
                     agentType={session.agentType}
-                    topInset={HEADER_INSET}
                     onShowJumpChange={onShowJumpChange}
                     workingLabel={
                       session.pendingSend
@@ -1654,82 +1625,33 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
                   />
                 </Suspense>
               </div>
-              {/* Reserves its own width — the conversation narrows beside it
-                    rather than being covered, so nothing the reader is
-                    following disappears under the thing describing it. */}
-              {overviewOpen && (
-                <Suspense fallback={null}>
-                  <ThreadOverviewPanel
-                    tabId={tabId}
-                    title={headerTitle}
-                    onOpenSearch={onOpenSearchStable}
-                  />
-                </Suspense>
-              )}
             </div>
-            <div className="absolute inset-x-0 top-0 z-20">
-              <ChatHeader
-                title={headerTitle}
-                roleFilter={roleFilter}
-                onRoleFilterChange={setRoleFilter}
-                pinScopeKey={pinScopeKey}
-                onJumpToPin={onJumpToPinStable}
-                bashPanelOpen={bashPanelOpen}
-                onToggleBash={onToggleBashStable}
-                plansPanelOpen={plansPanelOpen}
-                onTogglePlans={onTogglePlansStable}
-                overviewOpen={overviewOpen}
-                onToggleOverview={onToggleOverviewStable}
-                sidebarOpen={appSidebarOpen}
-                onToggleSidebar={toggleAppSidebar}
-                onFindSession={findSession}
-                // Zero-arg wrapper, NOT a bare reference: React would call
-                // openNewAgentChat(SyntheticMouseEvent) and the event object
-                // sailed through `agent?` into the store as agentType —
-                // poisoning the bind ("JSON.stringify cannot serialize cyclic
-                // structures" from agents_spawn) and killing the composer.
-                onNewSession={onNewSessionStable}
-                onForkSession={canFork ? onForkSessionStable : undefined}
-              />
-            </div>
-            <DockedSessionContext tabId={tabId} docked={contextDock.docked} />
+            {/* The docked cards: an absolute layer over the transcript's
+                top-right, in room the row above already leaves. */}
+            <SessionDockLane
+              tabId={tabId}
+              overviewKey={overviewKey}
+              docked={contextDock.docked}
+              onOpenSearch={onOpenSearchStable}
+            />
           </div>
         )}
 
         <div
           data-chat-composer-stack
           className="relative"
-          // The composer stack has to sit under the THREAD, not under the
-          // thread-plus-rail. The transcript row centres a 760px column and
-          // the rail as one group, which puts the column's centre half a
-          // rail to the left of this element's own centre — so a composer
-          // left to centre itself drifted right of the conversation it
-          // belongs to. Reserving the rail's width here makes the two
-          // centres the same number. Capped the way the rail is
-          // (`max-w-[50%]`, of this same column): reserving the stored width
-          // once the rail had hit its cap starved the composer of the
-          // difference — at a 900px window, a third of the thread's width.
+          // The docked cards' room, reserved the way the row above reserves
+          // it, so the composer stays centred under the column. From the
+          // panel's width alone: opening or closing a card never moves it.
           //
           // A MARGIN, not padding: the pill below is `absolute inset-x-0`
-          // against this element, and an absolute child is laid out
-          // against the padding box, so under padding it still spanned the
-          // full width and centred half a rail right of the composer. A
-          // margin shrinks the box itself, which every child honours.
-          //
-          // Only while the rail is DRAWN, which needs a thread. The rail is
-          // keyed per thread, but an unbound thread is keyed by its tab, so
-          // an empty welcome screen can still read an open flag; reserving
-          // then pushed that composer half a rail left of everything else.
-          //
-          // The docked session context card's reservation is the same bargain,
-          // so the composer stays under the column the row centres. The two
-          // never stack: the card does not dock while the rail is open.
+          // against this element, and an absolute child is laid out against
+          // the padding box, so under padding it would still span the full
+          // width. A margin shrinks the box itself, which every child honours.
           style={
-            overviewWidth > 0 && session.messages.length > 0
-              ? { marginRight: `min(${overviewWidth}px, 50%)` }
-              : contextDock.docked
-                ? { marginLeft: contextDock.inset, marginRight: contextDock.reserve }
-                : undefined
+            contextDock.docked
+              ? { marginLeft: contextDock.inset, marginRight: contextDock.reserve }
+              : undefined
           }
         >
           {/* Anchored to this whole stack, not to the composer: the card below

@@ -15,7 +15,7 @@ import { useMemo } from "react";
 import { useSessionRoots } from "@/features/chat/hooks/use-session-roots";
 import { useSessionFiles } from "@/features/chat/lib/session-files";
 import { groupByRoot } from "@/features/chat/lib/session-roots";
-import { mergeChanges, tallyChanges, type ChangeRow } from "@/features/chat/lib/thread-overview";
+import { mergeChanges, tallyChanges, type ChangeRow } from "@/features/chat/lib/session-overview";
 import { useChatStore } from "@/features/chat/stores/chat-store";
 
 /** One root's share of the session's changes. */

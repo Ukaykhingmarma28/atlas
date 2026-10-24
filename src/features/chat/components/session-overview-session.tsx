@@ -1,10 +1,11 @@
 /**
- * The body of the overview's Session card (the panel's `Section` frames it,
- * titled with the thread): where this thread's project lives, and the
- * session's own actions — comments, share, open in the Timeline, find.
+ * The body of the session overview's Session card (the panel's `Section`
+ * frames it): where this session's project lives, and the session's own
+ * actions — comments, share, open in the Timeline, find. The card never
+ * repeats the session's name; the title bar shows it.
  *
  * Comments and Share are the Timeline reader's own morphs, not copies. They
- * grow out of a round button IN PLACE, which the rail cannot host: it scrolls,
+ * grow out of a round button IN PLACE, which the card cannot host: it scrolls,
  * and a box growing inside it would be clipped by it. So a click pins the morph
  * over the button in a portal, closed, and opens it the next frame — the same
  * growth, out of the same circle, down and to the left. Closing shrinks it back
@@ -61,10 +62,14 @@ export function SessionBody({
   tabId,
   projectPath,
   onOpenSearch,
+  showProject = true,
 }: {
   tabId: string;
   projectPath: string | null;
   onOpenSearch?: () => void;
+  /** The project rows. Dropped when the card is short of height (its
+   *  `compact` density), which keeps the actions. */
+  showProject?: boolean;
 }) {
   const target = useChatCommentsStore((s) => s.byTab[tabId]?.target ?? null);
   const commentCount = useCommentCount(tabId);
@@ -120,12 +125,16 @@ export function SessionBody({
   // act on ("Session") on the left, every action together on the right.
   return (
     <>
-      <div className="space-y-1.5 px-2 pt-0.5">
-        <ProjectFacts projectPath={projectPath} />
-      </div>
+      {showProject && (
+        <div className="space-y-1.5 px-2 pt-0.5">
+          <ProjectFacts projectPath={projectPath} />
+        </div>
+      )}
 
       <HintGroup>
-        <div className="flex items-center gap-1.5 px-2 pt-2.5 pb-0.5">
+        <div
+          className={cn("flex items-center gap-1.5 px-2 pb-0.5", showProject ? "pt-2.5" : "pt-0.5")}
+        >
           <span className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
             <MessageCircleDashedCheck size={12} className="shrink-0" aria-hidden />
             <span className="truncate">Session</span>
@@ -165,6 +174,7 @@ export function SessionBody({
           // Pinned by its top-right corner to the button's, so the box grows
           // down and to the left — into the conversation, not off the window.
           <div
+            data-session-overview-portal
             className="fixed z-popover"
             style={
               {
@@ -202,7 +212,7 @@ export function SessionBody({
   );
 }
 
-/** The rail's outlined circle — the project sidebar's help button, sized to
+/** The card's outlined circle — the project sidebar's help button, sized to
  *  the 12px header text it sits beside. */
 function RoundButton({
   icon: Icon,
@@ -259,7 +269,7 @@ function RoundButton({
   );
 }
 
-/** The project this thread runs in — the capture card's "This project" rows,
+/** The project this session runs in — the capture card's "This project" rows,
  *  plus where it is shared. */
 function ProjectFacts({ projectPath }: { projectPath: string | null }) {
   // Cached project-wide (`project-facts.ts`): this body remounts on every

@@ -1,20 +1,23 @@
-// The thread overview — a rail docked to the right of the conversation.
+// The session overview: a card over the session's top-right, shown and hidden
+// by its title-bar button.
 //
-// It answers the questions a long turn raises that the thread itself answers
+// It answers the questions a long turn raises that the session itself answers
 // badly, because the answer is scattered through it: how many children are
-// running, what this conversation has changed, what it remembered. Claude
-// Desktop's right rail ("Background tasks · 3 running") is the reference.
+// running, what this session has changed, what it remembered.
 //
-// Like the comments panel it is DOCKED, not an overlay: it takes layout space
-// and the transcript reflows narrower beside it. An overlay over a transcript
-// the reader is following would cover the thing the rail is describing.
+// Showing it is a toggle and nothing else. It never takes layout space from
+// the transcript or the composer: docked, it is drawn into room the panel
+// keeps at its top-right whether or not it shows (`context-dock.ts`); where
+// there is no such room it is a popover under its button. Either way it is
+// capped at the height above the composer, sheds its least useful rows before
+// it scrolls (`session-overview-layout.ts`), and scrolls inside itself after.
 //
-// Contract with the transcript, inherited from `detail-panel`: opening,
-// resizing or collapsing a section must not re-render a single transcript row.
-// Nothing here writes to the chat store, and the rail's own state lives in
-// `thread-overview-store`.
+// Contract with the transcript, inherited from `detail-panel`: opening the
+// card or collapsing a section must not re-render a single transcript row.
+// Nothing here writes to the chat store, and the card's own state lives in
+// `session-overview-store`.
 
-import { useMemo, useRef } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   Brain,
@@ -37,21 +40,26 @@ import { openMemoryEntry } from "@/features/memory/lib/open-memory-entry";
 import { useSessionMemoryWrites } from "@/features/memory/lib/use-session-memory-writes";
 
 import { openDetail } from "../stores/detail-panel-store";
-import { HEADER_INSET } from "../lib/row-metrics";
 import { useChatStore } from "../stores/chat-store";
 import {
   OVERVIEW_SECTIONS,
   SECTION_TITLE,
-  useThreadOverviewStore,
+  useSessionOverviewStore,
   type ListedSection,
   type OverviewSection,
-} from "../stores/thread-overview-store";
+} from "../stores/session-overview-store";
 import { useSubagents } from "../hooks/use-subagents";
 import { elapsedMs, isRunning, tallySubagents } from "../lib/subagents";
-import { changesStatus, mergeChanges, tallyChanges } from "../lib/thread-overview";
+import { changesStatus, mergeChanges, tallyChanges } from "../lib/session-overview";
 import { useSessionFiles } from "../lib/session-files";
 import { LiveElapsed, settledFigure } from "./transcript-rows";
-import { SessionBody } from "./thread-overview-session";
+import { SessionBody } from "./session-overview-session";
+import {
+  UNMEASURED,
+  resolveOverviewDensity,
+  type OverviewDensity,
+  type OverviewHeights,
+} from "../lib/session-overview-layout";
 
 // ── Section chrome ─────────────────────────────────────────────────────────
 
@@ -79,14 +87,11 @@ const SECTION_ICON: Record<OverviewSection, LucideIcon> = {
 
 function Section({
   id,
-  title,
   badge,
   badgeTitle,
   children,
 }: {
   id: OverviewSection;
-  /** Overrides the section's own title — the Session card shows the thread's. */
-  title?: string;
   /** How many items the card holds ("14"), or what they are doing ("3
    *  running"), in a badge beside the title. Empty hides the badge. */
   badge: string;
@@ -94,17 +99,17 @@ function Section({
   badgeTitle?: string;
   children: React.ReactNode;
 }) {
-  const collapsed = useThreadOverviewStore((s) => Boolean(s.collapsed[id]));
+  const collapsed = useSessionOverviewStore((s) => Boolean(s.collapsed[id]));
   const SectionIcon = SECTION_ICON[id];
-  const { toggleSection } = useThreadOverviewStore.use.actions();
-  // The body scrolls on its own past a cap, so one long list (a thread that
+  const { toggleSection } = useSessionOverviewStore.use.actions();
+  // The body scrolls on its own past a cap, so one long list (a session that
   // touched forty files) cannot push the other cards out of reach. The fade
   // marks "more below" and only while there is: on a list that fits, or one
   // scrolled to its end, it would just dim the last row.
   const bodyRef = useRef<HTMLDivElement>(null);
   const { bottom: moreBelow } = useScrollEdges(bodyRef, [children, collapsed]);
   return (
-    // `shrink-0`: the rail is a flex column that scrolls. A shrinkable card
+    // `shrink-0`: the card is a flex column that scrolls. A shrinkable card
     // was squeezed instead once the cards outgrew it, clipping its own rows.
     <section className="shrink-0 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)]">
       <button
@@ -115,7 +120,7 @@ function Section({
       >
         <SectionIcon size={12} className="shrink-0 text-[var(--muted-foreground)]" aria-hidden />
         <span className="min-w-0 truncate text-xs font-medium text-[var(--secondary-foreground)]">
-          {title || SECTION_TITLE[id]}
+          {SECTION_TITLE[id]}
         </span>
         {badge && (
           // The hint overlay's keycap (⌘⌥Space): the frosted chip the eye
@@ -179,7 +184,7 @@ function SubagentsSection({ tabId }: { tabId: string }) {
         <ul className="m-0 list-none p-0">
           {children.map((child) => (
             <li key={child.toolCallId}>
-              {/* Opens the child's own body beside the thread, the same target
+              {/* Opens the child's own body beside the session, the same target
                   its transcript row opens — one subagent, one place to read it. */}
               <button
                 type="button"
@@ -223,7 +228,7 @@ function SubagentsSection({ tabId }: { tabId: string }) {
 
 /**
  * Two sources, joined (`mergeChanges`): the capture record, which is every
- * file the session changed however it changed it, and the thread's own
+ * file the session changed however it changed it, and the session's own
  * per-turn tally, which carries the line counts and the running turn's edits
  * the moment they land. Either alone was wrong in a way the reader could not
  * see — the tally missed every shell edit, and read nothing until turn end.
@@ -249,7 +254,7 @@ function ChangesSection({ tabId }: { tabId: string }) {
     () => mergeChanges(recorded, tally, projectPath ?? ""),
     [recorded, tally, projectPath],
   );
-  // Clicking a file shows the thread's changes beside it, at that file. Needs
+  // Clicking a file shows the session's changes beside it, at that file. Needs
   // a session id: the tab is keyed by it and reads the record through it.
   const open =
     projectPath && acpSessionId
@@ -357,8 +362,8 @@ function MemoriesSection({ tabId }: { tabId: string }) {
   const projectPath = useAppStore.use.currentProject()?.path ?? null;
   const acpSessionId = useChatStore((s) => s.sessions[tabId]?.acpSessionId ?? null);
   const { writes } = useSessionMemoryWrites(projectPath, acpSessionId);
-  // No card at all when this thread remembered nothing — which is most
-  // threads. A card carrying only its own title is the empty-section problem
+  // No card at all when this session remembered nothing — which is most
+  // sessions. A card carrying only its own title is the empty-section problem
   // these cards exist to avoid, and separate cards make "not there" an option
   // a bordered panel of stacked rows never had.
   if (writes.length === 0) return null;
@@ -409,43 +414,108 @@ const SECTION_VIEW: Record<ListedSection, (props: { tabId: string }) => React.Re
   memories: MemoriesSection,
 };
 
-// ── Panel ──────────────────────────────────────────────────────────────────
+// ── Card ───────────────────────────────────────────────────────────────────
 
-export function ThreadOverviewPanel({
+export type OverviewPresentation = "docked" | "popover";
+
+/** Slack for subpixel rounding, so a card measured to fit exactly is not
+ *  stepped down by half a pixel. */
+const MEASURE_SLACK = 1;
+
+/**
+ * The card, in either form. `maxHeight` is the room above the composer (the
+ * caller measures it); the density steps and the internal scroll both work
+ * inside it, so the card can never reach the composer.
+ */
+export function SessionOverviewCard({
   tabId,
-  title,
   onOpenSearch,
+  presentation,
+  maxHeight,
 }: {
   tabId: string;
-  /** The thread's title, as the chat header shows it — heads the Session card. */
-  title?: string;
-  /** Opens the thread's find bar — the Session card's search button. */
+  /** Opens the session's find bar — the Session card's search button. */
   onOpenSearch?: () => void;
+  presentation: OverviewPresentation;
+  /** `null` while unmeasured: the card shows in full under its CSS cap. */
+  maxHeight: number | null;
 }) {
-  const width = useThreadOverviewStore.use.width();
   const projectPath = useAppStore.use.currentProject()?.path ?? null;
+  // Which sections are collapsed changes every step's height, so it is part
+  // of what a measurement is valid for. Without it, a card that stepped down
+  // to `essential` (which is never measured) would stay there after the
+  // reader collapsed the section that pushed it.
+  const collapsedKey = useSessionOverviewStore((s) => Object.keys(s.collapsed).sort().join(","));
+  const key = `${tabId}:${presentation}:${collapsedKey}`;
+  const [measured, setMeasured] = useState<{ key: string; heights: OverviewHeights }>({
+    key,
+    heights: UNMEASURED,
+  });
+  const heights = measured.key === key ? measured.heights : UNMEASURED;
+  const density: OverviewDensity =
+    maxHeight === null ? "full" : resolveOverviewDensity(maxHeight, heights);
+
+  const [content, setContent] = useState<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (!content || density === "essential") return;
+    const measure = () => {
+      const frame = content.parentElement;
+      // The content's own height plus the frame's padding and border: what
+      // the card would need to show this step without scrolling.
+      const chrome = frame ? frame.offsetHeight - frame.clientHeight + paddingY(frame) : 0;
+      const next = Math.max(1, content.offsetHeight + chrome - MEASURE_SLACK);
+      setMeasured((current) => {
+        const base = current.key === key ? current.heights : UNMEASURED;
+        return current.key === key && base[density] === next
+          ? current
+          : { key, heights: { ...base, [density]: next } };
+      });
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [content, density, key]);
 
   return (
-    // No panel chrome: no border, no header, no fill of its own. The cards ARE
-    // the surface, floating on the conversation's own background — which is
-    // what lets the subagent view open OVER this as a full panel without two
-    // competing frames on the same edge.
-    <aside
-      aria-label="Thread overview"
-      // The header bar floats over the CONVERSATION column only, so a rail
-      // starting at y=0 sits beside its icons rather than under them. Reserve
-      // the bar's height here too and the first card begins on the same line
-      // the transcript's first row does.
-      style={{ width, paddingTop: HEADER_INSET }}
-      className="hide-scrollbar flex h-full max-w-[50%] shrink-0 flex-col gap-2 overflow-y-auto pr-2 pb-2 pl-5"
+    <div
+      aria-label="Session overview"
+      role="region"
+      data-session-overview-card={presentation}
+      data-density={density}
+      style={maxHeight === null ? undefined : { maxHeight }}
+      className={cn(
+        "hide-scrollbar flex min-h-0 w-[300px] flex-col overflow-y-auto overscroll-contain",
+        // Docked, the cards float on the conversation's own background, in
+        // room the transcript leaves free. As a popover they lie over the
+        // transcript, so they get a surface under them.
+        presentation === "popover" &&
+          "rounded-lg border border-border bg-popover p-1.5 text-foreground shadow-md",
+      )}
     >
-      <Section id="session" title={title} badge="">
-        <SessionBody tabId={tabId} projectPath={projectPath} onOpenSearch={onOpenSearch} />
-      </Section>
-      {OVERVIEW_SECTIONS.map((id) => {
-        const View = SECTION_VIEW[id];
-        return <View key={id} tabId={tabId} />;
-      })}
-    </aside>
+      <div ref={setContent} className="flex flex-col gap-2">
+        {density !== "essential" && (
+          <Section id="session" badge="">
+            <SessionBody
+              tabId={tabId}
+              projectPath={projectPath}
+              onOpenSearch={onOpenSearch}
+              showProject={density === "full"}
+            />
+          </Section>
+        )}
+        {OVERVIEW_SECTIONS.map((id) => {
+          const View = SECTION_VIEW[id];
+          return <View key={id} tabId={tabId} />;
+        })}
+      </div>
+    </div>
   );
+}
+
+/** The frame's vertical padding, which `clientHeight` includes. */
+function paddingY(el: HTMLElement): number {
+  const style = getComputedStyle(el);
+  return (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
 }

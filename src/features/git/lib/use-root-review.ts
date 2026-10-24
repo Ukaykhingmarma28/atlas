@@ -26,7 +26,7 @@ import type { FileDiffMetadata } from "@pierre/diffs";
 
 import { useChatStore } from "@/features/chat/stores/chat-store";
 import { editsSignature } from "@/features/chat/lib/turn-edits";
-import { tallyChanges } from "@/features/chat/lib/thread-overview";
+import { tallyChanges } from "@/features/chat/lib/session-overview";
 import {
   OTHER_GROUP,
   ROOT_SEPARATOR,

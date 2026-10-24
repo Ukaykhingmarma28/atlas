@@ -25,7 +25,7 @@ vi.mock("@/features/artifacts/lib/read-session-detail", () => ({
   })),
 }));
 
-const { SessionBody } = await import("./thread-overview-session");
+const { SessionBody } = await import("./session-overview-session");
 const { useChatCommentsStore } = await import("../stores/chat-comments-store");
 const { useArtifactsStore } = await import("@/features/artifacts/stores/artifacts-store");
 const { useLayoutStore } = await import("@/features/layout/stores/layout-store");
