@@ -212,7 +212,7 @@ bookkeeping).
 | `editorFontSize` | integer | `13` | Appearance › Typography › Editor font size | 8 ≤ n ≤ 32 |
 | `terminalFontSize` | integer | `13` | Appearance › Typography › Terminal font size | 8 ≤ n ≤ 32 |
 | `diffIgnoreWhitespace` | boolean | `false` | Source Control › Diffs › Hide whitespace changes | — |
-| `diffFilesCollapsed` | boolean | `false` | Source Control › Diffs › Start files collapsed | — |
+| `diffFilesCollapsed` | boolean | `true` | Source Control › Diffs › Start files collapsed | — |
 | `diffPalette` | `"theme"` \| `"blue-orange"` | `"theme"` | Appearance › Interface › Diff colours | exactly one of these two strings |
 | `interfaceContrast` | integer | `100` | Appearance › Interface › Contrast | 50 ≤ n ≤ 200 |
 | `showTurnRail` | boolean | `true` | Appearance › Interface › Turn rail | — |

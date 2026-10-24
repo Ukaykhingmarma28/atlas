@@ -549,8 +549,9 @@ pub struct AppSettings {
     /// diff can be staged, since a patch without whitespace no longer applies.
     #[serde(default)]
     pub diff_ignore_whitespace: bool,
-    /// Multi-file diffs open with every file collapsed.
-    #[serde(default)]
+    /// Diffs open with every file collapsed to its header. Default ON: the
+    /// review diff opens as a list of its files, each expanded on a click.
+    #[serde(default = "default_true")]
     pub diff_files_collapsed: bool,
     /// Diff colours.
     #[serde(default)]
@@ -723,7 +724,7 @@ impl Default for AppSettings {
             editor_font_size: DEFAULT_FONT_SIZE,
             terminal_font_size: DEFAULT_FONT_SIZE,
             diff_ignore_whitespace: false,
-            diff_files_collapsed: false,
+            diff_files_collapsed: true,
             diff_palette: DiffPalette::default(),
             interface_contrast: default_interface_contrast(),
             show_turn_rail: true,

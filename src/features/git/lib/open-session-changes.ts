@@ -21,8 +21,8 @@ export function openSessionChanges(opts: {
   file: string;
   title?: string;
   /** Show this turn's own edits (the panel's turn scope) rather than the
-   *  session's files. Without it, a panel left on a turn goes back to the
-   *  session: the file asked for may not be in that turn. The turn's stable
+   *  branch's changes. Without it, a panel left on a turn goes back to
+   *  Changes: the file asked for may not be in that turn. The turn's stable
    *  key (`stableTurnKey`): it is persisted. */
   turnId?: string;
 }): void {
@@ -30,7 +30,7 @@ export function openSessionChanges(opts: {
   const id = `session-changes:${sessionId}`;
   const diffPanel = useDiffPanelStore.getState();
   if (turnId) diffPanel.actions.setTurn(id, turnId);
-  else if (diffPanel.scope[id] === "turn") diffPanel.actions.setScope(id, "session");
+  else if (diffPanel.scope[id] === "turn") diffPanel.actions.setScope(id, "branch-range");
   requestDiffJump(id, file);
 
   const layout = useLayoutStore.getState();

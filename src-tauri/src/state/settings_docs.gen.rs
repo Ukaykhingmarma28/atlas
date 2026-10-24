@@ -247,7 +247,7 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
     ),
     (
         "diffFilesCollapsed",
-        "# Open a diff of several files, such as a commit or your changes, with each\n# file collapsed to its header. Off: every file starts expanded. (default:\n# false)",
+        "# Open a diff, such as your changes or a commit, as a list of its files, each\n# collapsed to its header; click a file to expand it. Off: every file starts\n# expanded. (default: true)",
     ),
     (
         "diffPalette",

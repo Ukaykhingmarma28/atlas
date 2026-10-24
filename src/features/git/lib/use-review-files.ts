@@ -98,13 +98,10 @@ function latestCached(client: QueryClient, queryKey: readonly unknown[]): Loaded
 export function useReviewFiles({
   repoPath,
   source,
-  only,
   ignoreWhitespace,
 }: {
   repoPath: string;
   source: DiffSource | null;
-  /** Narrow to these paths (a session's files). `null`: every file. */
-  only: ReadonlySet<string> | null;
   ignoreWhitespace: boolean;
 }) {
   const kind = source?.kind;
@@ -132,9 +129,9 @@ export function useReviewFiles({
   }, [source?.diff, cacheScope]);
 
   const stats = useMemo(() => {
-    const files = (source?.files ?? []).filter((f) => !only || only.has(f.path));
+    const files = [...(source?.files ?? [])];
     return files.sort((a, b) => collator.compare(a.path, b.path));
-  }, [source?.files, only]);
+  }, [source?.files]);
 
   // One stand-in object per file, so an unchanged row keeps its identity.
   const placeholders = useMemo(

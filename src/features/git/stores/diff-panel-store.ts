@@ -17,10 +17,31 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { createSelectors } from "@/lib/create-selectors";
 
-/** What a diff panel reviews. `session` is the working tree narrowed to the
- *  files one agent session touched, and `turn` one turn's own edits; both are
- *  offered only where there is a session. */
-export type DiffScope = "session" | "turn" | "working-tree" | "branch-range";
+/** What a diff panel reviews: the working tree against the branch's base
+ *  ("Changes"), the uncommitted changes, or one turn's own edits (offered only
+ *  where there is a session). The stored values predate the menu's names and
+ *  are kept as they are; only {@link SCOPE_LABEL} speaks to the reader. */
+export type DiffScope = "turn" | "working-tree" | "branch-range";
+
+/** What the scope menu calls each scope. The turn scope reads "Latest turn"
+ *  on the newest turn and "Turn N" on any other. */
+export const SCOPE_LABEL: Record<DiffScope, string> = {
+  "branch-range": "Changes",
+  "working-tree": "Uncommitted",
+  turn: "Latest turn",
+};
+
+/**
+ * A stored scope as the panel reads it. `session` (the working tree narrowed
+ * to one session's files) is folded into Changes, whose range is the working
+ * tree against the base and so holds every edit the session left. Anything
+ * unknown is no choice at all.
+ */
+export function readStoredScope(value: unknown): DiffScope | undefined {
+  if (value === "session") return "branch-range";
+  if (value === "turn" || value === "working-tree" || value === "branch-range") return value;
+  return undefined;
+}
 
 /** The turn choice that follows the session's newest turn with changes. */
 export const LATEST_TURN = "latest";
@@ -147,6 +168,9 @@ export const useDiffPanelStore = createSelectors(
       }),
       {
         name: "atlas.git.diff-panel",
+        // 1: the `session` scope folded into `branch-range` (Changes).
+        version: 1,
+        migrate: (persisted) => migrateDiffPanelState(persisted) as DiffPanelState,
         partialize: (s) => ({
           scope: s.scope,
           turn: s.turn,
@@ -159,3 +183,18 @@ export const useDiffPanelStore = createSelectors(
     ),
   ),
 );
+
+/** A state persisted before version 1, with each panel's stored scope read
+ *  through {@link readStoredScope}: `session` becomes Changes, the rest stay
+ *  as stored. */
+export function migrateDiffPanelState(persisted: unknown): Partial<DiffPanelState> {
+  const state = (persisted ?? {}) as Omit<Partial<DiffPanelState>, "scope"> & {
+    scope?: Record<string, unknown>;
+  };
+  const scope: Record<string, DiffScope> = {};
+  for (const [panel, value] of Object.entries(state.scope ?? {})) {
+    const read = readStoredScope(value);
+    if (read) scope[panel] = read;
+  }
+  return { ...state, scope };
+}

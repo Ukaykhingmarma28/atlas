@@ -8,10 +8,8 @@ import { Button } from "@/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -19,24 +17,25 @@ import {
 } from "@/ui/dropdown-menu";
 import { formatTime } from "@/lib/format-time";
 import type { EditTurn } from "@/features/chat/lib/turn-edits";
-import { useSessionFiles } from "@/features/chat/lib/session-files";
 import { getDiffFileContents, getDiffPreview, type DiffSource } from "../../lib/git-review-api";
 import { fnv1a32 } from "../../lib/diff-rendering";
 import { invalidateReviewFiles, useReviewFiles } from "../../lib/use-review-files";
-import {
-  combineReviews,
-  useAttachedRootReviews,
-  useSessionTouchedPaths,
-} from "../../lib/use-root-review";
+import { combineReviews, useAttachedRootReviews } from "../../lib/use-root-review";
 import { useSessionRoots } from "@/features/chat/hooks/use-session-roots";
-import { isAbsolutePath } from "@/features/chat/lib/open-turn-diff";
 import {
   useSessionEditTurns,
   useTurnEdits,
   useTurnReviewFiles,
 } from "../../lib/use-turn-review-files";
-import { LATEST_TURN, useDiffPanelStore, type DiffScope } from "../../stores/diff-panel-store";
-import { useGitStore } from "../../stores/git-store";
+import {
+  LATEST_TURN,
+  readStoredScope,
+  SCOPE_LABEL,
+  useDiffPanelStore,
+  type DiffScope,
+} from "../../stores/diff-panel-store";
+import { useGitStore, type BranchInfo } from "../../stores/git-store";
+import { BaseRefPicker } from "./base-ref-picker";
 import { DiffPanelSkeleton } from "./diff-panel-skeleton";
 import {
   DiffEmpty,
@@ -61,13 +60,6 @@ import {
  * reads no git and shows that instead.
  */
 
-const SCOPE_LABEL: Record<DiffScope, string> = {
-  session: "This session",
-  turn: "Latest turn",
-  "working-tree": "Uncommitted",
-  "branch-range": "Branch",
-};
-
 /** The scope menu's value for the turn the panel follows. */
 const turnValue = (turn: string) => `turn:${turn}`;
 
@@ -75,7 +67,7 @@ export interface DiffPanelProps {
   /** The tab this panel is, so `requestDiffJump` can steer it. */
   tabId: string;
   repoPath: string;
-  /** Offer (and default to) the files this agent session touched. */
+  /** Offer this agent session's turns, and open on the branch's changes. */
   sessionId?: string | null;
   /** Source-control actions (commit, push, branch) go here when they land. */
   actions?: ReactNode;
@@ -108,15 +100,17 @@ function GitDiffPanel({
   actions,
   leading,
 }: Omit<DiffPanelProps, "source">) {
-  // The git scopes the menu lists as items; `turn` has its own entries.
-  const scopes: DiffScope[] = sessionId
-    ? ["session", "working-tree", "branch-range"]
-    : ["working-tree", "branch-range"];
-  const storedScope = useDiffPanelStore((s) => s.scope[tabId]);
-  const scope =
-    storedScope && (scopes.includes(storedScope) || (storedScope === "turn" && sessionId))
+  // The git scopes the menu lists as items ("Changes", "Uncommitted"); `turn`
+  // has its own entries. Beside a session the panel opens on Changes, which
+  // holds everything the session left; elsewhere on what is uncommitted.
+  const scopes: DiffScope[] = ["branch-range", "working-tree"];
+  const storedScope = readStoredScope(useDiffPanelStore((s) => s.scope[tabId]));
+  const scope: DiffScope =
+    storedScope && (storedScope !== "turn" || sessionId)
       ? storedScope
-      : scopes[0];
+      : sessionId
+        ? "branch-range"
+        : "working-tree";
   const turnChoice = useDiffPanelStore((s) => s.turn[tabId] ?? LATEST_TURN);
   const baseRef = useDiffPanelStore((s) => s.baseRef[repoPath] ?? null);
   const ignoreWhitespace = useDiffIgnoreWhitespace();
@@ -169,18 +163,6 @@ function GitDiffPanel({
   const source: DiffSource | null =
     preview.data?.sources.find((s) => s.kind === sourceKind) ?? null;
 
-  const sessionFiles = useSessionFiles(
-    scope === "session" ? repoPath : null,
-    scope === "session" ? sessionId : null,
-  );
-  const only = useMemo(
-    () =>
-      scope === "session"
-        ? new Set(sessionFiles.filter((f) => !f.outOfRepo).map((f) => f.path))
-        : null,
-    [scope, sessionFiles],
-  );
-
   // ── The turn scope: one turn's own edits, from the session's message log ──
   // Walked only while something shows them: the turn scope, or its picker.
   const [scopeMenuOpen, setScopeMenuOpen] = useState(false);
@@ -198,7 +180,6 @@ function GitDiffPanel({
   const gitReview = useReviewFiles({
     repoPath,
     source: scope === "turn" ? null : source,
-    only,
     ignoreWhitespace,
   });
   const baseReview = scope === "turn" ? turnReview : gitReview;
@@ -211,18 +192,9 @@ function GitDiffPanel({
     () => (sessionId ? roots.filter((r) => r.kind === "attached") : []),
     [roots, sessionId],
   );
-  const touchedByAgent = useSessionTouchedPaths(scope === "session" ? sessionId : null);
-  const touched = useMemo(() => {
-    if (scope !== "session") return null;
-    const set = new Set(touchedByAgent ?? []);
-    // The record's files outside the main project carry their own path.
-    for (const f of sessionFiles) if (f.outOfRepo && isAbsolutePath(f.path)) set.add(f.path);
-    return set as ReadonlySet<string>;
-  }, [scope, touchedByAgent, sessionFiles]);
   const attachedReview = useAttachedRootReviews({
     roots: attachedRoots,
     kind: scope === "turn" ? null : sourceKind,
-    touched,
     ignoreWhitespace,
   });
   // An attached project's repository moving (a commit, a checkout) re-reads
@@ -382,7 +354,8 @@ function GitDiffPanel({
         <BaseRefPicker
           current={source?.baseRef ?? null}
           chosen={baseRef}
-          branches={branches?.filter((b) => !b.isCurrent).map((b) => b.name) ?? []}
+          branches={branches ?? NO_BRANCHES}
+          head={headRef}
           onPick={(ref) => actionsApi.setBaseRef(repoPath, ref)}
         />
       </div>
@@ -413,13 +386,9 @@ function GitDiffPanel({
   } else if (files.length === 0) {
     placeholder = (
       <DiffEmpty>
-        {scope === "session"
-          ? only && only.size > 0
-            ? "Nothing uncommitted is left from this session."
-            : "This session hasn't changed any files."
-          : scope === "branch-range"
-            ? `No changes against ${source?.baseRef ?? "the base branch"}.`
-            : "No uncommitted changes."}
+        {scope === "branch-range"
+          ? `No changes against ${source?.baseRef ?? "the base branch"}.`
+          : "No uncommitted changes."}
       </DiffEmpty>
     );
   }
@@ -528,50 +497,4 @@ function TurnSubmenu({
   );
 }
 
-const AUTOMATIC = "__automatic__";
-
-function BaseRefPicker({
-  current,
-  chosen,
-  branches,
-  onPick,
-}: {
-  /** What the backend compared against. */
-  current: string | null;
-  /** What the reader picked; `null` is automatic. */
-  chosen: string | null;
-  branches: string[];
-  onPick: (ref: string | null) => void;
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label={`Change comparison target. Currently ${current ?? "the base branch"}`}
-          >
-            <span className="max-w-48 min-w-0 truncate">{current ?? "base"}</span>
-            <ChevronDown size={12} className="shrink-0 text-muted-foreground" />
-          </Button>
-        }
-      />
-      <DropdownMenuContent align="start" sideOffset={4} className="max-h-80 w-56 overflow-auto">
-        <DropdownMenuLabel>Compare against</DropdownMenuLabel>
-        <DropdownMenuRadioGroup
-          value={chosen ?? AUTOMATIC}
-          onValueChange={(value) => onPick(value === AUTOMATIC ? null : String(value))}
-        >
-          <DropdownMenuRadioItem value={AUTOMATIC}>Automatic</DropdownMenuRadioItem>
-          {branches.length > 0 && <DropdownMenuSeparator />}
-          {branches.map((name) => (
-            <DropdownMenuRadioItem key={name} value={name}>
-              <span className="truncate">{name}</span>
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
+const NO_BRANCHES: readonly BranchInfo[] = [];
