@@ -11,6 +11,8 @@
 // tab works for any pull request `gh` can see from there. What may be done
 // is asked of the detail's capabilities and permissions, never assumed.
 
+import { requestDiffJump } from "@/features/git/lib/diff-jump";
+import { usePullRequestCodeRequests } from "../lib/pull-request-code-request";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -179,6 +181,19 @@ export function PullRequestPanel({
     setTab("code");
     setCondensed(false);
   };
+  // A file chip in the description or a comment asks for the file in the
+  // Code tab: switch there and jump to it. Claiming the asks is what tells a
+  // chip this tab is open; without it the chip opens the checkout's file.
+  const codeRequests = usePullRequestCodeRequests(repoPath, number);
+  const codeRequest = codeRequests.request;
+  const clearCodeRequest = codeRequests.clear;
+  useEffect(() => {
+    if (!codeRequest) return;
+    setTab("code");
+    setCondensed(false);
+    requestDiffJump(tabId, codeRequest.path);
+    clearCodeRequest(codeRequest);
+  }, [codeRequest, clearCodeRequest, tabId]);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const foldRef = useRef<HTMLDivElement | null>(null);
   const condensedRowRef = useRef<HTMLDivElement | null>(null);

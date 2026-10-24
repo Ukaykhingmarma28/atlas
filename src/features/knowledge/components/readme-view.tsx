@@ -3,6 +3,8 @@ import ReactMarkdown, { type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
+import { PREVIEW_SANITIZE_SCHEMA } from "@/lib/markdown-sanitize";
 import { rehypeFileChips } from "@/lib/file-chip-hast";
 import { openFileChipUnder, useFileChipHost } from "@/lib/file-chip-host";
 import "@/styles/hljs.css";
@@ -22,6 +24,9 @@ const REMARK_PLUGINS: NonNullable<Options["remarkPlugins"]> = [remarkGfm];
  * doc-scale and via `rehype-raw` allows the raw HTML (`<h1 align="...">`,
  * `<details>`, `<img>`, …) that most GitHub READMEs depend on.
  *
+ * The raw HTML goes through the same allowlist as the markdown preview
+ * (`markdown-sanitize.ts`): a cloned repo's README is not trusted code.
+ *
  * File chips are drawn after the raw HTML is parsed. Raw HTML could write a
  * span that looks like one, but a click re-resolves the path inside `root`
  * (`openUntrustedPathLink`), so a look-alike opens nothing the real chip
@@ -31,6 +36,7 @@ export const ReadmeView = memo(function ReadmeView({ source, root }: Props) {
   const rehypePlugins = useMemo<NonNullable<Options["rehypePlugins"]>>(
     () => [
       rehypeRaw,
+      [rehypeSanitize, PREVIEW_SANITIZE_SCHEMA],
       [rehypeFileChips, root ? { root, label: "basename", folders: false } : null],
       rehypeHighlight,
     ],

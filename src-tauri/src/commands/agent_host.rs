@@ -1919,6 +1919,16 @@ impl AgentHost {
         self.cancel(key)
     }
 
+    /// Cancel the turn without the user asking it to stop: the tab closed,
+    /// the project is going away, a guide run was cancelled. Held wakes are
+    /// dropped so the cancelled turn does not hand straight over to one, but
+    /// the session's watches stay on — a watch outlives its tab, and the next
+    /// thing it hears opens the session again.
+    pub fn interrupt(&self, key: &SessionKey) -> Result<()> {
+        self.forget_wakes(&key.session_id);
+        self.cancel(key)
+    }
+
     // ---- per-session settings -------------------------------------------
 
     pub async fn set_mode(&self, key: &SessionKey, mode_id: String) -> Result<()> {

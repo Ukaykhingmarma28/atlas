@@ -158,7 +158,10 @@ export const agents = {
       resourceLinks: resourceLinks?.length ? resourceLinks : null,
       pastedTexts: pastedTexts?.length ? pastedTexts : null,
     }),
-  cancel: (key: SessionKey) => invoke<void>("agents_cancel", { key }),
+  /** Cancel the turn. `stop` is the user's Stop: it also ends the session's
+   *  pull request watches. A tab or project closing leaves them on. */
+  cancel: (key: SessionKey, opts?: { stop?: boolean }) =>
+    invoke<void>("agents_cancel", { key, stop: opts?.stop ?? false }),
   /** Answer an elicitation the agent raised (P3.3). */
   respondElicitation: (
     agentId: AgentId,

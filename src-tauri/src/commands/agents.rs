@@ -2425,12 +2425,23 @@ async fn build_bootstrap(
     }
 }
 
-/// The user stopped the session's turn. Also drops a pull request watch's
-/// wake held for it and ends its watches: a Stop means "stop", and a wake
-/// landing right after it would start the agent straight back up.
+/// Cancel the session's turn. `stop` is the user's Stop button: it also ends
+/// the session's pull request watches, since a Stop means "stop" and a wake
+/// landing right after it would start the agent straight back up. Every
+/// other cancel (a tab closing, a project closing, a guide run cancelled)
+/// leaves the watches on; both drop a wake held for the turn.
 #[tauri::command]
-pub fn agents_cancel(key: SessionKey, host: State<'_, Arc<AgentHost>>) -> Result<(), String> {
-    host.stop(&key).map_err(|e| e.to_string())
+pub fn agents_cancel(
+    key: SessionKey,
+    stop: Option<bool>,
+    host: State<'_, Arc<AgentHost>>,
+) -> Result<(), String> {
+    if stop.unwrap_or(false) {
+        host.stop(&key)
+    } else {
+        host.interrupt(&key)
+    }
+    .map_err(|e| e.to_string())
 }
 
 /// Tear down a session's backend state when its tab closes or the project

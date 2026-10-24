@@ -1334,7 +1334,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
       agent_id: s.acpAgentId,
       session_id: s.acpSessionId,
     };
-    agents.cancel(key).catch(() => {});
+    agents.cancel(key, { stop: true }).catch(() => {});
   };
 
   const handleSend = async (
