@@ -6,6 +6,7 @@ import type { CodeViewDiffItem, FileDiffContentsLoader, FileDiffMetadata } from 
 import type { CodeViewHandle } from "@pierre/diffs/react";
 import {
   AlertCircle,
+  ArrowRight,
   ChevronDown,
   ChevronRight,
   ChevronsDownUp,
@@ -17,14 +18,20 @@ import {
   Pilcrow,
   RefreshCw,
   Rows3,
+  Search,
+  Settings2,
   WrapText,
 } from "lucide-react";
 import { openReviewFile } from "../../lib/open-review-file";
 import { Button } from "@/ui/button";
 import { IconButton } from "@/ui/icon-button";
+import { Segmented } from "@/ui/segmented";
+import { useScopedHotkeys } from "@/features/keybindings/lib/use-scoped-hotkeys";
+import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { Hint } from "@/ui/tooltip";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
@@ -36,12 +43,14 @@ import {
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 import { formatTime } from "@/lib/format-time";
+import { cn } from "@/lib/utils";
 import type { EditTurn } from "@/features/chat/lib/turn-edits";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { useWordWrap } from "@/features/settings/lib/use-word-wrap";
 import { useSessionFiles } from "@/features/chat/lib/session-files";
 import { getDiffFileContents, getDiffPreview, type DiffSource } from "../../lib/git-review-api";
 import { buildFileDiffContentVersion, fnv1a32 } from "../../lib/diff-rendering";
+import { FileViewedContext, FileViewedToggle, type FileViewedState } from "./file-viewed-toggle";
 import { invalidateReviewFiles, useReviewFiles, type ReviewFile } from "../../lib/use-review-files";
 import { useDiffJump } from "../../lib/diff-jump";
 import {
@@ -53,13 +62,17 @@ import {
   collapsedSetOf,
   LATEST_TURN,
   useDiffPanelStore,
+  type DiffLayout,
   type DiffScope,
+  type ViewedMark,
 } from "../../stores/diff-panel-store";
 import { useGitStore } from "../../stores/git-store";
 import { StyledCodeView } from "./styled-code-view";
 import { DiffFileTree } from "./diff-file-tree";
 import { CopyPathButton } from "./copy-path-button";
 import { DiffPanelSkeleton } from "./diff-panel-skeleton";
+import { DiffFindBar, type DiffFindHandle } from "./diff-find-bar";
+import { formatCompactCount } from "../../lib/format-compact-count";
 
 /**
  * The review diff: every changed file of the working tree or the branch,
@@ -79,6 +92,37 @@ const SCOPE_LABEL: Record<DiffScope, string> = {
   "working-tree": "Uncommitted",
   "branch-range": "Branch",
 };
+
+const LAYOUT_OPTIONS = [
+  { value: "unified", label: "Stacked diff view", icon: <Rows3 size={12} />, iconOnly: true },
+  { value: "split", label: "Split diff view", icon: <Columns2 size={12} />, iconOnly: true },
+] as const;
+
+/** `+12 −3`, in the diff palette's colours, compact past a thousand. */
+const DiffStat = memo(function DiffStat({
+  additions,
+  deletions,
+  className,
+}: {
+  additions: number;
+  deletions: number;
+  className?: string;
+}) {
+  return (
+    <span
+      role="group"
+      aria-label={`${additions} additions, ${deletions} deletions`}
+      className={cn("inline-flex items-center gap-1 font-mono text-2xs tabular-nums", className)}
+    >
+      <span aria-hidden className="text-[var(--atlas-diff-added-text)]">
+        +{formatCompactCount(additions)}
+      </span>
+      <span aria-hidden className="text-[var(--atlas-diff-removed-text)]">
+        −{formatCompactCount(deletions)}
+      </span>
+    </span>
+  );
+});
 
 /** The scope menu's value for the turn the panel follows. */
 const turnValue = (turn: string) => `turn:${turn}`;
@@ -134,6 +178,31 @@ function contentVersion(fileDiff: FileDiffMetadata): number {
     versionCache.set(fileDiff, v);
   }
   return v;
+}
+
+/** What a "Viewed" mark remembers of a file: its diff's content, free of the
+ *  scope-specific cache key, so the capped patch and a lazily loaded one of
+ *  the same change agree. `null` until the diff has loaded. */
+const signatureCache = new WeakMap<FileDiffMetadata, number>();
+function viewedSignature(file: ReviewFile): number | null {
+  if (file.state !== "ready") return null;
+  let sig = signatureCache.get(file.fileDiff);
+  if (sig === undefined) {
+    sig = buildFileDiffContentVersion(file.fileDiff);
+    signatureCache.set(file.fileDiff, sig);
+  }
+  return sig;
+}
+
+const NO_VIEWED: Record<string, ViewedMark> = {};
+
+/** Marked viewed, and the diff now on screen is not the one that was read. A
+ *  mark from another whitespace mode, or made before the diff loaded, cannot
+ *  tell, so it is not called stale. */
+function isStaleMark(mark: ViewedMark | undefined, file: ReviewFile | undefined, ws: boolean) {
+  if (!mark || !file || mark.sig === null || mark.ws !== ws) return false;
+  const sig = viewedSignature(file);
+  return sig !== null && sig !== mark.sig;
 }
 
 export interface DiffPanelProps {
@@ -291,21 +360,62 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
   const toggleAll = () => updateCollapsed(() => (allCollapsed ? new Set() : new Set(itemIds)));
 
   const fileById = useMemo(() => new Map(files.map((f) => [itemIdOf(f), f])), [files]);
+  const fileByPath = useMemo(() => new Map(files.map((f) => [f.stat.path, f])), [files]);
+
+  // ── Viewed: per scope and path, remembered across relaunches ──
+  const viewedMarks = useDiffPanelStore((s) => s.viewed[collapseScopeKey] ?? NO_VIEWED);
+  const isViewed = useCallback((path: string) => path in viewedMarks, [viewedMarks]);
+  const isStale = useCallback(
+    (path: string) => isStaleMark(viewedMarks[path], fileByPath.get(path), ignoreWhitespace),
+    [viewedMarks, fileByPath, ignoreWhitespace],
+  );
+  const setViewed = useCallback(
+    (id: string, path: string, viewed: boolean) => {
+      const file = fileByPath.get(path);
+      actionsApi.setViewed(
+        collapseScopeKey,
+        path,
+        viewed ? { sig: file ? viewedSignature(file) : null, ws: ignoreWhitespace } : null,
+      );
+      // Marking a file viewed folds it; unmarking opens it again.
+      updateCollapsed((current) => {
+        if (current.has(id) === viewed) return current;
+        const next = new Set(current);
+        if (viewed) next.add(id);
+        else next.delete(id);
+        return next;
+      });
+    },
+    [actionsApi, collapseScopeKey, fileByPath, ignoreWhitespace, updateCollapsed],
+  );
+  const viewedState = useMemo<FileViewedState>(
+    () => ({ isViewed, isStale, setViewed }),
+    [isViewed, isStale, setViewed],
+  );
+  const viewedCount = useMemo(
+    () => files.reduce((n, f) => (f.stat.path in viewedMarks ? n + 1 : n), 0),
+    [files, viewedMarks],
+  );
 
   const items = useMemo<CodeViewDiffItem[]>(
     () =>
       files.map((file) => {
         const id = itemIdOf(file);
         const folded = file.state !== "ready" || collapsed.has(id);
+        const path = file.stat.path;
+        const mark = viewedMarks[path];
+        const viewedMark = mark ? (isStaleMark(mark, file, ignoreWhitespace) ? "s" : "v") : "";
         return {
           id,
           type: "diff",
           fileDiff: file.fileDiff,
           collapsed: folded,
-          version: fnv1a32(`${contentVersion(file.fileDiff)}:${folded ? 1 : 0}:${file.state}`),
+          version: fnv1a32(
+            `${contentVersion(file.fileDiff)}:${folded ? 1 : 0}:${file.state}:${viewedMark}`,
+          ),
         };
       }),
-    [files, collapsed],
+    [files, collapsed, viewedMarks, ignoreWhitespace],
   );
 
   // Expanding the unchanged lines around a hunk needs both whole sides.
@@ -383,6 +493,45 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
     },
     [files, requestFile, updateCollapsed, viewer],
   );
+  // ── Find (⌘F), scoped to this tab: the session beside it keeps its own ──
+  const [find, setFind] = useState({ open: false, focus: 0 });
+  const findRef = useRef<DiffFindHandle>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const openFind = useCallback(() => setFind((f) => ({ open: true, focus: f.focus + 1 })), []);
+  const closeFind = useCallback(() => {
+    setFind((f) => ({ ...f, open: false }));
+    rootRef.current?.focus({ preventScroll: true });
+  }, []);
+  const findShortcut = useActionShortcut("diff.find")?.label;
+  const canFind = files.length > 0;
+  const unloaded = useMemo(() => files.filter((f) => f.state === "pending").length, [files]);
+  useScopedHotkeys({
+    tabId,
+    handlers: {
+      "diff.find": () => {
+        if (!canFind) return false;
+        openFind();
+      },
+    },
+  });
+  // Stable: what it reads is rebuilt whenever a file loads, and the find bar
+  // must not see a new callback each time.
+  const unfoldDeps = useRef({ fileById, requestFile, updateCollapsed });
+  unfoldDeps.current = { fileById, requestFile, updateCollapsed };
+  const unfold = useCallback((id: string) => {
+    const { fileById, requestFile, updateCollapsed } = unfoldDeps.current;
+    const file = fileById.get(id);
+    if (file?.state === "pending") requestFile(file.stat.path);
+    updateCollapsed((current) => {
+      if (!current.has(id)) return current;
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+  // Each file's render remounts rows; the open find repaints over them.
+  const repaintFind = useCallback(() => findRef.current?.repaint(), []);
+
   const jump = useDiffJump(tabId);
   const handledJump = useRef<number | null>(null);
   useEffect(() => {
@@ -436,63 +585,87 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
     });
   };
 
+  const headRef = branches?.find((b) => b.isCurrent)?.name ?? "HEAD";
   const header = (
-    <div className="flex h-control-lg shrink-0 items-center gap-1 border-b border-border px-2">
+    <div className="@container flex h-control-lg shrink-0 items-center gap-2 border-b border-border-subtle px-2">
       {leading}
-      <DropdownMenu onOpenChange={(open) => setScopeMenuOpen(open)}>
-        <DropdownMenuTrigger
-          render={
-            <Button variant="ghost" size="sm" aria-label={`Diff scope: ${scopeLabel}`}>
-              <span className="max-w-40 truncate">{scopeLabel}</span>
-              <ChevronDown size={12} className="text-muted-foreground" />
-            </Button>
-          }
-        />
-        <DropdownMenuContent align="start" sideOffset={4} className="w-48">
-          <DropdownMenuRadioGroup
-            value={
-              scope !== "turn" ? scope : selectedTurn === latestTurn ? turnValue(LATEST_TURN) : ""
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <DropdownMenu onOpenChange={(open) => setScopeMenuOpen(open)}>
+          <DropdownMenuTrigger
+            render={
+              <Button variant="secondary" size="sm" aria-label={`Diff scope: ${scopeLabel}`}>
+                <span className="max-w-40 truncate">{scopeLabel}</span>
+                <ChevronDown size={12} className="shrink-0 text-muted-foreground" />
+              </Button>
             }
-            onValueChange={(value) => {
-              const v = String(value);
-              if (v.startsWith("turn:")) actionsApi.setTurn(tabId, v.slice(5));
-              else actionsApi.setScope(tabId, v as DiffScope);
-            }}
-          >
-            {scopes.map((s) => (
-              <DropdownMenuRadioItem key={s} value={s}>
-                {SCOPE_LABEL[s]}
-              </DropdownMenuRadioItem>
-            ))}
+          />
+          <DropdownMenuContent align="start" sideOffset={4} className="w-48">
+            <DropdownMenuRadioGroup
+              value={
+                scope !== "turn" ? scope : selectedTurn === latestTurn ? turnValue(LATEST_TURN) : ""
+              }
+              onValueChange={(value) => {
+                const v = String(value);
+                if (v.startsWith("turn:")) actionsApi.setTurn(tabId, v.slice(5));
+                else actionsApi.setScope(tabId, v as DiffScope);
+              }}
+            >
+              {scopes.map((s) => (
+                <DropdownMenuRadioItem key={s} value={s}>
+                  {SCOPE_LABEL[s]}
+                </DropdownMenuRadioItem>
+              ))}
+              {sessionId && (
+                <DropdownMenuRadioItem value={turnValue(LATEST_TURN)} disabled={!latestTurn}>
+                  {SCOPE_LABEL.turn}
+                </DropdownMenuRadioItem>
+              )}
+            </DropdownMenuRadioGroup>
             {sessionId && (
-              <DropdownMenuRadioItem value={turnValue(LATEST_TURN)} disabled={!latestTurn}>
-                {SCOPE_LABEL.turn}
-              </DropdownMenuRadioItem>
+              <TurnSubmenu
+                turns={turns}
+                selected={scope === "turn" && selectedTurn !== latestTurn ? selectedTurn : null}
+                onPick={(turnId) => actionsApi.setTurn(tabId, turnId)}
+              />
             )}
-          </DropdownMenuRadioGroup>
-          {sessionId && (
-            <TurnSubmenu
-              turns={turns}
-              selected={scope === "turn" && selectedTurn !== latestTurn ? selectedTurn : null}
-              onPick={(turnId) => actionsApi.setTurn(tabId, turnId)}
-            />
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
-      {scope === "branch-range" && (
-        <BaseRefPicker
-          current={source?.baseRef ?? null}
-          chosen={baseRef}
-          branches={branches?.filter((b) => !b.isCurrent).map((b) => b.name) ?? []}
-          onPick={(ref) => actionsApi.setBaseRef(repoPath, ref)}
-        />
-      )}
-      <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          </DropdownMenuContent>
+        </DropdownMenu>
         {files.length > 0 && (
-          <span className="mr-1 font-mono text-2xs tabular-nums">
-            <span className="text-[var(--atlas-diff-added-text)]">+{totals.additions}</span>{" "}
-            <span className="text-[var(--atlas-diff-removed-text)]">−{totals.deletions}</span>
+          <span className="flex min-w-0 shrink items-center gap-1.5 truncate text-xs text-muted-foreground tabular-nums">
+            <span className="shrink-0">
+              {files.length} {files.length === 1 ? "file" : "files"}
+            </span>
+            <span aria-hidden className="shrink-0 opacity-50">
+              ·
+            </span>
+            <span className="truncate">
+              {viewedCount} / {files.length} viewed
+            </span>
           </span>
+        )}
+        {scope === "branch-range" && (
+          <div
+            className="flex min-w-0 items-center gap-2 overflow-hidden text-xs text-muted-foreground"
+            aria-label={`Comparing ${headRef} against ${source?.baseRef ?? "the base branch"}`}
+          >
+            <span className="max-w-48 min-w-0 truncate">{headRef}</span>
+            <ArrowRight size={12} className="shrink-0" aria-hidden />
+            <BaseRefPicker
+              current={source?.baseRef ?? null}
+              chosen={baseRef}
+              branches={branches?.filter((b) => !b.isCurrent).map((b) => b.name) ?? []}
+              onPick={(ref) => actionsApi.setBaseRef(repoPath, ref)}
+            />
+          </div>
+        )}
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        {files.length > 0 && (
+          <DiffStat
+            additions={totals.additions}
+            deletions={totals.deletions}
+            className="mr-1 hidden @2xl:inline-flex"
+          />
         )}
         <Hint label="Previous change">
           <IconButton
@@ -512,6 +685,16 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
             onClick={() => jumpChange(1)}
           />
         </Hint>
+        <Hint label={findShortcut ? `Find in diff (${findShortcut})` : "Find in diff"}>
+          <IconButton
+            size="sm"
+            icon={Search}
+            label="Find in diff"
+            aria-pressed={find.open}
+            disabled={!canFind}
+            onClick={() => (find.open ? closeFind() : openFind())}
+          />
+        </Hint>
         {/* A turn's edits are a record, not the disk: nothing to refresh. */}
         {scope !== "turn" && (
           <Hint label="Refresh">
@@ -524,6 +707,72 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
             />
           </Hint>
         )}
+        {/* Whitespace, layout and wrap: inline when the panel is wide, one
+            options menu when it is not. */}
+        <DropdownMenu>
+          <Hint label="Diff options">
+            <DropdownMenuTrigger
+              render={
+                <IconButton
+                  size="sm"
+                  icon={Settings2}
+                  label="Diff options"
+                  className="@3xl:hidden"
+                />
+              }
+            />
+          </Hint>
+          <DropdownMenuContent align="end" sideOffset={4} className="w-48">
+            <DropdownMenuCheckboxItem
+              checked={ignoreWhitespace}
+              onCheckedChange={(checked) => actionsApi.setIgnoreWhitespace(checked)}
+            >
+              Hide whitespace changes
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem checked={wordWrap} onCheckedChange={toggleWordWrap}>
+              Wrap lines
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuRadioGroup
+              value={layout}
+              onValueChange={(value) => actionsApi.setLayout(value as DiffLayout)}
+            >
+              <DropdownMenuRadioItem value="unified" closeOnClick>
+                Stacked
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="split" closeOnClick>
+                Split
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <div className="hidden items-center gap-1 @3xl:flex">
+          <Hint label={ignoreWhitespace ? "Show whitespace changes" : "Hide whitespace changes"}>
+            <IconButton
+              size="sm"
+              icon={Pilcrow}
+              label="Hide whitespace changes"
+              aria-pressed={ignoreWhitespace}
+              onClick={() => actionsApi.setIgnoreWhitespace(!ignoreWhitespace)}
+            />
+          </Hint>
+          <Segmented
+            size="sm"
+            aria-label="Diff layout"
+            value={layout}
+            onValueChange={actionsApi.setLayout}
+            options={LAYOUT_OPTIONS}
+          />
+          <Hint label={wordWrap ? "Disable word wrap" : "Enable word wrap"}>
+            <IconButton
+              size="sm"
+              icon={WrapText}
+              label="Word wrap"
+              aria-pressed={wordWrap}
+              onClick={toggleWordWrap}
+            />
+          </Hint>
+        </div>
         {files.length > 1 && (
           <Hint label={allCollapsed ? "Expand all files" : "Collapse all files"}>
             <IconButton
@@ -534,32 +783,6 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
             />
           </Hint>
         )}
-        <Hint label={layout === "split" ? "Unified view" : "Split view"}>
-          <IconButton
-            size="sm"
-            icon={layout === "split" ? Rows3 : Columns2}
-            label={layout === "split" ? "Unified view" : "Split view"}
-            onClick={() => actionsApi.setLayout(layout === "split" ? "unified" : "split")}
-          />
-        </Hint>
-        <Hint label={wordWrap ? "Disable word wrap" : "Enable word wrap"}>
-          <IconButton
-            size="sm"
-            icon={WrapText}
-            label="Word wrap"
-            aria-pressed={wordWrap}
-            onClick={toggleWordWrap}
-          />
-        </Hint>
-        <Hint label={ignoreWhitespace ? "Show whitespace changes" : "Hide whitespace changes"}>
-          <IconButton
-            size="sm"
-            icon={Pilcrow}
-            label="Hide whitespace changes"
-            aria-pressed={ignoreWhitespace}
-            onClick={() => actionsApi.setIgnoreWhitespace(!ignoreWhitespace)}
-          />
-        </Hint>
         <Hint label={fileTreeOpen ? "Hide file tree" : "Show file tree"}>
           <IconButton
             size="sm"
@@ -619,13 +842,16 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
       >
         <Panel id="review-diff-files" className="min-w-0">
           <div
-            className="h-full min-h-0 min-w-0"
+            className="relative h-full min-h-0 min-w-0"
             onClickCapture={(event) => {
               // A click on a file's header row or its name (not on one of its
               // buttons) opens the file.
               const path = event.nativeEvent.composedPath();
               for (const node of path) {
                 if (node instanceof HTMLButtonElement || node instanceof HTMLAnchorElement) return;
+                // The find bar floats over the viewer; its clicks are its own.
+                if (node instanceof HTMLElement && node.hasAttribute("data-diff-find")) return;
+                if (node instanceof HTMLElement && node.hasAttribute("data-viewed-toggle")) return;
               }
               const title = path.find(
                 (n): n is HTMLElement => n instanceof HTMLElement && n.hasAttribute("data-title"),
@@ -646,68 +872,96 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
               void openReviewFile(`${repoPath}/${file.stat.path}`);
             }}
           >
-            <StyledCodeView
-              // Remounted only when what it shows is a different diff (another
-              // scope or base). A refresh after an edit updates items in place,
-              // keeping the scroll position and every unchanged file's tokens.
-              key={collapseScopeKey}
-              viewerRef={setViewer}
-              className="h-full min-h-0 overflow-auto"
-              items={items}
-              fallback={<DiffPanelSkeleton />}
-              extraCSS={HIDE_VIEWER_COUNTS}
-              options={{
-                diffStyle: layout,
-                overflow: wordWrap ? "wrap" : "scroll",
-                stickyHeaders: true,
-                // Unchanged lines around a hunk come from git, which knows
-                // nothing of a past turn's texts.
-                loadDiffFiles: git ? loadDiffFiles : undefined,
-              }}
-              renderHeaderPrefix={(item) => {
-                const file = fileById.get(item.id);
-                if (!file) return null;
-                return (
-                  <CollapseToggle
-                    id={item.id}
-                    path={file.stat.path}
-                    collapsed={item.collapsed === true}
-                    disabled={file.state !== "ready"}
-                    onToggle={toggleFile}
-                  />
-                );
-              }}
-              renderHeaderFilenameSuffix={(item) => {
-                const file = fileById.get(item.id);
-                if (!file) return null;
-                return (
-                  <FileStatus file={file} onRequest={requestFile} onRetry={retry} turn={!git} />
-                );
-              }}
-              renderHeaderMetadata={(item) => {
-                const stat = fileById.get(item.id)?.stat;
-                if (!stat || stat.additions === null) return null;
-                return (
-                  <span className="font-mono text-2xs tabular-nums">
-                    <span className="text-[var(--atlas-diff-added-text)]">+{stat.additions}</span>{" "}
-                    <span className="text-[var(--atlas-diff-removed-text)]">−{stat.deletions}</span>
-                  </span>
-                );
-              }}
-            />
+            <FileViewedContext value={viewedState}>
+              <StyledCodeView
+                // Remounted only when what it shows is a different diff (another
+                // scope or base). A refresh after an edit updates items in place,
+                // keeping the scroll position and every unchanged file's tokens.
+                key={collapseScopeKey}
+                viewerRef={setViewer}
+                className="h-full min-h-0 overflow-auto"
+                items={items}
+                fallback={<DiffPanelSkeleton />}
+                extraCSS={HIDE_VIEWER_COUNTS}
+                options={{
+                  diffStyle: layout,
+                  overflow: wordWrap ? "wrap" : "scroll",
+                  stickyHeaders: true,
+                  // Whole lines tinted, no word-level boxes inside them: a
+                  // review reads the line, and the boxes fight the syntax colour.
+                  lineDiffType: "none",
+                  onPostRender: repaintFind,
+                  // Unchanged lines around a hunk come from git, which knows
+                  // nothing of a past turn's texts.
+                  loadDiffFiles: git ? loadDiffFiles : undefined,
+                }}
+                renderHeaderPrefix={(item) => {
+                  const file = fileById.get(item.id);
+                  if (!file) return null;
+                  return (
+                    <CollapseToggle
+                      id={item.id}
+                      path={file.stat.path}
+                      collapsed={item.collapsed === true}
+                      disabled={file.state !== "ready"}
+                      onToggle={toggleFile}
+                    />
+                  );
+                }}
+                renderHeaderFilenameSuffix={(item) => {
+                  const file = fileById.get(item.id);
+                  if (!file) return null;
+                  return (
+                    <FileStatus file={file} onRequest={requestFile} onRetry={retry} turn={!git} />
+                  );
+                }}
+                renderHeaderMetadata={(item) => {
+                  const stat = fileById.get(item.id)?.stat;
+                  if (!stat) return null;
+                  return (
+                    <FileViewedToggle
+                      id={item.id}
+                      path={stat.path}
+                      stat={
+                        stat.additions === null ? null : (
+                          <DiffStat additions={stat.additions} deletions={stat.deletions ?? 0} />
+                        )
+                      }
+                    />
+                  );
+                }}
+              />
+            </FileViewedContext>
+            {/* After the viewer: its item updates land first (`DiffFindBar`). */}
+            {find.open && (
+              <DiffFindBar
+                ref={findRef}
+                viewer={viewer}
+                items={items}
+                onUnfold={unfold}
+                onClose={closeFind}
+                focusRequest={find.focus}
+                unloaded={unloaded}
+              />
+            )}
           </div>
         </Panel>
         {fileTreeOpen && (
           <>
-            <Separator className="w-px bg-border transition-colors hover:bg-primary data-[separator=active]:bg-primary cursor-col-resize" />
+            <Separator className="w-px bg-border-subtle transition-colors hover:bg-primary data-[separator=active]:bg-primary cursor-col-resize" />
             <Panel
               id="review-diff-tree"
-              defaultSize="26"
-              minSize="12"
+              defaultSize="34"
+              minSize="16"
               maxSize="50"
               className="flex min-w-0 flex-col"
             >
-              <DiffFileTree files={treeFiles} selectedPath={selected} onSelect={reveal} />
+              <DiffFileTree
+                files={treeFiles}
+                root={repoPath}
+                selectedPath={selected}
+                onSelect={reveal}
+              />
             </Panel>
           </>
         )}
@@ -716,7 +970,12 @@ export function DiffPanel({ tabId, repoPath, sessionId = null, actions, leading 
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[var(--atlas-editor-background)]">
+    <div
+      ref={rootRef}
+      tabIndex={-1}
+      data-diff-panel
+      className="flex h-full min-h-0 flex-col bg-[var(--atlas-editor-background)] outline-none"
+    >
       {header}
       {!git && selectedTurn && <TurnNote turn={selectedTurn} />}
       {body}
@@ -901,11 +1160,10 @@ function BaseRefPicker({
           <Button
             variant="ghost"
             size="sm"
-            aria-label={`Compared against ${current ?? "the base branch"}`}
+            aria-label={`Change comparison target. Currently ${current ?? "the base branch"}`}
           >
-            <span className="text-muted-foreground">vs</span>
-            <span className="max-w-32 truncate">{current ?? "base"}</span>
-            <ChevronDown size={12} className="text-muted-foreground" />
+            <span className="max-w-48 min-w-0 truncate">{current ?? "base"}</span>
+            <ChevronDown size={12} className="shrink-0 text-muted-foreground" />
           </Button>
         }
       />

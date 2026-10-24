@@ -63,6 +63,11 @@ function acquire(): SharedPool {
           // seconds; past this length a line is shown plain.
           tokenizeMaxLineLength: 1_000,
           useTokenTransformer: true,
+          // `lineDiffType` is deliberately left at the pool's `word-alt`: the
+          // workers produce the highlighted AST, word-level change spans
+          // included, off the main thread. The viewers' own
+          // `lineDiffType: "none"` only governs the plain first paint on the
+          // main thread, which therefore never pays for a word diff.
         },
       ),
       consumers: 0,

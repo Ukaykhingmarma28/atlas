@@ -49,18 +49,49 @@ export const DIFF_VIEW_CSS = `
 
   --diffs-addition-color-override: var(--atlas-diff-added-text);
   --diffs-deletion-color-override: var(--atlas-diff-removed-text);
-  --diffs-modified-color-override: var(--atlas-status-warning-foreground);
+  --diffs-modified-color-override: var(--atlas-diff-modified-text);
 
   --diffs-bg-context-override: var(--atlas-diff-context-background);
   --diffs-bg-hover-override: var(--atlas-element-hover);
-  --diffs-bg-separator-override: var(--atlas-editor-gutter-background);
+  --diffs-bg-separator-override: color-mix(
+    in srgb,
+    var(--atlas-editor-background) 95%,
+    var(--atlas-editor-foreground)
+  );
   --diffs-bg-buffer-override: var(--atlas-editor-gutter-background);
   --diffs-bg-selection-override: var(--atlas-editor-selection-background);
 
-  /* Line tints are left to the viewer: it mixes the editor background with the
-     addition / deletion hue above, and an override here is used as that mix's
-     TARGET, so a translucent theme tint would come out nearly invisible. Word
-     highlights are painted directly, so those take the theme's emphasis. */
+  /* Line tints: the code surface mixed with the palette's addition / deletion
+     hue, stronger under the line number than across the code. Solid mixes,
+     not the theme's translucent line backgrounds, which nearly vanish over
+     the viewer's own surface. Every term is a variable, so the diff palette
+     setting and a theme switch recolour them in place. */
+  --diffs-bg-addition-override: light-dark(
+    color-mix(in srgb, var(--atlas-editor-background) 50%, var(--atlas-diff-added-text)),
+    color-mix(in srgb, var(--atlas-editor-background) 70%, var(--atlas-diff-added-text))
+  );
+  --diffs-bg-addition-number-override: light-dark(
+    color-mix(in srgb, var(--atlas-editor-background) 35%, var(--atlas-diff-added-text)),
+    color-mix(in srgb, var(--atlas-editor-background) 60%, var(--atlas-diff-added-text))
+  );
+  --diffs-bg-addition-hover-override: color-mix(
+    in srgb,
+    var(--atlas-editor-background) 85%,
+    var(--atlas-diff-added-text)
+  );
+  --diffs-bg-deletion-override: light-dark(
+    color-mix(in srgb, var(--atlas-editor-background) 50%, var(--atlas-diff-removed-text)),
+    color-mix(in srgb, var(--atlas-editor-background) 70%, var(--atlas-diff-removed-text))
+  );
+  --diffs-bg-deletion-number-override: light-dark(
+    color-mix(in srgb, var(--atlas-editor-background) 35%, var(--atlas-diff-removed-text)),
+    color-mix(in srgb, var(--atlas-editor-background) 60%, var(--atlas-diff-removed-text))
+  );
+  --diffs-bg-deletion-hover-override: color-mix(
+    in srgb,
+    var(--atlas-editor-background) 85%,
+    var(--atlas-diff-removed-text)
+  );
   --diffs-bg-addition-emphasis-override: var(--atlas-diff-added-emphasis);
   --diffs-bg-deletion-emphasis-override: var(--atlas-diff-removed-emphasis);
 
@@ -85,11 +116,13 @@ export const DIFF_VIEW_CSS = `
   position: sticky !important;
   top: 0;
   z-index: 4;
-  background-color: var(--atlas-panel-background) !important;
-  border-bottom: 1px solid var(--atlas-border-subtle) !important;
+  /* On the code surface, with no rule under it: the file's name and its first
+     line read as one block. */
+  background-color: var(--atlas-editor-background) !important;
+  border-bottom-color: transparent !important;
   align-items: center !important;
   font-family: var(--font-sans) !important;
-  font-size: var(--text-xs) !important;
+  font-size: var(--text-sm) !important;
   line-height: 1 !important;
   /* A collapsed item is never remeasured, so the painted header must be exactly
      the virtualizer's diffHeaderHeight. Centre controls in it; no padding. */
@@ -100,31 +133,50 @@ export const DIFF_VIEW_CSS = `
   padding-inline: 8px 12px !important;
 }
 
+/* A full-width hover band would stop short at the native scrollbar gutter,
+   which descendants cannot paint; an inset edge cue never looks clipped. */
 [data-diffs-header]:hover {
-  background-color: var(--atlas-element-hover) !important;
+  background-color: var(--atlas-editor-background) !important;
+  box-shadow: inset 3px 0 color-mix(in srgb, var(--atlas-editor-foreground) 24%, transparent);
 }
 
-/* Hunk separators lead to the unchanged lines between hunks: quiet controls
-   one step off the code surface, brought forward on hover. */
+/* Hunk separators lead to the unchanged lines between hunks ("N unmodified
+   lines", the expand control in its own cell): a band one step off the code
+   surface, its text half-strength, both brought forward on hover. */
 :is([data-separator="line-info"], [data-separator="line-info-basic"]) {
   /* Exact and margin-free: the virtualizer places rows by hunkSeparatorHeight. */
   height: 24px !important;
   margin-block: 0 !important;
-  --diffs-bg-separator: var(--atlas-editor-gutter-background);
+  --diffs-bg-separator: color-mix(
+    in srgb,
+    var(--atlas-editor-background) 97%,
+    var(--atlas-editor-foreground)
+  );
 }
 
 :is([data-separator="line-info"], [data-separator="line-info-basic"]) [data-separator-content],
 :is([data-separator="line-info"], [data-separator="line-info-basic"]) [data-expand-button] {
-  color: var(--atlas-editor-gutter-foreground) !important;
+  color: color-mix(
+    in srgb,
+    var(--atlas-editor-foreground) 50%,
+    var(--atlas-editor-background)
+  ) !important;
+}
+
+:is([data-separator="line-info"], [data-separator="line-info-basic"]) [data-separator-content] {
   font-family: var(--font-sans) !important;
-  font-size: var(--text-2xs) !important;
+  font-size: var(--text-xs) !important;
   text-decoration: none !important;
 }
 
 :is([data-separator="line-info"], [data-separator="line-info-basic"])[data-expand-index]
   :is([data-separator-content], [data-expand-button]):hover {
   color: var(--atlas-editor-foreground) !important;
-  background-color: var(--atlas-element-hover) !important;
+  background-color: color-mix(
+    in srgb,
+    var(--atlas-editor-background) 92%,
+    var(--atlas-editor-foreground)
+  ) !important;
 }
 
 [data-diffs-header] [data-header-content],
@@ -142,7 +194,7 @@ export const DIFF_VIEW_CSS = `
 [data-diffs-header] [data-additions-count],
 [data-diffs-header] [data-deletions-count] {
   font-family: var(--font-mono) !important;
-  font-size: var(--text-2xs) !important;
+  font-size: var(--text-xs) !important;
   font-variant-numeric: tabular-nums;
   line-height: 1 !important;
 }
@@ -162,18 +214,31 @@ export const DIFF_VIEW_CSS = `
 
 [data-title] {
   cursor: pointer;
+  transition: color 120ms ease;
   font-family: var(--font-sans) !important;
 }
 
 [data-title]:hover {
-  color: var(--atlas-primary-hover) !important;
+  color: color-mix(in srgb, var(--atlas-editor-foreground) 84%, var(--primary)) !important;
+}
+
+/* Find in diff (diff-find.ts): every match a tint, the current one the
+   theme's active search fill. A highlight is styled by the tree its text is
+   in, so these rules live here, inside the viewer's shadow roots. */
+::highlight(atlas-diff-find) {
+  background-color: var(--atlas-search-match-background);
+}
+
+::highlight(atlas-diff-find-current) {
+  background-color: var(--atlas-search-match-active-background);
+  color: var(--atlas-editor-foreground);
 }
 
 /* Expanding a file mounts its body at once; fade it in. Appearance only: the
    viewer owns geometry, so height cannot animate. */
 [data-diff],
 [data-file] {
-  transition: opacity 150ms ease-out;
+  transition: opacity 200ms ease-out;
 }
 
 @starting-style {

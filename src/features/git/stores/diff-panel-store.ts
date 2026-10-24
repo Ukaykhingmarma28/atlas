@@ -9,6 +9,9 @@
 //  - Which files are folded lives for the run only. It is keyed by the scope
 //    being reviewed, so it survives switching tabs, scopes and panels, but a
 //    fold from yesterday's diff has no business closing today's file.
+//  - Which files were marked viewed persists, per review scope, with the
+//    signature of the diff the reader saw: a file that changes afterwards
+//    reads as changed, not as still viewed.
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
@@ -23,6 +26,15 @@ export type DiffScope = "session" | "turn" | "working-tree" | "branch-range";
 export const LATEST_TURN = "latest";
 
 export type DiffLayout = "unified" | "split";
+
+/** A file marked viewed: the signature of the diff it showed then, and the
+ *  whitespace mode it was read in (another mode diffs differently, so its
+ *  signature says nothing about whether the file moved). `sig` is `null` when
+ *  the file was marked before its diff had loaded. */
+export interface ViewedMark {
+  sig: number | null;
+  ws: boolean;
+}
 
 interface DiffPanelState {
   /** Per panel (its tab id). Absent: the panel's own default. */
@@ -41,6 +53,8 @@ interface DiffPanelState {
   /** Folded files per review scope key (`collapseScopeKey`), as a set of
    *  file keys. Absent: nothing touched yet, the default applies. */
   collapsed: Record<string, Record<string, true>>;
+  /** Viewed files per review scope key, by path. */
+  viewed: Record<string, Record<string, ViewedMark>>;
   actions: {
     setScope: (panel: string, scope: DiffScope) => void;
     /** Show one turn (or {@link LATEST_TURN}): the `turn` scope, on it. */
@@ -55,6 +69,8 @@ interface DiffPanelState {
       defaults: ReadonlySet<string>,
       update: (current: ReadonlySet<string>) => ReadonlySet<string>,
     ) => void;
+    /** Mark (or, with `null`, unmark) one file of a scope viewed. */
+    setViewed: (scopeKey: string, path: string, mark: ViewedMark | null) => void;
   };
 }
 
@@ -90,6 +106,7 @@ export const useDiffPanelStore = createSelectors(
         ignoreWhitespace: null,
         fileTreeOpen: true,
         collapsed: {},
+        viewed: {},
         actions: {
           setScope: (panel, scope) => set((s) => ({ scope: withRecent(s.scope, panel, scope) })),
           setTurn: (panel, turn) =>
@@ -111,6 +128,15 @@ export const useDiffPanelStore = createSelectors(
               for (const key of next) record[key] = true;
               return { collapsed: { ...s.collapsed, [scopeKey]: record } };
             }),
+          setViewed: (scopeKey, path, mark) =>
+            set((s) => {
+              const current = s.viewed[scopeKey] ?? {};
+              if (!mark && !(path in current)) return s;
+              const next = { ...current };
+              if (mark) next[path] = mark;
+              else delete next[path];
+              return { viewed: withRecent(s.viewed, scopeKey, next) };
+            }),
         },
       }),
       {
@@ -122,6 +148,7 @@ export const useDiffPanelStore = createSelectors(
           layout: s.layout,
           ignoreWhitespace: s.ignoreWhitespace,
           fileTreeOpen: s.fileTreeOpen,
+          viewed: s.viewed,
         }),
       },
     ),

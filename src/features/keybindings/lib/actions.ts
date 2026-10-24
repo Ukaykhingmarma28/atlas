@@ -28,6 +28,7 @@ export type When =
   | "knowledgeFocus"
   | "pdfFocus"
   | "canvasFocus"
+  | "diffFocus"
   | "modelPicker";
 
 export type ActionCategory =
@@ -41,7 +42,8 @@ export type ActionCategory =
   | "Terminal"
   | "Knowledge"
   | "PDF"
-  | "Canvas";
+  | "Canvas"
+  | "Review";
 
 export interface ActionDef {
   id: string;
@@ -61,6 +63,7 @@ export const WHEN_LABELS: Record<When, string> = {
   knowledgeFocus: "knowledgeFocus",
   pdfFocus: "pdfFocus",
   canvasFocus: "canvasFocus",
+  diffFocus: "diffFocus",
   modelPicker: "modelPickerOpen",
 };
 
@@ -466,6 +469,16 @@ export const ACTIONS = [
     when: "terminalFocus",
     defaults: ["cmd+f"],
   },
+  // ── Review ──
+  {
+    // The review diff's own find: matches across every changed file, folded
+    // ones included. Its tab, not the session beside it, owns ⌘F.
+    id: "diff.find",
+    title: "Find in diff",
+    category: "Review",
+    when: "diffFocus",
+    defaults: ["cmd+f"],
+  },
   // ── Knowledge ──
   {
     id: "kb.toggleSidebar",
@@ -543,4 +556,5 @@ export const CATEGORY_ORDER: readonly ActionCategory[] = [
   "Knowledge",
   "PDF",
   "Canvas",
+  "Review",
 ];

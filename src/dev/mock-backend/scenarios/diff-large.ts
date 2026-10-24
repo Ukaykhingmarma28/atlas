@@ -1,5 +1,5 @@
 // A review diff big enough to measure: 60 changed TypeScript files and about
-// 5,000 changed lines, so the patch passes the 120 KB cap and most files load
+// 3,600 changed lines, so the patch passes the 120 KB cap and most files load
 // one at a time. Opens the diff beside the session on load.
 //
 // `__atlasMock.actions.edit()` rewrites one line of a file, as an agent's
@@ -14,11 +14,13 @@ import { MOCK_PROJECT } from "../project";
 const FILES = 60;
 const LINES = 120;
 
-/** A deterministic module, with every third line rewritten in the "after". */
+/** A deterministic module, with every third line rewritten in the "after",
+ *  except for a run in the middle left alone: the unchanged lines between two
+ *  hunks, which the viewer folds behind "N unmodified lines". */
 function moduleText(index: number, edited: boolean): string {
   const lines: string[] = [`// module ${index}`, `import { assert } from "./assert";`, ""];
   for (let i = 0; i < LINES; i++) {
-    const touched = edited && i % 3 === 0;
+    const touched = edited && i % 3 === 0 && (i < 30 || i >= 60);
     const name = `value${index}_${i}`;
     lines.push(
       touched
@@ -46,7 +48,7 @@ let edits = 0;
 
 export const diffLarge: Scenario = {
   name: "diff-large",
-  description: "The review diff on 60 files and ~5,000 changed lines, past the patch cap.",
+  description: "The review diff on 60 files and ~3,600 changed lines, past the patch cap.",
   commands: {
     git_diff_preview: () => preview,
     git_diff_file_contents: ({ filePath }) => {

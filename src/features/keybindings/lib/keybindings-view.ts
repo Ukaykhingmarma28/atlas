@@ -45,6 +45,7 @@ export const WHEN_PHRASES: Record<When, string> = {
   knowledgeFocus: "In Knowledge",
   pdfFocus: "In a PDF",
   canvasFocus: "On a canvas",
+  diffFocus: "In the review diff",
   modelPicker: "While the model picker is open",
 };
 

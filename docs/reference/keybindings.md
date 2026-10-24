@@ -123,6 +123,7 @@ tightest and `||` loosest. Empty means always.
 | `pdfFocus`                      | … is a PDF                                            |
 | `canvasFocus`                   | … is a canvas or a space                              |
 | `browserFocus`                  | … is the browser                                      |
+| `diffFocus`                     | … is the review diff                                  |
 | `inputFocus`                    | a text field, text area or rich-text editor has focus |
 | `knowledgeOpen`                 | the focused split's active tab is Knowledge           |
 | `modelPickerOpen`               | the composer's model picker has focus                 |
