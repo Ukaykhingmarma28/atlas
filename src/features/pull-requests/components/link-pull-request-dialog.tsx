@@ -1,5 +1,8 @@
 // "Link a pull request…": tie a pull request to a session by its URL or
-// number, or by picking one of the repository's open pull requests.
+// number, or by picking one of the repository's open pull requests. A number
+// is read in the session's checkout; a URL may name any repository, and is
+// linked in the first checkout of it Atlas knows (the session's own, the
+// projects attached to it, then every other project).
 //
 // Opened imperatively (`openLinkPullRequestDialog`) from the session row's
 // menu and the overlay's Version Control section, so a menu that closes the
@@ -25,6 +28,8 @@ import {
 import { Input } from "@/ui/input";
 
 import { resolveLinkInput } from "../lib/link-pull-request-input";
+import { findCheckoutFor } from "../lib/open-linked-pull-request";
+import { sessionCheckouts } from "../lib/session-checkouts";
 import { classifyPrError, prErrorMessage } from "../lib/pr-errors";
 import { usePrList, usePrProvider } from "../lib/pull-requests-queries";
 import type { PrListEntry } from "../lib/pull-requests-types";
@@ -38,6 +43,9 @@ export interface LinkPullRequestRequest {
   repoPath: string;
   /** What is linked already (`owner/name#n`, case-folded), marked in the list. */
   linked: readonly string[];
+  /** Other checkouts a URL may resolve in, nearest first (the session's
+   *  attached projects); every known project is tried after them. */
+  checkouts?: readonly string[];
 }
 
 const useRequest = create<{ request: LinkPullRequestRequest | null }>(() => ({ request: null }));
@@ -69,7 +77,7 @@ function LinkPullRequestDialog({ request }: { request: LinkPullRequestRequest })
   const [linked, setLinked] = useState(() => new Set(request.linked));
 
   const provider = usePrProvider(repoPath).data ?? null;
-  const resolved = resolveLinkInput(reference, provider);
+  const resolved = resolveLinkInput(reference);
   // A word that is not a number or a URL searches the open pull requests.
   const search = useDeferredValue(
     resolved.kind === "error" && !/^https?:/i.test(reference.trim()) ? reference.trim() : "",
@@ -79,11 +87,29 @@ function LinkPullRequestDialog({ request }: { request: LinkPullRequestRequest })
 
   useEffect(() => setError(null), [reference]);
 
-  const link = async (number: number) => {
+  /** Link `number` in `repoPath`, or, for a URL, in a checkout of its
+   *  repository. */
+  const link = async (number: number, url?: { repository: string; url: string }) => {
     if (busy) return;
     setBusy(true);
     try {
-      const change = await linkSessionPullRequest(threadId, repoPath, number);
+      let checkout = repoPath;
+      if (url) {
+        const found = await findCheckoutFor(url, [
+          repoPath,
+          ...(request.checkouts ?? []),
+          ...sessionCheckouts(null),
+        ]);
+        if (!found) {
+          setError(
+            `No project in Atlas is a checkout of ${url.repository}. Open it as a project, then link the pull request.`,
+          );
+          setBusy(false);
+          return;
+        }
+        checkout = found;
+      }
+      const change = await linkSessionPullRequest(threadId, checkout, number);
       setLinked(new Set(change.pullRequests.map(linkKey)));
       toast.success(
         change.changed
@@ -95,7 +121,7 @@ function LinkPullRequestDialog({ request }: { request: LinkPullRequestRequest })
       const failure = classifyPrError(raw);
       setError(
         failure.kind === "notFound"
-          ? `This repository has no pull request #${number}.`
+          ? `${url ? url.repository : "This repository"} has no pull request #${number}.`
           : prErrorMessage(failure),
       );
       setBusy(false);
@@ -104,23 +130,22 @@ function LinkPullRequestDialog({ request }: { request: LinkPullRequestRequest })
 
   const submit = () => {
     setDirty(true);
-    if (resolved.kind === "ok") void link(resolved.number);
+    if (resolved.kind === "number") void link(resolved.number);
+    else if (resolved.kind === "url") void link(resolved.number, resolved);
     // A search word that matched one pull request links it; a refused URL
     // never falls through to whichever pull request happens to be listed.
     else if (resolved.kind === "error" && search && candidates.length === 1)
       void link(candidates[0]!.number);
   };
 
-  // A search word is not a mistake; only a malformed URL or number is. A URL
-  // waiting on the repository says so at once: Link stays off until then.
+  // A search word is not a mistake; only a malformed URL or number is.
   const validation =
-    resolved.kind === "waiting"
+    dirty &&
+    resolved.kind === "error" &&
+    (/^https?:/i.test(reference.trim()) || /^#?\d/.test(reference.trim()))
       ? resolved.message
-      : dirty &&
-          resolved.kind === "error" &&
-          (/^https?:/i.test(reference.trim()) || /^#?\d/.test(reference.trim()))
-        ? resolved.message
-        : null;
+      : null;
+  const ready = resolved.kind === "number" || resolved.kind === "url";
   const message = validation ?? error;
   const repoKey = provider?.repository ?? "";
 
@@ -142,7 +167,7 @@ function LinkPullRequestDialog({ request }: { request: LinkPullRequestRequest })
           <DialogHeader>
             <DialogTitle>Link a pull request</DialogTitle>
             <DialogDescription>
-              Paste its URL, type its number, or pick one of{" "}
+              Paste its URL from any repository, type its number, or pick one of{" "}
               {provider ? provider.repository : "the repository"}'s open pull requests. Atlas shows
               it beside the session and keeps its state current.
             </DialogDescription>
@@ -160,16 +185,7 @@ function LinkPullRequestDialog({ request }: { request: LinkPullRequestRequest })
               setReference(event.target.value);
             }}
           />
-          {message ? (
-            <p
-              className={cn(
-                "text-xs",
-                resolved.kind === "waiting" ? "text-muted-foreground" : "text-error",
-              )}
-            >
-              {message}
-            </p>
-          ) : null}
+          {message ? <p className="text-xs text-error">{message}</p> : null}
           <div
             role="listbox"
             aria-label="Open pull requests"
@@ -203,8 +219,8 @@ function LinkPullRequestDialog({ request }: { request: LinkPullRequestRequest })
             <Button variant="outline" disabled={busy} onClick={close}>
               Cancel
             </Button>
-            <Button type="submit" disabled={busy || resolved.kind !== "ok"}>
-              {busy ? "Linking…" : resolved.kind === "ok" ? `Link #${resolved.number}` : "Link"}
+            <Button type="submit" disabled={busy || !ready}>
+              {busy ? "Linking…" : ready ? `Link #${resolved.number}` : "Link"}
             </Button>
           </DialogFooter>
         </form>

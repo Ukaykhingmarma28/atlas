@@ -10,16 +10,7 @@
 // control takes it back.
 
 import { memo, useState, type ComponentProps, type ReactNode } from "react";
-import {
-  CircleAlert,
-  CircleCheck,
-  CircleDashed,
-  CircleX,
-  Layers,
-  MessageSquare,
-  Search,
-  type LucideIcon,
-} from "lucide-react";
+import { CircleAlert, Layers, MessageSquare, Search } from "lucide-react";
 
 import { timeAgo } from "@/lib/time-ago";
 import { cn } from "@/lib/utils";
@@ -27,7 +18,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 
 import type { PullRequestChangeBreakdown } from "../lib/pull-request-change-breakdown";
 import type { PullRequestStackMembership } from "../lib/pull-request-list-logic";
-import type { PrListEntry, PrReviewDecision } from "../lib/pull-requests-types";
+import type { PrListEntry } from "../lib/pull-requests-types";
 import { ChangeBreakdownStat } from "./pull-request-change-breakdown-stat";
 import {
   ActorAvatar,
@@ -35,6 +26,7 @@ import {
   CHECKS_STATE_PRESENTATION,
   LabelChip,
   resolveStatePresentation,
+  REVIEW_DECISION_PRESENTATION,
 } from "./pull-request-presentation";
 import { PullRequestQuickActions } from "./pull-request-quick-actions";
 
@@ -46,16 +38,6 @@ const CHECKS_LABEL = {
   failing: "Checks failing",
   pending: "Checks running",
 } as const;
-
-const REVIEW: Record<PrReviewDecision, { Icon: LucideIcon; tone: string; label: string }> = {
-  approved: { Icon: CircleCheck, tone: "text-success", label: "Approved" },
-  "changes-requested": { Icon: CircleX, tone: "text-error", label: "Changes requested" },
-  "review-required": {
-    Icon: CircleDashed,
-    tone: "text-muted-foreground",
-    label: "Review required",
-  },
-};
 
 function Signal({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -164,7 +146,9 @@ function PullRequestListRowImpl({
       ? CHECKS_STATE_PRESENTATION[entry.checksState]
       : null;
   const review =
-    entry.state === "open" && entry.reviewDecision ? REVIEW[entry.reviewDecision] : null;
+    entry.state === "open" && entry.reviewDecision
+      ? REVIEW_DECISION_PRESENTATION[entry.reviewDecision]
+      : null;
   const conflicting = entry.state === "open" && entry.mergeability === "conflicting";
   const label = `${state.label} pull request #${entry.number}: ${entry.title}`;
   return (
@@ -206,7 +190,7 @@ function PullRequestListRowImpl({
           ) : null}
           {review ? (
             <Signal label={review.label}>
-              <review.Icon aria-hidden className={cn("size-3", review.tone)} />
+              <review.Icon aria-hidden className={cn("size-3", review.toneClassName)} />
             </Signal>
           ) : null}
         </span>

@@ -24,6 +24,7 @@ import type {
 import type { AuthEnvStatus, AuthMethodWire } from "@/features/chat/lib/agents-api";
 import type {
   ImportCandidate,
+  PullRequestLink,
   ResumedThread,
   ThreadProject,
   ThreadRow,
@@ -49,6 +50,11 @@ import { fixtureLink, sessionPullRequestHandlers } from "../session-pull-request
 import { RESTING_LIFECYCLE } from "@/features/chat/lib/session-lifecycle";
 
 const nothing = () => null;
+
+/** `link` with its snapshot based on `base` instead of `main`: a chain. */
+function chainedOn(link: PullRequestLink, base: string): PullRequestLink {
+  return link.snapshot ? { ...link, snapshot: { ...link.snapshot, baseBranch: base } } : link;
+}
 
 // Anchored when the mock loads, not at a fixed instant. Everything `ago`
 // feeds is rendered as a RELATIVE time ("5m", "3h ago"), so a frozen anchor
@@ -96,9 +102,11 @@ const THREADS: ThreadRow[] = [
     model: "Claude Sonnet 4.5",
     pullRequests: [
       // Opened from the session, found on its branch, and linked by hand: the
-      // badge's "+2" and the hover card's three lines.
-      fixtureLink(412, "created", ago(50 * 60_000)),
-      fixtureLink(405, "detected", ago(40 * 60_000)),
+      // badge's "+3", the hover list's three lines and the session's pull
+      // request panel. number 412 is watched (the eye), and number 405 is based on
+      // number 412's branch, so the two read as a chain of two.
+      { ...fixtureLink(412, "created", ago(50 * 60_000)), watching: true },
+      chainedOn(fixtureLink(405, "detected", ago(40 * 60_000)), "theo/payment-state-machine"),
       fixtureLink(398, "manual", ago(30 * 60_000)),
     ],
     forkedFromSessionId: null,

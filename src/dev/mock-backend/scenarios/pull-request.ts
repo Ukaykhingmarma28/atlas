@@ -11,7 +11,9 @@
 //  - `pull-request-list` — the repository's list tab over about 150 pull
 //    requests across Authored, Review requested and Others, every state, paged;
 //    the sidebar's top session has three linked (created, detected, manual);
-//    `pull-request-list-signed-out` is the list with `gh` signed out.
+//    `pull-request-list-signed-out` is the list with `gh` signed out;
+//  - `session-pull-requests` — the top session's pull request panel: three
+//    linked, number 412 watched, number 405 chained on number 412's branch.
 //
 // Writes are real for the page's life (see `fixtures/pull-requests.ts`). The
 // agent actions work too: Fix and Explain open a session with the task in its
@@ -136,7 +138,25 @@ export const pullRequestListSignedOut = pullRequestListScenario(
   { kind: "notAuthenticated" },
 );
 
+/** The top session's pull request panel (`session-pull-requests:th-01`):
+ *  three linked, number 412 watched and number 405 chained on it. */
+export const sessionPullRequests: Scenario = {
+  name: "session-pull-requests",
+  description:
+    "The top session's pull request panel: three linked, one watched, two chained by base branch.",
+  setup: async () => {
+    const { openSessionPullRequestsTab } =
+      await import("@/features/pull-requests/lib/open-session-pull-requests-tab");
+    openSessionPullRequestsTab({
+      threadId: "th-01",
+      cwd: MOCK_PROJECT.path,
+      title: "Move the user reads onto /v2 and keep the retry helper",
+    });
+  },
+};
+
 export const pullRequestScenarios: Scenario[] = [
+  sessionPullRequests,
   pullRequestList,
   pullRequestListSignedOut,
   pullRequest,

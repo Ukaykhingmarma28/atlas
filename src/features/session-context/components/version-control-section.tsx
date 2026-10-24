@@ -13,7 +13,11 @@
 // changes.
 
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import {
+  ArrowUpRight,
+  Eye,
+  Link,
   CircleCheck,
   CircleDashed,
   CircleX,
@@ -37,6 +41,16 @@ import { useChatStore } from "@/features/chat/stores/chat-store";
 import { openSessionChanges } from "@/features/git/lib/open-session-changes";
 import { openPullRequestTab } from "@/features/pull-requests/lib/open-pull-request-tab";
 import { openPullRequestListTab } from "@/features/pull-requests/lib/open-pull-request-list-tab";
+import { openSessionPullRequestsTab } from "@/features/pull-requests/lib/open-session-pull-requests-tab";
+import { SessionPullRequestMenuItems } from "@/features/pull-requests/components/session-pull-request-menu";
+import { classifyPrError, prErrorMessage } from "@/features/pull-requests/lib/pr-errors";
+import { sessionCheckouts } from "@/features/pull-requests/lib/session-checkouts";
+import {
+  copySessionLink,
+  openLinkOnHost,
+  openSessionLink,
+} from "@/features/pull-requests/lib/session-pull-request-actions";
+import { linkSessionPullRequest } from "@/features/pull-requests/lib/session-pull-requests-api";
 import { openLinkPullRequestDialog } from "@/features/pull-requests/components/link-pull-request-dialog";
 import {
   LINK_SOURCE_LABEL,
@@ -45,6 +59,13 @@ import {
 import { useGitStore } from "@/features/git/stores/git-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import type { PrChecksState } from "@/features/pull-requests/lib/pull-requests-types";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/ui/context-menu";
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/ui/dropdown-menu";
 
 import { startCreatePr, useCreatePrDraft } from "../lib/create-pr";
@@ -151,9 +172,11 @@ function PullRequestRows({ projectPath, prs }: { projectPath: string; prs: Sessi
   if (!prs.current) return null;
   return (
     <>
-      <PullRequestRow projectPath={projectPath} pr={prs.current} />
+      <PullRequestRow projectPath={projectPath} pr={prs.current} prs={prs} />
       {expanded &&
-        prs.rest.map((pr) => <PullRequestRow key={pr.number} projectPath={projectPath} pr={pr} />)}
+        prs.rest.map((pr) => (
+          <PullRequestRow key={pr.number} projectPath={projectPath} pr={pr} prs={prs} />
+        ))}
       {!expanded && prs.rest.length > 0 && (
         <ContextRow onClick={() => setExpanded(true)} className="text-muted-foreground">
           <Plus size={14} className="shrink-0" aria-hidden />
@@ -164,29 +187,102 @@ function PullRequestRows({ projectPath, prs }: { projectPath: string; prs: Sessi
   );
 }
 
-function PullRequestRow({ projectPath, pr }: { projectPath: string; pr: SessionPullRequest }) {
+/**
+ * One pull request. A click opens its tab; a right-click offers what the
+ * session's pull request panel does (Open, Open on GitHub, Copy link, Watch,
+ * Unlink) for a linked one, and Link to this session for a branch pull
+ * request not linked yet.
+ */
+function PullRequestRow({
+  projectPath,
+  pr,
+  prs,
+}: {
+  projectPath: string;
+  pr: SessionPullRequest;
+  prs: SessionPullRequests;
+}) {
   const { icon, className } = prIcon(pr);
   const checks = pr.state === "open" && pr.checksState ? CHECKS[pr.checksState] : null;
+  const link = prs.links.find((l) => l.url.toLowerCase() === pr.url.toLowerCase()) ?? null;
+  const openTab = () =>
+    openPullRequestTab({ repoPath: projectPath, number: pr.number, title: pr.title });
   return (
-    <ContextRow
-      onClick={() =>
-        openPullRequestTab({ repoPath: projectPath, number: pr.number, title: pr.title })
-      }
-      title={`${pr.title} — ${pr.url}${pr.source ? `\n${LINK_SOURCE_LABEL[pr.source]}` : ""}`}
-    >
-      <RowIcon icon={icon} className={className} />
-      <RowLabel>{pr.title}</RowLabel>
-      {checks && (
-        <span title={checks.label} className="inline-flex shrink-0">
-          <checks.icon size={12} className={checks.className} aria-label={checks.label} />
-        </span>
-      )}
-      <RowMeta>#{pr.number}</RowMeta>
-    </ContextRow>
+    <ContextMenu>
+      <ContextMenuTrigger render={<div className="contents" />}>
+        <ContextRow
+          onClick={openTab}
+          title={`${pr.title} — ${pr.url}${pr.source ? `\n${LINK_SOURCE_LABEL[pr.source]}` : ""}`}
+        >
+          <RowIcon icon={icon} className={className} />
+          <RowLabel>{pr.title}</RowLabel>
+          {link?.watching && (
+            <span title="Watching" className="inline-flex shrink-0">
+              <Eye size={12} aria-label="Watching" />
+            </span>
+          )}
+          {checks && (
+            <span title={checks.label} className="inline-flex shrink-0">
+              <checks.icon size={12} className={checks.className} aria-label={checks.label} />
+            </span>
+          )}
+          <RowMeta>#{pr.number}</RowMeta>
+        </ContextRow>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        {link && prs.threadId ? (
+          <SessionPullRequestMenuItems
+            Item={ContextMenuItem}
+            Separator={ContextMenuSeparator}
+            threadId={prs.threadId}
+            link={link}
+            onOpen={() => openSessionLink(link, sessionCheckouts(null, projectPath))}
+          />
+        ) : (
+          <>
+            <ContextMenuItem onClick={openTab}>
+              <GitPullRequest aria-hidden />
+              Open #{pr.number}
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => openLinkOnHost(pr)}>
+              <ArrowUpRight aria-hidden />
+              Open on GitHub
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => void copySessionLink(pr)}>
+              <Link aria-hidden />
+              Copy link
+            </ContextMenuItem>
+            {prs.threadId && (
+              <>
+                <ContextMenuSeparator />
+                <ContextMenuItem
+                  onClick={() => void linkBranchPullRequest(prs.threadId!, projectPath, pr.number)}
+                >
+                  <Link2 aria-hidden />
+                  Link to this session
+                </ContextMenuItem>
+              </>
+            )}
+          </>
+        )}
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
-/** "Link a pull request…" and "View all pull requests", under the rows. */
+async function linkBranchPullRequest(threadId: string, repoPath: string, number: number) {
+  try {
+    await linkSessionPullRequest(threadId, repoPath, number);
+    toast.success(`Linked #${number} to this session`);
+  } catch (raw) {
+    toast.error("Could not link the pull request", {
+      description: prErrorMessage(classifyPrError(raw)),
+    });
+  }
+}
+
+/** The session's pull request count (opening its panel), "Link a pull
+ *  request…" and "View all pull requests", under the rows. */
 function PullRequestLinkRows({
   projectPath,
   prs,
@@ -195,8 +291,22 @@ function PullRequestLinkRows({
   prs: SessionPullRequests;
 }) {
   const { threadId, links } = prs;
+  const open = links.filter((l) => !l.snapshot || l.snapshot.state === "open").length;
   return (
     <>
+      {threadId && links.length > 0 && (
+        <ContextRow
+          onClick={() => openSessionPullRequestsTab({ threadId, cwd: projectPath })}
+          title="Every pull request linked to this session, with their checks and chains"
+        >
+          <RowIcon icon={GitPullRequest} />
+          <RowLabel>Session pull requests</RowLabel>
+          <RowMeta>
+            {open > 0 && open < links.length ? `${open} open · ` : ""}
+            {links.length} linked
+          </RowMeta>
+        </ContextRow>
+      )}
       <ContextRow
         onClick={() => {
           if (threadId) {

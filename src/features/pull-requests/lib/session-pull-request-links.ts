@@ -9,6 +9,8 @@
 
 import type { PullRequestLink } from "@/features/chat/lib/history-api";
 
+import { resolveSessionPullRequestChains } from "./session-pull-request-chains";
+
 /** The state a link shows: a draft is an open pull request marked draft;
  *  a link the host has not been read for yet counts as open. */
 export type PullRequestLinkState = "open" | "draft" | "closed" | "merged";
@@ -54,6 +56,9 @@ export function currentLink(links: readonly PullRequestLink[]): PullRequestLink 
 export interface PullRequestBadge {
   link: PullRequestLink;
   others: number;
+  /** Two or more links, all in one chain derived from base branches: the
+   *  badge reads as a stack of `others + 1`. */
+  stacked: boolean;
   /** `draft` when every one is an open draft; `open` when any is open;
    *  `merged` when all merged; else `closed`. */
   state: PullRequestLinkState;
@@ -73,7 +78,8 @@ export function pullRequestBadge(
       : states.every((s) => s === "merged")
         ? "merged"
         : "closed";
-  return { link, others: all.length - 1, state };
+  const stacked = all.length > 1 && resolveSessionPullRequestChains(all).length === 1;
+  return { link, others: all.length - 1, state, stacked };
 }
 
 /** The words a session search matches its pull requests by. */

@@ -77,6 +77,13 @@ const PullRequestListPanel = lazy(() =>
     default: m.PullRequestListPanel,
   })),
 );
+// One session's linked pull requests (`session-pull-requests:<threadId>`);
+// its own chunk.
+const SessionPullRequestsPanel = lazy(() =>
+  import("@/features/pull-requests/components/session-pull-requests-panel").then((m) => ({
+    default: m.SessionPullRequestsPanel,
+  })),
+);
 // The review diff (`diff`, `session-changes`). Its own chunk, which is the only
 // thing that imports the diff viewer, Shiki and their workers.
 const ReviewPanel = lazy(() =>
@@ -141,6 +148,7 @@ import {
 } from "lucide-react";
 import { readPullRequestTabData } from "@/features/pull-requests/lib/open-pull-request-tab";
 import { readPullRequestListTabData } from "@/features/pull-requests/lib/open-pull-request-list-tab";
+import { readSessionPullRequestsTabData } from "@/features/pull-requests/lib/open-session-pull-requests-tab";
 import { PROJECTLESS_TYPES, surfaceMinWidth, type TabType } from "@/lib/constants";
 import { teamChatShown, toggleTeamChat } from "../lib/team-chat";
 import { SessionContextButton } from "@/features/session-context/components/session-context-button";
@@ -165,6 +173,7 @@ const tabIcons: Record<TabType, FallbackIcon> = {
   commit: GitCommitHorizontal,
   "pull-request": GitPullRequestArrow,
   "pull-requests": GitPullRequest,
+  "session-pull-requests": GitPullRequest,
   "session-changes": FileDiff,
   "source-control": GitBranch,
   log: ScrollText,
@@ -1086,6 +1095,14 @@ function TabContent({ tab, projectId = null }: { tab: Tab; projectId?: string | 
       const list = readPullRequestListTabData(tab.data);
       return list ? (
         <PullRequestListPanel repoPath={list.repoPath} />
+      ) : (
+        <PlaceholderContent tab={tab} />
+      );
+    }
+    case "session-pull-requests": {
+      const session = readSessionPullRequestsTabData(tab.data);
+      return session ? (
+        <SessionPullRequestsPanel tabId={tab.id} threadId={session.threadId} cwd={session.cwd} />
       ) : (
         <PlaceholderContent tab={tab} />
       );

@@ -301,6 +301,9 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
   });
   const isWokeStatus = topStatus === "woke";
   const [snoozeMenuOpen, setSnoozeMenuOpen] = useState(false);
+  // The pull request badge's hover list is showing: the row's own hover card
+  // would cover it.
+  const [badgeOpen, setBadgeOpen] = useState(false);
   const settled = session.settledAt !== null;
   const snoozed = session.snoozedUntil !== null;
 
@@ -411,7 +414,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
     </Hint>
   ) : null;
 
-  const hoverCardDisabled = snoozeMenuOpen || props.isDragging || isRenaming;
+  const hoverCardDisabled = snoozeMenuOpen || badgeOpen || props.isDragging || isRenaming;
 
   if (variant === "slim") {
     return (
@@ -670,7 +673,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
               ) : (
                 <span className="flex-1" />
               )}
-              <SessionPullRequestBadge cwd={session.cwd} pullRequests={session.pullRequests} />
+              <SessionPullRequestBadge session={session} onOpenChange={setBadgeOpen} />
               <span
                 aria-hidden
                 className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1 opacity-60"
