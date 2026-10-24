@@ -14,11 +14,13 @@
 //! every card in the repository. A branch whose PR is older than the newest
 //! hundred shows none, which is the right trade for a sidebar label.
 //!
-//! The result says *why* there is nothing, because the two reasons call for
+//! The result says *why* there is nothing, because the reasons call for
 //! different behaviour: [`RepoPullRequests::Unavailable`] (no `gh`, or `gh`
-//! not signed in) is true of every repository, so the caller stops asking for
-//! the rest of the session; [`RepoPullRequests::Failed`] (not a GitHub remote,
-//! offline, too slow) is about this repository at this moment. Neither is an
+//! not signed in) is true of every repository until the user fixes it, so the
+//! caller backs off and asks again when the window regains focus;
+//! [`RepoPullRequests::Failed`] (not a GitHub remote, offline, rate limited,
+//! too slow) is about this repository at this moment, and its
+//! [`FailedReason`] says whether asking again soon can help. Neither is an
 //! `Err` — the caller is a label on a sidebar card, and none is worth a toast.
 
 use std::collections::BTreeMap;
@@ -68,6 +70,28 @@ pub struct BranchPullRequest {
     pub is_draft: bool,
 }
 
+/// Why `gh` cannot answer for any repository.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UnavailableReason {
+    NotInstalled,
+    NotAuthenticated,
+}
+
+/// Why `gh` could not answer for this repository just now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FailedReason {
+    /// Offline, a dead VPN, or too slow: worth asking again soon.
+    Network,
+    /// GitHub refused for its rate limit: ask again only after a pause.
+    RateLimited,
+    /// Not a GitHub remote, or not a repository: asking again will not help.
+    Unsupported,
+    /// Anything else, including output Atlas could not read.
+    Other,
+}
+
 /// The answer for one repository.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -78,12 +102,10 @@ pub enum RepoPullRequests {
     Ok {
         by_branch: BTreeMap<String, BranchPullRequest>,
     },
-    /// `gh` is not installed or not signed in — true of every repository, so
-    /// the caller stops asking.
-    Unavailable,
-    /// `gh` could not answer for this repository: not a GitHub remote, not a
-    /// repository, offline, timed out, or output Atlas could not read.
-    Failed,
+    /// `gh` is not installed or not signed in — true of every repository.
+    Unavailable { reason: UnavailableReason },
+    /// `gh` could not answer for this repository.
+    Failed { reason: FailedReason },
 }
 
 /// One element of `gh pr list --json number,title,state,isDraft,url,createdAt,headRefName`.
@@ -107,12 +129,13 @@ struct GhPullRequest {
 /// The pull requests of the repository at `path`, one per head branch.
 #[tauri::command]
 pub async fn git_repo_pull_requests(path: String) -> Result<RepoPullRequests, String> {
+    let failed = |reason| RepoPullRequests::Failed { reason };
     if path.trim().is_empty() {
-        return Ok(RepoPullRequests::Failed);
+        return Ok(failed(FailedReason::Unsupported));
     }
     // Held across the blocking run, so at most two `gh` exist at once.
     let Ok(_permit) = GH_PERMITS.acquire().await else {
-        return Ok(RepoPullRequests::Failed);
+        return Ok(failed(FailedReason::Other));
     };
     let run = tokio::task::spawn_blocking(move || {
         run_gh(OsStr::new("gh"), &path, &gh_pr_list_args(), GH_TIMEOUT)
@@ -121,13 +144,18 @@ pub async fn git_repo_pull_requests(path: String) -> Result<RepoPullRequests, St
     Ok(match run {
         Ok(GhOutcome::Output(stdout)) => match parse_by_branch(&stdout) {
             Some(by_branch) => RepoPullRequests::Ok { by_branch },
-            None => RepoPullRequests::Failed,
+            None => failed(FailedReason::Other),
         },
-        Ok(GhOutcome::Missing | GhOutcome::AuthRequired) => RepoPullRequests::Unavailable,
-        Ok(GhOutcome::Failed) => RepoPullRequests::Failed,
+        Ok(GhOutcome::Missing) => RepoPullRequests::Unavailable {
+            reason: UnavailableReason::NotInstalled,
+        },
+        Ok(GhOutcome::AuthRequired) => RepoPullRequests::Unavailable {
+            reason: UnavailableReason::NotAuthenticated,
+        },
+        Ok(GhOutcome::Failed(reason)) => failed(reason),
         Err(e) => {
             tracing::warn!(error = %e, "gh pr list task failed");
-            RepoPullRequests::Failed
+            failed(FailedReason::Other)
         }
     })
 }
@@ -154,8 +182,42 @@ pub(crate) enum GhOutcome {
     Missing,
     /// `gh` says it needs `gh auth login`.
     AuthRequired,
-    /// Any other non-zero exit, a timeout, or an I/O failure.
-    Failed,
+    /// Any other non-zero exit, a timeout, or an I/O failure, classified
+    /// from `gh`'s stderr.
+    Failed(FailedReason),
+}
+
+/// What a failed `gh` run's stderr says went wrong. Only the classification
+/// leaves this function; the text (which can name the repository) is never
+/// logged.
+pub(crate) fn classify_failure(stderr: &str) -> FailedReason {
+    let lower = stderr.to_ascii_lowercase();
+    if lower.contains("rate limit") || lower.contains("http 429") {
+        return FailedReason::RateLimited;
+    }
+    if lower.contains("none of the git remotes")
+        || lower.contains("not a git repository")
+        || lower.contains("no git remotes")
+        || lower.contains("could not resolve to a repository")
+        || lower.contains("not a github")
+    {
+        return FailedReason::Unsupported;
+    }
+    if lower.contains("error connecting")
+        || lower.contains("dial tcp")
+        || lower.contains("could not resolve host")
+        || lower.contains("no such host")
+        || lower.contains("timeout")
+        || lower.contains("timed out")
+        || lower.contains("connection")
+        || lower.contains("tls")
+        || lower.contains("http 502")
+        || lower.contains("http 503")
+        || lower.contains("http 504")
+    {
+        return FailedReason::Network;
+    }
+    FailedReason::Other
 }
 
 /// Run `program` with `args` in `cwd`, killing it after `timeout`. The
@@ -164,7 +226,7 @@ pub(crate) fn run_gh(program: &OsStr, cwd: &str, args: &[&str], timeout: Duratio
     // A directory that is gone (a removed worktree) fails the spawn with the
     // same NotFound as a missing binary; it must not read as "no `gh`".
     if !std::path::Path::new(cwd).is_dir() {
-        return GhOutcome::Failed;
+        return GhOutcome::Failed(FailedReason::Unsupported);
     }
     let spawned = atlas_process::command(program)
         .args(args)
@@ -175,7 +237,7 @@ pub(crate) fn run_gh(program: &OsStr, cwd: &str, args: &[&str], timeout: Duratio
         .env("NO_COLOR", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn();
     let mut child = match spawned {
         Ok(child) => child,
@@ -185,7 +247,7 @@ pub(crate) fn run_gh(program: &OsStr, cwd: &str, args: &[&str], timeout: Duratio
         }
         Err(e) => {
             tracing::debug!(error = %e, "gh failed to start");
-            return GhOutcome::Failed;
+            return GhOutcome::Failed(FailedReason::Other);
         }
     };
 
@@ -195,7 +257,21 @@ pub(crate) fn run_gh(program: &OsStr, cwd: &str, args: &[&str], timeout: Duratio
     let Some(mut stdout) = child.stdout.take() else {
         let _ = child.kill();
         let _ = child.wait();
-        return GhOutcome::Failed;
+        return GhOutcome::Failed(FailedReason::Other);
+    };
+    // Stderr drains on its own thread too, for the same reason; it is read
+    // only to classify a failure.
+    let stderr = child.stderr.take().map(|mut pipe| {
+        std::thread::spawn(move || {
+            let mut err = String::new();
+            let _ = pipe.read_to_string(&mut err);
+            err
+        })
+    });
+    let stderr_text = move || {
+        stderr
+            .and_then(|handle| handle.join().ok())
+            .unwrap_or_default()
     };
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
@@ -209,13 +285,13 @@ pub(crate) fn run_gh(program: &OsStr, cwd: &str, args: &[&str], timeout: Duratio
             tracing::debug!(error = %e, "gh stdout read failed");
             let _ = child.kill();
             let _ = child.wait();
-            return GhOutcome::Failed;
+            return GhOutcome::Failed(FailedReason::Other);
         }
         Err(_) => {
-            tracing::debug!(cwd, "gh timed out; killed");
+            tracing::debug!("gh timed out; killed");
             let _ = child.kill();
             let _ = child.wait();
-            return GhOutcome::Failed;
+            return GhOutcome::Failed(FailedReason::Network);
         }
     };
     // Stdout closed, so the child has exited (or is about to): this does not
@@ -224,13 +300,13 @@ pub(crate) fn run_gh(program: &OsStr, cwd: &str, args: &[&str], timeout: Duratio
         Ok(status) if status.success() => GhOutcome::Output(stdout),
         Ok(status) if status.code() == Some(GH_EXIT_AUTH_REQUIRED) => GhOutcome::AuthRequired,
         Ok(status) => {
-            // Not a GitHub remote, not a repository: nothing for this repo.
-            tracing::debug!(cwd, ?status, "gh exited non-zero");
-            GhOutcome::Failed
+            let reason = classify_failure(&stderr_text());
+            tracing::debug!(?status, ?reason, "gh exited non-zero");
+            GhOutcome::Failed(reason)
         }
         Err(e) => {
             tracing::debug!(error = %e, "gh wait failed");
-            GhOutcome::Failed
+            GhOutcome::Failed(FailedReason::Other)
         }
     }
 }
@@ -447,13 +523,38 @@ mod tests {
             })
         );
         assert_eq!(
-            serde_json::to_value(RepoPullRequests::Unavailable).unwrap(),
-            serde_json::json!({ "kind": "unavailable" })
+            serde_json::to_value(RepoPullRequests::Unavailable {
+                reason: UnavailableReason::NotAuthenticated
+            })
+            .unwrap(),
+            serde_json::json!({ "kind": "unavailable", "reason": "notAuthenticated" })
         );
         assert_eq!(
-            serde_json::to_value(RepoPullRequests::Failed).unwrap(),
-            serde_json::json!({ "kind": "failed" })
+            serde_json::to_value(RepoPullRequests::Failed {
+                reason: FailedReason::RateLimited
+            })
+            .unwrap(),
+            serde_json::json!({ "kind": "failed", "reason": "rateLimited" })
         );
+    }
+
+    #[test]
+    fn a_failure_is_classified_from_stderr() {
+        assert_eq!(
+            classify_failure("GraphQL: API rate limit exceeded for user ID 1."),
+            FailedReason::RateLimited
+        );
+        assert_eq!(
+            classify_failure(
+                "none of the git remotes configured for this repository point to a known GitHub host"
+            ),
+            FailedReason::Unsupported
+        );
+        assert_eq!(
+            classify_failure("error connecting to api.github.com"),
+            FailedReason::Network
+        );
+        assert_eq!(classify_failure("something else"), FailedReason::Other);
     }
 
     #[cfg(unix)]
@@ -500,7 +601,10 @@ mod tests {
         #[test]
         fn a_non_zero_exit_is_a_failure_for_this_repository() {
             let (_dir, gh) = fake_gh("echo 'not a github remote' >&2; exit 1");
-            assert_eq!(run(&gh, GH_TIMEOUT), GhOutcome::Failed);
+            assert_eq!(
+                run(&gh, GH_TIMEOUT),
+                GhOutcome::Failed(FailedReason::Unsupported)
+            );
         }
 
         #[test]
@@ -526,7 +630,10 @@ mod tests {
         fn a_directory_that_is_gone_is_a_failure_not_a_missing_gh() {
             let (_dir, gh) = fake_gh(r#"printf '[]'"#);
             let gone = std::env::temp_dir().join("atlas-git-pr-no-such-dir");
-            assert_eq!(run_in(&gh, &gone, GH_TIMEOUT), GhOutcome::Failed);
+            assert_eq!(
+                run_in(&gh, &gone, GH_TIMEOUT),
+                GhOutcome::Failed(FailedReason::Unsupported)
+            );
         }
 
         #[test]
@@ -534,7 +641,10 @@ mod tests {
             // `exec` so the kill reaches the sleeper itself, which holds stdout.
             let (_dir, gh) = fake_gh("exec sleep 30");
             let started = std::time::Instant::now();
-            assert_eq!(run(&gh, Duration::from_millis(200)), GhOutcome::Failed);
+            assert_eq!(
+                run(&gh, Duration::from_millis(200)),
+                GhOutcome::Failed(FailedReason::Network)
+            );
             assert!(started.elapsed() < Duration::from_secs(10));
         }
     }

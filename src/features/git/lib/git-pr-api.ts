@@ -6,11 +6,18 @@
 // One `gh` call per repository, shared by every card in it: the agent sidebar
 // mounts all its thread cards at once, and a call per branch was a burst of
 // network-bound processes on every open.
+//
+// A missing or signed-out `gh` holds every repository's read back through the
+// shared gh gate (`pull-requests/lib/pr-errors.ts`) — for a bounded time, and
+// only until the window is focused again, so a `gh auth login` run in a
+// terminal is picked up without restarting Atlas.
 
 import { useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type Query } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
+
+import { ghGate, noteGhOutcome, resetGhGateForTests } from "@/features/pull-requests/lib/pr-errors";
 
 export interface BranchPullRequest {
   number: number;
@@ -26,14 +33,14 @@ export interface BranchPullRequest {
  * - `ok` — `gh` answered; `byBranch` holds the PR worth showing per head
  *   branch (an open one if there is one, else the most recently created).
  * - `unavailable` — `gh` is not installed or not signed in. True of every
- *   repository, so nothing asks again this session.
- * - `failed` — this repository could not be answered for (not a GitHub
- *   remote, offline, timed out).
+ *   repository until fixed, so reads wait behind the gh gate.
+ * - `failed` — this repository could not be answered for; `reason` says
+ *   whether asking again soon can help.
  */
 export type RepoPullRequests =
   | { kind: "ok"; byBranch: Record<string, BranchPullRequest> }
-  | { kind: "unavailable" }
-  | { kind: "failed" };
+  | { kind: "unavailable"; reason: "notInstalled" | "notAuthenticated" }
+  | { kind: "failed"; reason: "network" | "rateLimited" | "unsupported" | "other" };
 
 export function repoPullRequests(path: string): Promise<RepoPullRequests> {
   return invoke<RepoPullRequests>("git_repo_pull_requests", { path });
@@ -44,19 +51,45 @@ export function repoPullRequestsKey(cwd: string) {
   return ["repo-pull-requests", cwd] as const;
 }
 
-/** Set once any repository reports `gh` unavailable; stops every later query. */
-let ghUnavailable = false;
-
 /** Test seam: forget that `gh` was found unavailable. */
 export function resetGhAvailabilityForTests(): void {
-  ghUnavailable = false;
+  resetGhGateForTests();
 }
 
-async function fetchRepoPullRequests(cwd: string): Promise<RepoPullRequests> {
-  if (ghUnavailable) return { kind: "unavailable" };
+export async function fetchRepoPullRequests(cwd: string): Promise<RepoPullRequests> {
+  const held = ghGate();
+  if (held?.kind === "notInstalled" || held?.kind === "notAuthenticated") {
+    return { kind: "unavailable", reason: held.kind };
+  }
+  if (held?.kind === "rateLimited") return { kind: "failed", reason: "rateLimited" };
   const result = await repoPullRequests(cwd);
-  if (result.kind === "unavailable") ghUnavailable = true;
+  if (result.kind === "unavailable") {
+    noteGhOutcome({ kind: result.reason ?? "notInstalled" });
+  } else if (result.kind === "failed" && result.reason === "rateLimited") {
+    noteGhOutcome({ kind: "rateLimited" });
+  } else if (result.kind === "ok") {
+    noteGhOutcome(null);
+  }
   return result;
+}
+
+/** When to ask again after an answer: an `ok` stays fresh for five minutes
+ *  (a turn end invalidates it sooner); a transient failure is retried soon;
+ *  anything else waits for the gate, or for the window's next focus. */
+export function repoPullRequestsStaleTime(data: RepoPullRequests | undefined): number {
+  if (!data) return 0;
+  if (data.kind === "ok") return 5 * 60_000;
+  if (data.kind === "failed" && data.reason === "unsupported") return 30 * 60_000;
+  return 0;
+}
+
+export function repoPullRequestsRefetchInterval(
+  data: RepoPullRequests | undefined,
+): number | false {
+  if (data?.kind !== "failed") return false;
+  if (data.reason === "network") return 30_000;
+  if (data.reason === "rateLimited") return 2 * 60_000;
+  return false;
 }
 
 /**
@@ -77,11 +110,12 @@ export function useBranchPullRequest(
   const { data } = useQuery({
     queryKey: repoPullRequestsKey(cwd),
     queryFn: () => fetchRepoPullRequests(cwd),
-    enabled: enabled && !!cwd && !!branch && !ghUnavailable,
+    enabled: enabled && !!cwd && !!branch,
     select,
-    // A PR's number does not change; its state does, and a turn end
-    // invalidates this key, which is when it is likely to have.
-    staleTime: 5 * 60_000,
+    staleTime: (query: Query<RepoPullRequests>) => repoPullRequestsStaleTime(query.state.data),
+    refetchInterval: (query: Query<RepoPullRequests>) =>
+      repoPullRequestsRefetchInterval(query.state.data),
+    refetchIntervalInBackground: false,
     retry: false,
   });
   return data ?? null;

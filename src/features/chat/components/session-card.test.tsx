@@ -274,8 +274,10 @@ describe("SessionCard", () => {
     expect(screen.queryByRole("button", { name: /pull request/ })).toBeNull();
   });
 
-  it("stops asking for the session once gh is unavailable", async () => {
-    invoke.mockImplementation(() => Promise.resolve({ kind: "unavailable" }));
+  it("holds other repositories back while gh is unavailable", async () => {
+    invoke.mockImplementation(() =>
+      Promise.resolve({ kind: "unavailable", reason: "notAuthenticated" }),
+    );
     renderCard();
     await waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
     cleanup();
@@ -285,8 +287,22 @@ describe("SessionCard", () => {
     expect(screen.queryByRole("button", { name: /pull request/ })).toBeNull();
   });
 
+  it("asks again once the window is focused, which is when a sign-in lands", async () => {
+    invoke.mockImplementation(() =>
+      Promise.resolve({ kind: "unavailable", reason: "notAuthenticated" }),
+    );
+    renderCard();
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
+    cleanup();
+    invoke.mockImplementation(prsAnswer({ "0.4.0": PR }));
+    window.dispatchEvent(new Event("focus"));
+    renderCard({ cwd: "/repo/other" });
+    expect(await screen.findByText("353")).toBeTruthy();
+    expect(invoke).toHaveBeenCalledWith("git_repo_pull_requests", { path: "/repo/other" });
+  });
+
   it("shows nothing for a repository gh could not answer for", async () => {
-    invoke.mockImplementation(() => Promise.resolve({ kind: "failed" }));
+    invoke.mockImplementation(() => Promise.resolve({ kind: "failed", reason: "unsupported" }));
     renderCard();
     await waitFor(() => expect(invoke).toHaveBeenCalled());
     await act(async () => {});

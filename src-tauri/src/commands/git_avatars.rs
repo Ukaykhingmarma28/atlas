@@ -71,7 +71,7 @@ pub async fn git_repo_avatars(path: String) -> Result<RepoAvatars, String> {
             // A run that used its whole timeout was offline or stuck, not
             // missing a branch — a second one would hold the shared permit
             // (and stall the PR badges) for nothing.
-            GhOutcome::Failed if started.elapsed() < GH_TIMEOUT => {
+            GhOutcome::Failed(_) if started.elapsed() < GH_TIMEOUT => {
                 run_gh(gh, &path, &gh_api_args(false), GH_TIMEOUT)
             }
             other => other,
@@ -84,7 +84,7 @@ pub async fn git_repo_avatars(path: String) -> Result<RepoAvatars, String> {
             None => RepoAvatars::Failed,
         },
         Ok(GhOutcome::Missing | GhOutcome::AuthRequired) => RepoAvatars::Unavailable,
-        Ok(GhOutcome::Failed) => RepoAvatars::Failed,
+        Ok(GhOutcome::Failed(_)) => RepoAvatars::Failed,
         Err(e) => {
             tracing::warn!(error = %e, "gh api commits task failed");
             RepoAvatars::Failed

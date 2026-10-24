@@ -1355,7 +1355,7 @@ export const gitHandlers: TypedHandlers<GitResponses> = {
   }),
   git_blame_file: ({ file }): BlameLine[] => blame(String(file)),
   // The default repository has no GitHub remote, so `gh` has nothing to say.
-  git_repo_pull_requests: (): RepoPullRequests => ({ kind: "failed" }),
+  git_repo_pull_requests: (): RepoPullRequests => ({ kind: "failed", reason: "unsupported" }),
   git_repo_avatars: (): RepoAvatars => ({ kind: "failed" }),
 
   // ── index ───────────────────────────────────────────────────────────────
