@@ -29,7 +29,7 @@ use serde_json::{json, Value};
 use super::{CodeToolsGate, CODE_PATH};
 use crate::commands::memory_server::{Grant, TOOLS_LIST_TTL_MS};
 use crate::commands::session_projects::ProjectAccessBroker;
-use crate::commands::session_pull_requests::{repository_of_url, PullRequestLinkBroker};
+use crate::commands::session_pull_requests::{repository_of_url, PullRequestBroker};
 use atlas_thread_metadata::ProjectAccess;
 
 /// What the server tells the agent about itself. The engine shows it as the
@@ -45,7 +45,9 @@ Those two are the whole search surface: there is no symbol, semantic or impact t
 When you need a folder outside your working directory and the session's attached projects (another \
 repository, say), call request_project_access: the user approves or denies it in the session, and \
 an approved folder is attached at the access granted. When you open a pull request (or start \
-work on one that already exists), call link_pull_request so the user sees it beside this session.";
+work on one that already exists), call link_pull_request so the user sees it beside this session. \
+To follow its checks and reviews, call watch_pull_request and end your turn: Atlas wakes you with \
+a message when something needs you, so never poll or sleep on a pull request.";
 
 /// How long one call may search before it answers with what it has.
 pub(crate) const DEADLINE: Duration = Duration::from_secs(15);
@@ -61,9 +63,17 @@ const ACCESS_DESCRIPTION: &str = "Ask the user to attach a folder outside your w
 
 const NO_ACCESS_NOTE: &str = "Project access requests are not available in this session.";
 
-const LINK_PR_DESCRIPTION: &str = "Link a pull request to this session, so Atlas shows its state and checks beside the session and keeps them current. Call it for every pull request you open (gh pr create) or work on. Pass the URL, or the number in this session's repository. Linking one already linked succeeds and says so.";
+const LINK_PR_DESCRIPTION: &str = "Call this for every pull request you open (gh pr create) or work on. Links it to this session, so Atlas shows its state and checks beside the session, keeps them current, and settles the session when it merges. Pass the URL, or the number in this session's repository. Linking one already linked succeeds and says so.";
 
-const NO_LINK_NOTE: &str = "Linking pull requests is not available in this session.";
+const UNLINK_PR_DESCRIPTION: &str = "Remove a pull request link from this session, for example after closing one you opened by mistake. Pass the URL, or the number. Unlinking one that is not linked succeeds and says so.";
+
+const LIST_PRS_DESCRIPTION: &str = "List the pull requests linked to this session with their last known state, checks, review and whether Atlas is watching them, and how they stack by base branch (bottom to top). Call link_pull_request for any you opened that is missing.";
+
+const WATCH_PR_DESCRIPTION: &str = "Have Atlas watch an open pull request for this session, linking it first if needed. Atlas reads it every two minutes and wakes you with a message when a check fails, the required checks pass, someone else comments or reviews, or the branch starts to conflict with its base. Use this to monitor or babysit a pull request instead of polling, sleeping or running a watcher. Only comments posted after this call wake you, so handle the existing ones first, then end your turn. A wake is news, not a merge decision: check readiness yourself before merging. While Atlas watches, the session shows as working in the user's sidebar; when you hand the work back to the user, call unwatch_pull_request first. Watching ends when the pull request merges or closes, when the session settles, when Atlas fails to read it 8 times in a row (a rate limit only delays it), when the user stops the session, or when you call unwatch_pull_request. Unsettle the session before starting a new watch.";
+
+const UNWATCH_PR_DESCRIPTION: &str = "Stop Atlas from watching a pull request for this session. It stays linked. Pass the URL, or the number.";
+
+const NO_LINK_NOTE: &str = "Pull request tools are not available in this session.";
 
 fn schema(value: Value) -> Arc<JsonObject> {
     match value {
@@ -150,20 +160,62 @@ pub(super) fn tools() -> Vec<Tool> {
         Tool::new(
             Cow::Borrowed(LINK_PR_TOOL),
             Cow::Borrowed(LINK_PR_DESCRIPTION),
-            schema(json!({
-                "type": "object",
-                "properties": {
-                    "url": { "type": "string", "description": "The pull request's URL." },
-                    "number": { "type": "integer", "minimum": 1, "description": "Its number in this session's repository, when no URL is given." }
-                }
-            })),
+            pr_target_schema(),
         )
-        .with_annotations(ToolAnnotations::new().read_only(false)),
+        .with_annotations(ToolAnnotations::new().read_only(false).idempotent(true)),
+        Tool::new(
+            Cow::Borrowed(UNLINK_PR_TOOL),
+            Cow::Borrowed(UNLINK_PR_DESCRIPTION),
+            pr_target_schema(),
+        )
+        .with_annotations(
+            ToolAnnotations::new()
+                .read_only(false)
+                .destructive(true)
+                .idempotent(true),
+        ),
+        Tool::new(
+            Cow::Borrowed(LIST_PRS_TOOL),
+            Cow::Borrowed(LIST_PRS_DESCRIPTION),
+            schema(json!({ "type": "object", "properties": {} })),
+        )
+        .with_annotations(ToolAnnotations::new().read_only(true)),
+        Tool::new(
+            Cow::Borrowed(WATCH_PR_TOOL),
+            Cow::Borrowed(WATCH_PR_DESCRIPTION),
+            pr_target_schema(),
+        )
+        .with_annotations(ToolAnnotations::new().read_only(false).idempotent(true)),
+        Tool::new(
+            Cow::Borrowed(UNWATCH_PR_TOOL),
+            Cow::Borrowed(UNWATCH_PR_DESCRIPTION),
+            pr_target_schema(),
+        )
+        .with_annotations(ToolAnnotations::new().read_only(false).idempotent(true)),
     ]
+}
+
+/// The arguments every pull request tool but the list takes.
+fn pr_target_schema() -> Arc<JsonObject> {
+    schema(json!({
+        "type": "object",
+        "properties": {
+            "url": { "type": "string", "description": "The pull request's URL." },
+            "number": { "type": "integer", "minimum": 1, "description": "Its number in this session's repository, when no URL is given." }
+        }
+    }))
 }
 
 /// The tool an agent links a pull request to its session with.
 pub(crate) const LINK_PR_TOOL: &str = "link_pull_request";
+/// ...unlinks one with.
+pub(crate) const UNLINK_PR_TOOL: &str = "unlink_pull_request";
+/// ...lists the session's with.
+pub(crate) const LIST_PRS_TOOL: &str = "list_session_pull_requests";
+/// ...has Atlas watch one with.
+pub(crate) const WATCH_PR_TOOL: &str = "watch_pull_request";
+/// ...stops the watch with.
+pub(crate) const UNWATCH_PR_TOOL: &str = "unwatch_pull_request";
 
 #[derive(Debug, Deserialize)]
 struct LinkArgs {
@@ -368,8 +420,8 @@ pub struct CodeTools {
     /// Where `request_project_access` goes; `None` answers that it is not
     /// available (the tests that need no host).
     access: Option<Arc<dyn ProjectAccessBroker>>,
-    /// Where `link_pull_request` goes; `None` as for `access`.
-    pull_requests: Option<Arc<dyn PullRequestLinkBroker>>,
+    /// Where the pull request tools go; `None` as for `access`.
+    pull_requests: Option<Arc<dyn PullRequestBroker>>,
 }
 
 impl CodeTools {
@@ -381,30 +433,38 @@ impl CodeTools {
         }
     }
 
-    /// Route `link_pull_request` to `broker`.
-    pub fn with_pull_requests(mut self, broker: Arc<dyn PullRequestLinkBroker>) -> Self {
+    /// Route the pull request tools to `broker`.
+    pub fn with_pull_requests(mut self, broker: Arc<dyn PullRequestBroker>) -> Self {
         self.pull_requests = Some(broker);
         self
     }
 
-    /// `link_pull_request`: the target read off the arguments, linked by the
-    /// broker against the session's checkout.
-    async fn link_pull_request(&self, grant: Grant, args: Value) -> CallToolResult {
+    /// One of the pull request tools (`name`): the target read off the
+    /// arguments, done by the broker against the session's checkout.
+    async fn pull_request_tool(&self, name: &str, grant: Grant, args: Value) -> CallToolResult {
         let Some(broker) = self.pull_requests.clone() else {
             return tool_error(NO_LINK_NOTE);
         };
-        let args: LinkArgs = match serde_json::from_value(args) {
-            Ok(args) => args,
-            Err(e) => return tool_error(format!("{LINK_PR_TOOL}: {e}")),
+        let answer = if name == LIST_PRS_TOOL {
+            broker.list(grant.session_id).await
+        } else {
+            let args: LinkArgs = match serde_json::from_value(args) {
+                Ok(args) => args,
+                Err(e) => return tool_error(format!("{name}: {e}")),
+            };
+            let (repository, number) = match link_target(args.url.as_deref(), args.number) {
+                Ok(target) => target,
+                Err(e) => return tool_error(e.replacen(LINK_PR_TOOL, name, 1)),
+            };
+            let (session, cwd) = (grant.session_id, grant.cwd);
+            match name {
+                UNLINK_PR_TOOL => broker.unlink(session, cwd, repository, number).await,
+                WATCH_PR_TOOL => broker.watch(session, cwd, repository, number, true).await,
+                UNWATCH_PR_TOOL => broker.watch(session, cwd, repository, number, false).await,
+                _ => broker.link(session, cwd, repository, number).await,
+            }
         };
-        let (repository, number) = match link_target(args.url.as_deref(), args.number) {
-            Ok(target) => target,
-            Err(e) => return tool_error(e),
-        };
-        match broker
-            .link(grant.session_id, grant.cwd, repository, number)
-            .await
-        {
+        match answer {
             Ok(text) => CallToolResult::success(vec![Content::text(text)]),
             Err(e) => tool_error(e),
         }
@@ -463,8 +523,16 @@ impl CodeTools {
         if name == REQUEST_ACCESS_TOOL {
             return self.request_access(grant, args).await;
         }
-        if name == LINK_PR_TOOL {
-            return self.link_pull_request(grant, args).await;
+        if [
+            LINK_PR_TOOL,
+            UNLINK_PR_TOOL,
+            LIST_PRS_TOOL,
+            WATCH_PR_TOOL,
+            UNWATCH_PR_TOOL,
+        ]
+        .contains(&name.as_str())
+        {
+            return self.pull_request_tool(&name, grant, args).await;
         }
         let root = PathBuf::from(&grant.cwd);
         let job: Job = match name.as_str() {

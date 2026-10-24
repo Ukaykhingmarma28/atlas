@@ -916,6 +916,7 @@ pub fn run() {
             commands::session_pull_requests::session_pull_requests_link,
             commands::session_pull_requests::session_pull_requests_unlink,
             commands::session_pull_requests::session_pull_requests_sync,
+            commands::session_pull_requests::session_pull_requests_watch,
             commands::agents::threads_mark_unread,
             commands::agents::agents_snapshot,
             commands::agents::agents_snapshot_meta,

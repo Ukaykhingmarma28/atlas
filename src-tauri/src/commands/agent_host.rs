@@ -58,6 +58,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+mod wake;
+pub use wake::PendingWake;
+
 // ── The IPC wire shapes ─────────────────────────────────────────────────────
 //
 // These moved out of `atlas-agents`. Field names and serde
@@ -473,6 +476,9 @@ pub struct AgentHost {
     /// answer, once there is one. A second request for the same folder
     /// waits on the card already up instead of raising another.
     access_requests: Mutex<HashMap<(String, PathBuf), AccessAnswer>>,
+    /// Prompts Atlas sends on its own (a pull request watch's wake), held
+    /// until their session's turn ends ([`AgentHost::wake`]).
+    wakes: wake::Wakes,
 }
 
 /// Where an access request's answer arrives.
@@ -630,6 +636,7 @@ impl AgentHost {
             lifecycle: Mutex::new(None),
             session_mcp,
             access_requests: Mutex::new(HashMap::new()),
+            wakes: wake::Wakes::default(),
         });
         // Weak, and installed after the host exists: the observer needs the
         // host to name the agent a session belongs to, and a strong reference
@@ -1643,6 +1650,8 @@ impl AgentHost {
             // Every way out of the turn ends it, a superseded one included:
             // each send counted itself in, so each counts itself out.
             this.end_atlas_turn(&session_key);
+            // A wake held for this turn goes out once the session is idle.
+            this.drain_wakes_later(&session_key);
             if let Err(e) = sent {
                 // A send that was superseded reports back late, and its failure
                 // belongs to a turn that is already over. Announcing it anyway
@@ -1892,6 +1901,21 @@ impl AgentHost {
         self.manager
             .cancel(&acp::SessionId::new(key.session_id.as_str()));
         Ok(())
+    }
+
+    /// The user pressed Stop: cancel the turn, drop any wake held for the
+    /// session, and end its pull request watches, so nothing Atlas sends on
+    /// its own starts the agent straight back up. The order matters: the held
+    /// wakes go first, so the cancelled turn's end finds none to send.
+    pub fn stop(&self, key: &SessionKey) -> Result<()> {
+        self.forget_wakes(&key.session_id);
+        if let Some(history) = self.history() {
+            if let Some(thread_id) = history.thread_for(&acp::SessionId::new(key.session_id.as_str()))
+            {
+                history.store().end_pull_request_watches(thread_id);
+            }
+        }
+        self.cancel(key)
     }
 
     // ---- per-session settings -------------------------------------------
@@ -3042,17 +3066,32 @@ impl AgentHost {
     /// "quiet" and settle a session a terminal is using in another project.
     /// A candidate any of whose folders cannot be answered for is skipped:
     /// the sweep never settles a session it could not check.
+    #[cfg(test)]
     pub fn auto_settle_idle(
         &self,
         idle: chrono::Duration,
         activity_in: ActivityIn<'_>,
+    ) -> Result<usize> {
+        self.auto_settle_idle_keeping(idle, activity_in, false)
+    }
+
+    /// [`Self::auto_settle_idle`], leaving every session with a linked pull
+    /// request alone when `keep_pull_requests` (`autoSettleKeepPullRequests`).
+    /// A watched one is left alone either way.
+    pub fn auto_settle_idle_keeping(
+        &self,
+        idle: chrono::Duration,
+        activity_in: ActivityIn<'_>,
+        keep_pull_requests: bool,
     ) -> Result<usize> {
         let history = self.history_or_err()?;
         let now = Utc::now();
         let cutoff = now - idle;
         // Only the rows already idle past the cutoff are worth a busy check:
         // most ticks find none, and then nothing else is read.
-        let idle_sessions = history.store().idle_sessions(cutoff);
+        let idle_sessions = history
+            .store()
+            .idle_sessions_keeping(cutoff, keep_pull_requests);
         if idle_sessions.is_empty() {
             return Ok(0);
         }
@@ -3080,7 +3119,9 @@ impl AgentHost {
             })
             .map(|(session_id, _)| session_id)
             .collect();
-        Ok(history.store().auto_settle_idle(cutoff, &busy))
+        Ok(history
+            .store()
+            .auto_settle_idle_keeping(cutoff, &busy, keep_pull_requests))
     }
 
     /// Which installed agents can be imported from, and how much they have.
