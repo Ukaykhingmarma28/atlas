@@ -2052,12 +2052,23 @@ html[data-word-wrap="off"] .prose-chat pre {
   color: inherit;
   font-size: inherit;
 }
+/* A link reads by colour alone, the accent, and is underlined only under the
+   pointer or keyboard focus. The underline is a dotted rule drawn as a
+   background rather than `text-decoration`, so it runs under the service mark
+   (`.atlas-link__icon`, an inline-block that text-decoration skips) as well as
+   the text. Focus still gets the global `:focus-visible` ring on top. File
+   chips are spans (`.atlas-file-chip`), not anchors, so none of this reaches
+   them. */
 .prose-chat a {
   color: var(--primary);
-  text-decoration: underline;
+  text-decoration: none;
 }
-.prose-chat a:hover {
-  opacity: 0.8;
+.prose-chat a:hover,
+.prose-chat a:focus-visible {
+  background-image: radial-gradient(circle, currentcolor 0.75px, transparent 1px);
+  background-position: left bottom;
+  background-repeat: repeat-x;
+  background-size: 4px 2px;
 }
 .prose-chat strong {
   font-weight: 600;
