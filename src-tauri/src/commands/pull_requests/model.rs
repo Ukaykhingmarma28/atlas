@@ -545,6 +545,10 @@ pub struct PrListEntry {
     pub deletions: u32,
     pub created_at: String,
     pub updated_at: String,
+    /// When it merged; `None` while it is not merged. A session's link
+    /// snapshot dates the merge by it.
+    #[serde(default)]
+    pub merged_at: Option<String>,
     pub viewer_review_requested: bool,
     pub labels: Vec<PrLabel>,
     pub review_decision: Option<PrReviewDecision>,

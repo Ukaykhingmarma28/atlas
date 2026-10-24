@@ -136,6 +136,9 @@ export interface PullRequestLinkSnapshot {
   baseBranch: string;
   isDraft: boolean;
   updatedAt: string | null;
+  /** When it merged; `null` while it is not merged, or on a snapshot stored
+   *  before the merge time was kept. Absent from older fakes. */
+  mergedAt?: string | null;
   checksState: "passing" | "failing" | "pending" | null;
   reviewDecision: "approved" | "changes-requested" | "review-required" | null;
   commentCount: number | null;

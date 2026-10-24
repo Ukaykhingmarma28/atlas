@@ -1477,6 +1477,7 @@ fn to_list_entry(node: &Value, viewer: Option<&str>) -> Option<PrListEntry> {
         deletions: u32_of(node, "deletions"),
         created_at: string_or_empty(node, "createdAt"),
         updated_at: string_or_empty(node, "updatedAt"),
+        merged_at: text(node, "mergedAt"),
         viewer_review_requested: team_request
             || viewer_lower
                 .is_some_and(|v| review_logins.iter().any(|l| l.to_ascii_lowercase() == v)),

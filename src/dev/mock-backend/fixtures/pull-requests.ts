@@ -210,6 +210,7 @@ function pull(
       deletions: full.deletions,
       createdAt: full.createdAt,
       updatedAt: full.updatedAt,
+      mergedAt: full.mergedAt,
       viewerReviewRequested: full.reviewers.some(
         (r) => r.actor.login === VIEWER.login && r.state === "requested",
       ),

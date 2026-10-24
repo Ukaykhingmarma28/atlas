@@ -88,6 +88,10 @@ pub struct PullRequestSnapshot {
     /// When the host last saw it change (RFC 3339), as it reported it.
     #[serde(default)]
     pub updated_at: Option<String>,
+    /// When it merged (RFC 3339), as the host reported it. `None` while it
+    /// is not merged, and on a snapshot stored before this was kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merged_at: Option<String>,
     /// `passing`, `failing` or `pending`; `None` when it has no checks.
     #[serde(default)]
     pub checks_state: Option<String>,
@@ -110,9 +114,24 @@ impl PullRequestSnapshot {
             && self.base_branch == other.base_branch
             && self.is_draft == other.is_draft
             && self.updated_at == other.updated_at
+            && self.merged_at == other.merged_at
             && self.checks_state == other.checks_state
             && self.review_decision == other.review_decision
             && self.comment_count == other.comment_count
+    }
+
+    /// When the pull request was done, as far as this snapshot knows: the
+    /// merge time for a merged one, and otherwise (closed, or merged on a
+    /// snapshot stored before the merge time was kept) the host's last
+    /// update time. `None` while it is open.
+    pub fn done_at(&self) -> Option<&str> {
+        if self.state == "open" {
+            return None;
+        }
+        self.merged_at
+            .as_deref()
+            .filter(|_| self.state == "merged")
+            .or(self.updated_at.as_deref())
     }
 }
 
@@ -439,6 +458,7 @@ mod tests {
             base_branch: "main".into(),
             is_draft: false,
             updated_at: Some("2026-10-20T10:00:00Z".into()),
+            merged_at: None,
             checks_state: Some("passing".into()),
             review_decision: None,
             comment_count: Some(2),
@@ -453,6 +473,33 @@ mod tests {
             format!("https://github.com/acme/shop/pull/{number}"),
             source,
         )
+    }
+
+    #[test]
+    fn a_merge_is_dated_by_its_merge_time_and_else_by_the_last_update() {
+        let mut merged = snapshot("merged", "Ship it");
+        merged.merged_at = Some("2026-10-19T08:00:00Z".into());
+        assert_eq!(merged.done_at(), Some("2026-10-19T08:00:00Z"));
+
+        // A snapshot stored before the merge time was kept.
+        merged.merged_at = None;
+        assert_eq!(merged.done_at(), Some("2026-10-20T10:00:00Z"));
+
+        let closed = snapshot("closed", "Never mind");
+        assert_eq!(closed.done_at(), Some("2026-10-20T10:00:00Z"));
+        assert_eq!(snapshot("open", "Still going").done_at(), None);
+    }
+
+    #[test]
+    fn a_snapshot_stored_without_a_merge_time_still_reads() {
+        let old = r#"{"state":"merged","title":"Old","updated_at":"2026-10-20T10:00:00Z","synced_at":"2026-10-20T10:01:00Z"}"#;
+        let snapshot: PullRequestSnapshot = serde_json::from_str(old).unwrap();
+        assert_eq!(snapshot.merged_at, None);
+        assert_eq!(snapshot.done_at(), Some("2026-10-20T10:00:00Z"));
+        // And one without a merge time writes none.
+        assert!(!serde_json::to_string(&snapshot)
+            .unwrap()
+            .contains("merged_at"));
     }
 
     #[test]

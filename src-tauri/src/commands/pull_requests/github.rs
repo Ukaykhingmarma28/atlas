@@ -317,6 +317,16 @@ impl GitHub {
             .await
     }
 
+    /// A read over this repository (`$owner`, `$name`, plus `extra`), bound
+    /// by the read timeout, for a sibling module that pages on its own.
+    pub(crate) async fn read_in_repo(&self, query: &str, extra: Value) -> Result<Value, PrError> {
+        let mut vars = json!({ "owner": self.ctx.owner, "name": self.ctx.name });
+        if let (Some(base), Value::Object(extra)) = (vars.as_object_mut(), extra) {
+            base.extend(extra);
+        }
+        self.read(query, vars).await
+    }
+
     async fn entries_chunk(&self, numbers: &[u64]) -> Result<Vec<PrListEntry>, PrError> {
         let data = self
             .gh

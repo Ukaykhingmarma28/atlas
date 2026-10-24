@@ -36,6 +36,7 @@ export function snapshotOf(entry: PrListEntry, syncedAt = new Date().toISOString
     baseBranch: entry.baseBranch,
     isDraft: entry.isDraft,
     updatedAt: entry.updatedAt,
+    mergedAt: entry.mergedAt ?? null,
     checksState: entry.checksState,
     reviewDecision: entry.reviewDecision,
     commentCount: entry.commentCount,
