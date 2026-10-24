@@ -1002,6 +1002,7 @@ let lastTypingEcho = 0;
  * `invoke<T>`, or `Unread` where it awaits only success or failure.
  */
 export interface CommsResponses {
+  comms_ready: Unit;
   comms_status: ConnectionInfo;
   comms_snapshot: CommsSnapshot;
   comms_base_url: string;
@@ -1046,6 +1047,19 @@ export interface CommsResponses {
 }
 
 export const commsHandlers: TypedHandlers<CommsResponses> = {
+  // Rust's `announce`: the connection state, then a `resync`, which is what
+  // hydrates the store at boot with the panel closed (the footer's unread dot
+  // reads it).
+  comms_ready: (): null => {
+    push({
+      kind: "connection",
+      state: connection.state,
+      reason: connection.reason,
+      retry_at_ms: null,
+    });
+    push({ kind: "resync" });
+    return null;
+  },
   comms_status: (): ConnectionInfo => connection,
   comms_snapshot: (): CommsSnapshot => ({
     connection,
