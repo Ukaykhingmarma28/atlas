@@ -82,6 +82,9 @@ export interface UserRow extends RowBase {
   timestamp: string;
   /** `timestamp` is only when Atlas replayed the message; show no clock. */
   timestampApproximate?: true;
+  /** `ChatMessage.trustedMentionPaths`: the outside paths the composer
+   *  attached, the only ones a click in this bubble may open. */
+  trustedPaths?: readonly string[];
 }
 
 /** The `ChatMessage.id` behind a user row. Row ids are minted as
@@ -1175,6 +1178,7 @@ function projectSegment(
       attachments: m.attachments ?? NO_ATTACHMENTS,
       timestamp: m.timestamp,
       ...(m.timestampApproximate && { timestampApproximate: true as const }),
+      ...(m.trustedMentionPaths?.length && { trustedPaths: m.trustedMentionPaths }),
     });
 
     turns.push({

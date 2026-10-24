@@ -103,6 +103,7 @@ async function watchStall<T>(hop: Promise<T>, label: string, tabId: string): Pro
  *  genuine re-auth later in the session still gets the dialog. */
 const signInAttempted = new Set<string>();
 import { composePrompt, type MentionData } from "../lib/mentions";
+import { trustedMentionPaths } from "../lib/picked-mentions";
 import { withCitesInline } from "../lib/cited-text";
 import { usePaneFind } from "../lib/use-pane-find";
 import { MessageInput } from "./message-input";
@@ -1421,7 +1422,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
         (cs.queues[tabId]?.length ?? 0) === 0 &&
         !isBusyAgentStatus(bound?.status);
       if (firstWhileStarting) {
-        addMessage(tabId, "user", actualContent, attachments);
+        addMessage(tabId, "user", actualContent, attachments, trustedMentionPaths(mentions));
         logEvent({
           source: "chat",
           kind: "send-agent",
@@ -1453,7 +1454,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
       // The user-visible message keeps the prose as the user typed it,
       // including the shortform mention references (`@file:src/foo.rs` etc).
       // The context block goes only to the agent, not the local transcript.
-      addMessage(tabId, "user", actualContent, attachments);
+      addMessage(tabId, "user", actualContent, attachments, trustedMentionPaths(mentions));
       logEvent({
         source: "chat",
         kind: "send-agent",

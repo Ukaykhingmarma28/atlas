@@ -64,6 +64,8 @@ const SANITIZE_SCHEMA = {
       "dataFileLine",
       "dataFileColumn",
       "dataFileIcon",
+      "dataFileRoot",
+      "dataFileTrusted",
       "dataLinkService",
       "ariaHidden",
       "role",
@@ -375,6 +377,14 @@ function fileChipNode(opts: {
   folder: boolean;
   label: string;
   title: string;
+  /** The root `target` was resolved under: the session's working directory,
+   *  which for a worktree session is not the open project. A click opens a
+   *  file under it in Atlas (`open-path-link.ts`). */
+  root?: string;
+  /** A path outside every root that the composer attached itself
+   *  (`ParseOptions.trustedPaths`): the only kind a click may hand to an
+   *  editor or the system's app. */
+  trusted?: boolean;
 }): Hast {
   const kind = opts.folder ? "folder" : "file";
   const properties: Record<string, unknown> = {
@@ -386,6 +396,8 @@ function fileChipNode(opts: {
     properties.dataFilePath = opts.target.path;
     if (opts.target.line !== undefined) properties.dataFileLine = String(opts.target.line);
     if (opts.target.column !== undefined) properties.dataFileColumn = String(opts.target.column);
+    if (opts.root) properties.dataFileRoot = opts.root;
+    if (opts.trusted) properties.dataFileTrusted = "true";
     properties.role = "link";
     properties.tabIndex = 0;
   }
@@ -421,12 +433,15 @@ function chipNode(prefix: string, value: string, data: RenderData): Hast {
   const kind = MENTION_PREFIX_KIND[prefix] ?? "file";
   if (kind === "file" || kind === "folder") {
     // A mention's path is project-relative (`toShortForm`), or absolute when
-    // the file is outside the project. Outside it, only a message the user
-    // wrote opens it: they attached that file themselves. An agent's reply
-    // can write any `@file:` it likes, so there it opens project files only,
-    // as its inline code does — never `@file:/Applications/Some.app`.
+    // the file is outside the project. Outside it, only a path the composer
+    // attached to this very message opens (`trustedPaths`): the user picked
+    // that file themselves. Any other text can write any `@file:` it likes —
+    // an agent's reply, replayed history, a handoff prompt quoting a pull
+    // request's check names — so there it opens project files only, as inline
+    // code does: never `@file:/Applications/Some.app`.
     const resolved = data.fileRoot ? resolveInProject(value, data.fileRoot) : null;
-    const outside = data.userAuthored && isAbsolutePath(value) ? value : null;
+    const outside =
+      !resolved && isAbsolutePath(value) && data.trustedPaths?.has(value) ? value : null;
     const absolute = resolved ?? outside;
     return fileChipNode({
       target: absolute ? { path: absolute, folder: kind === "folder" } : null,
@@ -434,6 +449,8 @@ function chipNode(prefix: string, value: string, data: RenderData): Hast {
       folder: kind === "folder",
       label: baseNameOf(value),
       title: absolute ?? value,
+      root: resolved ? data.fileRoot : undefined,
+      trusted: outside !== null,
     });
   }
   const label = FIXED_LABEL[kind] ?? value;
@@ -521,18 +538,20 @@ type RenderData = {
   mentionTokens?: MentionToken[];
   /** The session's project root. Unset, no path becomes a chip. */
   fileRoot?: string;
-  /** See {@link ParseOptions.userAuthored}. */
-  userAuthored?: boolean;
+  /** See {@link ParseOptions.trustedPaths}. */
+  trustedPaths?: ReadonlySet<string>;
 };
 
 /** How one string is rendered, besides its project root. */
 export interface ParseOptions {
   /**
-   * The user wrote this text (a sent message), so an absolute `@file:` or
-   * `@folder:` mention outside the project opens what it names. Unset (an
-   * agent's reply), only paths inside the project are clickable.
+   * The absolute paths the composer itself attached to this message (the
+   * `@file:`/`@folder:` mentions it serialised from picked files): a mention
+   * of one of them opens even outside the project. Every other absolute path
+   * — in an agent's reply, replayed history, or text pasted into a handoff —
+   * is drawn but not clickable; only paths inside the project are.
    */
-  userAuthored?: boolean;
+  trustedPaths?: readonly string[];
 }
 
 // ── File paths in prose ───────────────────────────────────────────────────────
@@ -573,13 +592,14 @@ function labelRestatesTarget(label: string, href: string): boolean {
 /** A chip for a path found in prose. Its label is the text as written —
  *  `src/a/index.ts` and `src/b/index.ts` must not both read `index.ts`, and
  *  copying the reply keeps the path — and its tooltip the resolved path. */
-function fileTargetChip(target: FileLinkTarget, written: string): Hast {
+function fileTargetChip(target: FileLinkTarget, written: string, root: string): Hast {
   return fileChipNode({
     target,
     iconPath: target.path,
     folder: target.folder,
     label: written.trim(),
     title: fileChipTitle(target),
+    root,
   });
 }
 
@@ -609,7 +629,7 @@ function rehypeFileChips() {
         if (child.tagName === "code") {
           const text = plainText(child);
           const target = text === null ? null : inlineCodeFileTarget(text, root);
-          next.push(target && text !== null ? fileTargetChip(target, text) : child);
+          next.push(target && text !== null ? fileTargetChip(target, text, root) : child);
           continue;
         }
         const href = child.tagName === "a" ? child.properties?.href : undefined;
@@ -617,7 +637,7 @@ function rehypeFileChips() {
         if (target && typeof href === "string") {
           const label = plainText(child);
           if (label !== null && labelRestatesTarget(label, href)) {
-            next.push(fileTargetChip(target, label));
+            next.push(fileTargetChip(target, label, root));
           } else {
             // The link's own words stay, as text: an anchor with a relative
             // href would navigate the webview away. The chip follows them.
@@ -625,7 +645,7 @@ function rehypeFileChips() {
             next.push(
               ...(child.children ?? []),
               { type: "text", value: " " },
-              fileTargetChip(target, writtenHref(href)),
+              fileTargetChip(target, writtenHref(href), root),
             );
           }
           continue;
@@ -773,7 +793,7 @@ export function parseMarkdown(src: string, fileRoot?: string, options?: ParseOpt
     const data: RenderData = {
       mentionTokens: tokens,
       fileRoot: fileRoot || undefined,
-      userAuthored: options?.userAuthored === true,
+      trustedPaths: options?.trustedPaths?.length ? new Set(options.trustedPaths) : undefined,
     };
     return String(getProcessor().processSync({ value: text, data }));
   } catch {

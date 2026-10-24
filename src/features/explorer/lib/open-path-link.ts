@@ -4,12 +4,19 @@
 //
 // Inside the open project the file becomes an Atlas tab, through the same
 // open path as a click in the file tree, with the cursor on the line the chip
-// named. A file Atlas has nowhere to place — outside the project, or no
-// project open — goes where a file opened from a diff goes
-// (`open-review-file.ts`): the editor the user named, else the system's app,
-// through the external-editor command, whose Rust side shows anything the
-// system would *run* in Finder instead. A folder (or a bundle such as
-// `Foo.app`, a folder that reads like a file) is revealed in the file manager.
+// named. So does a file under the root the chip was resolved against
+// (`PathLink.root`): a session's working directory, which for a pull request
+// session is a worktree under app data, not the open project. Every chip an
+// agent wrote resolves under that root, so it opens in Atlas.
+//
+// Only a path the composer attached itself (`PathLink.trusted`) can go
+// further: where a file opened from a diff goes (`open-review-file.ts`), the
+// editor the user named, else the system's app, through the external-editor
+// command, whose Rust side opens only document types and shows anything else
+// in Finder. Any other chip outside every root — text an agent or a pull
+// request wrote — is only revealed in the file manager: a click must never
+// hand a planted `setup.terminal` to the system's opener. A folder (or a
+// bundle such as `Foo.app`, a folder that reads like a file) is revealed too.
 //
 // Never the opener plugin's JS `openPath`: it is outside Atlas's capabilities,
 // and it would skip that executable guard.
@@ -28,6 +35,10 @@ export interface PathLink {
   line?: number;
   column?: number;
   folder?: boolean;
+  /** The root the chip was resolved under (the session's working directory). */
+  root?: string;
+  /** The composer attached this path itself: the user picked it. */
+  trusted?: boolean;
 }
 
 /** `/` separators and an upper-case drive letter, for comparing index paths
@@ -80,15 +91,23 @@ export async function openPathLink(link: PathLink): Promise<void> {
     await revealInFileManager(link.path);
     return;
   }
+  const reveal =
+    link.line === undefined ? undefined : { reveal: { line: link.line, column: link.column } };
   const root = useAppStore.getState().currentProject?.path ?? null;
-  if (!root || !isUnderRoot(link.path, root)) {
+  if (root && isUnderRoot(link.path, root)) {
+    const path = await locateInProject(link.path, root);
+    await openInProject(path, undefined, reveal);
+    return;
+  }
+  // The session's own root (a worktree): Atlas's viewer, as in the project.
+  // The file index covers the project only, so the path is taken as written.
+  if (link.root && isUnderRoot(link.path, link.root)) {
+    await openInProject(link.path, undefined, reveal);
+    return;
+  }
+  if (link.trusted) {
     await openOutsideFile(link.path);
     return;
   }
-  const path = await locateInProject(link.path, root);
-  await openInProject(
-    path,
-    undefined,
-    link.line === undefined ? undefined : { reveal: { line: link.line, column: link.column } },
-  );
+  await revealInFileManager(link.path);
 }

@@ -15,9 +15,9 @@ import { onMarkdownClick, onMarkdownCopy, onMarkdownKeyDown } from "./markdown-l
 
 const ROOT = "/Users/dev/acme-app";
 
-function render(src: string): HTMLElement {
+function render(src: string, fileRoot = ROOT): HTMLElement {
   const root = document.createElement("div");
-  root.innerHTML = parseMarkdown(src, ROOT);
+  root.innerHTML = parseMarkdown(src, fileRoot);
   root.addEventListener("click", (e) => void onMarkdownClick(e));
   root.addEventListener("keydown", onMarkdownKeyDown);
   document.body.replaceChildren(root);
@@ -40,7 +40,27 @@ describe("clicks in rendered markdown", () => {
         line: 42,
         column: undefined,
         folder: false,
+        root: ROOT,
+        trusted: false,
       }),
+    );
+  });
+
+  it("carries a worktree session's root on its chips, untrusted", async () => {
+    // A pull request session runs in a worktree under app data, not in the
+    // open project; the chip says which root it was resolved under, so the
+    // click can open it in Atlas rather than through the system's opener.
+    const worktree = "/Users/dev/Library/Application Support/atlas/worktrees/pr-42";
+    const root = render("Run `tools/setup.terminal` to set up.", worktree);
+    root.querySelector<HTMLElement>(".atlas-file-chip")!.click();
+    await vi.waitFor(() =>
+      expect(openPathLink).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: `${worktree}/tools/setup.terminal`,
+          root: worktree,
+          trusted: false,
+        }),
+      ),
     );
   });
 

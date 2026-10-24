@@ -39,9 +39,16 @@ describe("opening a session's file chip", () => {
     expect(openInProject).toHaveBeenCalledWith("/p/src/a.ts", undefined, undefined);
   });
 
-  it("hands a file outside the project to the preferred editor or the system", async () => {
-    await openPathLink({ path: "/elsewhere/x.ts", line: 3 });
+  it("hands a file the user attached outside the project to the preferred editor or the system", async () => {
+    await openPathLink({ path: "/elsewhere/x.ts", line: 3, trusted: true });
     expect(openOutsideFile).toHaveBeenCalledWith("/elsewhere/x.ts");
+    expect(openInProject).not.toHaveBeenCalled();
+  });
+
+  it("only reveals an untrusted chip outside every root, never handing it to an app", async () => {
+    await openPathLink({ path: "/elsewhere/setup.terminal" });
+    expect(revealItemInDir).toHaveBeenCalledWith("/elsewhere/setup.terminal");
+    expect(openOutsideFile).not.toHaveBeenCalled();
     expect(openInProject).not.toHaveBeenCalled();
   });
 
@@ -61,9 +68,9 @@ describe("opening a session's file chip", () => {
     expect(openOutsideFile).not.toHaveBeenCalled();
   });
 
-  it("hands a file to the preferred editor or the system when no project is open", async () => {
+  it("hands an attached file to the preferred editor or the system when no project is open", async () => {
     project.path = null;
-    await openPathLink({ path: "/p/src/a.ts" });
+    await openPathLink({ path: "/p/src/a.ts", trusted: true });
     expect(openOutsideFile).toHaveBeenCalledWith("/p/src/a.ts");
   });
 
@@ -73,6 +80,38 @@ describe("opening a session's file chip", () => {
     await openPathLink({ path: "C:/Users/me/proj/src/a.ts" });
     expect(openInProject).toHaveBeenCalledWith("C:/Users/me/proj/src/a.ts", undefined, undefined);
     expect(openOutsideFile).not.toHaveBeenCalled();
+  });
+});
+
+describe("a chip in a pull request session's worktree", () => {
+  const WORKTREE = "/Users/me/Library/Application Support/atlas/worktrees/acme-web-pr-42";
+
+  it("opens the agent's chip in Atlas, not the system's opener", async () => {
+    // A malicious pull request adds `tools/setup.terminal`, the agent names
+    // it, and the user clicks. The worktree is not the open project, but it
+    // is the root the chip was resolved under.
+    await openPathLink({ path: `${WORKTREE}/tools/setup.terminal`, root: WORKTREE });
+    expect(openInProject).toHaveBeenCalledWith(
+      `${WORKTREE}/tools/setup.terminal`,
+      undefined,
+      undefined,
+    );
+    expect(openOutsideFile).not.toHaveBeenCalled();
+    expect(revealItemInDir).not.toHaveBeenCalled();
+  });
+
+  it("keeps the line a worktree chip named", async () => {
+    await openPathLink({ path: `${WORKTREE}/src/a.ts`, line: 7, column: 2, root: WORKTREE });
+    expect(openInProject).toHaveBeenCalledWith(`${WORKTREE}/src/a.ts`, undefined, {
+      reveal: { line: 7, column: 2 },
+    });
+  });
+
+  it("does not stretch the root to a path outside it", async () => {
+    await openPathLink({ path: "/Applications/Evil/setup.terminal", root: WORKTREE });
+    expect(openInProject).not.toHaveBeenCalled();
+    expect(openOutsideFile).not.toHaveBeenCalled();
+    expect(revealItemInDir).toHaveBeenCalledWith("/Applications/Evil/setup.terminal");
   });
 });
 
