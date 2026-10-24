@@ -191,16 +191,15 @@ export function Titlebar() {
  * because the lights do not scale with it. Vertically the lights are centred
  * by `trafficLightPosition.y` = bar height / 2 − 2 (see `--titlebar-height` in
  * `tokens.css`), re-applied after launch and title changes by
- * `commands::window::apply_traffic_light_inset`. It is dropped when the project rail is DOCKED — the rail
+ * `commands::window::apply_traffic_light_inset`. It is dropped while the sidebar is open — the sidebar
  * then sits under the lights and carries that gap itself — and in fullscreen,
  * which hides the lights. Only macOS has them on the left; Windows and Linux get
  * the menu bar here and `WindowControls` at the other end.
  */
 function TopbarLeading({ breadcrumb = true }: { breadcrumb?: boolean }) {
   const isFullscreen = useFullscreen();
-  const sidebarPinned = useProjectStore.use.sidebarPinned();
   const sidebarOpen = useProjectStore.use.sidebarOpen();
-  const inset = isMac && !isFullscreen && !(sidebarPinned && sidebarOpen);
+  const inset = isMac && !isFullscreen && !sidebarOpen;
 
   return (
     <div
@@ -209,8 +208,8 @@ function TopbarLeading({ breadcrumb = true }: { breadcrumb?: boolean }) {
         inset ? "pl-[calc(78px/var(--ui-zoom,1))]" : "pl-2",
       )}
     >
-      {/* The docked rail owns the corner then, and carries the badge. */}
-      {!(sidebarPinned && sidebarOpen) && <DevBadge className="mr-1" />}
+      {/* An open sidebar owns the corner then, and carries the badge. */}
+      {!sidebarOpen && <DevBadge className="mr-1" />}
       {/* Windows and Linux: the menus macOS shows in the system menu bar. */}
       {!isMac && <MenuBar className="mr-1" />}
       {/* One sidebar toggle: the project rail's. The project tree is the
