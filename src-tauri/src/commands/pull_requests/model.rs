@@ -805,6 +805,45 @@ pub struct PrFilesViewed {
     pub truncated: bool,
 }
 
+/// Someone who may be asked to review: a person by login, or a team by slug
+/// (`id`, what a request names). `actor` is how the row reads.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrReviewerCandidate {
+    pub id: String,
+    pub kind: PrReviewerKind,
+    pub actor: PrActor,
+    /// Asked already, and not yet answered.
+    pub is_requested: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrReviewerCandidates {
+    pub candidates: Vec<PrReviewerCandidate>,
+    /// The repository has more people with access than were listed.
+    pub truncated: bool,
+}
+
+/// A label the repository defines, and whether this pull request carries it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrLabelCandidate {
+    pub name: String,
+    /// Hex without the `#`, as GitHub stores it.
+    pub color: Option<String>,
+    pub description: Option<String>,
+    pub is_applied: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrLabelCandidates {
+    pub candidates: Vec<PrLabelCandidate>,
+    /// The repository has more labels than were listed.
+    pub truncated: bool,
+}
+
 /// An image from a pull request's body or comments, fetched through the
 /// host's credential. `data` is base64.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

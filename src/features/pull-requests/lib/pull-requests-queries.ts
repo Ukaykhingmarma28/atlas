@@ -29,6 +29,8 @@ import {
   prDetail,
   prDiff,
   prFilesViewed,
+  prLabelCandidates,
+  prReviewerCandidates,
   prList,
   prProvider,
   prReact,
@@ -50,6 +52,8 @@ import type {
   PrError,
   PrFilesViewed,
   PrFileViewedChange,
+  PrLabelCandidates,
+  PrReviewerCandidates,
   PrListQuery,
   PrListResult,
   PrProvider,
@@ -94,6 +98,10 @@ export const pullRequestKeys = {
     ["pull-requests", cwd, "pull", number, "diff", cursor, commit] as const,
   filesViewed: (cwd: string, number: number) =>
     ["pull-requests", cwd, "pull", number, "files-viewed"] as const,
+  reviewerCandidates: (cwd: string, number: number) =>
+    ["pull-requests", cwd, "pull", number, "reviewer-candidates"] as const,
+  labelCandidates: (cwd: string, number: number) =>
+    ["pull-requests", cwd, "pull", number, "label-candidates"] as const,
 };
 
 /** Shared by every read: retry only what is transient, with back-off; never
@@ -210,6 +218,39 @@ export function usePrFilesViewed(cwd: string | null, number: number | null): Res
     queryFn: () => prFilesViewed(cwd!, number!),
     enabled: !!cwd && !!number,
     staleTime: STALE.filesViewed,
+  });
+}
+
+/** The reviewer picker's rows. Read only while the picker is open
+ *  (`enabled`): most readers never open it. */
+export function usePrReviewerCandidates(
+  cwd: string,
+  number: number,
+  enabled: boolean,
+): Result<PrReviewerCandidates> {
+  return useQuery<PrReviewerCandidates, PrError>({
+    ...COMMON,
+    queryKey: pullRequestKeys.reviewerCandidates(cwd, number),
+    queryFn: () => prReviewerCandidates(cwd, number),
+    enabled,
+    staleTime: STALE.detail,
+    refetchInterval: false,
+  });
+}
+
+/** The label picker's rows, read only while it is open. */
+export function usePrLabelCandidates(
+  cwd: string,
+  number: number,
+  enabled: boolean,
+): Result<PrLabelCandidates> {
+  return useQuery<PrLabelCandidates, PrError>({
+    ...COMMON,
+    queryKey: pullRequestKeys.labelCandidates(cwd, number),
+    queryFn: () => prLabelCandidates(cwd, number),
+    enabled,
+    staleTime: STALE.detail,
+    refetchInterval: false,
   });
 }
 

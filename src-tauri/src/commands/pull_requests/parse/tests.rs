@@ -592,3 +592,81 @@ fn the_repository_context_names_its_host() {
     assert_eq!(ctx.viewer.as_deref(), Some("uzayer"));
     assert_eq!(to_repo_context(&json!({ "repository": null })), None);
 }
+
+// ── pickers ─────────────────────────────────────────────────────────────
+
+#[test]
+fn reviewer_candidates_leave_out_the_author_and_put_the_asked_first() {
+    let data = json!({
+        "repository": {
+            "assignableUsers": {
+                "pageInfo": { "hasNextPage": true },
+                "nodes": [
+                    { "login": "zoe", "name": "Zoe", "avatarUrl": null },
+                    { "login": "Author", "name": null, "avatarUrl": null },
+                    { "login": "ana", "name": null, "avatarUrl": null },
+                    { "login": "mo", "name": null, "avatarUrl": null }
+                ]
+            },
+            "pullRequest": {
+                "author": { "login": "author" },
+                "reviewRequests": { "nodes": [
+                    { "requestedReviewer": { "__typename": "User", "login": "Mo" } },
+                    { "requestedReviewer": {
+                        "__typename": "Team",
+                        "slug": "web",
+                        "combinedSlug": "acme/web",
+                        "teamName": "Web",
+                        "teamAvatarUrl": null
+                    } }
+                ] }
+            }
+        }
+    });
+    let read = to_reviewer_candidates(&data).unwrap();
+    let rows: Vec<(&str, bool)> = read
+        .candidates
+        .iter()
+        .map(|c| (c.id.as_str(), c.is_requested))
+        .collect();
+    assert_eq!(
+        rows,
+        [("mo", true), ("ana", false), ("zoe", false), ("web", true)]
+    );
+    assert_eq!(read.candidates[3].kind, PrReviewerKind::Team);
+    assert_eq!(read.candidates[3].actor.login, "acme/web");
+    assert!(read.truncated);
+}
+
+#[test]
+fn label_candidates_mark_what_the_pull_request_carries() {
+    let data = json!({
+        "repository": {
+            "labels": {
+                "pageInfo": { "hasNextPage": false },
+                "nodes": [
+                    { "name": "bug", "color": "d73a4a", "description": "Something is broken" },
+                    { "name": "docs", "color": "0075ca", "description": null }
+                ]
+            },
+            "pullRequest": { "labels": { "nodes": [ { "name": "docs" } ] } }
+        }
+    });
+    let read = to_label_candidates(&data).unwrap();
+    assert_eq!(read.candidates.len(), 2);
+    assert!(!read.candidates[0].is_applied);
+    assert_eq!(
+        read.candidates[0].description.as_deref(),
+        Some("Something is broken")
+    );
+    assert!(read.candidates[1].is_applied);
+    assert_eq!(read.candidates[1].color.as_deref(), Some("0075ca"));
+    assert!(!read.truncated);
+}
+
+#[test]
+fn candidates_for_a_missing_pull_request_read_as_none() {
+    let data = json!({ "repository": { "pullRequest": null } });
+    assert!(to_reviewer_candidates(&data).is_none());
+    assert!(to_label_candidates(&data).is_none());
+}

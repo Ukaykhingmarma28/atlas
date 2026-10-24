@@ -652,6 +652,8 @@ pub fn run() {
             commands::pull_requests::pr_diff,
             commands::pull_requests::pr_diff_file_contents,
             commands::pull_requests::pr_files_viewed,
+            commands::pull_requests::pr_reviewer_candidates,
+            commands::pull_requests::pr_label_candidates,
             commands::pull_requests::pr_set_files_viewed,
             commands::pull_requests::pr_comment,
             commands::pull_requests::pr_reply_to_thread,

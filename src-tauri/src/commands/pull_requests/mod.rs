@@ -162,6 +162,28 @@ pub async fn pr_files_viewed(path: String, number: u64) -> Result<PrFilesViewed,
     open(&path).await?.files_viewed(pull_number(number)?).await
 }
 
+/// The people and teams the reviewer picker offers, those already asked
+/// marked.
+#[tauri::command]
+pub async fn pr_reviewer_candidates(
+    path: String,
+    number: u64,
+) -> Result<PrReviewerCandidates, PrError> {
+    open(&path)
+        .await?
+        .reviewer_candidates(pull_number(number)?)
+        .await
+}
+
+/// The repository's labels, those on this pull request marked.
+#[tauri::command]
+pub async fn pr_label_candidates(path: String, number: u64) -> Result<PrLabelCandidates, PrError> {
+    open(&path)
+        .await?
+        .label_candidates(pull_number(number)?)
+        .await
+}
+
 // ── writes ───────────────────────────────────────────────────────────────
 
 #[tauri::command]
