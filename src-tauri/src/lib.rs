@@ -641,7 +641,6 @@ pub fn run() {
             commands::git::git_checkout,
             commands::git::git_create_branch,
             commands::git::git_blame_file,
-            commands::git_pr::git_repo_pull_requests,
             commands::pull_requests::pr_provider,
             commands::pull_requests::pr_list,
             commands::pull_requests::pr_detail,

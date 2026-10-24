@@ -505,7 +505,32 @@ function seedThreads(): ThreadRow[] {
       liveElsewhere: false,
       attachedProjects: [],
       model: "Claude Sonnet 4.5",
-      pullRequests: [],
+      // The run on `server-discounts` went up as pull request 353, found on its branch.
+      // Merged, because the branch is: its commit is already on `main`.
+      pullRequests:
+        s.content.branch === "server-discounts"
+          ? [
+              {
+                repository: "northwind/northwind-shop",
+                number: 353,
+                url: "https://github.com/northwind/northwind-shop/pull/353",
+                source: "detected" as const,
+                linkedAt: iso(s.lastMs),
+                snapshot: {
+                  state: "merged" as const,
+                  title: "Validate discount codes on the server",
+                  headBranch: "server-discounts",
+                  baseBranch: "main",
+                  isDraft: false,
+                  updatedAt: iso(s.lastMs),
+                  checksState: "passing" as const,
+                  reviewDecision: "approved" as const,
+                  commentCount: 2,
+                  syncedAt: iso(s.lastMs),
+                },
+              },
+            ]
+          : [],
       forkedFromSessionId: null,
     }));
 }

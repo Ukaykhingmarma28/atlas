@@ -1,36 +1,25 @@
-//! A repository's pull requests, read through the user's GitHub CLI.
+//! Running the user's GitHub CLI (`gh`) with a timeout, and reading how it
+//! ended.
 //!
 //! Not through `github.rs`: that client is unauthenticated, so it cannot see a
-//! private repository, and a history card that shows PRs only for public repos
-//! would be wrong most of the time without saying so. `gh` already holds the
-//! user's own credentials and knows which GitHub repository the checkout's
-//! remote points at, so asking it costs Atlas no token handling at all.
+//! private repository. `gh` already holds the user's own credentials and knows
+//! which GitHub repository the checkout's remote points at, so asking it costs
+//! Atlas no token handling at all. `git_avatars` reads through it; pull
+//! requests have their own client (`pull_requests/gh.rs`).
 //!
-//! One `gh pr list` per repository, not per branch: the agent sidebar mounts
-//! every thread card at once, and a card per branch each spawning its own `gh`
-//! was a burst of network-bound processes on every sidebar open. The answer is
-//! the newest [`GH_LIMIT`] PRs of the repository, reduced here to the one PR
-//! worth showing per head branch; the frontend shares that one answer between
-//! every card in the repository. A branch whose PR is older than the newest
-//! hundred shows none, which is the right trade for a sidebar label.
-//!
-//! The result says *why* there is nothing, because the reasons call for
-//! different behaviour: [`RepoPullRequests::Unavailable`] (no `gh`, or `gh`
-//! not signed in) is true of every repository until the user fixes it, so the
-//! caller backs off and asks again when the window regains focus;
-//! [`RepoPullRequests::Failed`] (not a GitHub remote, offline, rate limited,
-//! too slow) is about this repository at this moment, and its
-//! [`FailedReason`] says whether asking again soon can help. Neither is an
-//! `Err` — the caller is a label on a sidebar card, and none is worth a toast.
+//! The outcome says *why* there is nothing, because the reasons call for
+//! different behaviour: [`GhOutcome::Missing`] and [`GhOutcome::AuthRequired`]
+//! are true of every repository until the user fixes them;
+//! [`GhOutcome::Failed`] is about this repository at this moment, and its
+//! [`FailedReason`] says whether asking again soon can help.
 
-use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::io::Read;
 use std::process::Stdio;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tokio::sync::Semaphore;
 
 /// How long `gh` gets before it is killed. It goes to the network, so a
@@ -38,45 +27,13 @@ use tokio::sync::Semaphore;
 /// long as the TCP stack cares to wait.
 pub(crate) const GH_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// How many of the repository's PRs to ask for, newest first. Enough to cover
-/// every branch a sidebar realistically lists; one page of GitHub's API.
-const GH_LIMIT: &str = "100";
-
 /// The most `gh` processes this module runs at once, across all repositories.
-/// A sidebar listing threads from many worktrees would otherwise spawn one per
-/// repository in the same instant. Shared with `git_avatars`.
+/// A sidebar listing sessions from many worktrees would otherwise spawn one
+/// per repository in the same instant.
 pub(crate) static GH_PERMITS: Semaphore = Semaphore::const_new(2);
 
 /// `gh`'s documented exit code for "authentication required".
 const GH_EXIT_AUTH_REQUIRED: i32 = 4;
-
-/// What a PR is now, lowercased from `gh`'s `OPEN` / `CLOSED` / `MERGED`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum PullRequestState {
-    Open,
-    Closed,
-    Merged,
-}
-
-/// The pull request whose head is a given branch.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BranchPullRequest {
-    pub number: u64,
-    pub state: PullRequestState,
-    pub title: String,
-    pub url: String,
-    pub is_draft: bool,
-}
-
-/// Why `gh` cannot answer for any repository.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum UnavailableReason {
-    NotInstalled,
-    NotAuthenticated,
-}
 
 /// Why `gh` could not answer for this repository just now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -90,87 +47,6 @@ pub enum FailedReason {
     Unsupported,
     /// Anything else, including output Atlas could not read.
     Other,
-}
-
-/// The answer for one repository.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum RepoPullRequests {
-    /// `gh` answered: the PR worth showing for each head branch. A branch
-    /// that is absent has no PR among the newest [`GH_LIMIT`].
-    #[serde(rename_all = "camelCase")]
-    Ok {
-        by_branch: BTreeMap<String, BranchPullRequest>,
-    },
-    /// `gh` is not installed or not signed in — true of every repository.
-    Unavailable { reason: UnavailableReason },
-    /// `gh` could not answer for this repository.
-    Failed { reason: FailedReason },
-}
-
-/// One element of `gh pr list --json number,title,state,isDraft,url,createdAt,headRefName`.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GhPullRequest {
-    number: u64,
-    state: String,
-    title: String,
-    url: String,
-    #[serde(default)]
-    is_draft: bool,
-    /// RFC 3339 in UTC (`2026-10-07T12:00:00Z`), so the strings order the
-    /// same way the instants do.
-    #[serde(default)]
-    created_at: String,
-    #[serde(default)]
-    head_ref_name: String,
-}
-
-/// The pull requests of the repository at `path`, one per head branch.
-#[tauri::command]
-pub async fn git_repo_pull_requests(path: String) -> Result<RepoPullRequests, String> {
-    let failed = |reason| RepoPullRequests::Failed { reason };
-    if path.trim().is_empty() {
-        return Ok(failed(FailedReason::Unsupported));
-    }
-    // Held across the blocking run, so at most two `gh` exist at once.
-    let Ok(_permit) = GH_PERMITS.acquire().await else {
-        return Ok(failed(FailedReason::Other));
-    };
-    let run = tokio::task::spawn_blocking(move || {
-        run_gh(OsStr::new("gh"), &path, &gh_pr_list_args(), GH_TIMEOUT)
-    })
-    .await;
-    Ok(match run {
-        Ok(GhOutcome::Output(stdout)) => match parse_by_branch(&stdout) {
-            Some(by_branch) => RepoPullRequests::Ok { by_branch },
-            None => failed(FailedReason::Other),
-        },
-        Ok(GhOutcome::Missing) => RepoPullRequests::Unavailable {
-            reason: UnavailableReason::NotInstalled,
-        },
-        Ok(GhOutcome::AuthRequired) => RepoPullRequests::Unavailable {
-            reason: UnavailableReason::NotAuthenticated,
-        },
-        Ok(GhOutcome::Failed(reason)) => failed(reason),
-        Err(e) => {
-            tracing::warn!(error = %e, "gh pr list task failed");
-            failed(FailedReason::Other)
-        }
-    })
-}
-
-fn gh_pr_list_args() -> Vec<&'static str> {
-    vec![
-        "pr",
-        "list",
-        "--state",
-        "all",
-        "--limit",
-        GH_LIMIT,
-        "--json",
-        "number,title,state,isDraft,url,createdAt,headRefName",
-    ]
 }
 
 /// How one run of `gh` ended.
@@ -311,232 +187,9 @@ pub(crate) fn run_gh(program: &OsStr, cwd: &str, args: &[&str], timeout: Duratio
     }
 }
 
-/// Group `gh pr list --json` output by head branch and pick the PR worth
-/// showing for each: an open one if there is one, else the most recently
-/// created. `None` for output that is not the expected JSON; PRs in a state
-/// Atlas does not know, or with no head branch, are skipped.
-fn parse_by_branch(json: &str) -> Option<BTreeMap<String, BranchPullRequest>> {
-    let prs: Vec<GhPullRequest> = serde_json::from_str(json).ok()?;
-    let mut best: BTreeMap<String, (String, BranchPullRequest)> = BTreeMap::new();
-    for pr in prs {
-        if pr.head_ref_name.is_empty() {
-            continue;
-        }
-        let state = match pr.state.to_ascii_uppercase().as_str() {
-            "OPEN" => PullRequestState::Open,
-            "CLOSED" => PullRequestState::Closed,
-            "MERGED" => PullRequestState::Merged,
-            _ => continue,
-        };
-        let candidate = (
-            pr.created_at,
-            BranchPullRequest {
-                number: pr.number,
-                state,
-                title: pr.title,
-                url: pr.url,
-                is_draft: pr.is_draft,
-            },
-        );
-        match best.get(&pr.head_ref_name) {
-            Some(current) if !beats(&candidate, current) => {}
-            _ => {
-                best.insert(pr.head_ref_name, candidate);
-            }
-        }
-    }
-    Some(
-        best.into_iter()
-            .map(|(branch, (_, pr))| (branch, pr))
-            .collect(),
-    )
-}
-
-/// Whether `a` is the better PR to show for a branch than `b`: open beats
-/// anything else, then the more recently created, then the higher number
-/// (opened later at the same instant).
-fn beats(a: &(String, BranchPullRequest), b: &(String, BranchPullRequest)) -> bool {
-    let (a_at, a) = a;
-    let (b_at, b) = b;
-    let a_open = a.state == PullRequestState::Open;
-    let b_open = b.state == PullRequestState::Open;
-    a_open
-        .cmp(&b_open)
-        .then_with(|| a_at.cmp(b_at))
-        .then_with(|| a.number.cmp(&b.number))
-        .is_gt()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn pr_on(branch: &str, number: u64, state: &str, created_at: &str) -> String {
-        format!(
-            r#"{{"number":{number},"state":"{state}","title":"PR {number}","url":"https://github.com/o/r/pull/{number}","isDraft":false,"createdAt":"{created_at}","headRefName":"{branch}"}}"#
-        )
-    }
-
-    fn pr(number: u64, state: &str, created_at: &str) -> String {
-        pr_on("feature", number, state, created_at)
-    }
-
-    fn list(items: &[String]) -> String {
-        format!("[{}]", items.join(","))
-    }
-
-    /// The PR chosen for the `feature` branch of a one-branch list.
-    fn select(json: &str) -> Option<BranchPullRequest> {
-        parse_by_branch(json)?.remove("feature")
-    }
-
-    #[test]
-    fn an_empty_list_is_no_pull_request() {
-        assert_eq!(parse_by_branch("[]"), Some(BTreeMap::new()));
-    }
-
-    #[test]
-    fn output_that_is_not_the_expected_json_is_unreadable() {
-        assert_eq!(parse_by_branch(""), None);
-        assert_eq!(parse_by_branch("no pull requests found"), None);
-        assert_eq!(parse_by_branch(r#"{"number":1}"#), None);
-    }
-
-    #[test]
-    fn one_pull_request_is_returned_with_its_state_lowercased() {
-        let json = r#"[{"number":353,"state":"OPEN","title":"Validate discount codes","url":"https://github.com/o/r/pull/353","isDraft":true,"createdAt":"2026-10-06T16:00:00Z","headRefName":"feature"}]"#;
-        assert_eq!(
-            select(json),
-            Some(BranchPullRequest {
-                number: 353,
-                state: PullRequestState::Open,
-                title: "Validate discount codes".into(),
-                url: "https://github.com/o/r/pull/353".into(),
-                is_draft: true,
-            })
-        );
-    }
-
-    #[test]
-    fn an_open_pull_request_beats_a_newer_closed_one() {
-        let json = list(&[
-            pr(20, "MERGED", "2026-10-06T00:00:00Z"),
-            pr(12, "OPEN", "2026-09-01T00:00:00Z"),
-            pr(30, "CLOSED", "2026-10-07T00:00:00Z"),
-        ]);
-        assert_eq!(select(&json).map(|p| p.number), Some(12));
-    }
-
-    #[test]
-    fn with_nothing_open_the_most_recent_wins_whatever_order_gh_used() {
-        let json = list(&[
-            pr(5, "MERGED", "2026-08-01T00:00:00Z"),
-            pr(9, "CLOSED", "2026-10-01T00:00:00Z"),
-            pr(7, "MERGED", "2026-09-01T00:00:00Z"),
-        ]);
-        let chosen = select(&json).unwrap();
-        assert_eq!(chosen.number, 9);
-        assert_eq!(chosen.state, PullRequestState::Closed);
-    }
-
-    #[test]
-    fn at_the_same_instant_the_higher_number_wins() {
-        let json = list(&[
-            pr(41, "MERGED", "2026-10-01T00:00:00Z"),
-            pr(42, "MERGED", "2026-10-01T00:00:00Z"),
-        ]);
-        assert_eq!(select(&json).map(|p| p.number), Some(42));
-    }
-
-    #[test]
-    fn a_state_atlas_does_not_know_is_skipped_rather_than_guessed() {
-        let json = list(&[
-            pr(4, "MERGED", "2026-08-01T00:00:00Z"),
-            pr(8, "LOCKED", "2026-10-01T00:00:00Z"),
-        ]);
-        assert_eq!(select(&json).map(|p| p.number), Some(4));
-    }
-
-    #[test]
-    fn each_branch_gets_its_own_pick_from_a_mixed_list() {
-        let json = list(&[
-            pr_on("main", 1, "MERGED", "2026-01-01T00:00:00Z"),
-            pr_on("feature", 10, "CLOSED", "2026-10-05T00:00:00Z"),
-            pr_on("feature", 11, "OPEN", "2026-09-01T00:00:00Z"),
-            pr_on("fix/login", 20, "MERGED", "2026-08-01T00:00:00Z"),
-            pr_on("fix/login", 21, "CLOSED", "2026-09-15T00:00:00Z"),
-            pr_on("", 99, "OPEN", "2026-10-07T00:00:00Z"),
-        ]);
-        let by_branch = parse_by_branch(&json).unwrap();
-        let picked: Vec<(&str, u64)> = by_branch
-            .iter()
-            .map(|(b, p)| (b.as_str(), p.number))
-            .collect();
-        assert_eq!(
-            picked,
-            vec![("feature", 11), ("fix/login", 21), ("main", 1)]
-        );
-    }
-
-    #[test]
-    fn the_wire_shape_is_camel_case_with_a_lowercase_state() {
-        let value = serde_json::to_value(BranchPullRequest {
-            number: 1,
-            state: PullRequestState::Merged,
-            title: "t".into(),
-            url: "u".into(),
-            is_draft: false,
-        })
-        .unwrap();
-        assert_eq!(
-            value,
-            serde_json::json!({
-                "number": 1,
-                "state": "merged",
-                "title": "t",
-                "url": "u",
-                "isDraft": false,
-            })
-        );
-    }
-
-    #[test]
-    fn the_repo_answer_is_tagged_by_kind() {
-        let mut by_branch = BTreeMap::new();
-        by_branch.insert(
-            "b".to_string(),
-            BranchPullRequest {
-                number: 2,
-                state: PullRequestState::Open,
-                title: "t".into(),
-                url: "u".into(),
-                is_draft: true,
-            },
-        );
-        assert_eq!(
-            serde_json::to_value(RepoPullRequests::Ok { by_branch }).unwrap(),
-            serde_json::json!({
-                "kind": "ok",
-                "byBranch": {
-                    "b": { "number": 2, "state": "open", "title": "t", "url": "u", "isDraft": true }
-                },
-            })
-        );
-        assert_eq!(
-            serde_json::to_value(RepoPullRequests::Unavailable {
-                reason: UnavailableReason::NotAuthenticated
-            })
-            .unwrap(),
-            serde_json::json!({ "kind": "unavailable", "reason": "notAuthenticated" })
-        );
-        assert_eq!(
-            serde_json::to_value(RepoPullRequests::Failed {
-                reason: FailedReason::RateLimited
-            })
-            .unwrap(),
-            serde_json::json!({ "kind": "failed", "reason": "rateLimited" })
-        );
-    }
 
     #[test]
     fn a_failure_is_classified_from_stderr() {
@@ -573,8 +226,7 @@ mod tests {
         }
 
         fn run_in(script: &Path, cwd: &Path, timeout: Duration) -> GhOutcome {
-            let mut args = vec![script.to_str().unwrap()];
-            args.extend(gh_pr_list_args());
+            let args = [script.to_str().unwrap(), "pr", "list", "--state", "all"];
             run_gh(OsStr::new("/bin/sh"), cwd.to_str().unwrap(), &args, timeout)
         }
 
@@ -589,13 +241,12 @@ mod tests {
         }
 
         #[test]
-        fn the_arguments_ask_for_every_state_with_the_head_branch() {
+        fn the_arguments_reach_gh_in_order() {
             let (_dir, gh) = fake_gh(r#"printf '%s ' "$@""#);
             let GhOutcome::Output(argv) = run(&gh, GH_TIMEOUT) else {
                 panic!("expected output");
             };
-            assert!(argv.contains("pr list --state all --limit 100"), "{argv}");
-            assert!(argv.contains("headRefName"), "{argv}");
+            assert!(argv.contains("pr list --state all"), "{argv}");
         }
 
         #[test]
@@ -620,7 +271,7 @@ mod tests {
             let outcome = run_gh(
                 missing.as_os_str(),
                 std::env::temp_dir().to_str().unwrap(),
-                &gh_pr_list_args(),
+                &["pr", "list"],
                 GH_TIMEOUT,
             );
             assert_eq!(outcome, GhOutcome::Missing);

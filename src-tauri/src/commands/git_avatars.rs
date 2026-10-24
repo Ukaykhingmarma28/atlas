@@ -10,7 +10,7 @@
 //! repository. A branch GitHub does not have (unpushed, detached HEAD) costs a
 //! second call, for the default branch, whose authors mostly overlap.
 //!
-//! The result says why there is nothing, exactly as `git_pr` does:
+//! The result says why there is nothing, from `git_pr`'s outcome:
 //! [`RepoAvatars::Unavailable`] stops the caller asking for the session,
 //! [`RepoAvatars::Failed`] is about this repository now. Neither is an `Err`:
 //! the caller falls back to Gravatar, and no avatar is worth a toast.

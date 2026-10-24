@@ -7,7 +7,7 @@
 // session and status only — so a streaming chunk (which rewrites messages,
 // never a status) re-renders nothing here.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isBusyAgentStatus } from "@/types/agent";
 import { useChatStore } from "@/features/chat/stores/chat-store";
@@ -15,8 +15,8 @@ import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { useActiveOrgProjects } from "@/features/projects/lib/org-scope";
-import { repoPullRequestsKey } from "@/features/git/lib/git-pr-api";
 import { invalidatePullRequestQueries } from "@/features/pull-requests/lib/pull-requests-queries";
+import { syncSessionPullRequests } from "@/features/pull-requests/lib/session-pull-requests-api";
 import {
   onThreadsChanged,
   syncProjectThreads,
@@ -77,31 +77,80 @@ export function useActiveSessionId(): string | null {
   );
 }
 
-/** A turn that just ended may have pushed a branch or opened a PR: refresh that
- *  repository's pull requests, the one query every row in it shares, and any
- *  pull-request surface reads open for it. */
-function useRefreshPullRequestsOnTurnEnd(): void {
+/** How often the linked pull requests are swept while the window is visible.
+ *  Rust decides which are due (open ones every pass, quiet and closed ones
+ *  less often, merged never) and holds back after a rate limit. */
+const PULL_REQUEST_SWEEP_MS = 60_000;
+
+interface SweptSession {
+  threadId: string;
+  sessionId: string;
+}
+
+/**
+ * Keep the listed sessions' linked pull requests current: a sweep every
+ * minute while the window is visible, and at once when it is focused.
+ * Returns the forced sweep of one session, for a turn that just ended. A
+ * sweep's changes arrive as `atlas:threads-changed`, which re-reads the list;
+ * its errors (no `gh`, a rate limit) are the gh gate's to hold, and nothing
+ * here shows them.
+ */
+function useSweepSessionPullRequests(
+  sessions: readonly SweptSession[],
+): (sessionId: string) => void {
+  const latest = useRef<readonly SweptSession[]>(sessions);
+  useEffect(() => {
+    latest.current = sessions;
+  }, [sessions]);
+  useEffect(() => {
+    const sweep = () => {
+      const ids = latest.current.map((s) => s.threadId);
+      if (document.visibilityState !== "visible" || ids.length === 0) return;
+      void syncSessionPullRequests(ids).catch(() => {});
+    };
+    // The first pass waits for the list to settle after mount.
+    const first = window.setTimeout(sweep, 1_500);
+    const id = window.setInterval(sweep, PULL_REQUEST_SWEEP_MS);
+    window.addEventListener("focus", sweep);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(id);
+      window.removeEventListener("focus", sweep);
+    };
+  }, []);
+  return useCallback((sessionId: string) => {
+    const threadId = latest.current.find((s) => s.sessionId === sessionId)?.threadId;
+    if (!threadId || document.visibilityState !== "visible") return;
+    void syncSessionPullRequests([threadId], true).catch(() => {});
+  }, []);
+}
+
+/** A turn that just ended may have pushed a branch or opened a PR: hand its
+ *  session to `onEnded`, and refresh any pull-request surface reads open for
+ *  its repository. */
+function useRefreshPullRequestsOnTurnEnd(onEnded: (sessionId: string) => void): void {
   const queryClient = useQueryClient();
-  const busyDirs = useChatStore((s) => {
+  const busy = useChatStore((s) => {
     let sig = "";
     for (const tabId in s.sessions) {
       const session = s.sessions[tabId]!;
-      if (isBusyAgentStatus(session.status)) sig += `${tabId}|${session.workingDirectory ?? ""}\n`;
+      if (isBusyAgentStatus(session.status)) {
+        sig += `${tabId}|${session.acpSessionId ?? ""}|${session.workingDirectory ?? ""}\n`;
+      }
     }
     return sig;
   });
   const previous = useRef("");
   useEffect(() => {
-    const now = new Set(busyDirs.split("\n").filter(Boolean));
+    const now = new Set(busy.split("\n").filter(Boolean));
     for (const line of previous.current.split("\n")) {
       if (!line || now.has(line)) continue;
-      const dir = line.slice(line.indexOf("|") + 1);
-      if (!dir) continue;
-      void queryClient.invalidateQueries({ queryKey: repoPullRequestsKey(dir) });
-      void invalidatePullRequestQueries(queryClient, dir);
+      const [, sessionId = "", dir = ""] = line.split("|");
+      if (sessionId) onEnded(sessionId);
+      if (dir) void invalidatePullRequestQueries(queryClient, dir);
     }
-    previous.current = busyDirs;
-  }, [busyDirs, queryClient]);
+    previous.current = busy;
+  }, [busy, queryClient, onEnded]);
 }
 
 export interface SidebarSessions {
@@ -158,8 +207,6 @@ export function useSidebarSessions(): SidebarSessions {
     return () => window.removeEventListener("focus", sync);
   }, [cwd]);
 
-  useRefreshPullRequestsOnTurnEnd();
-
   // Re-partition when the soonest snooze ends, in case Rust's wake event is
   // late: the clock is state, moved only by that one timer.
   const [now, setNow] = useState(() => Date.now());
@@ -188,6 +235,14 @@ export function useSidebarSessions(): SidebarSessions {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [groups, projects, scopeProjectId, sidebarSort, now],
   );
+
+  // The listed sessions that are not settled: what the sweep keeps current.
+  const swept = useMemo(
+    () => [...partition.pinned, ...partition.active, ...partition.snoozed],
+    [partition],
+  );
+  const sweepNow = useSweepSessionPullRequests(swept);
+  useRefreshPullRequestsOnTurnEnd(sweepNow);
 
   return {
     partition,
