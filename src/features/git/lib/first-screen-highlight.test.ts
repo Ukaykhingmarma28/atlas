@@ -7,7 +7,7 @@ import {
   type RenderFileOptions,
   type ThemedFileResult,
 } from "@pierre/diffs";
-import { DIFF_THEME_NAME, ensureDiffTheme } from "./diff-theme";
+import { DIFF_THEME_NAMES, ensureDiffTheme } from "./diff-theme";
 import {
   FIRST_SCREEN_MAX_LINE,
   FIRST_SCREEN_MIN_LINES,
@@ -19,7 +19,7 @@ import {
 } from "./first-screen-highlight";
 
 const OPTIONS: RenderFileOptions = {
-  theme: DIFF_THEME_NAME,
+  theme: DIFF_THEME_NAMES,
   useTokenTransformer: true,
   tokenizeMaxLineLength: 1_000,
 };
@@ -56,7 +56,7 @@ let highlighter: DiffsHighlighter;
 beforeAll(async () => {
   ensureDiffTheme();
   highlighter = await getSharedHighlighter({
-    themes: [DIFF_THEME_NAME],
+    themes: [DIFF_THEME_NAMES.light, DIFF_THEME_NAMES.dark],
     langs: ["text"],
     preferredHighlighter: "shiki-js",
   });
@@ -83,7 +83,7 @@ describe("colourFirstScreen", () => {
   describe("with the grammar loaded", () => {
     beforeAll(async () => {
       await getSharedHighlighter({
-        themes: [DIFF_THEME_NAME],
+        themes: [DIFF_THEME_NAMES.light, DIFF_THEME_NAMES.dark],
         langs: ["text", "typescript"],
         preferredHighlighter: "shiki-js",
       });

@@ -14,10 +14,22 @@
 // Atlas's default syntax colours come from Pierre's own theme by that same
 // table, so on the default theme a diff looks as Pierre draws it.
 
-import { registerCustomTheme, type ThemeRegistration } from "@pierre/diffs";
+import { registerCustomTheme, type ThemeRegistration, type ThemesType } from "@pierre/diffs";
 
-/** The name the worker pool and every viewer ask for. */
-export const DIFF_THEME_NAME = "atlas";
+/**
+ * The theme pair the worker pool and every viewer ask for: one name per
+ * appearance, never a single name. Given a single theme, the viewer pins its
+ * shadow root's `color-scheme` to that theme's registered `type` and ignores
+ * `themeType`, so every `light-dark()` in it (its own and `DIFF_VIEW_CSS`'s)
+ * resolved dark under a light Atlas theme. Given a pair, `themeType` decides.
+ *
+ * Both halves are the same variables, so tokens still render once: the pair
+ * never changes, and an appearance switch is only a `themeType` change.
+ */
+export const DIFF_THEME_NAMES = {
+  light: "atlas-light",
+  dark: "atlas-dark",
+} as const satisfies ThemesType;
 
 type Role =
   | "comment"
@@ -107,11 +119,9 @@ const SCOPES: ReadonlyArray<readonly [Role, readonly string[]]> = [
   ["attribute", ["entity.other.attribute-name", "meta.preprocessor", "keyword.control.directive"]],
 ];
 
-export const DIFF_THEME: ThemeRegistration = {
-  name: DIFF_THEME_NAME,
-  // Only a default: the viewer is told the appearance (`themeType`) by the
-  // active Atlas theme, and every colour below follows it on its own.
-  type: "dark",
+/** The colours both halves of {@link DIFF_THEME_NAMES} share; only the name
+ *  and the `type` differ between them. */
+export const DIFF_THEME: Omit<ThemeRegistration, "name" | "type"> = {
   fg: "var(--atlas-editor-foreground)",
   bg: "var(--atlas-editor-background)",
   colors: {
@@ -136,10 +146,13 @@ export const DIFF_THEME: ThemeRegistration = {
 
 let registered = false;
 
-/** Make {@link DIFF_THEME_NAME} resolvable. Idempotent; must run before the
- *  worker pool is created, which resolves its theme up front. */
+/** Make both of {@link DIFF_THEME_NAMES} resolvable. Idempotent; must run
+ *  before the worker pool is created, which resolves its themes up front. */
 export function ensureDiffTheme(): void {
   if (registered) return;
   registered = true;
-  registerCustomTheme(DIFF_THEME_NAME, () => Promise.resolve(DIFF_THEME));
+  for (const type of ["light", "dark"] as const) {
+    const name = DIFF_THEME_NAMES[type];
+    registerCustomTheme(name, () => Promise.resolve({ ...DIFF_THEME, name, type }));
+  }
 }
