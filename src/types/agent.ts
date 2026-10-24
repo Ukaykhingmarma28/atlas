@@ -288,6 +288,10 @@ export interface ChatSession {
    *  otherwise rescan the log (`editsSignature`). Only ever compared. */
   toolRevision?: number;
   workingDirectory: string;
+  /** The folder the next bind must open the session in, when it is not the
+   *  tab's project root — a worktree the user asked to start in. Read once by
+   *  the bind; dropped with the conversation on a clear. */
+  bindCwd?: string;
   tasks: AgentTask[];
   createdAt: string;
   updatedAt: string;

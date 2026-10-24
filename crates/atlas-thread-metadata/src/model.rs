@@ -91,6 +91,11 @@ pub struct ThreadMetadata {
     /// `None` is "not known": a detached HEAD, a folder outside any
     /// repository, or a row older than the column. Never guessed.
     pub branch: Option<Arc<str>>,
+    /// The model the session's latest turn ran on, as its agent names it
+    /// (the display name, else the id) — recorded at each turn start and on
+    /// a model change. `None` when Atlas never saw one: an import, a row
+    /// older than the column, or an agent with no model selection.
+    pub model: Option<Arc<str>>,
     /// When the session was settled: done for now, moved to the sidebar's
     /// Settled shelf, still listed and still resumable. `None` is active.
     /// Settled replaced archiving: there is no state that takes a session off
@@ -145,6 +150,7 @@ impl ThreadMetadata {
             worktree_paths: WorktreePaths::from_folder_paths(&folder_paths),
             remote_connection: None,
             branch: None,
+            model: None,
             settled_at: None,
             unsettled_at: None,
             pinned_at: None,

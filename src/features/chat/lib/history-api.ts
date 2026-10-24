@@ -83,6 +83,9 @@ export interface ThreadRow {
    * Never guessed.
    */
   branch: string | null;
+  /** The model its latest turn ran on, by the agent's display name. `null`
+   *  when Atlas never saw one — an import, or a row older than the column. */
+  model: string | null;
 }
 
 /** One project's threads, as the sidebar groups them. */

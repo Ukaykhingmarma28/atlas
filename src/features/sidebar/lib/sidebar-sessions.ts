@@ -3,8 +3,9 @@
 //
 // One flat list across the organisation's projects. Pinned sessions first, in
 // their fractional-key order (`pin-order.ts`); then active ones by recency;
-// snoozed sessions are hidden until Rust wakes them; settled ones go to the
-// Settled shelf, most recently settled first. Every lifecycle rule is Rust's
+// snoozed sessions wait on the Snoozed shelf, soonest to wake first, until
+// Rust wakes them; settled ones go to the Settled shelf, most recently
+// settled first. Every lifecycle rule is Rust's
 // (`atlas-thread-metadata`) — `unread` and `woke` arrive already decided, and
 // nothing here re-derives them. This module only sorts and filters.
 
@@ -20,7 +21,7 @@ export interface SidebarProject {
   path: string;
 }
 
-export type SidebarSection = "pinned" | "active" | "settled";
+export type SidebarSection = "pinned" | "active" | "snoozed" | "settled";
 
 /** One session, as a sidebar row reads it. Every field is a primitive, so a
  *  memoised row compares cheaply. */
@@ -38,11 +39,16 @@ export interface SidebarSession {
   /** The session's own working directory — where it resumes. */
   cwd: string;
   branch: string | null;
+  /** The model the latest turn ran on, as Rust recorded it. */
+  model: string | null;
   updatedAt: string;
   createdAt: string | null;
   settledAt: string | null;
   pinnedAt: string | null;
   pinOrder: string | null;
+  /** When a snooze still running ends; `null` when the session is not on
+   *  the Snoozed shelf. */
+  snoozedUntil: string | null;
   unread: boolean;
   woke: boolean;
   liveElsewhere: boolean;
@@ -51,9 +57,9 @@ export interface SidebarSession {
 export interface SidebarPartition {
   pinned: SidebarSession[];
   active: SidebarSession[];
+  /** Soonest to wake first. */
+  snoozed: SidebarSession[];
   settled: SidebarSession[];
-  /** Snoozed sessions are not shown; the count is for the empty state. */
-  snoozedCount: number;
 }
 
 /** A path without its trailing separators, so `/a/b/` and `/a/b` agree. */
@@ -84,7 +90,11 @@ export function matchProject(
   return best;
 }
 
-function toSession(thread: ThreadRow, project: SidebarProject): SidebarSession {
+function toSession(
+  thread: ThreadRow,
+  project: SidebarProject,
+  snoozedUntil: string | null,
+): SidebarSession {
   return {
     threadId: thread.threadId,
     sessionId: thread.sessionId ?? "",
@@ -96,11 +106,13 @@ function toSession(thread: ThreadRow, project: SidebarProject): SidebarSession {
     projectPath: project.path,
     cwd: thread.folderPaths[0] ?? project.path,
     branch: thread.branch ?? null,
+    model: thread.model ?? null,
     updatedAt: thread.updatedAt,
     createdAt: thread.createdAt,
     settledAt: thread.settledAt,
     pinnedAt: thread.pinnedAt,
     pinOrder: thread.pinOrder,
+    snoozedUntil,
     unread: thread.unread,
     woke: thread.woke,
     liveElsewhere: thread.liveElsewhere,
@@ -138,21 +150,18 @@ export function partitionSidebarSessions(input: {
   const { groups, projects, scopeProjectId, now, sort = "recent" } = input;
   const pinned: SidebarSession[] = [];
   const active: SidebarSession[] = [];
+  const snoozed: SidebarSession[] = [];
   const settled: SidebarSession[] = [];
-  let snoozedCount = 0;
   for (const group of groups) {
     const project = matchProject(group.paths, projects);
     if (!project) continue;
     if (scopeProjectId !== null && project.id !== scopeProjectId) continue;
     for (const thread of group.threads) {
       if (!thread.sessionId) continue;
-      const snoozed = thread.snoozedUntil !== null && Date.parse(thread.snoozedUntil) > now;
-      if (snoozed) {
-        snoozedCount += 1;
-        continue;
-      }
-      const session = toSession(thread, project);
-      if (thread.settledAt !== null) settled.push(session);
+      const isSnoozed = thread.snoozedUntil !== null && Date.parse(thread.snoozedUntil) > now;
+      const session = toSession(thread, project, isSnoozed ? thread.snoozedUntil : null);
+      if (isSnoozed) snoozed.push(session);
+      else if (thread.settledAt !== null) settled.push(session);
       else if (thread.pinnedAt !== null) pinned.push(session);
       else active.push(session);
     }
@@ -161,7 +170,11 @@ export function partitionSidebarSessions(input: {
   settled.sort(
     (a, b) => b.settledAt!.localeCompare(a.settledAt!) || a.threadId.localeCompare(b.threadId),
   );
-  return { pinned: sortByPinOrder(pinned), active, settled, snoozedCount };
+  snoozed.sort(
+    (a, b) =>
+      a.snoozedUntil!.localeCompare(b.snoozedUntil!) || a.threadId.localeCompare(b.threadId),
+  );
+  return { pinned: sortByPinOrder(pinned), active, snoozed, settled };
 }
 
 /** The soonest snooze still running, so the list can re-partition when it

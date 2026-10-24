@@ -3,7 +3,8 @@
 // Two shapes. A card for the pinned and active sessions: the project on top
 // (badge, name, pin) with the status slot at its end, the title under it, and
 // the branch, its pull request and the agent on the third line. A slim row
-// for the Settled shelf: badge, title, when it was settled. Search results get
+// for the shelves: badge, title, and when it was settled — or, on the
+// Snoozed shelf, how long until it wakes. Search results get
 // a third, flatter row of their own.
 //
 // The status slot swaps on hover. At rest it says what the session is doing
@@ -23,6 +24,7 @@ import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import {
   AlarmClock,
+  AlarmClockOff,
   Check,
   CircleAlert,
   Clock,
@@ -58,6 +60,7 @@ import {
   ProjectBadge,
   RelativeTime,
   SessionAgentIcon,
+  SnoozeRemaining,
   WorkingDuration,
   WorkingRing,
 } from "./session-row-parts";
@@ -84,6 +87,8 @@ export interface SessionRowHandlers {
   unsettle: (session: SidebarSession) => void;
   snooze: (session: SidebarSession, until: string) => void;
   unpin: (session: SidebarSession) => void;
+  /** End a snooze now. */
+  wake: (session: SidebarSession) => void;
   acknowledgeWoke: (session: SidebarSession) => void;
   startRename: (session: SidebarSession) => void;
   commitRename: (session: SidebarSession, title: string) => void;
@@ -294,6 +299,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
   const isWokeStatus = topStatus === "woke";
   const [snoozeMenuOpen, setSnoozeMenuOpen] = useState(false);
   const settled = session.settledAt !== null;
+  const snoozed = session.snoozedUntil !== null;
 
   const handleClick = (event: MouseEvent) => {
     if (event.defaultPrevented) return;
@@ -427,7 +433,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
             <span
               className={cn(
                 "flex shrink-0 items-center transition-opacity",
-                (!props.isActive || settled) &&
+                (!props.isActive || settled || snoozed) &&
                   "opacity-40 grayscale group-focus-within/sidebar-row:opacity-100 group-focus-within/sidebar-row:grayscale-0 group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
               )}
             >
@@ -450,12 +456,30 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
               )}
             />
             <span className="relative ml-auto flex h-6 min-w-8 shrink-0 items-center justify-end">
-              <span className="inline-flex justify-end text-xs tabular-nums text-secondary-foreground transition-opacity group-hover/sidebar-row:opacity-0">
-                <RelativeTime iso={settled ? session.settledAt : session.updatedAt} />
-              </span>
+              {snoozed ? (
+                <span className="inline-flex items-center justify-end gap-1 text-xs tabular-nums text-info transition-opacity group-hover/sidebar-row:opacity-0">
+                  <AlarmClock aria-hidden className="size-3 shrink-0" />
+                  <SnoozeRemaining until={session.snoozedUntil!} />
+                </span>
+              ) : (
+                <span className="inline-flex justify-end text-xs tabular-nums text-secondary-foreground transition-opacity group-hover/sidebar-row:opacity-0">
+                  <RelativeTime iso={settled ? session.settledAt : session.updatedAt} />
+                </span>
+              )}
               <span className="pointer-events-none absolute inset-y-0 right-0 -mr-1 flex items-stretch opacity-0 transition-opacity has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100">
                 <MenuButton />
-                {settled ? (
+                {snoozed ? (
+                  <Hint label="Wake session" side="top">
+                    <button
+                      type="button"
+                      aria-label="Wake session"
+                      onClick={stop(() => handlers.wake(session))}
+                      className="inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      <AlarmClockOff aria-hidden className="size-3.5" />
+                    </button>
+                  </Hint>
+                ) : settled ? (
                   <Hint label="Un-settle session" side="top">
                     <button
                       type="button"

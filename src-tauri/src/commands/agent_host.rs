@@ -1600,8 +1600,9 @@ impl AgentHost {
         };
         // Every turn start, not only the bind: the user may have switched
         // branches since the session opened, and the row should name the
-        // branch the latest work ran on.
+        // branch the latest work ran on. The model likewise.
         self.refresh_branch(&session_id, &cwd);
+        self.refresh_model(&session_id);
         // Before the turn opens, so the `status: running` that `begin_turn`
         // emits already carries this turn's identity.
         self.projector.set_turn_seq(&session_id, turn_seq);
@@ -1811,6 +1812,46 @@ impl AgentHost {
         });
     }
 
+    /// Read the model the session is on from its agent and record it on the
+    /// history row, for the sidebar's hover card.
+    ///
+    /// Fire-and-forget, like [`Self::refresh_branch`]: the selector is async
+    /// and may do work, and neither a send nor a model pick may wait on it.
+    /// An agent with no model selection, or one that answers nothing, writes
+    /// nothing — the row keeps the last model Atlas saw.
+    fn refresh_model(&self, session_id: &acp::SessionId) {
+        let Some(history) = self.history().cloned() else {
+            return;
+        };
+        let Ok(handle) = self.thread(session_id.0.as_ref()) else {
+            return;
+        };
+        let connection = lock_thread(&handle).connection().clone();
+        let Some(selector) = connection.model_selector(session_id) else {
+            return;
+        };
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let session_id = session_id.clone();
+        runtime.spawn(async move {
+            let Ok(model) = selector.selected_model().await else {
+                return;
+            };
+            let id = model.id.as_str();
+            // The native runtime names a session with no BYOK provider "/".
+            if id.is_empty() || id == "/" {
+                return;
+            }
+            let label: Arc<str> = if model.name.trim().is_empty() {
+                Arc::from(id)
+            } else {
+                model.name.clone()
+            };
+            history.note_model(&session_id, label);
+        });
+    }
+
     /// Whether `turn_seq` is still the turn this session is running.
     ///
     /// A session that has since been dropped counts as not current: there is
@@ -1860,6 +1901,7 @@ impl AgentHost {
         }
         // The thread has no event for this, so the host announces it.
         self.projector.note_model_changed(&session_id, model_id);
+        self.refresh_model(&session_id);
         Ok(())
     }
 
@@ -3222,6 +3264,9 @@ pub struct ThreadRow {
     /// detached HEAD, a folder that is not a repository, a row older than
     /// the column. Never guessed.
     pub branch: Option<String>,
+    /// The model the latest turn ran on, by its display name. `None` when
+    /// Atlas never saw one (an import, a row older than the column).
+    pub model: Option<String>,
     /// Another process (typically `claude` in a terminal) wrote this session
     /// within the liveness window and Atlas is not hosting it (Rule 7).
     pub live_elsewhere: bool,
@@ -3397,6 +3442,7 @@ fn thread_row(thread: &ThreadMetadata, live: &LiveContext<'_>) -> ThreadRow {
         folder_paths: paths_of(thread.folder_paths()),
         live_elsewhere,
         branch: thread.branch.as_deref().map(str::to_string),
+        model: thread.model.as_deref().map(str::to_string),
     }
 }
 

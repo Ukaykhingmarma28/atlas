@@ -32,7 +32,7 @@ function nameTaken(name: string, orgs: Organisation[], exceptId?: string): boole
  *
  * The survivor is the active org if one of the duplicates is active (switching
  * away from under the user would be worse than the duplicate), else the first.
- * Projects and groups tagged with a dropped org are re-tagged to the survivor
+ * Projects tagged with a dropped org are re-tagged to the survivor
  * — dropping the org without that would strand every project inside it.
  */
 function collapseDuplicateRemotes(
@@ -70,9 +70,6 @@ function collapseDuplicateRemotes(
   useProjectStore.setState((s) => ({
     projects: s.projects.map((w) =>
       w.orgId && remap.has(w.orgId) ? { ...w, orgId: remap.get(w.orgId) } : w,
-    ),
-    groups: s.groups.map((g) =>
-      g.orgId && remap.has(g.orgId) ? { ...g, orgId: remap.get(g.orgId) } : g,
     ),
   }));
   logEvent({

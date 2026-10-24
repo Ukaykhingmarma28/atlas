@@ -484,8 +484,11 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
         // background projects keep their chat panels mounted, so a bind that
         // fires after a project switch (failed-bind retry, agent change)
         // would otherwise create the session against the WRONG repo — and a
-        // "/" fallback would dodge the running-project eviction guard.
-        const cwd = projectPathForTab(tabId) ?? useAppStore.getState().currentProject?.path ?? "/";
+        // "/" fallback would dodge the running-project eviction guard. A tab
+        // asked to start in a worktree (`bindCwd`) starts there.
+        const cwd =
+          useChatStore.getState().sessions[tabId]?.bindCwd ||
+          (projectPathForTab(tabId) ?? useAppStore.getState().currentProject?.path ?? "/");
         const init = await watchStall(
           withDeadline(
             agents.newSession(agent.agent_id, cwd),

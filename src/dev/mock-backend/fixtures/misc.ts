@@ -75,6 +75,7 @@ const THREADS: ThreadRow[] = [
     // Another process is writing this one: the live dot, and the composer's
     // "Send anyway" hold when it is opened.
     liveElsewhere: true,
+    model: "Claude Sonnet 4.5",
     // One of the fake repo's own branches (`fixtures/git.ts`).
     branch: "feature/auth-v2",
   },
@@ -90,6 +91,7 @@ const THREADS: ThreadRow[] = [
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
+    model: null,
     branch: "main",
   },
   {
@@ -104,6 +106,7 @@ const THREADS: ThreadRow[] = [
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path, abs("src/styles")],
     liveElsewhere: false,
+    model: null,
     branch: "main",
   },
   {
@@ -120,6 +123,7 @@ const THREADS: ThreadRow[] = [
     projectName: OTHER_PROJECTS[0].name,
     folderPaths: [OTHER_PROJECTS[0].path],
     liveElsewhere: false,
+    model: null,
     branch: "main",
   },
   {
@@ -136,6 +140,7 @@ const THREADS: ThreadRow[] = [
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
+    model: null,
     // Detached HEAD when it ran, so Atlas never learned a branch.
     branch: null,
   },
@@ -150,6 +155,7 @@ const THREADS: ThreadRow[] = [
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
+    model: null,
     // A branch nobody would size a column for. The card trims it rather than
     // pushing the agent's mark off its own edge — the only row here that
     // exercises that, and the reason it is this long.
@@ -169,6 +175,7 @@ const THREADS: ThreadRow[] = [
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
+    model: null,
     branch: "feature/auth-v2",
   },
   {
@@ -185,6 +192,7 @@ const THREADS: ThreadRow[] = [
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
+    model: null,
     branch: null,
   },
   {
@@ -200,6 +208,7 @@ const THREADS: ThreadRow[] = [
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
+    model: null,
     branch: "main",
   },
   {
@@ -216,6 +225,7 @@ const THREADS: ThreadRow[] = [
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
+    model: null,
     branch: "fix/checkpoint-blobs",
   },
   {
@@ -231,6 +241,7 @@ const THREADS: ThreadRow[] = [
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
+    model: null,
     branch: "main",
   },
 ];

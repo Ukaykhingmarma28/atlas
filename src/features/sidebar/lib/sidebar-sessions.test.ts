@@ -41,6 +41,7 @@ function row(threadId: string, patch: Partial<ThreadRow> = {}): ThreadRow {
     folderPaths: ["/work/app"],
     liveElsewhere: false,
     branch: null,
+    model: null,
     ...patch,
   } as ThreadRow;
 }
@@ -74,7 +75,7 @@ describe("matchProject", () => {
 });
 
 describe("partitionSidebarSessions", () => {
-  it("sorts pinned by key, active by recency, settled by settle time, and hides snoozed", () => {
+  it("sorts pinned by key, active by recency, settled by settle time, and shelves snoozed soonest-first", () => {
     const groups = [
       group(
         ["/work/app"],
@@ -86,6 +87,7 @@ describe("partitionSidebarSessions", () => {
           row("settled-1", { settledAt: iso(-300) }),
           row("settled-2", { settledAt: iso(-30) }),
           row("snoozed", { snoozedUntil: iso(30) }),
+          row("snoozed-soon", { snoozedUntil: iso(5), pinnedAt: iso(-40) }),
           row("snooze-over", { snoozedUntil: iso(-1), updatedAt: iso(-50) }),
           row("draft", { sessionId: null }),
         ],
@@ -95,7 +97,10 @@ describe("partitionSidebarSessions", () => {
     expect(result.pinned.map((s) => s.threadId)).toEqual(["pin-a", "pin-b"]);
     expect(result.active.map((s) => s.threadId)).toEqual(["new", "snooze-over", "old"]);
     expect(result.settled.map((s) => s.threadId)).toEqual(["settled-2", "settled-1"]);
-    expect(result.snoozedCount).toBe(1);
+    // A snooze outranks a pin: the session waits on the shelf until it wakes.
+    expect(result.snoozed.map((s) => s.threadId)).toEqual(["snoozed-soon", "snoozed"]);
+    expect(result.snoozed[0]!.snoozedUntil).toBe(iso(5));
+    expect(result.active.find((s) => s.threadId === "snooze-over")!.snoozedUntil).toBeNull();
   });
 
   it("leaves out groups outside the organisation and honours the project scope", () => {

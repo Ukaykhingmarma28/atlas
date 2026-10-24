@@ -418,6 +418,8 @@ interface ChatActions {
      *  `ChatSession.resumePending` — gates sending, not reading. */
     setResumePending: (sessionId: string, pending: boolean) => void;
     clearSession: (sessionId: string) => void;
+    /** Where the tab's next bind opens its session (see `ChatSession.bindCwd`). */
+    setBindCwd: (tabId: string, cwd: string) => void;
     removeSession: (sessionId: string) => void;
     /** Drop several sessions at once (used when a project is DISCARDED from
      *  the hot set — frees its chat history from RAM; reloaded cold on revisit). */
@@ -1232,8 +1234,14 @@ export const useChatStore = createSelectors(
               // conversation being dropped, exactly like the queue below.
               session.pendingSend = undefined;
               session.unrestoredModeId = undefined;
+              session.bindCwd = undefined;
             }
             delete s.queues[sessionId];
+          }),
+        setBindCwd: (tabId, cwd) =>
+          set((s) => {
+            const session = s.sessions[tabId];
+            if (session) session.bindCwd = cwd;
           }),
         cycleClaudePermissionMode: (sessionId) => {
           let next: ClaudePermissionMode | undefined;

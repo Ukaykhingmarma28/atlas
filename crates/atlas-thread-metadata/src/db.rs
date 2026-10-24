@@ -22,7 +22,7 @@ const LIST_QUERY: &str = "SELECT thread_id, session_id, agent_id, title, title_o
      updated_at, created_at, interacted_at, folder_paths, folder_paths_order, \
      main_worktree_paths, main_worktree_paths_order, remote_connection, \
      branch, settled_at, unsettled_at, pinned_at, pin_order, snoozed_until, snoozed_at, \
-     last_snooze_wake_at, last_viewed_at, last_turn_completed_at \
+     last_snooze_wake_at, last_viewed_at, last_turn_completed_at, model \
      FROM threads \
      ORDER BY updated_at DESC";
 
@@ -33,9 +33,9 @@ const UPSERT: &str = "INSERT INTO threads(thread_id, session_id, agent_id, title
          folder_paths_order, main_worktree_paths, main_worktree_paths_order, \
          remote_connection, branch, settled_at, unsettled_at, pinned_at, pin_order, \
          snoozed_until, snoozed_at, last_snooze_wake_at, last_viewed_at, \
-         last_turn_completed_at) \
+         last_turn_completed_at, model) \
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
-         ?18, ?19, ?20, ?21, ?22, ?23) \
+         ?18, ?19, ?20, ?21, ?22, ?23, ?24) \
      ON CONFLICT(thread_id) DO UPDATE SET \
          session_id = excluded.session_id, \
          agent_id = excluded.agent_id, \
@@ -58,7 +58,8 @@ const UPSERT: &str = "INSERT INTO threads(thread_id, session_id, agent_id, title
          snoozed_at = excluded.snoozed_at, \
          last_snooze_wake_at = excluded.last_snooze_wake_at, \
          last_viewed_at = excluded.last_viewed_at, \
-         last_turn_completed_at = excluded.last_turn_completed_at";
+         last_turn_completed_at = excluded.last_turn_completed_at, \
+         model = excluded.model";
 
 /// The durable half of the store.
 pub(crate) struct Db {
@@ -135,6 +136,7 @@ impl Db {
                 rfc3339(row.last_snooze_wake_at),
                 rfc3339(row.last_viewed_at),
                 rfc3339(row.last_turn_completed_at),
+                row.model.as_deref(),
             ],
         )?;
         Ok(())
@@ -310,6 +312,7 @@ fn decode(row: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMetadata> {
         Ok(timestamp(row.get::<_, Option<String>>(index)?))
     };
     let pin_order: Option<String> = row.get(17)?;
+    let model: Option<String> = row.get(23)?;
 
     let folder_paths = path_list(serialized(folder_paths, folder_paths_order));
     let main_paths = path_list(serialized(main_paths, main_paths_order));
@@ -350,6 +353,9 @@ fn decode(row: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMetadata> {
         last_snooze_wake_at: time(20)?,
         last_viewed_at: time(21)?,
         last_turn_completed_at: time(22)?,
+        model: model
+            .filter(|m| !m.trim().is_empty())
+            .map(|m| Arc::from(m.as_str())),
     })
 }
 

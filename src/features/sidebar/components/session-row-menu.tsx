@@ -12,7 +12,12 @@
 import { useState, type ReactNode, type RefObject } from "react";
 import {
   Copy,
+  Folder,
   FolderTree,
+  GitBranch,
+  Hash,
+  Type,
+  AlarmClockOff,
   Clock,
   MailOpen,
   Mail,
@@ -49,6 +54,7 @@ export interface SessionMenuActions {
   markUnread: (session: SidebarSession) => void;
   markRead: (session: SidebarSession) => void;
   snooze: (session: SidebarSession, until: string) => void;
+  wake: (session: SidebarSession) => void;
   settle: (session: SidebarSession) => void;
   unsettle: (session: SidebarSession) => void;
   rename: (session: SidebarSession) => void;
@@ -104,7 +110,12 @@ function SessionMenuItems({
           {settleShortcut ? <ContextMenuShortcut>{settleShortcut}</ContextMenuShortcut> : null}
         </ContextMenuItem>
       )}
-      {settled ? null : (
+      {settled ? null : session.snoozedUntil !== null ? (
+        <ContextMenuItem onClick={() => actions.wake(session)}>
+          <AlarmClockOff />
+          Wake session
+        </ContextMenuItem>
+      ) : (
         <ContextMenuSub>
           <ContextMenuSubTrigger>
             <Clock />
@@ -162,20 +173,26 @@ function SessionMenuItems({
         </ContextMenuSubTrigger>
         <ContextMenuSubContent>
           <ContextMenuItem onClick={() => actions.copy(session.title, "Title")}>
+            <Type />
             Title
           </ContextMenuItem>
-          <ContextMenuItem onClick={() => actions.copy(session.cwd, "Path")}>Path</ContextMenuItem>
+          <ContextMenuItem onClick={() => actions.copy(session.cwd, "Path")}>
+            <Folder />
+            Path
+          </ContextMenuItem>
           {session.branch ? (
             <ContextMenuItem onClick={() => actions.copy(session.branch!, "Branch")}>
+              <GitBranch />
               Branch
             </ContextMenuItem>
           ) : null}
           <ContextMenuItem onClick={() => actions.copy(session.threadId, "Session ID")}>
+            <Hash />
             Session ID
           </ContextMenuItem>
         </ContextMenuSubContent>
       </ContextMenuSub>
-      <OpenInEditorContextItems path={session.cwd} />
+      <OpenInEditorContextItems path={session.cwd} withIcons />
       <ContextMenuItem onClick={() => actions.projectSettings(session)}>
         <Settings />
         Project settings

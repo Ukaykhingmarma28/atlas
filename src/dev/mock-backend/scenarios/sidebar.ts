@@ -1,7 +1,8 @@
 // The sidebar at scale: eight projects and about 1,200 sessions across them,
 // in every state the list draws — pinned (in their fractional-key order),
-// active, unread, woke from a snooze, snoozed (hidden), running in another
-// process, on a branch with a pull request, and a long Settled shelf.
+// active, unread, woke from a snooze, snoozed (on their own shelf), running in
+// another process, on a branch with a pull request, shared with the team (with
+// comments), and a long Settled shelf.
 //
 // Generated deterministically (a seeded PRNG), so screenshots compare. The
 // lifecycle commands are the shared fake (`session-lifecycle.ts`), so pin,
@@ -9,6 +10,7 @@
 
 import { emit } from "@tauri-apps/api/event";
 import type { ResumedThread, ThreadProject, ThreadRow } from "@/features/chat/lib/history-api";
+import type { Comment, CommentThreads } from "@/features/artifacts/lib/comments-api";
 import type { Project } from "@/features/projects/stores/project-store";
 import type { Scenario } from "../types";
 import { MOCK_ORG_ID, MOCK_PROJECT, appState } from "../project";
@@ -29,7 +31,7 @@ const PROJECT_NAMES = [
 const PROJECTS: Project[] = PROJECT_NAMES.map((name, i) =>
   i === 0
     ? MOCK_PROJECT
-    : { id: `ws-side-${i}`, name, path: `/Users/dev/${name}`, groupId: null, orgId: MOCK_ORG_ID },
+    : { id: `ws-side-${i}`, name, path: `/Users/dev/${name}`, orgId: MOCK_ORG_ID },
 );
 
 const AGENTS = ["atlas-agent", "claude-acp", "codex-acp", "opencode", "cursor"];
@@ -42,6 +44,7 @@ const BRANCHES = [
   "refactor/billing-ledger",
   null,
 ];
+const MODELS = ["Claude Sonnet 4.5", "Claude Opus 4.1", "GPT-5 Codex", "Gemini 2.5 Pro", null];
 const VERBS = ["Fix", "Add", "Refactor", "Investigate", "Document", "Port", "Speed up", "Remove"];
 const THINGS = [
   "the checkout total rounding",
@@ -108,6 +111,8 @@ function generate(): ThreadRow[] {
       folderPaths: [project.path],
       liveElsewhere: false,
       branch,
+      // Not drawn from the PRNG, so adding it moved no other fixture value.
+      model: MODELS[i % MODELS.length] ?? null,
     };
     // Older than two weeks and not otherwise marked: settled (the idle sweep).
     if (now - updated > 14 * DAY && rand() < 0.85) row.settledAt = iso(updated + 3 * DAY);
@@ -133,7 +138,7 @@ function generate(): ThreadRow[] {
   at(2).lastViewedAt = iso(now - 2 * HOUR);
   at(11).lastSnoozeWakeAt = iso(now - 5 * MINUTE);
   at(11).lastViewedAt = iso(now - DAY);
-  // Snoozed: hidden until they wake (one wakes two minutes in).
+  // Snoozed: on the Snoozed shelf until they wake (one wakes two minutes in).
   for (const [i, ms] of [
     [1, 2 * MINUTE],
     [6, 3 * HOUR],
@@ -152,6 +157,31 @@ function generate(): ThreadRow[] {
 }
 
 let threads: ThreadRow[] = [];
+
+/** Sessions shared with the team, and how many comments each has: the hover
+ *  card reads both without the session being open. */
+const SHARED: Record<string, number> = { "side-sess-0": 3, "side-sess-3": 0, "side-sess-14": 1 };
+
+function sharedComments(sessionId: string): CommentThreads {
+  const count = SHARED[sessionId] ?? 0;
+  const session: Comment[] = Array.from({ length: count }, (_, i) => ({
+    id: `${sessionId}-c${i}`,
+    sessionId,
+    anchorKind: "session",
+    anchorId: sessionId,
+    parentId: null,
+    authorId: "user-mock",
+    guestName: null,
+    body: "Looks good",
+    mentions: [],
+    createdAt: new Date(Date.now() - i * HOUR).toISOString(),
+    editedAt: null,
+    deletedAt: null,
+    resolvedAt: null,
+    resolvedBy: null,
+  }));
+  return { byAnchor: {}, session };
+}
 
 function threadsChanged(): void {
   void emit("atlas:threads-changed");
@@ -186,6 +216,11 @@ export const sidebar: Scenario = {
     bootstrap_app_state: () => appState({ workspaces: PROJECTS }),
     threads_history: (): ThreadRow[] => threads,
     threads_sync_project: () => 0,
+    chat_comment_target: ({ nativeSessionId }) =>
+      String(nativeSessionId) in SHARED
+        ? { remoteProjectId: "rw-side", sessionId: String(nativeSessionId), entries: [] }
+        : null,
+    artifacts_cloud_comments: ({ sessionId }): CommentThreads => sharedComments(String(sessionId)),
     threads_projects: ({ cwd }): ThreadProject[] =>
       threadProjects(cwd === null || cwd === undefined ? null : String(cwd)),
     threads_resume: ({ threadId }): ResumedThread => {

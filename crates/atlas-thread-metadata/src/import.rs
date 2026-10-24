@@ -137,6 +137,8 @@ pub fn importable_threads(
                 remote_connection: None,
                 // Atlas was not there to see which branch it ran on.
                 branch: None,
+                // Nor which model.
+                model: None,
                 settled_at: active_since
                     .is_none_or(|cutoff| updated_at < cutoff)
                     .then_some(updated_at),

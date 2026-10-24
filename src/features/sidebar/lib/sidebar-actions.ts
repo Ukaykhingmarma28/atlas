@@ -12,6 +12,8 @@ import { copyText } from "@/lib/clipboard";
 import { useSessionLifecycleStore } from "@/features/chat/stores/session-lifecycle-store";
 import { useChatStore } from "@/features/chat/stores/chat-store";
 import { useGitStore } from "@/features/git/stores/git-store";
+import { checkoutBranch, checkoutState } from "@/features/git/lib/git-remote-api";
+import { busySessions } from "@/features/projects/lib/stop-agents-confirm";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { deleteThread, markSessionViewed } from "@/features/chat/lib/history-api";
 import { confirmDeleteChat } from "@/features/chat/lib/confirm-delete-chat";
@@ -34,6 +36,7 @@ const UNDO_MS = 5_000;
 export interface SidebarListSnapshot {
   pinned: readonly SidebarSession[];
   active: readonly SidebarSession[];
+  snoozed: readonly SidebarSession[];
   settled: readonly SidebarSession[];
   activeSessionId: string | null;
 }
@@ -184,26 +187,54 @@ async function activateProject(path: string): Promise<void> {
 }
 
 /**
- * A fresh session on the branch this one ran on, with the same agent. A
- * session in its own worktree is already on its branch; one in the project's
- * checkout switches the checkout to the branch first — and stops there if git
- * refuses (uncommitted changes in the way), saying why.
+ * A fresh session on the branch this one ran on, with the same agent.
+ *
+ * A session in its own worktree starts the new one in that worktree, which is
+ * already on the branch; nothing is switched. One in the project's checkout
+ * switches the checkout only when nothing would be disturbed: never with
+ * uncommitted changes in the working tree, and never under an agent that is
+ * working there. Otherwise it stops and says why, offering to start on the
+ * branch the checkout is on instead.
  */
 export async function newSessionOnBranch(session: SidebarSession): Promise<void> {
   await activateProject(session.projectPath);
-  if (session.branch && session.cwd === session.projectPath) {
-    const git = useGitStore.getState();
-    if (git.isRepo && git.branch !== session.branch) {
-      try {
-        await git.actions.checkout(session.branch);
-      } catch (err) {
-        toast.error(`Couldn't switch to ${session.branch}`, { description: String(err) });
-        return;
-      }
-    }
-  }
   const agent = AGENT_TYPE_BY_SIDEBAR[session.agent] ?? (session.agent as SwitchableAgent);
-  openNewAgentChat(agent);
+  const start = () => openNewAgentChat(agent);
+  const branch = session.branch;
+
+  if (session.cwd !== session.projectPath) {
+    useChatStore.getState().actions.setBindCwd(start(), session.cwd);
+    return;
+  }
+  if (!branch) {
+    start();
+    return;
+  }
+  const checkout = await checkoutState(session.projectPath);
+  if (!checkout || checkout.branch === branch) {
+    start();
+    return;
+  }
+  const blocker = checkout.dirty
+    ? "it has uncommitted changes"
+    : busySessions(session.projectPath).length > 0
+      ? "an agent is working in it"
+      : null;
+  if (blocker) {
+    toast.error(`Didn't switch to ${branch}`, {
+      description: `The project is on ${checkout.branch} and ${blocker}, so Atlas left it alone.`,
+      action: { label: `Start on ${checkout.branch}`, onClick: () => void start() },
+    });
+    return;
+  }
+  try {
+    await checkoutBranch(session.projectPath, branch);
+  } catch (err) {
+    toast.error(`Couldn't switch to ${branch}`, { description: String(err) });
+    return;
+  }
+  void useGitStore.getState().actions.refreshStatusNow(session.projectPath);
+  start();
 }
 
 /** The project's own settings: the Settings screen, scoped to its folder. */

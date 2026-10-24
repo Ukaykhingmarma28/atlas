@@ -40,7 +40,7 @@ export interface LiveSession {
   tabId: string;
 }
 
-const EMPTY_PARTITION: SidebarPartition = { pinned: [], active: [], settled: [], snoozedCount: 0 };
+const EMPTY_PARTITION: SidebarPartition = { pinned: [], active: [], snoozed: [], settled: [] };
 
 /** Every chat tab's live state, keyed by its session id. Re-computed only when
  *  a tab's session or status changes. */

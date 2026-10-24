@@ -2,7 +2,7 @@
 // of what is installed. One component per menu primitive, since a context
 // menu and a dropdown are different Base UI trees.
 
-import { SquareArrowOutUpRight } from "lucide-react";
+import { AppWindow, SquareArrowOutUpRight } from "lucide-react";
 import {
   ContextMenuItem,
   ContextMenuSub,
@@ -27,13 +27,17 @@ export function editorMenuEntries(
   return { primary: preferred, others: editors.filter((e) => e.id !== preferred.id) };
 }
 
-/** For a context menu: "Open in Cursor", then an "Open With" submenu. */
+/** For a context menu: "Open in Cursor", then an "Open With" submenu.
+ *  `withIcons` gives both a leading icon, for a menu whose other items have
+ *  one — without it their labels sit left of everyone else's. */
 export function OpenInEditorContextItems({
   path,
   position,
+  withIcons = false,
 }: {
   path: string;
   position?: EditorPosition;
+  withIcons?: boolean;
 }) {
   const { editors, preferred } = usePreferredEditor();
   const { primary, others } = editorMenuEntries(editors, preferred);
@@ -41,11 +45,15 @@ export function OpenInEditorContextItems({
   return (
     <>
       <ContextMenuItem onClick={() => void openInEditor(primary.id, path, position)}>
+        {withIcons && <SquareArrowOutUpRight />}
         {openInLabel(primary)}
       </ContextMenuItem>
       {others.length > 0 && (
         <ContextMenuSub>
-          <ContextMenuSubTrigger>Open With</ContextMenuSubTrigger>
+          <ContextMenuSubTrigger>
+            {withIcons && <AppWindow />}
+            Open With
+          </ContextMenuSubTrigger>
           <ContextMenuSubContent>
             {others.map((editor) => (
               <ContextMenuItem

@@ -432,7 +432,7 @@ function ProjectLabel({
           its own chevron so the bar's text reads as something you can press. */}
       {orgName && (
         <>
-          <OrgSwitcher variant="breadcrumb" />
+          <OrgSwitcher />
           <span className="shrink-0 px-0.5 text-sm text-muted-foreground opacity-60">/</span>
         </>
       )}

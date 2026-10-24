@@ -1,5 +1,5 @@
 // A section heading in the session list: the label, a hairline to the edge,
-// and a chevron. The Settled shelf's toggle.
+// and a chevron. The Snoozed and Settled shelves' toggle.
 
 import type { ComponentProps, ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 const tones = {
   muted: { label: "text-muted-foreground", line: "bg-border-subtle" },
   accent: { label: "text-primary", line: "bg-primary/50" },
+  info: { label: "text-info", line: "bg-info/40" },
 } as const;
 
 export function CollapsibleSectionHeader({

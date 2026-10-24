@@ -30,7 +30,7 @@ import {
 import { markFileIndexClosedFor } from "@/features/file-picker/lib/file-picker-api";
 import { instructionSync } from "../lib/instruction-sync-api";
 
-/** The org id used to tag newly-created projects/groups so they belong to
+/** The org id used to tag newly-created projects so they belong to
  *  the org the user is currently in. Read lazily to avoid an import-time
  *  dependency cycle with the org store. Falls back to the first org when no
  *  active org is set (org store mid-hydration) — an untagged row would render
@@ -74,7 +74,6 @@ export interface Project {
   id: string;
   name: string;
   path: string;
-  groupId: string | null;
   /** Owning Organisation (mirrors `app_state.rs:Project::org_id`). Every
    *  render surface filters STRICTLY by `orgId === activeOrganisationId` —
    *  an untagged row is invisible. Creation always tags (see
@@ -86,29 +85,14 @@ export interface Project {
   /** Optional git remote — the only field besides id/name that syncs to the
    *  server (`project_refs.git_url`) for one-click clone. */
   gitUrl?: string;
-  color?: string;
-  /** Pinned to the top of the sidebar + prioritized to stay in the hot set. */
-  pinned?: boolean;
   /** ISO-8601 of the last time this was the active project. */
   lastActiveAt?: string;
-}
-
-/** A user-defined collapsible folder grouping projects in the sidebar. */
-export interface ProjectGroup {
-  id: string;
-  name: string;
-  order: number;
-  /** Owning Organisation (mirrors `Project.orgId`). */
-  orgId?: string;
-  /** Pinned groups float to the top of the Recent tier. */
-  pinned?: boolean;
 }
 
 interface ProjectState {
   /** The full project REGISTRY — every known project (opened, recent, or
    *  bookmarked-for-later). Unbounded; lightweight metadata only. */
   projects: Project[];
-  groups: ProjectGroup[];
   activeProjectId: string | null;
   /** The bounded HOT set: projects actually MOUNTED in CenterPanel + holding
    *  resident Rust state. CenterPanel renders only these. Capped at
@@ -123,21 +107,8 @@ interface ProjectState {
    *  instead of the default OVERLAY. A user preference, persisted to
    *  localStorage. `sidebarOpen` still gates visibility in both modes. */
   sidebarPinned: boolean;
-  /** Group whose header is currently in inline-rename mode (transient, not
-   *  persisted). Lives in the store so it survives the virtualized row
-   *  remounting and so a freshly-created group can open straight into rename. */
-  editingGroupId: string | null;
-  /** Project whose name is currently in inline-rename mode (transient, not
-   *  persisted). Lives in the store — like `editingGroupId` — so it survives
-   *  the virtualized row remounting. */
-  editingProjectId: string | null;
   /** Guards re-entrant switches while a flush/restore is in flight. */
   switching: boolean;
-  /** OPTIMISTIC selection target — set the instant a project is clicked so the
-   *  switcher highlight updates immediately, before the (slow) switch completes.
-   *  The sidebar highlights `optimisticActiveId ?? activeProjectId`; cleared
-   *  when the switch settles. */
-  optimisticActiveId: string | null;
   actions: {
     /** Add a project for `path`, or focus the existing one if `path` is
      *  already open. Returns the project id. Switches to it (mounts it). */
@@ -155,44 +126,19 @@ interface ProjectState {
      *  org's projects load. Does NOT flush — the caller flushes the active
      *  project first (its layout mirror is the only unsaved state). */
     teardownForOrgSwitch: () => void;
-    /** Purge every project + group belonging to `orgId` from the registry
+    /** Purge every project belonging to `orgId` from the registry
      *  (tearing down any still mounted). Used by org deletion. */
     removeProjectsForOrg: (orgId: string) => void;
     /** Ensure `id` is in the hot set, evicting the LRU evictable project if
      *  that pushes the set over `maxMounted`. */
     ensureMounted: (id: string) => void;
-    pin: (id: string) => void;
-    unpin: (id: string) => void;
-    setColor: (id: string, color: string | null) => void;
-    rename: (id: string, name: string) => void;
-    /** Enter inline-rename for a project row. */
-    beginRenameProject: (id: string) => void;
-    /** Leave project inline-rename (commit or cancel). */
-    endRenameProject: () => void;
-    /** Move a project into a group (or ungroup with `null`). */
-    setGroup: (id: string, groupId: string | null) => void;
-    reorder: (orderedIds: string[]) => void;
-    addGroup: (name: string) => string | null;
-    renameGroup: (id: string, name: string) => void;
-    /** Enter inline-rename for a group header. */
-    beginRenameGroup: (id: string) => void;
-    /** Leave inline-rename (commit or cancel). */
-    endRenameGroup: () => void;
-    removeGroup: (id: string) => void;
-    pinGroup: (id: string) => void;
-    unpinGroup: (id: string) => void;
     toggleSidebar: () => void;
     setSidebarOpen: (open: boolean) => void;
     /** Toggle docked (pinned) vs overlay. Pinning also opens the sidebar so it
      *  docks into view immediately. */
     toggleSidebarPinned: () => void;
-    setSidebarPinned: (pinned: boolean) => void;
     /** One-shot hydration from Rust `AppState` on boot. */
-    hydrate: (payload: {
-      projects: Project[];
-      groups: ProjectGroup[];
-      activeProjectId: string | null;
-    }) => void;
+    hydrate: (payload: { projects: Project[]; activeProjectId: string | null }) => void;
   };
 }
 
@@ -270,7 +216,6 @@ const initialSidebarPinned = readSidebarPinned();
 export const useProjectStore = createSelectors(
   create<ProjectState>()((set, get) => ({
     projects: [],
-    groups: [],
     activeProjectId: null,
     mountedProjectIds: [],
     maxMounted: DEFAULT_MAX_MOUNTED,
@@ -279,9 +224,6 @@ export const useProjectStore = createSelectors(
     sidebarOpen: initialSidebarPinned,
     sidebarPinned: initialSidebarPinned,
     switching: false,
-    optimisticActiveId: null,
-    editingGroupId: null,
-    editingProjectId: null,
     actions: {
       addProject: async (path: string) => {
         // Dedup by (path, ORG) — not path alone. Project identity is
@@ -316,7 +258,6 @@ export const useProjectStore = createSelectors(
           id: uuid(),
           name: nameOf(path),
           path,
-          groupId: null,
           orgId: org,
         };
         set((s) => ({ projects: [...s.projects, ws] }));
@@ -345,7 +286,6 @@ export const useProjectStore = createSelectors(
           id: uuid(),
           name: nameOf(path),
           path,
-          groupId: null,
           orgId: org,
         };
         set((s) => ({ projects: [...s.projects, ws] }));
@@ -362,7 +302,6 @@ export const useProjectStore = createSelectors(
           if (wid === id || wid === st.activeProjectId) return false;
           const w = byId(wid);
           if (!w) return true;
-          if (w.pinned) return false;
           if (isProjectRunning(w.path)) return false;
           return true;
         };
@@ -375,7 +314,7 @@ export const useProjectStore = createSelectors(
             .sort((a, b) =>
               (byId(a)?.lastActiveAt ?? "").localeCompare(byId(b)?.lastActiveAt ?? ""),
             );
-          if (candidates.length === 0) break; // all pinned/running — exceed cap
+          if (candidates.length === 0) break; // all running — exceed cap
           const lru = candidates[0];
           teardownHot(lru);
           mounted = mounted.filter((x) => x !== lru);
@@ -383,44 +322,23 @@ export const useProjectStore = createSelectors(
         set({ mountedProjectIds: mounted });
       },
 
-      pin: (id: string) => {
-        set((s) => ({
-          projects: s.projects.map((w) => (w.id === id ? { ...w, pinned: true } : w)),
-        }));
-        // Pinning warms the project so it's instant.
-        get().actions.ensureMounted(id);
-        scheduleAppStateSave();
-      },
-
-      unpin: (id: string) => {
-        set((s) => ({
-          projects: s.projects.map((w) => (w.id === id ? { ...w, pinned: false } : w)),
-        }));
-        scheduleAppStateSave();
-      },
-
       switchTo: async (id: string) => {
         const { activeProjectId, switching, projects } = get();
         const target = projects.find((w) => w.id === id);
         if (!target) return;
 
-        // INSTANT UI response — before any guard or heavy work:
-        //  • close the OVERLAY switcher (its slide-out animation covers the
-        //    switch's eventual load latency). When DOCKED (pinned) the sidebar
-        //    is a persistent panel, so we leave it open — closing it would make
-        //    the whole layout jump on every switch.
-        //  • optimistically highlight the selection so the clicked item updates
-        //    immediately even though the real `activeProjectId` lags behind.
+        // INSTANT UI response — before any guard or heavy work: close the
+        // OVERLAY sidebar (its slide-out animation covers the switch's
+        // eventual load latency). When DOCKED (pinned) the sidebar is a
+        // persistent panel, so we leave it open — closing it would make the
+        // whole layout jump on every switch.
         const pinnedNow = get().sidebarPinned;
         const wasOpen = get().sidebarOpen && !pinnedNow;
-        set({
-          optimisticActiveId: id,
-          ...(pinnedNow ? {} : { sidebarOpen: false }),
-        });
+        if (!pinnedNow) set({ sidebarOpen: false });
 
         // A switch already in flight → don't DROP the click; remember the latest
-        // target and run it when the current one settles (coalesce). The close +
-        // optimistic highlight above already gave instant feedback.
+        // target and run it when the current one settles (coalesce). The close
+        // above already gave instant feedback.
         if (switching) {
           pendingSwitchTarget = id;
           return;
@@ -432,7 +350,6 @@ export const useProjectStore = createSelectors(
             name: target.name,
             path: target.path,
           });
-          set({ optimisticActiveId: null });
           return;
         }
 
@@ -527,14 +444,11 @@ export const useProjectStore = createSelectors(
         } finally {
           set({ switching: false });
           // Drain a coalesced click: jump straight to the LATEST target the user
-          // selected while this switch ran. Keep the optimistic highlight on it
-          // until that switch resolves; otherwise clear it (real active id wins).
+          // selected while this switch ran.
           const next = pendingSwitchTarget;
           pendingSwitchTarget = null;
           if (next && next !== get().activeProjectId) {
             void get().actions.switchTo(next);
-          } else {
-            set({ optimisticActiveId: null });
           }
         }
       },
@@ -599,7 +513,6 @@ export const useProjectStore = createSelectors(
         set({
           mountedProjectIds: [],
           activeProjectId: null,
-          optimisticActiveId: null,
         });
       },
 
@@ -613,90 +526,10 @@ export const useProjectStore = createSelectors(
         }
         set((s) => ({
           projects: s.projects.filter((w) => w.orgId !== orgId),
-          groups: s.groups.filter((g) => g.orgId !== orgId),
           mountedProjectIds: s.mountedProjectIds.filter((x) => !removedIds.has(x)),
         }));
       },
 
-      setColor: (id, color) => {
-        set((s) => ({
-          projects: s.projects.map((w) => (w.id === id ? { ...w, color: color ?? undefined } : w)),
-        }));
-        scheduleAppStateSave();
-      },
-      rename: (id, name) => {
-        set((s) => ({
-          projects: s.projects.map((w) => (w.id === id ? { ...w, name } : w)),
-        }));
-        scheduleAppStateSave();
-      },
-      beginRenameProject: (id) => set({ editingProjectId: id }),
-      endRenameProject: () => set({ editingProjectId: null }),
-      setGroup: (id, groupId) => {
-        set((s) => ({
-          projects: s.projects.map((w) => (w.id === id ? { ...w, groupId } : w)),
-        }));
-        scheduleAppStateSave();
-      },
-      reorder: (orderedIds) => {
-        set((s) => {
-          const byId = new Map(s.projects.map((w) => [w.id, w]));
-          const reordered = orderedIds
-            .map((wid) => byId.get(wid))
-            .filter((w): w is Project => Boolean(w));
-          // Append any projects missing from the order list (defensive).
-          for (const w of s.projects) {
-            if (!orderedIds.includes(w.id)) reordered.push(w);
-          }
-          return { projects: reordered };
-        });
-        scheduleAppStateSave();
-      },
-      addGroup: (name) => {
-        const org = requireActiveOrgId();
-        if (!org) return refuseWithoutOrg("no organisation available to own a new group");
-        const group: ProjectGroup = {
-          id: uuid(),
-          name,
-          order: get().groups.length,
-          orgId: org,
-        };
-        // Open the new group straight into inline-rename so the user can name it.
-        set((s) => ({
-          groups: [...s.groups, group],
-          editingGroupId: group.id,
-        }));
-        scheduleAppStateSave();
-        return group.id;
-      },
-      renameGroup: (id, name) => {
-        set((s) => ({
-          groups: s.groups.map((g) => (g.id === id ? { ...g, name } : g)),
-        }));
-        scheduleAppStateSave();
-      },
-      beginRenameGroup: (id) => set({ editingGroupId: id }),
-      endRenameGroup: () => set({ editingGroupId: null }),
-      removeGroup: (id) => {
-        set((s) => ({
-          groups: s.groups.filter((g) => g.id !== id),
-          // Ungroup any projects that belonged to it.
-          projects: s.projects.map((w) => (w.groupId === id ? { ...w, groupId: null } : w)),
-        }));
-        scheduleAppStateSave();
-      },
-      pinGroup: (id) => {
-        set((s) => ({
-          groups: s.groups.map((g) => (g.id === id ? { ...g, pinned: true } : g)),
-        }));
-        scheduleAppStateSave();
-      },
-      unpinGroup: (id) => {
-        set((s) => ({
-          groups: s.groups.map((g) => (g.id === id ? { ...g, pinned: false } : g)),
-        }));
-        scheduleAppStateSave();
-      },
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
       toggleSidebarPinned: () =>
@@ -711,14 +544,6 @@ export const useProjectStore = createSelectors(
           // (now overlay) sidebar in whatever open state it was.
           return sidebarPinned ? { sidebarPinned, sidebarOpen: true } : { sidebarPinned };
         }),
-      setSidebarPinned: (pinned) => {
-        try {
-          localStorage.setItem(SIDEBAR_PINNED_KEY, pinned ? "1" : "0");
-        } catch {
-          /* ignore */
-        }
-        set({ sidebarPinned: pinned });
-      },
 
       hydrate: (payload) => {
         set({
@@ -727,7 +552,6 @@ export const useProjectStore = createSelectors(
           projects: (payload.projects ?? []).map((w) =>
             w.name === w.path ? { ...w, name: nameOf(w.path) } : w,
           ),
-          groups: payload.groups ?? [],
           activeProjectId: payload.activeProjectId ?? null,
         });
       },

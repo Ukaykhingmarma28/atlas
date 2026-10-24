@@ -22,6 +22,7 @@ import { agentMeta } from "@/features/agents/lib/agent-meta";
 import { useChatStore } from "@/features/chat/stores/chat-store";
 import type { SidebarAgent } from "@/features/chat/lib/sidebar-agents";
 import { cn } from "@/lib/utils";
+import { snoozeRemainingLabel } from "@/features/chat/lib/session-snooze";
 import { compactAge } from "../lib/session-row-status";
 
 /** Two-letter monogram for a project name: "northwind-shop" → "NS", "atlas" → "AT". */
@@ -154,6 +155,12 @@ function WorkingDurationLabel({ startedAt }: { startedAt: number }) {
 export function RelativeTime({ iso }: { iso: string | null }) {
   const now = useSyncExternalStore(minuteTicker.subscribe, minuteTicker.get);
   return <>{compactAge(iso, now)}</>;
+}
+
+/** How long until a snooze ends ("45m", "3h", "2d"), on the same minute tick. */
+export function SnoozeRemaining({ until }: { until: string }) {
+  const now = useSyncExternalStore(minuteTicker.subscribe, minuteTicker.get);
+  return <>{snoozeRemainingLabel(until, new Date(now))}</>;
 }
 
 /** The dashed ring that turns while an agent works. */
