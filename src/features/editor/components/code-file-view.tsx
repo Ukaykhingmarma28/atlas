@@ -6,6 +6,7 @@ import {
   type File as FileInstance,
   type FileContents,
   type PostRenderPhase,
+  type SelectedLineRange,
 } from "@pierre/diffs";
 import { Editor, type EditorChangeEvent, type EditorFactory } from "@pierre/diffs/edit";
 import type { WorkerPoolManager } from "@pierre/diffs/worker";
@@ -24,6 +25,7 @@ import {
 import { positionOfSelection, type EditorPosition } from "../lib/editor-views";
 import { clampFileLine, resolveCenteredFileLineScrollTop } from "../lib/file-line-reveal";
 import type { FileDecorations } from "../lib/file-decorations";
+import type { FileCommentGroup, FileCommentsBinding } from "../lib/use-file-review-comments";
 import { fileCacheKey } from "../lib/file-preview-mode";
 import { revealSelection, type RevealTarget } from "../lib/reveal";
 import {
@@ -75,16 +77,21 @@ export interface CodeFileViewProps {
   decorations: FileDecorations;
   reveal?: (RevealTarget & { nonce: number }) | undefined;
   onRevealed?: (nonce: number) => void;
-  onChange: (contents: string, event: EditorChangeEvent<"file", undefined, undefined>) => void;
-  /** The gutter's `+`, on hover beside a line number: those lines, 1-based
-   *  and inclusive, go to the session. Left out, the gutter has no `+`. */
-  onAddLines?: (range: { start: number; end: number }) => void;
+  onChange: (
+    contents: string,
+    event: EditorChangeEvent<"file", FileCommentGroup, undefined>,
+  ) => void;
+  /** Comments on lines for the session beside the file
+   *  (`use-file-review-comments.tsx`): drawn under their lines, and started
+   *  from the gutter's `+` beside a line number or a drag down the numbers.
+   *  Left out, the gutter has no `+`. */
+  comments?: FileCommentsBinding | null;
   handleRef?: Ref<CodeFileViewHandle>;
 }
 
 type FilePostRender = (
   fileContainer: HTMLElement,
-  instance: FileInstance<undefined, undefined>,
+  instance: FileInstance<FileCommentGroup, undefined>,
   phase: PostRenderPhase,
 ) => void;
 
@@ -252,8 +259,11 @@ function useFileLineReveal(
   };
 }
 
-const createFileEditor: EditorFactory<undefined, undefined> = (editorType, options, editStateKey) =>
-  new Editor(editorType, options, editStateKey);
+const createFileEditor: EditorFactory<FileCommentGroup, undefined> = (
+  editorType,
+  options,
+  editStateKey,
+) => new Editor(editorType, options, editStateKey);
 
 /** Whether `contents` is short enough for the workers to tokenize. Counting
  *  stops at the limit, so a long file costs only that many `indexOf`s. */
@@ -317,7 +327,7 @@ function useEditableAfterHighlight(file: FileContents) {
  */
 function useFirstScreenRepaint(file: FileContents) {
   const workerPool = useWorkerPool();
-  const instanceRef = useRef<FileInstance<undefined, undefined> | null>(null);
+  const instanceRef = useRef<FileInstance<FileCommentGroup, undefined> | null>(null);
   const [missing] = useState(() => ({ file, lang: missingFirstScreenGrammar(file) }));
   const lang = missing.file === file ? missing.lang : null;
 
@@ -340,7 +350,7 @@ function useFirstScreenRepaint(file: FileContents) {
   // coloured; a closed tab (or a replaced version) must not keep that alive.
   useEffect(() => () => releaseFirstScreenCache(file.cacheKey), [file]);
 
-  return (instance: FileInstance<undefined, undefined>, phase: PostRenderPhase) => {
+  return (instance: FileInstance<FileCommentGroup, undefined>, phase: PostRenderPhase) => {
     instanceRef.current = phase === "unmount" ? null : instance;
   };
 }
@@ -389,14 +399,14 @@ function EditableFileSurface({
   reveal,
   onRevealed,
   onChange,
-  onAddLines,
+  comments = null,
   handleRef,
 }: CodeFileViewProps) {
   const appearance = useDiffAppearance();
   // Plain text when the workers are down, or for a file too large to edit.
   const poolFailed = useDiffPoolFailed() || readOnly;
   const surfaceRef = useRef<HTMLDivElement>(null);
-  const editorRef = useRef<Editor<"file", undefined, undefined> | null>(null);
+  const editorRef = useRef<Editor<"file", FileCommentGroup, undefined> | null>(null);
   /** The viewer's container, for the decoration sheet and the find key. */
   const containerRef = useRef<HTMLElement | null>(null);
 
@@ -415,8 +425,20 @@ function EditableFileSurface({
   const { ready, onPostRender: onEditablePostRender } = useEditableAfterHighlight(file);
   const editable = ready && !readOnly;
 
-  const latest = useRef({ onChange, onRevealed, decorations, onAddLines });
-  latest.current = { onChange, onRevealed, decorations, onAddLines };
+  const latest = useRef({ onChange, onRevealed, decorations, comments });
+  latest.current = { onChange, onRevealed, decorations, comments };
+  // The lines a press or a drag on the numbers picked, drawn as picked
+  // while the box under them is open.
+  const [picked, setPicked] = useState<SelectedLineRange | null>(null);
+  const writing = comments?.writing ?? false;
+  const beginComment = (range: SelectedLineRange | null) => {
+    if (!range || !latest.current.comments) return;
+    // The box takes the keyboard: the editor's caret would otherwise stay
+    // live under it.
+    editorRef.current?.setSelections([]);
+    setPicked(range);
+    latest.current.comments.begin(range);
+  };
 
   // ── Decorations: one stylesheet in the viewer's root, repainted per frame ──
   const paintFrame = useRef(0);
@@ -552,7 +574,7 @@ function EditableFileSurface({
           className="min-h-0 flex-1 overflow-auto outline-none"
           config={VIRTUALIZER_CONFIG}
         >
-          <File<undefined>
+          <File<FileCommentGroup>
             file={file}
             edit={editable}
             editorOptions={{
@@ -568,6 +590,7 @@ function EditableFileSurface({
             onEditChange={(event) => {
               latest.current.decorations.applyChanges(event.changes);
               latest.current.onChange(event.file.contents, event);
+              if (event.lineAnnotations) latest.current.comments?.onMoved(event.lineAnnotations);
               readCursor();
             }}
             options={{
@@ -578,9 +601,14 @@ function EditableFileSurface({
               preferredHighlighter: PREFERRED_HIGHLIGHTER,
               unsafeCSS: DIFF_VIEW_CSS,
               onPostRender: handlePostRender,
-              enableGutterUtility: !!onAddLines,
-              onGutterUtilityClick: (range) => latest.current.onAddLines?.(range),
+              enableGutterUtility: !!comments && !writing,
+              enableLineSelection: !!comments && !writing,
+              onGutterUtilityClick: beginComment,
+              onLineSelectionEnd: beginComment,
             }}
+            selectedLines={writing ? picked : null}
+            lineAnnotations={comments?.lineAnnotations}
+            renderAnnotation={comments?.renderAnnotation}
             className="min-h-full"
           />
         </Virtualizer>

@@ -8,6 +8,7 @@
 
 import { emit } from "@tauri-apps/api/event";
 import type { Scenario } from "../types";
+import type { Entitlement } from "@/features/chat/stores/ai-grant-store";
 import { diffPreviewOf, unifiedDiff, type PreviewChange } from "../fixtures/diff";
 import { MOCK_PROJECT } from "../project";
 
@@ -83,5 +84,42 @@ export const diffLarge: Scenario = {
   setup: async () => {
     const { openGitDiff } = await import("@/features/git/lib/git-diff-api");
     openGitDiff(MOCK_PROJECT.path, "", false);
+  },
+};
+
+/** How long the default session takes to bind, so it has an agent session id. */
+const BIND_WAIT_MS = 1500;
+
+/**
+ * The same diff as the session's changes, beside the session: line comments
+ * go to its composer (`use-diff-review-comments.tsx`).
+ * `__atlasMock.actions.openFile()` opens a project file in its tab, for the
+ * file view's line comments.
+ */
+export const diffComments: Scenario = {
+  name: "diff-comments",
+  description: "The large review diff beside the session, where diff lines can be commented on.",
+  commands: diffLarge.commands,
+  rawCommands: {
+    // An org with the AI grant: the local-only answer locks the native
+    // agent's composer, and a comment needs a composer to go in.
+    native_agent_entitlement: (): Entitlement => ({ state: "entitled", models: [] }),
+  },
+  actions: {
+    openFile: async () => {
+      const { openFile } = await import("@/lib/open-file");
+      await openFile(`${MOCK_PROJECT.path}/src/lib/api.ts`);
+      return "opened src/lib/api.ts";
+    },
+  },
+  setup: async () => {
+    await new Promise((r) => setTimeout(r, BIND_WAIT_MS));
+    const { useChatStore } = await import("@/features/chat/stores/chat-store");
+    const { openSessionChanges } = await import("@/features/git/lib/open-session-changes");
+    const chat = useChatStore.getState();
+    const tabId = chat.activeSessionId;
+    const sessionId = tabId ? chat.sessions[tabId]?.acpSessionId : null;
+    if (!sessionId) return;
+    openSessionChanges({ projectPath: MOCK_PROJECT.path, sessionId, file: "" });
   },
 };

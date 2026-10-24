@@ -40,6 +40,10 @@ import { fileURLToPath } from "node:url";
  * #12 pins the cite chip (`MentionCitedText`) to the `compose_prompt`
  *    variant it deserializes as (`MentionSpec::CitedText`): a renamed field
  *    there arrives as `None`, and the agent silently loses the note or row.
+ *    The review comment chip (`MentionReviewComment`, a comment on diff or
+ *    file lines) is pinned the same way to `MentionSpec::ReviewComment`: a
+ *    renamed field would fail the send's deserialize, or reach the agent
+ *    without its quoted lines.
  * #13 pins the pull-request surface: every `Pr*` struct and enum in
  *    `commands/pull_requests/model.rs` against its twin in
  *    `pull-requests-types.ts`, the error kinds the hand-written serializer
@@ -597,6 +601,23 @@ describe("cite chip: MentionCitedText ↔ MentionSpec::CitedText (#12)", () => {
     expect(tsFields.sort()).toEqual(rustFields);
     expect(ts).toMatch(/interface MentionCitedText \{\s*kind: "cited_text";/);
     expect(pascalToSnake("CitedText")).toBe("cited_text");
+  });
+});
+
+describe("review comment chip: MentionReviewComment ↔ MentionSpec::ReviewComment (#12)", () => {
+  const rust = read("src-tauri", "src", "commands", "compose_prompt.rs");
+  const ts = read("src", "features", "chat", "lib", "mentions.ts");
+
+  it("carries the same fields under the same tag", () => {
+    const { body } = rustItem(rust, "enum", "MentionSpec");
+    const rustFields = rustVariantFields(body, "ReviewComment").map(snakeToCamel).sort();
+    expect(rustFields).toEqual(
+      expect.arrayContaining(["filePath", "rangeLabel", "diff", "fenceLanguage", "text"]),
+    );
+    const tsFields = tsInterfaceProps(ts, "MentionReviewComment").filter((f) => f !== "kind");
+    expect(tsFields.sort()).toEqual(rustFields);
+    expect(ts).toMatch(/interface MentionReviewComment \{\s*kind: "review_comment";/);
+    expect(pascalToSnake("ReviewComment")).toBe("review_comment");
   });
 });
 

@@ -49,6 +49,8 @@ function sizeOf(mention: MentionData): number {
       return mention.text.length * 2 + ENTRY_BYTES;
     case "cited_text":
       return (mention.text.length + mention.note.length) * 2 + ENTRY_BYTES;
+    case "review_comment":
+      return (mention.text.length + mention.diff.length) * 2 + ENTRY_BYTES;
     default:
       return ENTRY_BYTES;
   }
@@ -97,9 +99,33 @@ export function knownMention(raw: string, projectPath: string | null): MentionDa
   return mention;
 }
 
-/** Whether a mention carries its whole text (a paste, a cite). */
+/** Whether a mention carries its whole text (a paste, a cite, a review
+ *  comment). */
 function carriesText(mention: MentionData): boolean {
-  return mention.kind === "pasted_text" || mention.kind === "cited_text";
+  return (
+    mention.kind === "pasted_text" ||
+    mention.kind === "cited_text" ||
+    mention.kind === "review_comment"
+  );
+}
+
+/**
+ * The mention of `kind` minted under `id`, in whatever project. For a kind
+ * whose id is minted fresh and never typed (a review comment), so a surface
+ * outside the composer — the diff beside the session — can read back what a
+ * draft's `@review:<id>` token stands for without knowing the composer's
+ * project.
+ */
+export function mintedMention<K extends MentionData["kind"]>(
+  kind: K,
+  id: string,
+): Extract<MentionData, { kind: K }> | null {
+  for (const { mention } of minted.values()) {
+    if (mention.kind === kind && mention.id === id) {
+      return mention as Extract<MentionData, { kind: K }>;
+    }
+  }
+  return null;
 }
 
 /** Forget the pastes and cites a send just carried: their text has gone out,

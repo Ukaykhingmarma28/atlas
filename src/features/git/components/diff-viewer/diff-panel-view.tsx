@@ -36,6 +36,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
+import { ContextMenu, ContextMenuTrigger } from "@/ui/context-menu";
 import { useScopedHotkeys } from "@/features/keybindings/lib/use-scoped-hotkeys";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { useWordWrap } from "@/features/settings/lib/use-word-wrap";
@@ -52,6 +53,7 @@ import {
   type DiffLayout,
 } from "../../stores/diff-panel-store";
 import { CopyPathButton } from "./copy-path-button";
+import { DiffFileContextMenuContent } from "./diff-file-context-menu";
 import { DiffFileTree, type TreeGroup } from "./diff-file-tree";
 import { DiffFindBar, type DiffFindHandle } from "./diff-find-bar";
 import { DiffPanelSkeleton } from "./diff-panel-skeleton";
@@ -115,6 +117,10 @@ export interface DiffViewSource {
   placeholder?: ReactNode;
   /** What "Copy path" copies for a file, when not its path. */
   copyPathOf?: (path: string) => string | undefined;
+  /** A file's absolute path on disk, for its header's right-click menu
+   *  (Reveal in Finder, Open in an editor, Copy Path). Left out, the files
+   *  are not on this disk and the menu offers the relative path only. */
+  absPathOf?: (path: string) => string | undefined;
   /** A file name's click. Without it the name folds the file, as the rest of
    *  its header row does. */
   openFile?: (file: ReviewFile) => void;
@@ -262,6 +268,7 @@ export function DiffPanelView({
     retry = noop,
     openFile,
     copyPathOf,
+    absPathOf,
   } = source;
   const layout = useDiffPanelStore.use.layout();
   // The global `wordWrap` setting: the button below flips it for file tabs too.
@@ -639,6 +646,26 @@ export function DiffPanelView({
     </div>
   );
 
+  // ── A file header's right-click menu: one menu for the viewer, aimed by
+  // the header the press was on. A press anywhere else is let through. ──
+  const [menuFile, setMenuFile] = useState<ReviewFile | null>(null);
+  const onContextMenuCapture = (event: React.MouseEvent) => {
+    const file = headerFileAt(event.nativeEvent.composedPath(), fileByPath);
+    if (!file) {
+      event.stopPropagation();
+      return;
+    }
+    setMenuFile(file);
+  };
+  const menuTarget = menuFile
+    ? {
+        deleted: menuFile.stat.status === "deleted",
+        absPath: absPathOf?.(menuFile.stat.path) ?? null,
+        relPath: copyPathOf?.(menuFile.stat.path) ?? menuFile.stat.path,
+        canOpen: !!openFile,
+      }
+    : null;
+
   const body = source.placeholder ?? (
     <Group
       id={TREE_LAYOUT_ID}
@@ -648,72 +675,78 @@ export function DiffPanelView({
       className="min-h-0 flex-1"
     >
       <Panel id="review-diff-files" className="min-w-0">
-        <div
-          className="relative h-full min-h-0 min-w-0"
-          onClickCapture={(event) => {
-            // A file's name opens the file (where the source can); the rest
-            // of its header row folds it. Its buttons keep their own actions:
-            // the chevron in particular must not also reach the row, or the
-            // two folds cancel out.
-            const path = event.nativeEvent.composedPath();
-            for (const node of path) {
-              if (node instanceof HTMLButtonElement || node instanceof HTMLAnchorElement) return;
-              if (node instanceof HTMLElement && node.hasAttribute("data-diff-find")) return;
-              if (node instanceof HTMLElement && node.hasAttribute("data-viewed-toggle")) return;
-            }
-            const title = path.find(
-              (n): n is HTMLElement => n instanceof HTMLElement && n.hasAttribute("data-title"),
-            );
-            const headerNode = path.find(
-              (n): n is HTMLElement =>
-                n instanceof HTMLElement && n.hasAttribute("data-diffs-header"),
-            );
-            if (!headerNode) return;
-            const name = (title ?? headerNode.querySelector("[data-title]"))?.textContent?.trim();
-            const file = name ? fileByPath.get(name) : undefined;
-            if (!file) return;
-            if (!title || !openFile) {
-              if (file.state === "ready") toggleFile(itemIdOf(file));
-              return;
-            }
-            openFile(file);
-          }}
-        >
-          <FileViewedContext value={viewedState}>
-            <StyledCodeView<unknown>
-              // Remounted only when what it shows is a different diff. A
-              // refresh updates items in place, keeping the scroll position
-              // and every unchanged file's tokens.
-              key={scopeKey}
-              viewerRef={setViewer}
-              className="h-full min-h-0 overflow-auto"
-              items={items}
-              fallback={<DiffPanelSkeleton />}
-              extraCSS={HIDE_VIEWER_COUNTS}
-              options={options}
-              selectedLines={annotations?.selectedLines}
-              onSelectedLinesChange={annotations?.onSelectedLinesChange}
-              renderHeaderPrefix={renderHeaderPrefix}
-              renderHeaderFilenameSuffix={renderHeaderFilenameSuffix}
-              renderHeaderMetadata={renderHeaderMetadata}
-              renderAnnotation={annotations?.render}
-              renderCodeViewFooter={source.renderFooter}
-              containerRef={source.scrollerRef}
-            />
-          </FileViewedContext>
-          {/* After the viewer: its item updates land first (`DiffFindBar`). */}
-          {find.open && (
-            <DiffFindBar
-              ref={findRef}
-              viewer={viewer}
-              items={items}
-              onUnfold={unfold}
-              onClose={closeFind}
-              focusRequest={find.focus}
-              unloaded={unloaded}
-            />
+        <ContextMenu>
+          <ContextMenuTrigger
+            render={<div className="relative h-full min-h-0 min-w-0" />}
+            onContextMenuCapture={onContextMenuCapture}
+            onClickCapture={(event) => {
+              // A file's name opens the file (where the source can); the rest
+              // of its header row folds it. Its buttons keep their own actions:
+              // the chevron in particular must not also reach the row, or the
+              // two folds cancel out.
+              const path = event.nativeEvent.composedPath();
+              for (const node of path) {
+                if (node instanceof HTMLButtonElement || node instanceof HTMLAnchorElement) return;
+                if (node instanceof HTMLElement && node.hasAttribute("data-diff-find")) return;
+                if (node instanceof HTMLElement && node.hasAttribute("data-viewed-toggle")) return;
+              }
+              const title = path.find(
+                (n): n is HTMLElement => n instanceof HTMLElement && n.hasAttribute("data-title"),
+              );
+              const headerNode = path.find(
+                (n): n is HTMLElement =>
+                  n instanceof HTMLElement && n.hasAttribute("data-diffs-header"),
+              );
+              if (!headerNode) return;
+              const name = (title ?? headerNode.querySelector("[data-title]"))?.textContent?.trim();
+              const file = name ? fileByPath.get(name) : undefined;
+              if (!file) return;
+              if (!title || !openFile) {
+                if (file.state === "ready") toggleFile(itemIdOf(file));
+                return;
+              }
+              openFile(file);
+            }}
+          >
+            <FileViewedContext value={viewedState}>
+              <StyledCodeView<unknown>
+                // Remounted only when what it shows is a different diff. A
+                // refresh updates items in place, keeping the scroll position
+                // and every unchanged file's tokens.
+                key={scopeKey}
+                viewerRef={setViewer}
+                className="h-full min-h-0 overflow-auto"
+                items={items}
+                fallback={<DiffPanelSkeleton />}
+                extraCSS={HIDE_VIEWER_COUNTS}
+                options={options}
+                selectedLines={annotations?.selectedLines}
+                onSelectedLinesChange={annotations?.onSelectedLinesChange}
+                renderHeaderPrefix={renderHeaderPrefix}
+                renderHeaderFilenameSuffix={renderHeaderFilenameSuffix}
+                renderHeaderMetadata={renderHeaderMetadata}
+                renderAnnotation={annotations?.render}
+                renderCodeViewFooter={source.renderFooter}
+                containerRef={source.scrollerRef}
+              />
+            </FileViewedContext>
+            {/* After the viewer: its item updates land first (`DiffFindBar`). */}
+            {find.open && (
+              <DiffFindBar
+                ref={findRef}
+                viewer={viewer}
+                items={items}
+                onUnfold={unfold}
+                onClose={closeFind}
+                focusRequest={find.focus}
+                unloaded={unloaded}
+              />
+            )}
+          </ContextMenuTrigger>
+          {menuFile && menuTarget && (
+            <DiffFileContextMenuContent target={menuTarget} onOpen={() => openFile?.(menuFile)} />
           )}
-        </div>
+        </ContextMenu>
       </Panel>
       {fileTreeOpen && (
         <>
@@ -750,6 +783,19 @@ export function DiffPanelView({
       {body}
     </div>
   );
+}
+
+/** The file whose header an event's path crosses, by the name it shows. */
+export function headerFileAt(
+  path: readonly EventTarget[],
+  fileByPath: ReadonlyMap<string, ReviewFile>,
+): ReviewFile | null {
+  const header = path.find(
+    (n): n is HTMLElement => n instanceof HTMLElement && n.hasAttribute("data-diffs-header"),
+  );
+  if (!header) return null;
+  const name = header.querySelector("[data-title]")?.textContent?.trim();
+  return (name && fileByPath.get(name)) || null;
 }
 
 export function DiffEmpty({ children }: { children: ReactNode }) {

@@ -998,6 +998,8 @@ function secondaryLabel(m: MentionData): string {
       return `${m.lines} lines`;
     case "cited_text":
       return "cited passage";
+    case "review_comment":
+      return `review comment · ${m.rangeLabel}`;
     case "comment":
       return [
         m.parentId ? "reply" : "comment",
@@ -1081,6 +1083,8 @@ function mentionTitle(m: MentionData): string {
     case "pasted_text":
       return m.text.slice(0, 200);
     case "cited_text":
+      return m.text.slice(0, 200);
+    case "review_comment":
       return m.text.slice(0, 200);
   }
 }

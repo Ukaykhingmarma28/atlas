@@ -25,6 +25,8 @@ import { FileIcon } from "@/features/icon-theme/components/file-icon";
 export interface ComposerChipViewProps<T> {
   data: T;
   selected: boolean;
+  /** Take this chip out of the document, as a Backspace on it would. */
+  remove?: () => void;
 }
 
 export interface ComposerChipSpec<T> {
@@ -66,8 +68,8 @@ export function createChipNode<T>(spec: ComposerChipSpec<T>) {
     if (!record) return null;
     return spec.fromHTML ? spec.fromHTML(record) : (record as T);
   };
-  function ChipNodeView({ node, selected }: ReactNodeViewProps) {
-    return <View data={node.attrs.data as T} selected={selected} />;
+  function ChipNodeView({ node, selected, deleteNode }: ReactNodeViewProps) {
+    return <View data={node.attrs.data as T} selected={selected} remove={deleteNode} />;
   }
   ChipNodeView.displayName = `ComposerChip(${spec.name})`;
 

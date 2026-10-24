@@ -23,6 +23,7 @@ import {
   Hash,
   Layers,
   MessageSquare,
+  MessageSquareCode,
   MessageSquareQuote,
   MessagesSquare,
   PencilLine,
@@ -30,6 +31,7 @@ import {
   Scale,
   SquareSlash,
   User,
+  X,
 } from "lucide-react";
 
 import {
@@ -74,7 +76,11 @@ export const SessionMention = createChipNode<SessionChipRecord>({
   fromHTML: () => null,
 });
 
-function SessionMentionChip({ data: mention, selected }: ComposerChipViewProps<SessionChipRecord>) {
+function SessionMentionChip({
+  data: mention,
+  selected,
+  remove,
+}: ComposerChipViewProps<SessionChipRecord>) {
   const media = mention.kind === "file" && mention.picked ? mediaKindOf(mention.absPath) : null;
   const preview = useMediaPreview(mention.kind === "file" ? mention.absPath : null, media);
   return (
@@ -91,6 +97,12 @@ function SessionMentionChip({ data: mention, selected }: ComposerChipViewProps<S
       {preview.card}
       {(mention.kind === "workspace" || mention.kind === "repo") && (
         <ProjectAccessToggle path={mention.absPath} name={mention.displayName} />
+      )}
+      {mention.kind === "review_comment" && remove && (
+        <ChipRemoveButton
+          label={`Remove the comment on ${mention.displayName}`}
+          onRemove={remove}
+        />
       )}
     </ComposerChip>
   );
@@ -126,6 +138,32 @@ function ProjectAccessToggle({ path, name }: { path: string; name: string }) {
       }}
     >
       {writable ? <PencilLine size={10} /> : <Eye size={10} />}
+    </button>
+  );
+}
+
+/**
+ * A review comment's ×: the comment was written elsewhere (the diff, the file
+ * view), so taking it back out of the prompt gets a button of its own rather
+ * than only a Backspace beside it. Its annotation goes with it, since the
+ * diff and the file view read the draft.
+ */
+function ChipRemoveButton({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <button
+      type="button"
+      className="inline-flex items-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+      title={label}
+      aria-label={label}
+      data-chip-remove
+      // Keep the caret in the composer: a press must not take focus from it.
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={(e) => {
+        e.stopPropagation();
+        onRemove();
+      }}
+    >
+      <X size={10} />
     </button>
   );
 }
@@ -175,6 +213,8 @@ function ChipIcon({ mention }: { mention: MentionData }) {
       return <ClipboardPaste size={size} />;
     case "cited_text":
       return <Quote size={size} />;
+    case "review_comment":
+      return <MessageSquareCode size={size} />;
   }
 }
 
@@ -212,6 +252,11 @@ function chipTitle(m: MentionData): string {
       // The passage, then the note: what the agent will be pointed at.
       const quote = m.text.split("\n").slice(0, 12).join("\n");
       return m.note ? `${quote}\n\nNote: ${m.note}` : quote;
+    }
+    case "review_comment": {
+      // The comment, then the lines it is on: what the agent will be sent.
+      const lines = m.diff.split("\n").slice(0, 12).join("\n");
+      return `${m.text}\n\n${m.filePath} ${m.rangeLabel}\n${lines}`;
     }
   }
 }

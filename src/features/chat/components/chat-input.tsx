@@ -67,6 +67,8 @@ export interface ChatInputHandle {
   /** Insert a mention chip. With `from`/`to`, that range is replaced (a
    *  picker swallowing the `@query` the user typed). */
   insertMention(m: MentionData, opts?: InsertChipOptions): void;
+  /** Take out every chip of `kind` with `id`; false when there was none. */
+  removeMention(kind: MentionKind, id: string): boolean;
   /** Replace a range with text, caret after it. */
   replaceRange(from: number, to: number, text: string): void;
   /** Insert text at the caret, as a paste would. */
@@ -173,6 +175,26 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
         const chip = pickedChip(m);
         rememberMention(chip, projectRef.current);
         inner.current?.insertChip(SESSION_MENTION, chip, opts);
+      },
+      removeMention: (kind, id) => {
+        const editor = inner.current?.editor();
+        if (!editor) return false;
+        const ranges: { from: number; to: number }[] = [];
+        editor.state.doc.descendants((node, pos) => {
+          if (node.type.name === SESSION_MENTION) {
+            const data = node.attrs.data as SessionChipRecord;
+            if (data.kind === kind && data.id === id) {
+              ranges.push({ from: pos, to: pos + node.nodeSize });
+            }
+          }
+          return !node.isInline;
+        });
+        if (ranges.length === 0) return false;
+        // Last first, so the earlier positions still hold.
+        let tr = editor.state.tr;
+        for (const r of ranges.reverse()) tr = tr.delete(r.from, r.to);
+        editor.view.dispatch(tr);
+        return true;
       },
       replaceRange: (from, to, text) => inner.current?.replaceRange(from, to, text),
       insertText: (text) => inner.current?.insertText(text),

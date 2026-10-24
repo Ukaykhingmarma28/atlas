@@ -108,6 +108,7 @@ const MENTION_PREFIX_KIND: Record<string, string> = {
   // which mean nothing to a reader: they draw as a fixed label instead.
   "@paste": "pasted_text",
   "@cite": "cited_text",
+  "@review": "review_comment",
   "#skill": "skill",
   "#command": "command",
   "#agent": "agent",
@@ -120,7 +121,7 @@ const MENTION_PREFIX_KIND: Record<string, string> = {
 // to the next whitespace, and its trailing punctuation is peeled back off into
 // plain text.
 const MENTION_TOKEN_RE =
-  /(?<![\w/])([@#](?:file|folder|symbol|note|repo|branch|msg|session|member|conversation|recorded-session|comment|paste|cite|skill|command|agent|rule)):(?:"([^"\n]+)"|(?!")(\S+))/g;
+  /(?<![\w/])([@#](?:file|folder|symbol|note|repo|branch|msg|session|member|conversation|recorded-session|comment|paste|cite|review|skill|command|agent|rule)):(?:"([^"\n]+)"|(?!")(\S+))/g;
 
 // Tokens are lifted out of the source BEFORE remark parses it, and parked
 // behind private-use placeholders. Left in, GFM gets to them first: a Retina
@@ -186,6 +187,16 @@ const MENTION_GLYPH: Record<string, [string, Record<string, string | number>][]>
         d: "M5 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z",
       },
     ],
+  ],
+  review_comment: [
+    [
+      "path",
+      {
+        d: "M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z",
+      },
+    ],
+    ["path", { d: "m10 8-3 3 3 3" }],
+    ["path", { d: "m14 14 3-3-3-3" }],
   ],
   skill: [
     [
@@ -341,6 +352,7 @@ function iconWrap(kind: string): Hast | null {
 const FIXED_LABEL: Record<string, string> = {
   pasted_text: "Pasted text",
   cited_text: "Cited passage",
+  review_comment: "Review comment",
 };
 
 function chipNode(prefix: string, value: string, data: RenderData): Hast {

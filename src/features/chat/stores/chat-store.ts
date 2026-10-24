@@ -45,6 +45,7 @@ import { extractNextSteps } from "../lib/next-steps";
 import { turnFilesOfToolCall } from "../lib/tool-files";
 import { withPastesInline } from "../lib/pasted-text";
 import { withCitesInline } from "../lib/cited-text";
+import { withReviewCommentsInline } from "../lib/review-comments";
 import type { MentionData } from "../lib/mentions";
 import type { TurnFile, TurnInterruption } from "@/types/agent";
 
@@ -1764,7 +1765,10 @@ export const useChatStore = createSelectors(
             const cur = s.queues[sessionId] ?? [];
             s.queues[sessionId] = [
               ...cur,
-              withCitesInline(withPastesInline(text, mentions), mentions),
+              withReviewCommentsInline(
+                withCitesInline(withPastesInline(text, mentions), mentions),
+                mentions,
+              ),
             ];
           }),
         removeQueueItem: (sessionId, index) =>

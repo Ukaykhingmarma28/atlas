@@ -36,7 +36,7 @@ import { chatTools } from "./chat-tools";
 import { chatTurnChanges, chatTurnChangesLong, chatTurnChangesNative } from "./chat-turn-changes";
 import { collab } from "./collab";
 import { designSystem } from "./design-system";
-import { diffLarge } from "./diff-large";
+import { diffComments, diffLarge } from "./diff-large";
 import { filesLarge } from "./files-large";
 import { gitConflict } from "./git-conflict";
 import { keymapFirstRun } from "./keymap-first-run";
@@ -99,6 +99,7 @@ const all: Scenario[] = [
   chatTurnChangesNative,
   gitConflict,
   diffLarge,
+  diffComments,
   filesLarge,
   knowledge,
   collab,
