@@ -545,6 +545,11 @@ pub struct AppSettings {
     /// Contrast of borders and secondary text, in percent of the theme's own.
     #[serde(default = "default_interface_contrast")]
     pub interface_contrast: u32,
+    /// The turn rail: one tick per turn down the left edge of a session's
+    /// transcript, with a preview on hover and a jump on click. Purely visual,
+    /// so default ON.
+    #[serde(default = "default_true")]
+    pub show_turn_rail: bool,
 }
 
 pub const MIN_INTERFACE_CONTRAST: u32 = 50;
@@ -669,6 +674,7 @@ impl Default for AppSettings {
             diff_files_collapsed: false,
             diff_palette: DiffPalette::default(),
             interface_contrast: default_interface_contrast(),
+            show_turn_rail: true,
         }
     }
 }
@@ -1147,6 +1153,7 @@ pub struct SettingsPatch {
     pub diff_files_collapsed: Option<bool>,
     pub diff_palette: Option<DiffPalette>,
     pub interface_contrast: Option<u32>,
+    pub show_turn_rail: Option<bool>,
 }
 
 impl SettingsPatch {
@@ -1312,6 +1319,7 @@ impl SettingsPatch {
             diff_files_collapsed,
             diff_palette,
             interface_contrast,
+            show_turn_rail,
         );
     }
 
@@ -1367,6 +1375,7 @@ impl SettingsPatch {
         set_bool!(word_wrap, "wordWrap");
         set_bool!(diff_ignore_whitespace, "diffIgnoreWhitespace");
         set_bool!(diff_files_collapsed, "diffFilesCollapsed");
+        set_bool!(show_turn_rail, "showTurnRail");
         macro_rules! set_str {
             ($field:ident, $key:literal) => {
                 if let Some(v) = &self.$field {
@@ -2556,6 +2565,7 @@ someFutureKey = \"left alone\"
             diff_files_collapsed: Some(!defaults.diff_files_collapsed),
             diff_palette: Some(DiffPalette::BlueOrange),
             interface_contrast: Some(150),
+            show_turn_rail: Some(!defaults.show_turn_rail),
         };
         let mut expected = defaults.clone();
         patch.apply_to(&mut expected);

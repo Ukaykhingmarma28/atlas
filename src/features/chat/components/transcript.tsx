@@ -67,6 +67,13 @@ import {
   TurnFooterRowView,
 } from "./transcript-rows";
 import { InterruptionRowView } from "./interruption-row";
+import { TurnRail } from "./turn-rail";
+import {
+  deriveTurnRailItems,
+  stableTurnRailItems,
+  turnRailPreviewSource,
+  type TurnRailItem,
+} from "../lib/turn-rail";
 
 /**
  * How many rows are added each time the window grows.
@@ -759,13 +766,18 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
       }
     }
     const anchor = landed ?? node;
+    // Clear the floating header and its blur band, not just the scroller's
+    // edge: a gap of `ANCHOR_GAP` alone parked the landed row under the bar,
+    // blurred. With a header the gap is the content's own top padding, so a
+    // jump to the first row lands exactly where it rests.
+    const gap = topInset ? topInset + TOP_BLUR_RAMP + 12 : ANCHOR_GAP;
     // `offsetTop` is measured from the positioned ancestor, so it is
     // independent of the current scroll position.
-    el.scrollTop = Math.max(0, anchor.offsetTop - ANCHOR_GAP);
+    el.scrollTop = Math.max(0, anchor.offsetTop - gap);
     // Hold this row in place while the screenful of markdown around it
     // finishes parsing. Without this the reader watches the thread creep as
     // each block swaps from placeholder to formatted.
-    stickyRef.current = { rowId: anchor.dataset.rowId ?? id, offset: ANCHOR_GAP };
+    stickyRef.current = { rowId: anchor.dataset.rowId ?? id, offset: gap };
     stickyUntil.current = performance.now() + STICKY_SETTLE_MS;
     invalidate();
     if (landed) markLanded(landed);
@@ -911,6 +923,26 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
     pendingJumpRef.current = null;
   }, [cacheKey]);
 
+  // ── Turn rail ────────────────────────────────────────────────────────
+  // One tick per user turn. Held stable across streaming frames (see
+  // `stableTurnRailItems`), so the memo'd rail re-renders only when a prompt
+  // is sent or history loads. The preview reads the latest rows on demand,
+  // which keeps the reply's text out of the rail's props entirely.
+  const turnRailItemsRef = useRef<readonly TurnRailItem[] | null>(null);
+  const turnRailItems = useMemo(() => {
+    const next = stableTurnRailItems(turnRailItemsRef.current, deriveTurnRailItems(projection));
+    turnRailItemsRef.current = next;
+    return next;
+  }, [projection]);
+  const getTurnRailPreview = useCallback(
+    (item: TurnRailItem) => turnRailPreviewSource(rowsRef.current, item.id),
+    [],
+  );
+  const selectTurnRailItem = useCallback(
+    (item: TurnRailItem) => scrollToMessage(item.messageIndex),
+    [scrollToMessage],
+  );
+
   useImperativeHandle(ref, () => ({ scrollToBottom, scrollToMessage }), [
     scrollToBottom,
     scrollToMessage,
@@ -1029,6 +1061,17 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
       </div>
 
       <ResponseSelectionActions viewportRef={scrollRef} tabId={tabId} enabled={live} />
+
+      {/* Hangs left into the gutter outside this box; takes no space. */}
+      <TurnRail
+        items={turnRailItems}
+        scrollRef={scrollRef}
+        contentRef={contentRef}
+        topInset={topInset}
+        windowStart={safeStart}
+        getPreview={getTurnRailPreview}
+        onSelect={selectTurnRailItem}
+      />
 
       {/* Progressive blur behind the floating header. It starts at y=0 and
             runs past the bar, so text scrolling underneath is blurred rather

@@ -257,6 +257,10 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
         "interfaceContrast",
         "# Contrast of borders and secondary text, in percent of what the theme draws.\n# Above 100 moves them toward the text colour, below 100 toward the\n# background. Applies to every theme, the terminal and charts included.\n# (default: 100)",
     ),
+    (
+        "showTurnRail",
+        "# The turn rail: a column of short ticks down the left edge of a session's\n# transcript, one per turn. Hovering a tick previews the prompt and the start\n# of the reply; clicking it jumps to that turn. Off hides the rail. (default:\n# true)",
+    ),
 ];
 
 /// The keys a project's `.atlas/config.toml` may override (`project` in the

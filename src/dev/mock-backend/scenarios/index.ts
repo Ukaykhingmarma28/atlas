@@ -30,6 +30,7 @@ import {
 import { chatFileChips } from "./chat-file-chips";
 import { chatLinkIcons } from "./chat-link-icons";
 import { chatLongPrompt } from "./chat-long-prompt";
+import { chatLongSession } from "./chat-long-session";
 import { chatMarkdown } from "./chat-markdown";
 import { chatTools } from "./chat-tools";
 import { chatTurnChanges, chatTurnChangesLong, chatTurnChangesNative } from "./chat-turn-changes";
@@ -86,6 +87,7 @@ const all: Scenario[] = [
   chatCommentsTools,
   chatCommentsError,
   chatLongPrompt,
+  chatLongSession,
   chatMarkdown,
   chatFileChips,
   chatLinkIcons,

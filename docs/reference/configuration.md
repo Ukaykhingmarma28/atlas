@@ -215,6 +215,7 @@ bookkeeping).
 | `diffFilesCollapsed` | boolean | `false` | Source Control › Diffs › Start files collapsed | — |
 | `diffPalette` | `"theme"` \| `"blue-orange"` | `"theme"` | Appearance › Interface › Diff colours | exactly one of these two strings |
 | `interfaceContrast` | integer | `100` | Appearance › Interface › Contrast | 50 ≤ n ≤ 200 |
+| `showTurnRail` | boolean | `true` | Appearance › Interface › Turn rail | — |
 
 <!-- /generated:settings -->
 

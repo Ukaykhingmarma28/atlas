@@ -99,6 +99,7 @@ export function AppearancePage() {
             setting="chatWidth"
             control={<SettingSelect setting="chatWidth" options={CHAT_WIDTHS} />}
           />
+          <SettingsRow setting="showTurnRail" control={<SettingSwitch setting="showTurnRail" />} />
           <SettingsRow
             setting="wordWrap"
             description="In file tabs and diffs. The wrap button in a file's or the review diff's header flips this too. A session's code blocks have their own setting, under Sessions."

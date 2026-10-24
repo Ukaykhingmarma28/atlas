@@ -1112,3 +1112,19 @@ Above 100 moves them toward the text colour, below 100 toward the background.
 Applies to every theme, the terminal and charts included.
 """
 validation = "50 ≤ n ≤ 200"
+
+[[setting]]
+key = "showTurnRail"
+type = "boolean"
+default = true
+status = "live"
+page = "appearance"
+section = "Interface"
+title = "Turn rail"
+summary = "Show a tick for each turn down the left edge of a session. Hover one to preview it, click it to jump there."
+doc = """
+The turn rail: a column of short ticks down the left edge of a session's
+transcript, one per turn. Hovering a tick previews the prompt and the start of
+the reply; clicking it jumps to that turn. Off hides the rail.
+"""
+validation = "—"

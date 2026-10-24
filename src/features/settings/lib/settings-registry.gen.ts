@@ -325,6 +325,12 @@ export interface AppSettings {
    * terminal and charts included.
    */
   interfaceContrast: number;
+  /**
+   * The turn rail: a column of short ticks down the left edge of a session's transcript, one
+   * per turn. Hovering a tick previews the prompt and the start of the reply; clicking it jumps
+   * to that turn. Off hides the rail.
+   */
+  showTurnRail: boolean;
 }
 
 export type SettingKey = keyof AppSettings;
@@ -393,6 +399,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   diffFilesCollapsed: false,
   diffPalette: "theme",
   interfaceContrast: 100,
+  showTurnRail: true,
 };
 
 export type SettingType =
@@ -1102,5 +1109,15 @@ export const SETTINGS_REGISTRY: readonly SettingMeta[] = [
     summary: "Strengthen or soften borders and secondary text across the interface.",
     min: 50,
     max: 200,
+  },
+  {
+    key: "showTurnRail",
+    type: "boolean",
+    status: "live",
+    page: "appearance",
+    section: "Interface",
+    title: "Turn rail",
+    summary:
+      "Show a tick for each turn down the left edge of a session. Hover one to preview it, click it to jump there.",
   },
 ];
