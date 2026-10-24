@@ -11,7 +11,7 @@ import { Editor, type EditorChangeEvent, type EditorFactory } from "@pierre/diff
 import type { WorkerPoolManager } from "@pierre/diffs/worker";
 import { EditProvider, File, Virtualizer, useWorkerPool } from "@pierre/diffs/react";
 import { isMac } from "@/lib/platform";
-import { DIFF_THEME_NAME } from "@/features/git/lib/diff-theme";
+import { DIFF_THEME_NAMES } from "@/features/git/lib/diff-theme";
 import {
   DiffWorkerPoolProvider,
   PREFERRED_HIGHLIGHTER,
@@ -327,7 +327,7 @@ function useFirstScreenRepaint(file: FileContents) {
       if (workerPool?.getFileResultCache(file) !== undefined) return;
       instance.onThemeChange();
     };
-    loadFirstScreenGrammar(lang, DIFF_THEME_NAME, PREFERRED_HIGHLIGHTER).then(repaint, () => {});
+    loadFirstScreenGrammar(lang, DIFF_THEME_NAMES, PREFERRED_HIGHLIGHTER).then(repaint, () => {});
     return () => {
       live = false;
     };
@@ -569,7 +569,7 @@ function EditableFileSurface({
             options={{
               disableFileHeader: true,
               overflow: wordWrap ? "wrap" : "scroll",
-              theme: DIFF_THEME_NAME,
+              theme: DIFF_THEME_NAMES,
               themeType: appearance,
               preferredHighlighter: PREFERRED_HIGHLIGHTER,
               unsafeCSS: DIFF_VIEW_CSS,

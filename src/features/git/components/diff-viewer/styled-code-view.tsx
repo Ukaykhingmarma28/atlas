@@ -11,7 +11,7 @@ import type { CodeViewItem } from "@pierre/diffs";
 import { useMemo, type ReactNode, type Ref } from "react";
 import { getActiveTheme } from "@/features/theme/apply-theme";
 import { useThemeVersion } from "@/features/theme/theme-values";
-import { DIFF_THEME_NAME } from "../../lib/diff-theme";
+import { DIFF_THEME_NAMES } from "../../lib/diff-theme";
 import {
   DiffWorkerPoolProvider,
   PREFERRED_HIGHLIGHTER,
@@ -333,7 +333,7 @@ export function StyledCodeView<A = undefined>({
         className={className ? `outline-none ${className}` : "outline-none"}
         options={{
           ...options,
-          theme: DIFF_THEME_NAME,
+          theme: DIFF_THEME_NAMES,
           themeType: appearance,
           preferredHighlighter: PREFERRED_HIGHLIGHTER,
           unsafeCSS: extraCSS ? `${DIFF_VIEW_CSS}\n${extraCSS}` : DIFF_VIEW_CSS,
@@ -407,7 +407,7 @@ export function StyledFileDiff<A = undefined>({
         {...props}
         options={{
           ...options,
-          theme: DIFF_THEME_NAME,
+          theme: DIFF_THEME_NAMES,
           themeType: appearance,
           preferredHighlighter: PREFERRED_HIGHLIGHTER,
           unsafeCSS: extraCSS ? `${DIFF_VIEW_CSS}\n${extraCSS}` : DIFF_VIEW_CSS,

@@ -11,7 +11,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { DIFF_THEME_NAME, ensureDiffTheme } from "../../lib/diff-theme";
+import { DIFF_THEME_NAMES, ensureDiffTheme } from "../../lib/diff-theme";
 import { colourFirstScreen } from "../../lib/first-screen-highlight";
 
 /**
@@ -83,9 +83,9 @@ function acquire(): SharedPool {
           totalASTLRUCacheSize: 240,
         },
         {
-          // A theme of theme-variable references (`diff-theme.ts`): a theme
+          // A pair of theme-variable themes (`diff-theme.ts`): a theme
           // switch recolours the cached tokens, so the pool never re-themes.
-          theme: DIFF_THEME_NAME,
+          theme: DIFF_THEME_NAMES,
           preferredHighlighter: PREFERRED_HIGHLIGHTER,
           // A minified bundle's one 400 KB line would hold a worker for
           // seconds; past this length a line is shown plain.

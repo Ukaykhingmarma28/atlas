@@ -12,6 +12,7 @@ import {
   type RenderFileOptions,
   type SupportedLanguages,
   type ThemedFileResult,
+  type ThemesType,
 } from "@pierre/diffs";
 
 /**
@@ -149,13 +150,14 @@ export function missingFirstScreenGrammar(file: FileContents): SupportedLanguage
   return lang;
 }
 
-/** Load `lang` into the shared highlighter, with the theme the pool renders in. */
+/** Load `lang` into the shared highlighter, with the theme(s) the pool renders in. */
 export function loadFirstScreenGrammar(
   lang: SupportedLanguages,
-  theme: DiffsThemeNames,
+  theme: DiffsThemeNames | ThemesType,
   preferredHighlighter: HighlighterTypes,
 ): Promise<unknown> {
-  return getSharedHighlighter({ themes: [theme], langs: ["text", lang], preferredHighlighter });
+  const themes = typeof theme === "string" ? [theme] : [theme.light, theme.dark];
+  return getSharedHighlighter({ themes, langs: ["text", lang], preferredHighlighter });
 }
 
 /**
