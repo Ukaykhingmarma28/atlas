@@ -10,8 +10,9 @@
 // The status slot swaps on hover. At rest it says what the session is doing
 // (working, waiting for the user, failed, woke, done) or, for a quiet one, how
 // long ago it moved; under the pointer it gives way to the row's controls —
-// snooze, the menu, Settle. A Woke marker stays put: it is a button (it
-// dismisses itself).
+// snooze and Settle. The rest of the row's actions are on right-click (or the
+// context-menu key), so the hover row stays two controls. A Woke marker stays
+// put: it is a button (it dismisses itself).
 //
 // Rows are memoised on their props, and every prop is either a primitive or
 // the list's one stable handler bag, so a delta that touches one session
@@ -28,7 +29,6 @@ import {
   Check,
   CircleAlert,
   Clock,
-  Ellipsis,
   GitBranch,
   MessageCircleQuestion,
   Pin,
@@ -186,41 +186,6 @@ function SnoozeMenuButton({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-/** Opens the list's shared context menu at the button, as a right-click
- *  would: the menu listens for `contextmenu`, and the row it bubbles through
- *  names itself the target on the way. */
-function openMenuAt(event: MouseEvent<HTMLElement>) {
-  event.preventDefault();
-  event.stopPropagation();
-  const rect = event.currentTarget.getBoundingClientRect();
-  event.currentTarget.dispatchEvent(
-    new globalThis.MouseEvent("contextmenu", {
-      bubbles: true,
-      cancelable: true,
-      clientX: rect.left,
-      clientY: rect.bottom + 2,
-    }),
-  );
-}
-
-function MenuButton() {
-  return (
-    <Hint label="More actions" side="top">
-      <button
-        type="button"
-        aria-label="More actions"
-        aria-haspopup="menu"
-        onClick={openMenuAt}
-        onPointerDown={(event) => event.stopPropagation()}
-        onDoubleClick={(event) => event.stopPropagation()}
-        className="inline-flex h-full cursor-pointer items-center rounded-md bg-transparent px-1.5 text-xs text-muted-foreground hover:text-foreground"
-      >
-        <Ellipsis aria-hidden className="size-3.5" />
-      </button>
-    </Hint>
   );
 }
 
@@ -479,7 +444,6 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                 </span>
               )}
               <span className="pointer-events-none absolute inset-y-0 right-0 -mr-1 flex items-stretch opacity-0 transition-opacity has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100">
-                <MenuButton />
                 {snoozed ? (
                   <Hint label="Wake session" side="top">
                     <button
@@ -621,7 +585,6 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                       onOpenChange={setSnoozeMenuOpen}
                       onSnooze={(until) => handlers.snooze(session, until)}
                     />
-                    <MenuButton />
                     <Hint
                       label={
                         props.isActive && props.settleShortcut
