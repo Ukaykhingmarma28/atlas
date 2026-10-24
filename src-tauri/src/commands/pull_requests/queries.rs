@@ -186,7 +186,10 @@ pub fn pull_request_check_contexts() -> String {
 }
 
 /// The conversation outside the review threads: who opened it, its issue
-/// comments, its reviews and its newest commits. The two remark connections
+/// comments, its reviews and its newest commits. `viewerCanUpdate` and
+/// `viewerCanDelete` are the host's own answer per remark, which is what the
+/// edit and delete controls are shown on (a review is never deleted, so its
+/// `viewerCanDelete` is not asked for). The two remark connections
 /// page independently, so each is switched on only while it has more to
 /// give; the first read (`$head`) asks for everything.
 pub const PULL_REQUEST_ACTIVITY: &str = r#"query PullRequestActivity(
@@ -231,6 +234,8 @@ pub const PULL_REQUEST_ACTIVITY: &str = r#"query PullRequestActivity(
           createdAt
           lastEditedAt
           url
+          viewerCanUpdate
+          viewerCanDelete
           author {
             __typename
             login
@@ -248,6 +253,7 @@ pub const PULL_REQUEST_ACTIVITY: &str = r#"query PullRequestActivity(
           submittedAt
           lastEditedAt
           url
+          viewerCanUpdate
           author {
             __typename
             login
@@ -290,6 +296,8 @@ const THREAD_COMMENT: &str = r#"fragment ThreadComment on PullRequestReviewComme
   createdAt
   lastEditedAt
   url
+  viewerCanUpdate
+  viewerCanDelete
   ...Reactions
 }"#;
 
@@ -819,6 +827,56 @@ pub const PULL_REQUEST_SOURCE_BRANCH: &str = r#"query PullRequestSourceBranch($r
   }
 }"#;
 
+/// What a merge that rewrites its message reads first: GitHub's own message
+/// for the method, the head it was written for, and whether a merge queue
+/// will choose its own message instead.
+pub const PULL_REQUEST_MERGE_MESSAGE: &str = r#"query PullRequestMergeMessage(
+  $owner: String!
+  $name: String!
+  $number: Int!
+  $method: PullRequestMergeMethod!
+) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      isMergeQueueEnabled
+      headRefOid
+      viewerMergeBodyText(mergeType: $method)
+    }
+  }
+}"#;
+
+/// Where a pull request's head lives now, read before workflow runs are
+/// approved and again before each one: a push (or a repointed fork) between
+/// the two must not have its runs approved unseen.
+pub const PULL_REQUEST_WORKFLOW_HEAD: &str = r#"query PullRequestWorkflowHead($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      state
+      isCrossRepository
+      headRefName
+      headRefOid
+      headRepositoryOwner { login }
+    }
+  }
+}"#;
+
+/// Open pull requests whose head branch has one name, from whichever
+/// repository it lives in. A run is named by branch and commit only, so
+/// approval first checks that exactly one open pull request is that head.
+pub const PULL_REQUEST_HEADS: &str = r#"query PullRequestHeads($owner: String!, $name: String!, $head: String!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(first: 100, after: $after, states: [OPEN], headRefName: $head) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        number
+        headRefOid
+        isCrossRepository
+        headRepositoryOwner { login }
+      }
+    }
+  }
+}"#;
+
 // ── mutations ────────────────────────────────────────────────────────────
 
 pub const ADD_REVIEW_THREAD_REPLY: &str = r#"mutation AddReviewThreadReply($threadId: ID!, $body: String!) {
@@ -901,6 +959,42 @@ pub const ADD_COMMENT: &str = r#"mutation AddComment($subjectId: ID!, $body: Str
   addComment(input: { subjectId: $subjectId, body: $body }) { clientMutationId }
 }"#;
 
+/// Opens a new pull request that reverses a merged one.
+pub const REVERT_PULL_REQUEST: &str = r#"mutation RevertPullRequest($pullRequestId: ID!) {
+  revertPullRequest(input: { pullRequestId: $pullRequestId }) {
+    revertPullRequest { number url }
+  }
+}"#;
+
+/// The comment mutations each name their subject differently; the variable
+/// is spelled the same in all of them, so a rewrite sends one set of
+/// variables whichever kind of remark it is.
+pub const UPDATE_ISSUE_COMMENT: &str = r#"mutation UpdateIssueComment($commentId: ID!, $body: String!) {
+  updateIssueComment(input: { id: $commentId, body: $body }) {
+    issueComment { id }
+  }
+}"#;
+
+pub const UPDATE_REVIEW_COMMENT: &str = r#"mutation UpdateReviewComment($commentId: ID!, $body: String!) {
+  updatePullRequestReviewComment(input: { pullRequestReviewCommentId: $commentId, body: $body }) {
+    pullRequestReviewComment { id }
+  }
+}"#;
+
+pub const UPDATE_REVIEW: &str = r#"mutation UpdateReview($commentId: ID!, $body: String!) {
+  updatePullRequestReview(input: { pullRequestReviewId: $commentId, body: $body }) {
+    pullRequestReview { id }
+  }
+}"#;
+
+pub const DELETE_ISSUE_COMMENT: &str = r#"mutation DeleteIssueComment($commentId: ID!) {
+  deleteIssueComment(input: { id: $commentId }) { clientMutationId }
+}"#;
+
+pub const DELETE_REVIEW_COMMENT: &str = r#"mutation DeleteReviewComment($commentId: ID!) {
+  deletePullRequestReviewComment(input: { id: $commentId }) { clientMutationId }
+}"#;
+
 /// Deletes a branch only while it still points at `beforeOid`.
 pub const DELETE_PULL_REQUEST_BRANCH: &str = r#"mutation DeletePullRequestBranch($input: UpdateRefsInput!) {
   updateRefs(input: $input) { clientMutationId }
@@ -974,6 +1068,15 @@ mod tests {
             PULL_REQUEST_BRANCH_TO_DELETE.to_string(),
             PULL_REQUEST_SOURCE_BRANCH.to_string(),
             UPDATE_PULL_REQUEST_BRANCH.to_string(),
+            PULL_REQUEST_MERGE_MESSAGE.to_string(),
+            PULL_REQUEST_WORKFLOW_HEAD.to_string(),
+            PULL_REQUEST_HEADS.to_string(),
+            REVERT_PULL_REQUEST.to_string(),
+            UPDATE_ISSUE_COMMENT.to_string(),
+            UPDATE_REVIEW_COMMENT.to_string(),
+            UPDATE_REVIEW.to_string(),
+            DELETE_ISSUE_COMMENT.to_string(),
+            DELETE_REVIEW_COMMENT.to_string(),
             set_files_viewed(&[true, false]),
             pull_requests_by_number(&[12, 7]),
         ] {

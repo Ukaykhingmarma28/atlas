@@ -41,6 +41,8 @@ const comment = (id: string, at: string, extra: Partial<PrComment> = {}): PrComm
   path: null,
   reviewState: null,
   reactions: [],
+  canEdit: false,
+  canDelete: false,
   ...extra,
 });
 

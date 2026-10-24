@@ -4,12 +4,17 @@
 //! Layers, top to bottom:
 //!
 //! - this module — the IPC commands, flat arguments, one per operation;
+//! - [`host`] — the provider seam: the host a checkout's remote names,
+//!   which every command opens and calls;
 //! - [`github`] — the GitHub driver: which requests an operation takes;
 //! - [`parse`] / [`queries`] — GitHub's answers read into [`model`], and the
 //!   GraphQL documents that ask for them;
 //! - [`gh`] — the transport: one bounded `gh api -i` process per request,
 //!   with rate-limit, conditional-read and concurrency policy;
 //! - [`images`] — the image proxy for bodies and comments;
+//! - [`check_log`] — which job a check names, and the part of its log
+//!   worth reading;
+//! - [`merge_message`] — a merge message with the agents' credits taken out;
 //! - [`create`] — opening a pull request with `gh pr create`;
 //! - [`checkout`] — the pull request's head checked out for a "Fix" session,
 //!   never by switching the main checkout;
@@ -21,13 +26,16 @@
 //! "sign in" from "wait until" from "try again". Nothing here logs a
 //! repository, title, branch or URL.
 
+mod check_log;
 pub mod checkout;
 pub mod create;
 mod gh;
 mod github;
 pub mod guide;
+mod host;
 mod images;
 pub mod list_stats;
+mod merge_message;
 mod model;
 mod parse;
 mod queries;
@@ -54,8 +62,20 @@ fn pull_number(number: u64) -> Result<u64, PrError> {
     Ok(number)
 }
 
-async fn open(path: &str) -> Result<GitHub, PrError> {
-    GitHub::open(checkout(path)?).await
+/// The host a checkout's pull requests live on: the seam every command
+/// goes through ([`host::PrHost`]).
+async fn open(path: &str) -> Result<host::PrHost, PrError> {
+    host::PrHost::open(checkout(path)?).await
+}
+
+/// A node id the client names (a comment, a review), checked for shape
+/// before it reaches the host.
+fn node_id(id: &str) -> Result<&str, PrError> {
+    let id = id.trim();
+    if !parse::is_node_id(id) {
+        return Err(PrError::invalid("That is not a comment or review id."));
+    }
+    Ok(id)
 }
 
 // ── reads ────────────────────────────────────────────────────────────────
@@ -323,6 +343,56 @@ pub async fn pr_set_labels(
         .await?
         .set_labels(pull_number(number)?, &labels, applied)
         .await
+}
+
+/// Rewrite a comment, a line comment or a review's summary the viewer may
+/// edit (`canEdit` on the remark).
+#[tauri::command]
+pub async fn pr_edit_comment(
+    path: String,
+    number: u64,
+    comment_id: String,
+    kind: PrCommentKind,
+    body: String,
+) -> Result<(), PrError> {
+    open(&path)
+        .await?
+        .edit_comment(pull_number(number)?, node_id(&comment_id)?, kind, &body)
+        .await
+}
+
+/// Delete a comment or a line comment the viewer may delete (`canDelete`).
+/// A review's summary is refused.
+#[tauri::command]
+pub async fn pr_delete_comment(
+    path: String,
+    number: u64,
+    comment_id: String,
+    kind: PrCommentKind,
+) -> Result<(), PrError> {
+    open(&path)
+        .await?
+        .delete_comment(pull_number(number)?, node_id(&comment_id)?, kind)
+        .await
+}
+
+/// Open a pull request that undoes a merged one, and answer which.
+#[tauri::command]
+pub async fn pr_revert(path: String, number: u64) -> Result<PrReverted, PrError> {
+    open(&path).await?.revert(pull_number(number)?).await
+}
+
+/// The end of one check's log, around its first error, read when asked for.
+/// `checkUrl` is the check's own link; only a GitHub Actions job of this
+/// repository has a log to read.
+#[tauri::command]
+pub async fn pr_check_log(
+    path: String,
+    number: u64,
+    check_url: String,
+) -> Result<PrCheckLog, PrError> {
+    pull_number(number)?;
+    open(&path).await?.check_log(&check_url).await
 }
 
 // ── images ───────────────────────────────────────────────────────────────

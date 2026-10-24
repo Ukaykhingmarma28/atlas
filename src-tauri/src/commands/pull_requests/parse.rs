@@ -511,6 +511,8 @@ pub(crate) fn capabilities() -> PrCapabilities {
             PrAction::UpdateBranch,
             PrAction::EnableAutoMerge,
             PrAction::DisableAutoMerge,
+            PrAction::Revert,
+            PrAction::ApproveWorkflows,
         ],
         merge_methods: vec![
             PrMergeMethod::Merge,
@@ -538,7 +540,7 @@ pub(crate) fn capabilities() -> PrCapabilities {
         },
         edit: PrEditCapabilities {
             change_request: true,
-            comment: false,
+            comment: true,
         },
         labels: true,
         file_contents: true,
@@ -585,6 +587,11 @@ pub(crate) struct ViewerAccess {
     pub can_update_branch: bool,
     pub can_merge_now: bool,
     pub auto_merge_allowed: bool,
+    /// The pull request is merged: the only state a revert is offered in.
+    pub merged: bool,
+    /// Open, with its head in a fork: the only kind whose workflow runs
+    /// wait on a maintainer's approval.
+    pub open_from_fork: bool,
 }
 
 /// What the viewer may do. Asking for a review needs write access, which an
@@ -613,6 +620,14 @@ pub(crate) fn viewer_permissions(access: &ViewerAccess) -> PrViewerPermissions {
     }
     if access.can_update_branch {
         actions.push(PrAction::UpdateBranch);
+    }
+    // Both need push access: GitHub refuses a revert, or an approval, from
+    // anyone without it.
+    if access.can_write && access.merged {
+        actions.push(PrAction::Revert);
+    }
+    if access.can_write && access.open_from_fork {
+        actions.push(PrAction::ApproveWorkflows);
     }
     PrViewerPermissions {
         can_merge: actions.contains(&PrAction::Merge),
@@ -745,6 +760,8 @@ pub(crate) fn to_detail(data: &Value, repository: &str) -> Option<PrDetail> {
             && boolean(pr, "viewerCanUpdateBranch") == Some(true),
         can_merge_now: is_immediately_mergeable(merge_state_status.as_deref()),
         auto_merge_allowed: boolean(repo, "autoMergeAllowed").unwrap_or(false),
+        merged: state == PrState::Merged,
+        open_from_fork: state == PrState::Open && boolean(pr, "isCrossRepository").unwrap_or(false),
     };
     let auto_merge = pr.get("autoMergeRequest");
     Some(PrDetail {
@@ -871,6 +888,8 @@ fn to_remarks(comments: &[&Value], reviews: &[&Value]) -> Vec<PrComment> {
                 path: None,
                 review_state: None,
                 reactions: Vec::new(),
+                can_edit: boolean(c, "viewerCanUpdate") == Some(true),
+                can_delete: boolean(c, "viewerCanDelete") == Some(true),
             })
         })
         .collect();
@@ -892,6 +911,9 @@ fn to_remarks(comments: &[&Value], reviews: &[&Value]) -> Vec<PrComment> {
             path: None,
             review_state: state,
             reactions: Vec::new(),
+            can_edit: boolean(r, "viewerCanUpdate") == Some(true),
+            // A submitted review is never deleted, only dismissed.
+            can_delete: false,
         })
     }));
     out.sort_by(|a, b| a.created_at.cmp(&b.created_at));
@@ -942,6 +964,8 @@ fn to_thread_comment(raw: &Value, viewer: Option<&str>) -> Option<PrThreadCommen
         edited_at: text(raw, "lastEditedAt"),
         url: text(raw, "url"),
         reactions: to_reactions(raw.get("reactionGroups"), viewer),
+        can_edit: boolean(raw, "viewerCanUpdate") == Some(true),
+        can_delete: boolean(raw, "viewerCanDelete") == Some(true),
     })
 }
 
@@ -1233,6 +1257,8 @@ pub(crate) fn merge_activity(
                 path: Some(thread.path.clone()),
                 review_state: None,
                 reactions: c.reactions.clone(),
+                can_edit: c.can_edit,
+                can_delete: c.can_delete,
             })
         })
         .collect();
@@ -2048,6 +2074,185 @@ pub(crate) fn is_node_id(value: &str) -> bool {
         && value
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '=' | '/' | '+'))
+}
+
+// ── writes' reads ────────────────────────────────────────────────────────
+
+/// The `__typename` of the node a rewrite or delete names, read beside the
+/// check that it belongs to this pull request.
+pub(crate) fn subject_typename(data: &Value) -> Option<String> {
+    trimmed(data.get("node").and_then(|n| n.get("__typename")))
+}
+
+/// The GraphQL type a remark of each kind is.
+pub(crate) fn comment_typename(kind: PrCommentKind) -> &'static str {
+    match kind {
+        PrCommentKind::IssueComment => "IssueComment",
+        PrCommentKind::ReviewComment => "PullRequestReviewComment",
+        PrCommentKind::Review => "PullRequestReview",
+    }
+}
+
+/// The pull request a revert opened.
+pub(crate) fn to_reverted(data: &Value) -> Option<PrReverted> {
+    let pr = data
+        .get("revertPullRequest")
+        .and_then(|r| r.get("revertPullRequest"))
+        .filter(|p| !p.is_null())?;
+    Some(PrReverted {
+        number: number(pr, "number").filter(|&n| n > 0)?,
+        url: text(pr, "url")?,
+    })
+}
+
+/// GitHub's own merge message for a method, the head it was written for,
+/// and whether a merge queue will pick its own instead.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MergeMessage {
+    pub queued: bool,
+    pub head: Option<String>,
+    pub body: String,
+}
+
+pub(crate) fn to_merge_message(data: &Value) -> Option<MergeMessage> {
+    let pr = data
+        .get("repository")
+        .and_then(|r| r.get("pullRequest"))
+        .filter(|p| !p.is_null())?;
+    Some(MergeMessage {
+        queued: boolean(pr, "isMergeQueueEnabled") == Some(true),
+        head: text(pr, "headRefOid"),
+        body: string_or_empty(pr, "viewerMergeBodyText"),
+    })
+}
+
+/// Where a pull request's head lives, as workflow approval checks it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WorkflowHead {
+    pub open: bool,
+    pub cross_repository: bool,
+    pub branch: String,
+    pub sha: Option<String>,
+    pub owner: Option<String>,
+}
+
+impl WorkflowHead {
+    /// The same commit, on the same branch, of the same fork.
+    pub fn is_same_head(&self, other: &WorkflowHead) -> bool {
+        self.cross_repository == other.cross_repository
+            && self.branch == other.branch
+            && self.sha.is_some()
+            && self.sha == other.sha
+            && match (&self.owner, &other.owner) {
+                (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
+                _ => false,
+            }
+    }
+}
+
+pub(crate) fn to_workflow_head(data: &Value) -> Option<WorkflowHead> {
+    let pr = data
+        .get("repository")
+        .and_then(|r| r.get("pullRequest"))
+        .filter(|p| !p.is_null())?;
+    Some(WorkflowHead {
+        open: to_state(pr) == PrState::Open,
+        cross_repository: boolean(pr, "isCrossRepository") == Some(true),
+        branch: string_or_empty(pr, "headRefName"),
+        sha: text(pr, "headRefOid"),
+        owner: trimmed(pr.get("headRepositoryOwner").and_then(|o| o.get("login"))),
+    })
+}
+
+/// One open pull request whose head branch has a given name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct HeadRow {
+    pub number: u64,
+    pub sha: Option<String>,
+    pub cross_repository: bool,
+    pub owner: Option<String>,
+}
+
+pub(crate) fn to_heads_page(data: &Value) -> Option<(Vec<HeadRow>, Option<String>)> {
+    let connection = data
+        .get("repository")
+        .filter(|r| !r.is_null())?
+        .get("pullRequests");
+    let rows = nodes(connection)
+        .into_iter()
+        .filter_map(|n| {
+            Some(HeadRow {
+                number: number(n, "number")?,
+                sha: text(n, "headRefOid"),
+                cross_repository: boolean(n, "isCrossRepository") == Some(true),
+                owner: trimmed(n.get("headRepositoryOwner").and_then(|o| o.get("login"))),
+            })
+        })
+        .collect();
+    Some((
+        rows,
+        next_cursor(connection.and_then(|c| c.get("pageInfo"))),
+    ))
+}
+
+/// Whether this pull request is the one open pull request that is exactly
+/// `head` (the commit, from that fork). A run names only a branch and a
+/// commit, so with two such pull requests nobody can say whose run it is.
+pub(crate) fn is_only_open_head(rows: &[HeadRow], number: u64, head: &WorkflowHead) -> bool {
+    let exact: Vec<&HeadRow> = rows
+        .iter()
+        .filter(|row| {
+            row.cross_repository
+                && row.sha.is_some()
+                && row.sha == head.sha
+                && match (&row.owner, &head.owner) {
+                    (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
+                    _ => false,
+                }
+        })
+        .collect();
+    matches!(exact.as_slice(), [only] if only.number == number)
+}
+
+/// A workflow run waiting on a maintainer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WorkflowRun {
+    pub id: u64,
+    pub name: String,
+}
+
+/// The runs of one page of `actions/runs` that wait on approval for exactly
+/// this head, and how many runs the page carried before any was dropped
+/// (which says whether another page follows). A run waiting on a maintainer
+/// reports `completed` with an `action_required` conclusion, or the status
+/// itself; either counts.
+pub(crate) fn to_action_required_runs(
+    body: &Value,
+    head_sha: &str,
+    head_branch: &str,
+) -> (Vec<WorkflowRun>, usize) {
+    let raw = body
+        .get("workflow_runs")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let runs = raw
+        .iter()
+        .filter(|run| {
+            let is = |key: &str| text(run, key).is_some_and(|v| v == "action_required");
+            (is("conclusion") || is("status"))
+                && text(run, "head_sha").is_some_and(|s| s.eq_ignore_ascii_case(head_sha))
+                && text(run, "head_branch").as_deref() == Some(head_branch)
+        })
+        .filter_map(|run| {
+            let id = number(run, "id")?;
+            Some(WorkflowRun {
+                id,
+                name: text(run, "name").unwrap_or_else(|| format!("Workflow run {id}")),
+            })
+        })
+        .collect();
+    (runs, raw.len())
 }
 
 #[cfg(test)]

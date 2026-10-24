@@ -32,7 +32,7 @@ import { toast } from "sonner";
 import { Button } from "@/ui/button";
 
 import { classifyPrError } from "../lib/pr-errors";
-import { lastMergeMethod } from "../lib/pull-request-prefs";
+import { lastMergeMethod, removeAgentCreditsOnMerge } from "../lib/pull-request-prefs";
 import {
   pullRequestQuickActions,
   resolveSweepKeys,
@@ -144,6 +144,7 @@ export function useQuickActionRunner(
             action,
             mergeMethod: resolveMergeMethod(allowed, null, lastMergeMethod()),
             expectedHeadOid: detail.headSha,
+            removeAgentCredits: removeAgentCreditsOnMerge(repoPath),
           });
         } else {
           await prAction(repoPath, entry.number, { action });

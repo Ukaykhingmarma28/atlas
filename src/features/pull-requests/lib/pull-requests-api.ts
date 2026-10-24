@@ -13,6 +13,8 @@ import type { GuideCheckout } from "./pull-request-guide-types";
 import type {
   PrActionInput,
   PrActivity,
+  PrCheckLog,
+  PrCommentKind,
   PrCommitsPage,
   PrCreateDraft,
   PrCreated,
@@ -33,6 +35,7 @@ import type {
   PrReviewCommentDraft,
   PrReviewerCandidates,
   PrReviewerRef,
+  PrReverted,
   PrReviewVerdict,
   PrThreadCommentsPage,
   PrTimelinePage,
@@ -231,6 +234,39 @@ export function prSetLabels(
   applied: boolean,
 ): Promise<void> {
   return gated(() => invoke<void>("pr_set_labels", { path, number, labels, applied }));
+}
+
+/** Rewrite a comment, a line comment or a review's summary (`canEdit`). */
+export function prEditComment(
+  path: string,
+  number: number,
+  commentId: string,
+  kind: PrCommentKind,
+  body: string,
+): Promise<void> {
+  return gated(() => invoke<void>("pr_edit_comment", { path, number, commentId, kind, body }));
+}
+
+/** Delete a comment or a line comment (`canDelete`); a review's summary is
+ *  refused. */
+export function prDeleteComment(
+  path: string,
+  number: number,
+  commentId: string,
+  kind: PrCommentKind,
+): Promise<void> {
+  return gated(() => invoke<void>("pr_delete_comment", { path, number, commentId, kind }));
+}
+
+/** Open a pull request that undoes a merged one; answers which. */
+export function prRevert(path: string, number: number): Promise<PrReverted> {
+  return gated(() => invoke<PrReverted>("pr_revert", { path, number }));
+}
+
+/** The end of one check's log, around its first error. `checkUrl` is the
+ *  check's own link (a GitHub Actions job of this repository). */
+export function prCheckLog(path: string, number: number, checkUrl: string): Promise<PrCheckLog> {
+  return gated(() => invoke<PrCheckLog>("pr_check_log", { path, number, checkUrl }));
 }
 
 /** A title and body to open a pull request for the current branch with.

@@ -43,7 +43,9 @@ export type PrAction =
   | "delete-branch"
   | "update-branch"
   | "enable-auto-merge"
-  | "disable-auto-merge";
+  | "disable-auto-merge"
+  | "revert"
+  | "approve-workflows";
 export type PrBaseComparison = "up-to-date" | "behind" | "unknown";
 
 export interface PrActor {
@@ -113,6 +115,10 @@ export interface PrComment {
   /** For a review: the host's state word (`APPROVED`, `DISMISSED`, …). */
   reviewState: string | null;
   reactions: PrReaction[];
+  /** The viewer may rewrite it (the host's word for this remark). */
+  canEdit: boolean;
+  /** The viewer may delete it; never true for a review's summary. */
+  canDelete: boolean;
 }
 
 export type PrDiffSide = "left" | "right";
@@ -126,6 +132,8 @@ export interface PrThreadComment {
   editedAt: string | null;
   url: string | null;
   reactions: PrReaction[];
+  canEdit: boolean;
+  canDelete: boolean;
 }
 
 export interface PrReviewThread {
@@ -562,6 +570,27 @@ export interface PrActionInput {
   /** For a merge or auto-merge: the head commit the reader saw. A head that
    *  has moved on since is refused rather than merged unseen. */
   expectedHeadOid?: string | null;
+  /** For a merge or auto-merge: take agent co-author trailers and
+   *  "Generated with" footers out of the merge commit's message. Off unless
+   *  asked for (the `removeAgentCreditsOnMerge` setting drives it). */
+  removeAgentCredits?: boolean;
+}
+
+/** The pull request a revert opened. */
+export interface PrReverted {
+  number: number;
+  url: string;
+}
+
+/** The end of one check's log around its first error, read on demand.
+ *  A third party's output: anything that passes it on marks it untrusted. */
+export interface PrCheckLog {
+  jobId: string;
+  text: string;
+  /** Lines before or after the window were left out. */
+  truncated: boolean;
+  /** The window is anchored on a line the runner marked as an error. */
+  foundError: boolean;
 }
 
 // ── opening one (`commands/pull_requests/create.rs`) ────────────────────

@@ -22,6 +22,12 @@ fn fixture(name: &str) -> Value {
         "files-viewed" => include_str!("../fixtures/files-viewed.json"),
         "files.rest" => include_str!("../fixtures/files.rest.json"),
         "pull.rest" => include_str!("../fixtures/pull.rest.json"),
+        "activity-own" => include_str!("../fixtures/activity-own.json"),
+        "review-threads-own" => include_str!("../fixtures/review-threads-own.json"),
+        "merge-message" => include_str!("../fixtures/merge-message.json"),
+        "workflow-head" => include_str!("../fixtures/workflow-head.json"),
+        "pull-request-heads" => include_str!("../fixtures/pull-request-heads.json"),
+        "actions-runs" => include_str!("../fixtures/actions-runs.json"),
         other => panic!("no fixture {other}"),
     };
     serde_json::from_str(raw).unwrap()
@@ -552,8 +558,12 @@ fn an_author_may_only_comment_and_an_outsider_may_not_write() {
         can_update_branch: false,
         can_merge_now: false,
         auto_merge_allowed: true,
+        merged: true,
+        open_from_fork: false,
     });
     assert_eq!(author.verdicts, [PrReviewVerdict::Comment]);
+    // A revert needs push access, which an outside author does not have.
+    assert!(!author.actions.contains(&PrAction::Revert));
     assert!(author.resolve);
     assert!(!author.can_merge);
     assert!(author.actions.contains(&PrAction::Close));
@@ -568,8 +578,12 @@ fn an_author_may_only_comment_and_an_outsider_may_not_write() {
         can_update_branch: true,
         can_merge_now: false,
         auto_merge_allowed: true,
+        merged: false,
+        open_from_fork: true,
     });
     assert!(maintainer.can_merge);
+    assert!(maintainer.actions.contains(&PrAction::ApproveWorkflows));
+    assert!(!maintainer.actions.contains(&PrAction::Revert));
     assert!(maintainer.actions.contains(&PrAction::EnableAutoMerge));
     assert_eq!(maintainer.verdicts.len(), 3);
     assert_eq!(maintainer.update_methods.len(), 2);
@@ -635,6 +649,8 @@ fn a_dismissed_review_with_only_a_marker_reads_its_dismissal() {
         path: None,
         review_state: Some("DISMISSED".into()),
         reactions: Vec::new(),
+        can_edit: false,
+        can_delete: false,
     };
     let mut page = ThreadPage::default();
     page.dismissals_by_review_id
@@ -850,4 +866,155 @@ fn candidates_for_a_missing_pull_request_read_as_none() {
     let data = json!({ "repository": { "pullRequest": null } });
     assert!(to_reviewer_candidates(&data).is_none());
     assert!(to_label_candidates(&data).is_none());
+}
+
+// ── edit, delete, revert, workflows, merge message ──────────────────────
+
+/// Recorded as the repository's admin, who may rewrite and delete anyone's
+/// comment; a submitted review is never deletable, whatever GitHub says.
+#[test]
+fn remarks_carry_what_the_viewer_may_do_to_them() {
+    let page = to_activity_page(&fixture("activity-own")).unwrap();
+    let comments: Vec<&PrComment> = page
+        .remarks
+        .iter()
+        .filter(|c| c.kind == PrCommentKind::IssueComment)
+        .collect();
+    assert!(!comments.is_empty());
+    assert!(comments.iter().all(|c| c.can_edit && c.can_delete));
+    let review = page
+        .remarks
+        .iter()
+        .find(|c| c.kind == PrCommentKind::Review)
+        .unwrap();
+    assert!(review.can_edit);
+    assert!(!review.can_delete);
+
+    let threads = to_review_thread_page(&fixture("review-threads-own")).unwrap();
+    let line = &threads.threads[0].comments[0];
+    assert!(line.can_edit && line.can_delete);
+    // Through the merge, a line comment keeps them.
+    let merged = merge_activity(
+        None,
+        Vec::new(),
+        Vec::new(),
+        threads.threads.clone(),
+        threads,
+        false,
+    );
+    let first = &merged.comments[0];
+    assert_eq!(first.kind, PrCommentKind::ReviewComment);
+    assert!(first.can_edit && first.can_delete);
+}
+
+/// An answer recorded before the fields were asked for (and so a host that
+/// does not say) offers neither.
+#[test]
+fn a_remark_the_host_says_nothing_about_is_not_editable() {
+    let page = to_activity_page(&fixture("activity")).unwrap();
+    assert!(page.remarks.iter().all(|c| !c.can_edit && !c.can_delete));
+}
+
+#[test]
+fn a_subject_names_its_type_for_the_mutation_that_fits_it() {
+    assert_eq!(
+        subject_typename(&fixture("subject")).as_deref(),
+        Some("PullRequestReviewThread")
+    );
+    assert_eq!(
+        comment_typename(PrCommentKind::IssueComment),
+        "IssueComment"
+    );
+    assert_eq!(
+        comment_typename(PrCommentKind::ReviewComment),
+        "PullRequestReviewComment"
+    );
+    assert_eq!(comment_typename(PrCommentKind::Review), "PullRequestReview");
+}
+
+/// The mutation's answer, shaped as GitHub's schema returns it.
+#[test]
+fn a_revert_answers_the_pull_request_it_opened() {
+    let data = json!({ "revertPullRequest": { "revertPullRequest": {
+        "number": 15001, "url": "https://github.com/cli/cli/pull/15001"
+    } } });
+    assert_eq!(
+        to_reverted(&data),
+        Some(PrReverted {
+            number: 15001,
+            url: "https://github.com/cli/cli/pull/15001".into()
+        })
+    );
+    assert_eq!(
+        to_reverted(&json!({ "revertPullRequest": { "revertPullRequest": null } })),
+        None
+    );
+}
+
+#[test]
+fn a_merge_message_reads_with_its_head_and_queue() {
+    let message = to_merge_message(&fixture("merge-message")).unwrap();
+    assert!(!message.queued);
+    assert_eq!(
+        message.head.as_deref(),
+        Some("654d851d8145b2912fe474ceb0a47681854b37e2")
+    );
+    assert!(message.body.starts_with("Co-authored-by: Copilot App"));
+    assert_eq!(
+        crate::commands::pull_requests::merge_message::remove_agent_credits(&message.body),
+        ""
+    );
+}
+
+#[test]
+fn a_fork_s_head_is_approved_only_while_it_is_the_one_open_head() {
+    let head = to_workflow_head(&fixture("workflow-head")).unwrap();
+    assert!(head.open && head.cross_repository);
+    assert_eq!(head.branch, "release-download-verify");
+    assert_eq!(head.owner.as_deref(), Some("mrecachinas"));
+    assert!(head.is_same_head(&head.clone()));
+
+    let (rows, next) = to_heads_page(&fixture("pull-request-heads")).unwrap();
+    assert_eq!(next, None);
+    assert!(is_only_open_head(&rows, 14783, &head));
+    // Asked about another number, or with a twin open, it is refused.
+    assert!(!is_only_open_head(&rows, 14784, &head));
+    let mut twins = rows.clone();
+    twins.push(HeadRow {
+        number: 14790,
+        ..rows[0].clone()
+    });
+    assert!(!is_only_open_head(&twins, 14783, &head));
+    // A push moves the head: no longer the same.
+    let moved = WorkflowHead {
+        sha: Some("0000000000000000000000000000000000000001".into()),
+        ..head.clone()
+    };
+    assert!(!moved.is_same_head(&head));
+    let other_fork = WorkflowHead {
+        owner: Some("someone-else".into()),
+        ..head.clone()
+    };
+    assert!(!other_fork.is_same_head(&head));
+}
+
+#[test]
+fn only_runs_of_this_head_waiting_on_approval_are_taken() {
+    let body = fixture("actions-runs");
+    let sha = "654d851d8145b2912fe474ceb0a47681854b37e2";
+    let (runs, raw) = to_action_required_runs(&body, sha, "release-download-verify");
+    assert_eq!(raw, 3);
+    assert_eq!(runs.len(), 3);
+    assert_eq!(runs[0].id, 39640741797);
+    assert_eq!(runs[0].name, "Code Scanning");
+    // Another branch or commit is someone else's run.
+    let (none, raw) = to_action_required_runs(&body, sha, "main");
+    assert!(none.is_empty());
+    assert_eq!(raw, 3, "the page still counts every run it carried");
+    let (none, _) = to_action_required_runs(
+        &body,
+        "1111111111111111111111111111111111111111",
+        "release-download-verify",
+    );
+    assert!(none.is_empty());
 }

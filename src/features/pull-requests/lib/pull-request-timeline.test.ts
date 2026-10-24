@@ -153,6 +153,8 @@ describe("buildTimeline", () => {
       path: null,
       reviewState: "DISMISSED",
       reactions: [{ content: "eyes", count: 1, actors: ["ana"], viewerHasReacted: false }],
+      canEdit: true,
+      canDelete: false,
     };
     const [event] = buildTimeline(
       [review("PRR_1", 1, "CHANGES_REQUESTED", "No.")],
@@ -162,6 +164,7 @@ describe("buildTimeline", () => {
     expect(event.editedAt).toBe(at(4));
     expect(event.reactions).toHaveLength(1);
     expect(event.comment?.id).toBe("PRR_1");
+    expect(event.comment?.canEdit).toBe(true);
   });
 
   it("gives a commit its diff stat when the activity read has one", () => {
@@ -200,6 +203,8 @@ describe("buildTimeline", () => {
           editedAt: null,
           url: null,
           reactions: [],
+          canEdit: false,
+          canDelete: false,
         },
         {
           id: "RC_1",
@@ -209,6 +214,8 @@ describe("buildTimeline", () => {
           editedAt: null,
           url: "https://github.com/o/r/pull/7#discussion_r1",
           reactions: [],
+          canEdit: false,
+          canDelete: false,
         },
       ],
       commentCount: 4,

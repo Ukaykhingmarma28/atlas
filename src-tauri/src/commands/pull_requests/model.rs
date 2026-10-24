@@ -182,6 +182,10 @@ pub enum PrAction {
     UpdateBranch,
     EnableAutoMerge,
     DisableAutoMerge,
+    /// Open a new pull request that undoes a merged one.
+    Revert,
+    /// Let workflow runs a fork's push is holding for a maintainer go ahead.
+    ApproveWorkflows,
 }
 
 /// Whether the head is behind its base.
@@ -289,6 +293,14 @@ pub struct PrComment {
     /// names it; null on anything that is not a review.
     pub review_state: Option<String>,
     pub reactions: Vec<PrReaction>,
+    /// The signed-in account may rewrite it (the host's own word, per
+    /// remark; false where the host does not say).
+    #[serde(default)]
+    pub can_edit: bool,
+    /// The signed-in account may delete it. Never true for a review's own
+    /// summary, which no host deletes once submitted.
+    #[serde(default)]
+    pub can_delete: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -316,6 +328,10 @@ pub struct PrThreadComment {
     pub edited_at: Option<String>,
     pub url: Option<String>,
     pub reactions: Vec<PrReaction>,
+    #[serde(default)]
+    pub can_edit: bool,
+    #[serde(default)]
+    pub can_delete: bool,
 }
 
 /// A conversation pinned to a line of the diff.
@@ -940,6 +956,35 @@ pub struct PrActionInput {
     /// A head that moved since is refused rather than merged unseen.
     #[serde(default)]
     pub expected_head_oid: Option<String>,
+    /// For a merge or auto-merge: take agent co-author trailers and
+    /// "Generated with" footers out of the merge commit's message. Off
+    /// unless asked for; a rebase has no message of its own to rewrite.
+    #[serde(default)]
+    pub remove_agent_credits: bool,
+}
+
+/// The pull request a revert opened.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrReverted {
+    pub number: u64,
+    pub url: String,
+}
+
+/// The end of one check's log, read on demand: the lines around its last
+/// error (or its last lines, when nothing is marked as one), with
+/// timestamps and terminal colour codes taken out. It is a third party's
+/// output, so whoever passes it on (a Fix handoff) marks it untrusted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrCheckLog {
+    /// The host's id for the job the log belongs to.
+    pub job_id: String,
+    pub text: String,
+    /// Lines before (or after) the window were left out.
+    pub truncated: bool,
+    /// The window is anchored on a line the runner marked as an error.
+    pub found_error: bool,
 }
 
 #[cfg(test)]

@@ -6,6 +6,7 @@
 use serde::Serialize;
 use serde_json::Value;
 
+use super::github::GitHub;
 use super::{open, pull_number, PrError};
 
 /// Aliased pull requests in one request. Each carries up to a hundred file
@@ -115,17 +116,24 @@ pub async fn pr_list_stats(path: String, numbers: Vec<u64>) -> Result<Vec<PrList
     if wanted.is_empty() {
         return Ok(Vec::new());
     }
-    let github = open(&path).await?;
-    let mut out = Vec::with_capacity(wanted.len());
-    for chunk in wanted.chunks(STATS_PER_REQUEST) {
-        match github.read_aliased(&stats_query(chunk)).await {
-            Ok(data) => out.extend(parse_stats(&data, chunk.len())),
-            // Every number in the batch was gone: nothing to count.
-            Err(PrError::NotFound) => {}
-            Err(e) => return Err(e),
+    open(&path).await?.list_stats(&wanted).await
+}
+
+impl GitHub {
+    /// The stats for up to [`STATS_MAX_NUMBERS`] distinct numbers, a batch
+    /// of aliased reads at a time.
+    pub(crate) async fn list_stats(&self, wanted: &[u64]) -> Result<Vec<PrListStat>, PrError> {
+        let mut out = Vec::with_capacity(wanted.len());
+        for chunk in wanted.chunks(STATS_PER_REQUEST) {
+            match self.read_aliased(&stats_query(chunk)).await {
+                Ok(data) => out.extend(parse_stats(&data, chunk.len())),
+                // Every number in the batch was gone: nothing to count.
+                Err(PrError::NotFound) => {}
+                Err(e) => return Err(e),
+            }
         }
+        Ok(out)
     }
-    Ok(out)
 }
 
 #[cfg(test)]

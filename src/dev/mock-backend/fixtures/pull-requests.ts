@@ -25,6 +25,7 @@ import type {
   PrActor,
   PrCapabilities,
   PrCheck,
+  PrCheckLog,
   PrComment,
   PrCommit,
   PrCommitsPage,
@@ -45,6 +46,7 @@ import type {
   PrProvider,
   PrReaction,
   PrReactionContent,
+  PrReverted,
   PrReviewerCandidates,
   PrReviewThread,
   PrThreadComment,
@@ -162,7 +164,8 @@ const check = (
   name,
   status,
   description: null,
-  url: `https://github.com/${REPOSITORY}/actions/runs/${name.length * 7919}`,
+  // An Actions job link, so "View log" has a log to read.
+  url: `https://github.com/${REPOSITORY}/actions/runs/${name.length * 7919}/job/${name.length * 104_729}`,
   required: null,
   workflow: "CI",
   startedAt: iso(2),
@@ -651,6 +654,12 @@ const reactions = new Map<string, PrReaction[]>([
   ],
 ]);
 
+/** The viewer may edit and delete what they wrote, as GitHub answers it. */
+const mine = (author: PrActor | null) => {
+  const own = author?.login === VIEWER.login;
+  return { canEdit: own, canDelete: own };
+};
+
 const threadComment = (
   id: string,
   author: PrActor,
@@ -664,6 +673,7 @@ const threadComment = (
   editedAt: null,
   url: `${URL_BASE}/412#discussion_${id}`,
   reactions: reactions.get(id) ?? [],
+  ...mine(author),
 });
 
 /** The long thread's comments past the ten the activity read carries. */
@@ -757,6 +767,7 @@ const remarks = new Map<number, PrComment[]>([
         path: null,
         reviewState: null,
         reactions: reactions.get("IC_412_1") ?? [],
+        ...mine(DEV),
       },
       {
         id: "PRR_412_1",
@@ -769,6 +780,20 @@ const remarks = new Map<number, PrComment[]>([
         path: null,
         reviewState: "CHANGES_REQUESTED",
         reactions: [],
+        ...mine(REVIEWER),
+      },
+      {
+        id: "IC_412_3",
+        kind: "issue-comment",
+        author: VIEWER,
+        body: "I'll take the retry test if nobody else has started it.",
+        createdAt: iso(20),
+        editedAt: null,
+        url: `${URL_BASE}/412#issuecomment-3`,
+        path: null,
+        reviewState: null,
+        reactions: [],
+        ...mine(VIEWER),
       },
       {
         id: "IC_412_2",
@@ -781,6 +806,7 @@ const remarks = new Map<number, PrComment[]>([
         path: null,
         reviewState: null,
         reactions: [],
+        ...mine(BOT),
       },
     ],
   ],
@@ -798,6 +824,7 @@ const remarks = new Map<number, PrComment[]>([
         path: null,
         reviewState: "APPROVED",
         reactions: [],
+        ...mine(VIEWER),
       },
     ],
   ],
@@ -829,6 +856,7 @@ remarks.set(
       path: null,
       reviewState: null,
       reactions: [],
+      ...mine(author),
     };
   }),
 );
@@ -847,6 +875,7 @@ remarks.get(420)!.push(
     path: null,
     reviewState: "DISMISSED",
     reactions: [],
+    ...mine(DEV),
   },
   {
     id: "PRR_420_2",
@@ -859,6 +888,7 @@ remarks.get(420)!.push(
     path: null,
     reviewState: "COMMENTED",
     reactions: [],
+    ...mine(DEV),
   },
 );
 remarks.get(420)!.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -1747,6 +1777,24 @@ export function answerGuidePrompt(info: { sessionId: string; text: string }): bo
   return true;
 }
 
+const CHECK_LOG = [
+  "Run bun run test src/checkout",
+  " RUN  v3.2.4 /home/runner/work/atlas/atlas",
+  "",
+  " ✓ src/checkout/payment-step.test.tsx (12 tests) 214ms",
+  " ✗ src/checkout/payment-machine.test.ts > retry > clears the last error on re-entry",
+  "   AssertionError: expected 'Card declined' to be null",
+  "    ❯ src/checkout/payment-machine.test.ts:131:32",
+  "      129|     machine.send({ type: 'retry' });",
+  "      130|     await vi.advanceTimersByTimeAsync(50);",
+  "      131|     expect(machine.state.error).toBeNull();",
+  "         |                                ^",
+  "",
+  " Test Files  1 failed | 8 passed (9)",
+  "      Tests  1 failed | 141 passed (142)",
+  "##[error]Process completed with exit code 1.",
+].join("\n");
+
 export interface PullRequestsResponses {
   pr_provider: PrProvider;
   pr_list: PrListResult;
@@ -1770,6 +1818,10 @@ export interface PullRequestsResponses {
   pr_request_reviewers: Unit;
   pr_set_labels: Unit;
   pr_image: PrImage;
+  pr_edit_comment: Unit;
+  pr_delete_comment: Unit;
+  pr_revert: PrReverted;
+  pr_check_log: PrCheckLog;
   pr_reviewer_candidates: PrReviewerCandidates;
   pr_label_candidates: PrLabelCandidates;
   pr_create_draft: PrCreateDraft;
@@ -1893,6 +1945,7 @@ export const pullRequestsHandlers: TypedHandlers<PullRequestsResponses> = {
       path: null,
       reviewState: null,
       reactions: [],
+      ...mine(VIEWER),
     });
     remarks.set(Number(number), list);
     return null;
@@ -1987,6 +2040,49 @@ export const pullRequestsHandlers: TypedHandlers<PullRequestsResponses> = {
     return null;
   },
   pr_image: () => ({ contentType: "image/png", data: PIXEL }),
+  pr_edit_comment: ({ number, commentId, body }) => {
+    const now = new Date().toISOString();
+    const remark = (remarks.get(Number(number)) ?? []).find((c) => c.id === commentId);
+    if (remark) {
+      Object.assign(remark, { body: String(body), editedAt: now });
+      return null;
+    }
+    for (const thread of threads.get(Number(number)) ?? []) {
+      const c = thread.comments.find((x) => x.id === commentId);
+      if (c) {
+        Object.assign(c, { body: String(body), editedAt: now });
+        return null;
+      }
+    }
+    return fail({ kind: "notFound" });
+  },
+  pr_delete_comment: ({ number, commentId }) => {
+    const list = remarks.get(Number(number)) ?? [];
+    const at = list.findIndex((c) => c.id === commentId);
+    if (at >= 0) {
+      list.splice(at, 1);
+      return null;
+    }
+    for (const thread of threads.get(Number(number)) ?? []) {
+      if (thread.comments.some((c) => c.id === commentId)) {
+        thread.comments = thread.comments.filter((c) => c.id !== commentId);
+        thread.commentCount -= 1;
+        return null;
+      }
+    }
+    return fail({ kind: "notFound" });
+  },
+  // Opens no pull request: answers with an existing one, so "Open" has a tab.
+  pr_revert: ({ number }) => {
+    const other = allPulls().find((p) => p.detail.number !== Number(number))!.detail.number;
+    return { number: other, url: `${URL_BASE}/${other}` };
+  },
+  pr_check_log: ({ checkUrl }) => ({
+    jobId: /job\/(\d+)/u.exec(String(checkUrl))?.[1] ?? "0",
+    text: CHECK_LOG,
+    truncated: true,
+    foundError: true,
+  }),
   // What `gh pr create --fill` would write for the fake repo's current branch.
   pr_create_draft: (): PrCreateDraft => {
     const head = mockCurrentBranchName();
