@@ -63,7 +63,10 @@ describe("FileTabFrame", () => {
         <div />
       </FileTabFrame>,
     );
-    // Inside its own project, so the tree column (or its rail) is there.
-    expect(container.firstElementChild?.childElementCount).toBe(2);
+    // Inside its own project, so the header offers the tree toggle, and the
+    // body leaves the docked tree its room.
+    expect(container.querySelector("[aria-label='Hide file tree']")).not.toBeNull();
+    const frame = container.querySelector<HTMLElement>("[data-file-tab-frame]")!;
+    expect(frame.style.getPropertyValue("--file-dock-reserve")).not.toBe("0px");
   });
 });

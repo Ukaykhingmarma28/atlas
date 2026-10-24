@@ -76,6 +76,9 @@ export interface CodeFileViewProps {
   reveal?: (RevealTarget & { nonce: number }) | undefined;
   onRevealed?: (nonce: number) => void;
   onChange: (contents: string, event: EditorChangeEvent<"file", undefined, undefined>) => void;
+  /** The gutter's `+`, on hover beside a line number: those lines, 1-based
+   *  and inclusive, go to the session. Left out, the gutter has no `+`. */
+  onAddLines?: (range: { start: number; end: number }) => void;
   handleRef?: Ref<CodeFileViewHandle>;
 }
 
@@ -386,6 +389,7 @@ function EditableFileSurface({
   reveal,
   onRevealed,
   onChange,
+  onAddLines,
   handleRef,
 }: CodeFileViewProps) {
   const appearance = useDiffAppearance();
@@ -411,8 +415,8 @@ function EditableFileSurface({
   const { ready, onPostRender: onEditablePostRender } = useEditableAfterHighlight(file);
   const editable = ready && !readOnly;
 
-  const latest = useRef({ onChange, onRevealed, decorations });
-  latest.current = { onChange, onRevealed, decorations };
+  const latest = useRef({ onChange, onRevealed, decorations, onAddLines });
+  latest.current = { onChange, onRevealed, decorations, onAddLines };
 
   // ── Decorations: one stylesheet in the viewer's root, repainted per frame ──
   const paintFrame = useRef(0);
@@ -574,6 +578,8 @@ function EditableFileSurface({
               preferredHighlighter: PREFERRED_HIGHLIGHTER,
               unsafeCSS: DIFF_VIEW_CSS,
               onPostRender: handlePostRender,
+              enableGutterUtility: !!onAddLines,
+              onGutterUtilityClick: (range) => latest.current.onAddLines?.(range),
             }}
             className="min-h-full"
           />

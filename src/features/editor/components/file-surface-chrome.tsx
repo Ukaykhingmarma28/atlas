@@ -1,12 +1,13 @@
 import type { ReactNode } from "react";
-import type { LucideIcon } from "lucide-react";
+import { FolderTree, type LucideIcon } from "lucide-react";
 import { IconButton } from "@/ui/icon-button";
 import { Hint } from "@/ui/tooltip";
+import { useFileTabFrame } from "@/features/explorer/lib/file-tab-frame-context";
 
 /**
- * The file tab's second row, under its tab: the tree's toolbar on the left
- * and the file's breadcrumbs and actions on the right. Both halves take this
- * one height and rule so the row reads as one band.
+ * The file tab's header band, under its tab: the file's breadcrumbs, then its
+ * actions. It runs the column's full width, over the project tree docked
+ * beside the file (`file-dock.tsx`), which starts under it.
  */
 export const FILE_SURFACE_SUBHEADER_CLASS = "h-control-lg shrink-0 border-b border-border";
 
@@ -29,6 +30,21 @@ export function FileSurfaceAction(props: {
         onClick={props.onPress}
       />
     </Hint>
+  );
+}
+
+/** The toolbar's last control: show or hide the project tree docked beside
+ *  the file. Nothing for a file outside the project, which has no tree. */
+export function FileTreeToggle() {
+  const frame = useFileTabFrame();
+  if (!frame?.root) return null;
+  return (
+    <FileSurfaceAction
+      label={frame.treeShown ? "Hide file tree" : "Show file tree"}
+      icon={FolderTree}
+      pressed={frame.treeShown}
+      onPress={frame.toggleTree}
+    />
   );
 }
 

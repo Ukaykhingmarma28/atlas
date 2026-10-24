@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { Code2, Eye, RefreshCw, Table2, WrapText } from "lucide-react";
@@ -51,7 +58,10 @@ import {
   FileSurfaceFailure,
   FileSurfaceLoading,
   FileSurfaceNotice,
+  FileTreeToggle,
 } from "./file-surface-chrome";
+import { FILE_DOCK_RESERVE } from "@/features/explorer/lib/file-tabs";
+import { sendToAgentChat } from "@/features/chat/lib/send-to-agent";
 
 /**
  * A file tab: the file's text in the code view (`code-file-view.tsx`),
@@ -454,47 +464,21 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
 
   useEffect(() => registerEditorView(tabId, () => viewRef.current?.position()), [tabId]);
 
+  // The gutter's `+` on a line (or a dragged range): a reference to those
+  // lines in the session's composer, root-relative when the file is in the
+  // project, so the agent reads exactly the lines meant.
+  const addLinesToSession = (range: { start: number; end: number }) => {
+    const root = frame?.root ?? (relPath !== null ? projectPath : null);
+    const shown = (root ? relativeTo(path, root) : null) ?? path;
+    const from = Math.min(range.start, range.end);
+    const to = Math.max(range.start, range.end);
+    sendToAgentChat(`\`${shown}:${from === to ? from : `${from}-${to}`}\``);
+  };
+
   useEffect(() => {
     decorations.setLayout(wordWrap, gitBlameInline);
   }, [decorations, wordWrap, gitBlameInline]);
 
-  if (tooLargeBytes !== null) {
-    return (
-      <div className="flex h-full flex-col bg-background">
-        <FileSurfaceFailure
-          message={`This file is too large to open here (${formatMegabytes(tooLargeBytes)}; the limit is ${formatMegabytes(MAX_OPEN_BYTES)}). Open it in your editor instead.`}
-          detail={path}
-          action={<OpenInEditorButton path={path} />}
-        />
-      </div>
-    );
-  }
-  if (loadError) {
-    return (
-      <div className="flex h-full flex-col bg-background">
-        <FileSurfaceFailure
-          message="This file can't be shown as text. It may be binary, or it couldn't be read."
-          detail={path}
-          action={
-            <Button variant="outline" size="xs" onClick={() => setLoadError(null)}>
-              Try again
-            </Button>
-          }
-        />
-      </div>
-    );
-  }
-  if (!buffer) {
-    return (
-      <div className="flex h-full flex-col bg-background">
-        <FileSurfaceLoading />
-      </div>
-    );
-  }
-
-  const large = buffer.originalContent.length > LARGE_FILE_CHARS;
-  const delimiter = renderedMode === "table" ? filePreviewDelimiter({ name: path }) : null;
-  const shownText = renderedText ?? buffer.originalContent;
   const name = path.split("/").pop() ?? path;
   const crumbs: FileBreadcrumbsProps | null = crumbTarget
     ? {
@@ -504,72 +488,120 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
         trail: crumbTarget.trail,
         onNavigate: navigateCrumb,
         onOpenFile: (abs) => void openInProject(abs),
-        identity: frame?.titled === false ? { path, dirty: buffer.dirty } : null,
+        identity: frame?.titled === false ? { path, dirty: buffer?.dirty ?? false } : null,
       }
     : null;
 
-  return (
+  // The header band runs the column's full width, over the project tree the
+  // column docks beside the file; the body under it leaves the tree its room
+  // (`FILE_DOCK_RESERVE`, see `file-tab-frame.tsx`). It is there in every
+  // state, loading and failed included, so the band never jumps.
+  const header = (
+    <div
+      className={cn(
+        "flex items-center gap-2 overflow-hidden bg-background px-3",
+        FILE_SURFACE_SUBHEADER_CLASS,
+      )}
+      data-surface-subheader
+    >
+      {crumbs ? (
+        <FileBreadcrumbsRow {...crumbs} className="shrink" />
+      ) : (
+        <UntitledName
+          name={name}
+          identity={frame?.titled === false ? { path, dirty: buffer?.dirty ?? false } : null}
+        />
+      )}
+      {buffer && !rendered && <HeaderBlame decorations={decorations} />}
+      {/* `ml-auto` on the group, not on whichever child happens to render,
+          keeps the controls pinned right whichever of them are present. */}
+      <div className="ml-auto flex items-center gap-1 pl-2">
+        {buffer?.externallyChanged && (
+          <Button
+            variant="outline"
+            size="xs"
+            onClick={() => void forceReload()}
+            title="This file changed on disk. Reload discards your unsaved edits."
+          >
+            <RefreshCw size={10} aria-hidden /> Disk changed · Reload
+          </Button>
+        )}
+        {!isUntitled && (
+          <OpenInEditorButton
+            compact
+            path={path}
+            position={() => {
+              if (rendered) return undefined;
+              const at = viewRef.current?.position();
+              return at ? { line: at.cursor.line, column: at.cursor.col } : undefined;
+            }}
+          />
+        )}
+        {buffer && renderedMode && (
+          <FileSurfaceAction
+            label={renderedToggleLabel(renderedMode, rendered)}
+            icon={rendered ? Code2 : renderedMode === "table" ? Table2 : Eye}
+            pressed={rendered}
+            onPress={toggleRendered}
+          />
+        )}
+        {buffer && !rendered && (
+          <FileSurfaceAction
+            label={wordWrap ? "Disable word wrap" : "Enable word wrap"}
+            icon={WrapText}
+            pressed={wordWrap}
+            onPress={toggleWordWrap}
+          />
+        )}
+        <FileTreeToggle />
+      </div>
+    </div>
+  );
+  const shell = (body: ReactNode) => (
     <div
       className="flex flex-col overflow-hidden bg-background"
       style={{ height: containerHeight || "100%" }}
     >
+      {header}
       <div
-        className={cn(
-          "flex items-center gap-2 overflow-hidden bg-background px-3",
-          FILE_SURFACE_SUBHEADER_CLASS,
-        )}
-        data-surface-subheader
+        className="flex min-h-0 flex-1 flex-col overflow-hidden"
+        style={{ marginRight: FILE_DOCK_RESERVE }}
       >
-        {crumbs ? (
-          <FileBreadcrumbsRow {...crumbs} className="shrink" />
-        ) : (
-          <UntitledName
-            name={name}
-            identity={frame?.titled === false ? { path, dirty: buffer.dirty } : null}
-          />
-        )}
-        {!rendered && <HeaderBlame decorations={decorations} />}
-        {/* `ml-auto` on the group, not on whichever child happens to render,
-            keeps the controls pinned right whichever of them are present. */}
-        <div className="ml-auto flex items-center gap-1 pl-2">
-          {buffer.externallyChanged && (
-            <Button
-              variant="outline"
-              size="xs"
-              onClick={() => void forceReload()}
-              title="This file changed on disk. Reload discards your unsaved edits."
-            >
-              <RefreshCw size={10} aria-hidden /> Disk changed · Reload
-            </Button>
-          )}
-          {renderedMode && (
-            <FileSurfaceAction
-              label={renderedToggleLabel(renderedMode, rendered)}
-              icon={rendered ? Code2 : renderedMode === "table" ? Table2 : Eye}
-              pressed={rendered}
-              onPress={toggleRendered}
-            />
-          )}
-          {!rendered && (
-            <FileSurfaceAction
-              label={wordWrap ? "Disable word wrap" : "Enable word wrap"}
-              icon={WrapText}
-              pressed={wordWrap}
-              onPress={toggleWordWrap}
-            />
-          )}
-          {!isUntitled && (
-            <OpenInEditorButton
-              path={path}
-              position={() => {
-                if (rendered) return undefined;
-                const at = viewRef.current?.position();
-                return at ? { line: at.cursor.line, column: at.cursor.col } : undefined;
-              }}
-            />
-          )}
-        </div>
+        {body}
       </div>
+    </div>
+  );
+
+  if (tooLargeBytes !== null) {
+    return shell(
+      <FileSurfaceFailure
+        message={`This file is too large to open here (${formatMegabytes(tooLargeBytes)}; the limit is ${formatMegabytes(MAX_OPEN_BYTES)}). Open it in your editor instead.`}
+        detail={path}
+        action={<OpenInEditorButton path={path} />}
+      />,
+    );
+  }
+  if (loadError) {
+    return shell(
+      <FileSurfaceFailure
+        message="This file can't be shown as text. It may be binary, or it couldn't be read."
+        detail={path}
+        action={
+          <Button variant="outline" size="xs" onClick={() => setLoadError(null)}>
+            Try again
+          </Button>
+        }
+      />,
+    );
+  }
+  if (!buffer) return shell(<FileSurfaceLoading />);
+
+  const large = buffer.originalContent.length > LARGE_FILE_CHARS;
+  const delimiter = renderedMode === "table" ? filePreviewDelimiter({ name: path }) : null;
+  const shownText = renderedText ?? buffer.originalContent;
+
+  return shell(
+    <>
       {large && !rendered && (
         <FileSurfaceNotice>
           {`Large file (${formatMegabytes(buffer.originalContent.length)}): shown read-only, without highlighting.`}
@@ -605,6 +637,7 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
             reveal={pendingReveal}
             onRevealed={(nonce) => consumeReveal(path, nonce)}
             onChange={(content) => save.change(content)}
+            onAddLines={isUntitled ? undefined : addLinesToSession}
           />
         </div>
       )}
@@ -624,7 +657,7 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
         <DelimitedTablePreview name={name} text={shownText} delimiter={delimiter} />
       )}
       {rendered && renderedMode === "html" && <HtmlPreview html={shownText} title={name} />}
-    </div>
+    </>,
   );
 }
 

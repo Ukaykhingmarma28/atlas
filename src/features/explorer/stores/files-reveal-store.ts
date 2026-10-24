@@ -3,7 +3,7 @@
 // (`revealFiles()`, `toggleFiles()`: `path` null).
 //
 // A request is read once. The Files surface takes it and clears it here
-// (`take`), and clears any left over when it unmounts, so reopening Files later
+// (`take`), and clears any left over when it leaves the screen, so reopening Files later
 // (⌘T F, ⌘B) never re-highlights an old path. Not persisted.
 
 import { create } from "zustand";
