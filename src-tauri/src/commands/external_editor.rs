@@ -585,6 +585,10 @@ fn detect(platform: Platform, env: &HostEnv, probe: &dyn Probe) -> Vec<Detected>
 /// waits for its result instead of probing again.
 static DETECTED: Mutex<Option<Arc<Vec<Detected>>>> = Mutex::const_new(None);
 
+#[expect(
+    clippy::await_holding_invalid_type,
+    reason = "the guard must span the probe: it is what makes a second caller wait for the first probe instead of running its own"
+)]
 async fn detected(refresh: bool) -> Result<Arc<Vec<Detected>>, String> {
     let mut cache = DETECTED.lock().await;
     if let (Some(list), false) = (cache.as_ref(), refresh) {
