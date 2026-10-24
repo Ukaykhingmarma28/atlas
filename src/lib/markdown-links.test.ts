@@ -9,6 +9,8 @@ const openPathLink = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock("@/features/explorer/lib/open-path-link", () => ({ openPathLink }));
 const openUrl = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl }));
+const openPullRequestHref = vi.hoisted(() => vi.fn((_href: string, _opts: unknown) => true));
+vi.mock("@/features/pull-requests/lib/open-pull-request-link", () => ({ openPullRequestHref }));
 
 import { parseMarkdown } from "./markdown-render";
 import { onMarkdownClick, onMarkdownCopy, onMarkdownKeyDown } from "./markdown-links";
@@ -88,6 +90,29 @@ describe("clicks in rendered markdown", () => {
     expect(event.defaultPrevented).toBe(true);
     await vi.waitFor(() => expect(openUrl).toHaveBeenCalledWith("https://example.com/"));
     expect(openPathLink).not.toHaveBeenCalled();
+  });
+
+  it("hands a pull request's address to the pull request opener", async () => {
+    const root = render("[the fix](https://github.com/acme/web/pull/415)");
+    root.querySelector("a")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await vi.waitFor(() =>
+      expect(openPullRequestHref).toHaveBeenCalledWith("https://github.com/acme/web/pull/415", {
+        external: false,
+      }),
+    );
+    expect(openUrl).not.toHaveBeenCalled();
+  });
+
+  it("asks for the host on a ⌘-click, and falls back to the browser", async () => {
+    openPullRequestHref.mockReturnValueOnce(false);
+    const root = render("[the fix](https://github.com/acme/web/pull/415)");
+    root
+      .querySelector("a")!
+      .dispatchEvent(new MouseEvent("click", { bubbles: true, metaKey: true }));
+    await vi.waitFor(() =>
+      expect(openUrl).toHaveBeenCalledWith("https://github.com/acme/web/pull/415"),
+    );
+    expect(openPullRequestHref).toHaveBeenCalledWith(expect.any(String), { external: true });
   });
 
   it("leaves a click on plain text alone", () => {

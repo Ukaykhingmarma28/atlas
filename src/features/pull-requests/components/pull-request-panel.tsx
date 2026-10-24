@@ -27,12 +27,14 @@ import {
   resolvePrimaryControl,
 } from "../lib/pull-request-logic";
 import { repositoryUrlOf } from "../lib/pull-request-markdown";
-import { lastMergeMethod, rememberMergeMethod } from "../lib/pull-request-prefs";
+import { useProjectSetting } from "@/features/settings/lib/use-scoped-setting";
+import { preferredMergeMethod, rememberMergeMethod } from "../lib/pull-request-prefs";
 import { pullRequestKeys, usePrActivity, usePrDetail } from "../lib/pull-requests-queries";
 import type { PrAction, PrMergeMethod } from "../lib/pull-requests-types";
 import { usePullRequestActions } from "../lib/use-pull-request-actions";
 import { usePullRequestAgentActions } from "../lib/use-pull-request-agent-actions";
 import { watchPullRequestTabDrafts } from "../lib/pull-request-tab-drafts";
+import { guideRunKey, useGuideRunStore } from "../stores/guide-run-store";
 import {
   patchPullRequestTabDraft,
   readPullRequestTabDraft,
@@ -98,6 +100,17 @@ export function PullRequestPanel({
   }, [detail?.title, number, tabId, setTabTitle, detail]);
 
   const [tab, setTab] = useState<InnerTab>("summary");
+  // A guide notification's Open asks for the Guide (`requestOpen`), maybe
+  // before this tab has mounted: whichever comes first, the ask is taken once.
+  const guideKey = guideRunKey(repoPath, number);
+  const guideOpenRequest = useGuideRunStore((s) => s.openRequests[guideKey]);
+  useEffect(() => {
+    if (guideOpenRequest === undefined) return;
+    setTab("guide");
+    useGuideRunStore.getState().takeOpenRequest(guideKey);
+  }, [guideOpenRequest, guideKey]);
+  // The Guide's "Finish review" opens the composer at the review.
+  const [reviewRequest, setReviewRequest] = useState(0);
   // The Code tab's commit: `null` for all of them. Set from outside by the
   // Timeline's "view this commit". Kept per tab, so a tab switch keeps it.
   useEffect(() => watchPullRequestTabDrafts(), []);
@@ -158,7 +171,12 @@ export function PullRequestPanel({
     if (armedMethod) setPicked(armedMethod);
   }
   const allowedMethods = allowedMethodsOf(detail);
-  const mergeMethod = resolveMergeMethod(allowedMethods, picked, lastMergeMethod());
+  const methodSetting = useProjectSetting(repoPath, "pullRequestMergeMethod");
+  const mergeMethod = resolveMergeMethod(
+    allowedMethods,
+    picked,
+    preferredMergeMethod(methodSetting),
+  );
   const selectMergeMethod = (method: PrMergeMethod) => {
     setPicked(method);
     rememberMergeMethod(method);
@@ -243,6 +261,11 @@ export function PullRequestPanel({
   const showsMergeMethods = mergeable && can("merge") && allowedMethods.length > 1;
   const freshness = resolveBaseFreshness(detail);
   const onUpdate = (method: "merge" | "rebase") => void perform("update-branch", undefined, method);
+  const canReview = detail.capabilities.review.verdicts.some((verdict) =>
+    detail.viewerPermissions.verdicts.includes(verdict),
+  );
+  const guideEnabled = agent.guide.enabled;
+  const innerTab: InnerTab = tab === "guide" && !guideEnabled ? "summary" : tab;
   const activityPending = activityQuery.isPending;
   const activityError = activity
     ? null
@@ -358,14 +381,18 @@ export function PullRequestPanel({
             <Segmented
               aria-label="Pull request view"
               size="sm"
-              value={tab}
+              value={innerTab}
               onValueChange={(next) => {
                 setTab(next);
                 setCondensed(false);
               }}
-              options={INNER_TABS.filter((t) => t.value !== "code" || detail.capabilities.diff)}
+              options={INNER_TABS.filter(
+                (t) =>
+                  (t.value !== "code" || detail.capabilities.diff) &&
+                  (t.value !== "guide" || guideEnabled),
+              )}
             />
-            {tab === "summary" ? (
+            {innerTab === "summary" ? (
               <PullRequestChecksStatus
                 checks={detail.checks}
                 checksState={checksState}
@@ -380,7 +407,7 @@ export function PullRequestPanel({
         </div>
 
         <div className="relative min-h-0 flex-1 overflow-hidden" onScrollCapture={onScrollCapture}>
-          {tab === "summary" ? (
+          {innerTab === "summary" ? (
             <PullRequestSummaryTab
               scrollerRef={setScroller}
               repoPath={repoPath}
@@ -391,15 +418,20 @@ export function PullRequestPanel({
               onRetryActivity={() => void activityQuery.refetch()}
               agent={agent}
             />
-          ) : tab === "guide" ? (
+          ) : innerTab === "guide" ? (
             <PullRequestGuideTab
+              tabId={tabId}
               scrollerRef={setScroller}
               repoPath={repoPath}
               number={number}
               agent={agent}
               active
+              canComment={
+                detail.capabilities.review.inlineComment && detail.viewerPermissions.comment
+              }
+              onFinishReview={canReview ? () => setReviewRequest((count) => count + 1) : null}
             />
-          ) : tab === "timeline" ? (
+          ) : innerTab === "timeline" ? (
             <PullRequestTimelineTab
               scrollerRef={setScroller}
               repoPath={repoPath}
@@ -427,6 +459,7 @@ export function PullRequestPanel({
             detail={detail}
             pendingAction={pendingAction}
             onCommentAction={commentThen}
+            reviewRequest={reviewRequest}
           />
         </div>
       </div>

@@ -89,6 +89,11 @@ function jumpTo(t: NotificationTarget): unknown {
       return openGitPanel(t.projectId);
     case "config-file":
       return openConfigFile();
+    case "pull-request":
+      // Loaded on use: the pull request tab's code has no place in delivery.
+      return import("@/features/pull-requests/lib/guide-notifier").then((m) =>
+        m.openPullRequestTarget(t),
+      );
     default: {
       // A new target type must say where "Open" goes — this fails to compile
       // until it does.

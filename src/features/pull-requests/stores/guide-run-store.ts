@@ -5,14 +5,21 @@
 //
 //   1. `pr_guide_prepare` — a detached worktree at the head commit, and the
 //      change it makes (files and hunk ranges);
-//   2. a session on the chosen agent in that worktree, sent the guide prompt
-//      (`buildGuidePrompt`). No tab shows it; the Guide tab shows its progress,
-//      and any permission it asks for, inline;
+//   2. a session on the guide's agent (`guideAgentFor`: the
+//      `pullRequestGuideAgent` setting, else the default agent) in that
+//      worktree, on the `pullRequestGuideModel` model when one is set, sent
+//      the guide prompt (`buildGuidePrompt`, with the user's
+//      `pullRequestGuideInstructions`). No tab shows it; the Guide tab shows
+//      its progress, and any permission it asks for, inline;
 //   3. once the agent is idle again, its last answer is read as a guide,
 //      fitted to the change (`normalizeGuide`) and kept for the head commit
 //      (`pr_guide_write`);
 //   4. the session is dropped and its history row deleted, and the worktree
-//      removed, whatever happened.
+//      removed, whatever happened;
+//   5. the user is told it is ready, or failed (`notifyGuideRun`): a toast
+//      with Open while they are elsewhere in Atlas, an OS banner while away,
+//      nothing while that pull request's Guide is on screen (`shownKey`).
+//      Open asks the tab for its Guide (`requestOpen`).
 //
 // The run belongs to the window, not the tab: closing the pull request tab
 // does not stop it, and opening the tab again shows it still running. It is
@@ -21,12 +28,16 @@
 import { create } from "zustand";
 import { createSelectors } from "@/lib/create-selectors";
 import { agents, ensureAgent } from "@/features/chat/lib/agents-api";
+import { defaultAgentForNewSession } from "@/features/chat/lib/default-agent";
+import { useAgentRegistryStore } from "@/features/agents/stores/agent-registry-store";
+import { projectSettingNow } from "@/features/settings/lib/use-scoped-setting";
 import { deleteThread, threadHistory } from "@/features/chat/lib/history-api";
-import { pluginIdForAgent, type SwitchableAgent } from "@/types/agent";
+import { NATIVE_AGENT_ID, pluginIdForAgent, type SwitchableAgent } from "@/types/agent";
 import type { SessionKey, SessionMessage } from "@/types/agents";
 import { normalizeGuide } from "../lib/pull-request-guide-normalize";
 import { buildGuidePrompt, guidePromptInput } from "../lib/pull-request-guide-prompt";
 import { parseGeneratedGuide, type PullRequestGuide } from "../lib/pull-request-guide-types";
+import { notifyGuideRun } from "../lib/guide-notifier";
 import { prGuideFinish, prGuidePrepare, prGuideWrite } from "../lib/pull-requests-api";
 import type { PrActivity, PrDetail } from "../lib/pull-requests-types";
 
@@ -54,6 +65,15 @@ export type GuideRun =
 interface GuideRunState {
   runs: Record<string, GuideRun>;
   setRun: (key: string, run: GuideRun | null) => void;
+  /** The pull request (`guideRunKey`) whose Guide is on screen, if any: its
+   *  run ending there needs no notification. */
+  shownKey: string | null;
+  setShown: (key: string | null) => void;
+  /** Asks a pull request's tab to show its Guide (a notification's Open).
+   *  The tab takes the ask once it is mounted (`takeOpenRequest`). */
+  openRequests: Record<string, number>;
+  requestOpen: (key: string) => void;
+  takeOpenRequest: (key: string) => void;
 }
 
 export function guideRunKey(repoPath: string, number: number): string {
@@ -69,9 +89,35 @@ const useGuideRunStoreBase = create<GuideRunState>()((set) => ({
       else runs[key] = run;
       return { runs };
     }),
+  shownKey: null,
+  setShown: (key) => set({ shownKey: key }),
+  openRequests: {},
+  requestOpen: (key) =>
+    set((state) => ({
+      openRequests: { ...state.openRequests, [key]: (state.openRequests[key] ?? 0) + 1 },
+    })),
+  takeOpenRequest: (key) =>
+    set((state) => {
+      if (!(key in state.openRequests)) return state;
+      const { [key]: _taken, ...rest } = state.openRequests;
+      return { openRequests: rest };
+    }),
 }));
 
 export const useGuideRunStore = createSelectors(useGuideRunStoreBase);
+
+/**
+ * The agent that writes `projectPath`'s guides: `pullRequestGuideAgent` when
+ * it names an installed agent (or Atlas Agent), the default agent for new
+ * sessions when it is empty, Atlas Agent when it names one not installed.
+ */
+export function guideAgentFor(projectPath: string): SwitchableAgent {
+  const wanted = projectSettingNow(projectPath, "pullRequestGuideAgent").trim();
+  if (!wanted) return defaultAgentForNewSession(projectPath);
+  if (wanted === NATIVE_AGENT_ID) return NATIVE_AGENT_ID;
+  const entry = useAgentRegistryStore.getState().catalogById[wanted];
+  return entry?.installed ? entry.agentType : NATIVE_AGENT_ID;
+}
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -172,9 +218,13 @@ export async function writeGuide(opts: {
     const info = await ensureAgent(pluginIdForAgent(agent));
     session = (await agents.newSession(info.agent_id, checkout.path)).key;
     running("reading", session);
+    // A model the agent does not offer is refused; the agent's default stays.
+    const model = projectSettingNow(repoPath, "pullRequestGuideModel").trim();
+    if (model) await agents.setModel(session, model).catch(() => undefined);
+    const instructions = projectSettingNow(repoPath, "pullRequestGuideInstructions");
     await agents.send(
       session,
-      buildGuidePrompt(guidePromptInput(detail, activity, checkout.baseCommit)),
+      buildGuidePrompt(guidePromptInput(detail, activity, checkout.baseCommit, instructions)),
     );
     const messages = await waitForAnswer(session);
     running("saving", session);
@@ -193,13 +243,16 @@ export async function writeGuide(opts: {
     await prGuideWrite(detail.repository, detail.number, guide);
     useGuideRunStoreBase.getState().setRun(key, null);
     onSaved();
+    notifyGuideRun({ repoPath, number: detail.number, title: detail.title, failure: null });
   } catch (err) {
+    const failure = describe(err);
     useGuideRunStoreBase.getState().setRun(key, {
       status: "failed",
       headSha,
       failedAt: Date.now(),
-      detail: describe(err),
+      detail: failure,
     });
+    notifyGuideRun({ repoPath, number: detail.number, title: detail.title, failure });
   } finally {
     if (session) await forgetSession(session);
     if (runId) await prGuideFinish(repoPath, runId);

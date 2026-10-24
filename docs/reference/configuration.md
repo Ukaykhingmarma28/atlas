@@ -216,6 +216,16 @@ bookkeeping).
 | `diffPalette` | `"theme"` \| `"blue-orange"` | `"theme"` | Appearance › Interface › Diff colours | exactly one of these two strings |
 | `interfaceContrast` | integer | `100` | Appearance › Interface › Contrast | 50 ≤ n ≤ 200 |
 | `showTurnRail` | boolean | `true` | Appearance › Interface › Turn rail | — |
+| `autoSettleOnMerge` | boolean | `true` | Pull Requests › Sessions › Settle sessions when their pull request merges | — |
+| `autoSettleKeepPullRequests` | boolean | `true` | Pull Requests › Sessions › Keep sessions with a pull request from settling | — |
+| `pullRequestWatchWakes` | boolean | `true` | Pull Requests › Sessions › Let agents act on watched pull requests | — |
+| `pullRequestLinksOpenInApp` | boolean | `true` | Pull Requests › Links › Open pull request links in Atlas | — |
+| `pullRequestMergeMethod` | `"last"` \| `"merge"` \| `"squash"` \| `"rebase"` | `"last"` | Pull Requests › Merging › Default merge method (per project too) | exactly one of these four strings |
+| `removeAgentCreditsOnMerge` | boolean | `false` | Pull Requests › Merging › Remove agent credits when merging (per project too) | — |
+| `pullRequestGuideEnabled` | boolean | `true` | Pull Requests › Review guide › Review guides (per project too) | — |
+| `pullRequestGuideAgent` | string | `""` | Pull Requests › Review guide › Guide agent (per project too) | an agent id (letters, digits, `-`, `_`, `.`), at most 64 characters; empty uses the default agent |
+| `pullRequestGuideModel` | string | `""` | Pull Requests › Review guide › Guide model (per project too) | one line, at most 200 characters; empty keeps the agent's default |
+| `pullRequestGuideInstructions` | string | `""` | Pull Requests › Review guide › Guide instructions (per project too) | at most 4000 bytes |
 
 <!-- /generated:settings -->
 

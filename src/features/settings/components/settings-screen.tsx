@@ -26,6 +26,7 @@ import { AppearancePage } from "./pages/appearance-page";
 import { ChatPage } from "./pages/chat-page";
 import { MemoryPage } from "./pages/memory-page";
 import { AboutPage, PrivacyPage, SourceControlPage, UpdatesPage } from "./pages/other-pages";
+import { PullRequestsPage } from "./pages/pull-requests-page";
 import { SettingsSidebar } from "./settings-sidebar";
 import { useSettingsNav, type SettingsSection } from "../stores/settings-nav-store";
 import { useSettingsStore } from "../stores/settings-store";
@@ -49,6 +50,7 @@ const PAGES: Partial<Record<SettingsSection, () => React.ReactElement>> = {
   agents: () => <AgentsPage />,
   skills: () => <SkillsAndPacks />,
   "source-control": () => <SourceControlPage />,
+  "pull-requests": () => <PullRequestsPage />,
   privacy: () => <PrivacyPage />,
   updates: () => <UpdatesPage />,
   layouts: () => <LayoutsSettings />,

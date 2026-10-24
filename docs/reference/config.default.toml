@@ -326,3 +326,64 @@ interfaceContrast = 100
 # of the reply; clicking it jumps to that turn. Off hides the rail. (default:
 # true)
 showTurnRail = true
+
+# Settle a session once its linked pull request merges, when the merge came
+# after you last worked in the session. A pull request that is closed without
+# merging always settles its session. Settled sessions stay listed and
+# resumable. (default: true)
+autoSettleOnMerge = true
+
+# Auto-settling after days of inactivity (autoSettleAfterDays) leaves a
+# session alone while it has a linked pull request. Merging or closing it can
+# still settle the session (autoSettleOnMerge). (default: true)
+autoSettleKeepPullRequests = true
+
+# When a session watches its pull request (the agent asked to, or you turned
+# the watch on), a failing check, a new review or comment, or a conflict with
+# the base sends the session's agent an update so it can act. Off: watches
+# still track the pull request but never prompt an agent. (default: true)
+pullRequestWatchWakes = true
+
+# Open a pull request link from a session, the sidebar or a transcript in
+# Atlas's pull request tab when it belongs to the project's repository. Off,
+# or a pull request of another repository: it opens in the browser. (default:
+# true)
+pullRequestLinksOpenInApp = true
+
+# The method a pull request's Merge button starts on: "merge", "squash" or
+# "rebase", or "last" for whichever you picked most recently on this device. A
+# method the repository doesn't allow falls back to one it does. (default:
+# "last") A project can override it in its own .atlas/config.toml.
+pullRequestMergeMethod = "last"
+
+# Remove recognized agent credit lines (an agent's Co-Authored-By trailer, a
+# "Generated with" footer) from the message of a merge or squash Atlas
+# performs, auto-merge included. Human co-authors are kept. Commits already on
+# the branch are not rewritten. (default: false) A project can override it in
+# its own .atlas/config.toml.
+removeAgentCreditsOnMerge = false
+
+# Show the Guide tab on pull requests, where an agent writes a tour of the
+# change in reading order, with the calls a maintainer should make. The agent
+# reads a checkout of the pull request's head and changes nothing. (default:
+# true) A project can override it in its own .atlas/config.toml.
+pullRequestGuideEnabled = true
+
+# The agent that writes review guides: "atlas-agent" or an installed ACP
+# agent's id, such as "claude-code". Empty uses defaultAgent. An agent that
+# isn't installed falls back to Atlas Agent. (default: "") A project can
+# override it in its own .atlas/config.toml.
+pullRequestGuideAgent = ""
+
+# The model the guide's agent runs on, as that agent names it (the id after
+# the colon in favoriteModels). The guide reads the change over many steps, so
+# a stronger model helps. Empty keeps the agent's default; a model the agent
+# doesn't offer is ignored. (default: "") A project can override it in its own
+# .atlas/config.toml.
+pullRequestGuideModel = ""
+
+# Your preferences for review guides, added to the guide's prompt: what to
+# show first, dwell on or skip, and how long summaries should be. The guide's
+# format and its coverage of every changed file stay the same. (default: "") A
+# project can override it in its own .atlas/config.toml.
+pullRequestGuideInstructions = ""

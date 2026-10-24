@@ -5,6 +5,10 @@
 // An ACP agent takes no output schema, so the shape is spelled out in the
 // prompt itself, and the answer is checked and fitted to the change before it
 // is kept (`normalizeGuide`).
+//
+// The user's own preferences (`pullRequestGuideInstructions`) close the
+// prompt, after the pull request's data: they steer tone, order and emphasis,
+// never the format or the coverage rule.
 
 import { visibleBody } from "./pull-request-logic";
 import type { PrActivity, PrDetail } from "./pull-requests-types";
@@ -48,12 +52,15 @@ export interface GuidePromptInput {
   baseBranch: string;
   baseCommit: string;
   settledReview: string;
+  /** The user's guide preferences (`pullRequestGuideInstructions`); empty for none. */
+  instructions?: string;
 }
 
 export function guidePromptInput(
   detail: Pick<PrDetail, "number" | "title" | "body" | "baseBranch">,
   activity: Pick<PrActivity, "reviewThreads"> | null,
   baseCommit: string,
+  instructions = "",
 ): GuidePromptInput {
   return {
     number: detail.number,
@@ -62,7 +69,25 @@ export function guidePromptInput(
     baseBranch: detail.baseBranch,
     baseCommit,
     settledReview: settledReviewSummary(activity),
+    instructions,
   };
+}
+
+/** The longest preferences the prompt carries, as `config.toml` allows. */
+const PREFERENCES_MAX_CHARS = 4_000;
+
+/** The maintainer's preferences, when there are any: the prompt's last block. */
+export function guidePreferences(instructions: string | undefined): string[] {
+  const trimmed = instructions?.trim();
+  return trimmed
+    ? [
+        "",
+        "The maintainer's preferences for guides:",
+        limitSection(trimmed, PREFERENCES_MAX_CHARS),
+        "",
+        "Follow these for tone, emphasis, ordering, and what to dwell on or skip. They do not change the JSON format, the coverage rule, or the rules on line numbers and excerpt ranges.",
+      ]
+    : [];
 }
 
 const OUTPUT_SHAPE = `{
@@ -131,5 +156,6 @@ export function buildGuidePrompt(input: GuidePromptInput): string {
     "<settled_review>",
     escapePromptData(limitSection(input.settledReview.trim() || "(nothing)", 8_000)),
     "</settled_review>",
+    ...guidePreferences(input.instructions),
   ].join("\n");
 }

@@ -11,23 +11,30 @@
 //   (`pr_prepare_checkout`). The main checkout is never switched. The task is
 //   in the composer, not sent; once the session has done the work, the user
 //   pushes it from the session context overlay. Nothing is pushed for them.
-// - "Write guide" — the Guide tab's background run (`guide-run-store.ts`);
-//   on a pull request from a fork, only after the reader confirms, since the
-//   run's agent works in a checkout of the fork author's code.
+// - "Write guide" — the Guide tab's background run (`guide-run-store.ts`) on
+//   the guide's own agent (`guideAgentFor`); on a pull request from a fork,
+//   only after the reader confirms, since the run's agent works in a checkout
+//   of the fork author's code. Off entirely while `pullRequestGuideEnabled`
+//   is off for the project.
 
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { agentMeta } from "@/features/agents/lib/agent-meta";
+import { useProjectSetting } from "@/features/settings/lib/use-scoped-setting";
+
 import { actionAgent, currentSessionTab, openHandoffSession } from "./pr-agent-session";
 import { findingKey, type Finding } from "./pull-request-logic";
 import {
   buildAskAboutGuideStopHandoff,
+  buildAskAboutLinesHandoff,
   buildExplainHandoff,
   buildFixFindingHandoff,
   buildFixFindingsHandoff,
   hasFindings,
   type Handoff,
+  type PickedLines,
 } from "./pull-request-handoff";
 import { guideQueryKey, usePrGuide } from "./pull-request-guide-queries";
 import type { GuideStop, PullRequestGuide } from "./pull-request-guide-types";
@@ -35,6 +42,7 @@ import { pullRequestKeys } from "./pull-requests-queries";
 import { prDiff, prPrepareCheckout } from "./pull-requests-api";
 import type { PrActivity, PrDetail, PrDiffFile, PrDiffResult } from "./pull-requests-types";
 import {
+  guideAgentFor,
   guideRunKey,
   useGuideRunStore,
   writeGuide,
@@ -42,6 +50,10 @@ import {
 } from "../stores/guide-run-store";
 
 export interface PullRequestGuideState {
+  /** `pullRequestGuideEnabled` for the project: off hides the Guide. */
+  enabled: boolean;
+  /** The agent that writes the guide (`pullRequestGuideAgent`). */
+  agentLabel: string;
   guide: PullRequestGuide | null;
   loading: boolean;
   run: GuideRun | null;
@@ -70,6 +82,9 @@ export interface PullRequestAgentActions {
   /** A question about one guide stop, in a session (the current one when it
    *  is in the project, as "Explain"). */
   askAboutStop: (stop: GuideStop, index: number, question: string) => void;
+  /** "Ask about these lines": a question about lines picked in the diff, in
+   *  a session as `askAboutStop`. */
+  askAboutLines: (lines: PickedLines, question: string) => void;
   /** The session beside the tab can take "Explain" instead of a new one. */
   canExplainInCurrent: () => boolean;
   /** The action being handed off: a `findingKey`, "findings" or "explain". */
@@ -99,7 +114,12 @@ export function usePullRequestAgentActions(target: {
   const [confirmingFork, setConfirmingFork] = useState(false);
   const agent = actionAgent(repoPath);
 
-  const guideQuery = usePrGuide(repoPath, detail?.repository ?? null, number);
+  const guideEnabled = useProjectSetting(repoPath, "pullRequestGuideEnabled");
+  // Read each render: it follows the setting and the installed agents.
+  const guideAgent = guideAgentFor(repoPath);
+  const guideAgentLabel = agentMeta(guideAgent).label;
+  const guideRepository = guideEnabled ? (detail?.repository ?? null) : null;
+  const guideQuery = usePrGuide(repoPath, guideRepository, number);
   const run = useGuideRunStore((s) => s.runs[guideRunKey(repoPath, number)] ?? null);
   const guide = guideQuery.data ?? null;
 
@@ -202,24 +222,14 @@ export function usePullRequestAgentActions(target: {
     })();
   };
 
-  const askAboutStop = (stop: GuideStop, index: number, question: string) => {
-    if (!detail || pending !== null) return;
+  /** A question in a session: the current one when it is in the project. */
+  const ask = (handoff: Handoff) => {
     const into = currentSessionTab(repoPath);
     void openHandoffSession({
       projectPath: repoPath,
       cwd: repoPath,
       agent: agent.agent,
-      handoff: buildAskAboutGuideStopHandoff(
-        detail,
-        {
-          index,
-          title: stop.title,
-          summary: stop.summary,
-          attention: stop.attention?.note ?? null,
-          excerpts: stop.excerpts,
-        },
-        question,
-      ),
+      handoff,
       into,
     })
       .then(() =>
@@ -232,36 +242,60 @@ export function usePullRequestAgentActions(target: {
       );
   };
 
+  const askAboutStop = (stop: GuideStop, index: number, question: string) => {
+    if (!detail || pending !== null) return;
+    ask(
+      buildAskAboutGuideStopHandoff(
+        detail,
+        {
+          index,
+          title: stop.title,
+          summary: stop.summary,
+          attention: stop.attention?.note ?? null,
+          excerpts: stop.excerpts,
+        },
+        question,
+      ),
+    );
+  };
+
+  const askAboutLines = (lines: PickedLines, question: string) => {
+    if (!detail || pending !== null) return;
+    ask(buildAskAboutLinesHandoff(detail, lines, question));
+  };
+
   const headSha = detail?.headSha ?? null;
   const running = run?.status === "running";
   const fromFork = detail?.isCrossRepository === true;
   const startGuide = () => {
     if (!detail || running) return;
     setConfirmingFork(false);
+    // Ready or failed, the run says so itself (`notifyGuideRun`).
     void writeGuide({
       repoPath,
       detail,
       activity,
-      agent: agent.agent,
-      agentLabel: agent.label,
+      agent: guideAgent,
+      agentLabel: guideAgentLabel,
       onSaved: () => {
         void client.invalidateQueries({ queryKey: guideQueryKey(repoPath, number) });
-        toast.success(`The review guide for #${number} is ready`);
       },
     });
   };
   const guideState: PullRequestGuideState = {
+    enabled: guideEnabled,
+    agentLabel: guideAgentLabel,
     guide,
-    loading: guideQuery.isPending && !!detail?.repository,
+    loading: guideQuery.isPending && !!guideRepository,
     run,
     running,
     stale: guide !== null && headSha !== null && guide.headSha !== headSha,
-    canWrite: !!detail && headSha !== null,
+    canWrite: guideEnabled && !!detail && headSha !== null,
     // A fork's head is code its author controls, agent configuration
     // included (`AGENTS.md`, hooks, `.mcp.json`), and the guide's agent runs
     // in a checkout of it: the reader says yes to that first.
     write: () => {
-      if (!detail || running) return;
+      if (!guideEnabled || !detail || running) return;
       if (fromFork) setConfirmingFork(true);
       else startGuide();
     },
@@ -280,6 +314,7 @@ export function usePullRequestAgentActions(target: {
     fixFindings,
     explain,
     askAboutStop,
+    askAboutLines,
     canExplainInCurrent: () => currentSessionTab(repoPath) !== null,
     pending,
     fixLabel: "Fix",

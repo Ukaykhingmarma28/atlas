@@ -11,6 +11,7 @@ import {
   cleanActionArgs,
   isNotificationKind,
   isNotificationSettingsSection,
+  isPullRequestTarget,
   OPEN_ACTION_ID,
   type NotificationAction,
   type NotificationKind,
@@ -180,7 +181,8 @@ function isAppTarget(t: unknown): t is NonNullable<AppNotification["target"]> {
     r.type === "app-update" ||
     (r.type === "settings" && isNotificationSettingsSection(r.section)) ||
     r.type === "config-file" ||
-    (r.type === "git-panel" && typeof r.projectId === "string" && !!r.projectId)
+    (r.type === "git-panel" && typeof r.projectId === "string" && !!r.projectId) ||
+    isPullRequestTarget(r)
   );
 }
 

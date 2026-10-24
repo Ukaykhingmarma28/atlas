@@ -4,18 +4,26 @@ import { act, renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
-const { writeGuide } = vi.hoisted(() => ({ writeGuide: vi.fn(async () => undefined) }));
+const { writeGuide, settings } = vi.hoisted(() => ({
+  writeGuide: vi.fn(async () => undefined),
+  settings: { guideEnabled: true },
+}));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("./pr-agent-session", () => ({
   actionAgent: () => ({ agent: "claude", label: "Claude" }),
   currentSessionTab: () => null,
   openHandoffSession: vi.fn(),
 }));
+// Review guides on for the project (`pullRequestGuideEnabled`).
+vi.mock("@/features/settings/lib/use-scoped-setting", () => ({
+  useProjectSetting: () => settings.guideEnabled,
+}));
 vi.mock("./pull-request-guide-queries", () => ({
   guideQueryKey: () => ["guide"],
   usePrGuide: () => ({ data: null, isPending: false }),
 }));
 vi.mock("../stores/guide-run-store", () => ({
+  guideAgentFor: () => "claude",
   guideRunKey: () => "key",
   useGuideRunStore: () => null,
   writeGuide,
@@ -53,7 +61,10 @@ function guideFor(isCrossRepository: boolean) {
   );
 }
 
-afterEach(() => writeGuide.mockClear());
+afterEach(() => {
+  writeGuide.mockClear();
+  settings.guideEnabled = true;
+});
 
 describe("Write guide", () => {
   it("starts at once for a pull request from the repository itself", () => {
@@ -77,5 +88,21 @@ describe("Write guide", () => {
     act(() => result.current.forkConfirm!.confirm());
     expect(writeGuide).toHaveBeenCalledTimes(1);
     expect(result.current.forkConfirm).toBeNull();
+  });
+
+  it("writes on the guide's own agent, named on the action", () => {
+    const { result } = guideFor(false);
+    expect(result.current.enabled).toBe(true);
+    act(() => result.current.write());
+    expect(writeGuide).toHaveBeenCalledWith(expect.objectContaining({ agent: "claude" }));
+  });
+
+  it("offers nothing while review guides are off for the project", () => {
+    settings.guideEnabled = false;
+    const { result } = guideFor(false);
+    expect(result.current.enabled).toBe(false);
+    expect(result.current.canWrite).toBe(false);
+    act(() => result.current.write());
+    expect(writeGuide).not.toHaveBeenCalled();
   });
 });

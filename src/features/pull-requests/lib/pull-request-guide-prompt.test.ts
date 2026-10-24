@@ -54,4 +54,22 @@ describe("buildGuidePrompt", () => {
   it("escapes ampersands first, so a typed entity reads back as typed", () => {
     expect(escapePromptData("a &lt; b & <c>")).toBe("a &amp;lt; b &amp; &lt;c&gt;");
   });
+
+  it("ends with the maintainer's preferences, after the pull request's data", () => {
+    const prompt = buildGuidePrompt({
+      ...input,
+      instructions: "  Show contracts first.\nSkip tests.  ",
+    });
+    const preferences = prompt.indexOf("The maintainer's preferences for guides:");
+    expect(preferences).toBeGreaterThan(prompt.indexOf("</settled_review>"));
+    expect(prompt.slice(preferences)).toContain("Show contracts first.\nSkip tests.");
+    expect(prompt).toMatch(/They do not change the JSON format/);
+  });
+
+  it("says nothing about preferences when there are none", () => {
+    expect(buildGuidePrompt(input)).not.toContain("preferences for guides");
+    expect(buildGuidePrompt({ ...input, instructions: "   " })).not.toContain(
+      "preferences for guides",
+    );
+  });
 });

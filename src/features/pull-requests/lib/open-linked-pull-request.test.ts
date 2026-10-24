@@ -1,16 +1,24 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { invoke, openTab, openExternal } = vi.hoisted(() => ({
+const { invoke, openTab, openExternal, settings } = vi.hoisted(() => ({
   invoke: vi.fn(),
   openTab: vi.fn(),
   openExternal: vi.fn(),
+  settings: { pullRequestLinksOpenInApp: true },
+}));
+vi.mock("@/features/settings/stores/settings-store", () => ({
+  useSettingsStore: { getState: () => ({ settings }) },
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("./open-pull-request-tab", () => ({ openPullRequestTab: openTab }));
 vi.mock("@/features/git/lib/git-pr-api", () => ({ openPullRequest: openExternal }));
 
 import { resetGhGateForTests } from "./pr-errors";
-import { linkBelongsToCheckout, openLinkedPullRequest } from "./open-linked-pull-request";
+import {
+  linkBelongsToCheckout,
+  openLinkedPullRequest,
+  parsePullRequestUrl,
+} from "./open-linked-pull-request";
 
 const provider = { host: "github.com", repository: "acme/shop" };
 const link = (repository: string, host = "github.com") => ({
@@ -23,6 +31,7 @@ afterEach(() => {
   invoke.mockReset();
   openTab.mockReset();
   openExternal.mockReset();
+  settings.pullRequestLinksOpenInApp = true;
   resetGhGateForTests();
 });
 
@@ -52,5 +61,37 @@ describe("openLinkedPullRequest", () => {
     await openLinkedPullRequest("/repo", link("acme/shop"));
     expect(openTab).not.toHaveBeenCalled();
     expect(openExternal).toHaveBeenCalled();
+  });
+
+  it("opens every link on the host while pullRequestLinksOpenInApp is off", async () => {
+    invoke.mockResolvedValue(provider);
+    settings.pullRequestLinksOpenInApp = false;
+    await openLinkedPullRequest("/repo", link("acme/shop"));
+    expect(openTab).not.toHaveBeenCalled();
+    expect(openExternal).toHaveBeenCalledWith("https://github.com/acme/shop/pull/12");
+  });
+
+  it("opens on the host when asked to (a modifier-click), or with no checkout", async () => {
+    invoke.mockResolvedValue(provider);
+    await openLinkedPullRequest("/repo", link("acme/shop"), { external: true });
+    await openLinkedPullRequest(null, link("acme/shop"));
+    expect(openTab).not.toHaveBeenCalled();
+    expect(openExternal).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("parsePullRequestUrl", () => {
+  it("reads a pull request's address, with anything after its number", () => {
+    expect(parsePullRequestUrl("https://github.com/acme/shop/pull/12/files#diff")).toEqual({
+      repository: "acme/shop",
+      number: 12,
+      url: "https://github.com/acme/shop/pull/12/files#diff",
+    });
+  });
+
+  it("takes nothing else", () => {
+    expect(parsePullRequestUrl("https://github.com/acme/shop/issues/12")).toBeNull();
+    expect(parsePullRequestUrl("https://github.com/acme/shop/pull/0")).toBeNull();
+    expect(parsePullRequestUrl("https://github.com/acme/shop")).toBeNull();
   });
 });

@@ -86,6 +86,7 @@ export function PullRequestComposer({
   detail,
   pendingAction,
   onCommentAction,
+  reviewRequest = 0,
 }: {
   /** The tab's id: what was typed is kept under it across tab switches. */
   tabId: string;
@@ -96,9 +97,17 @@ export function PullRequestComposer({
     body: string,
     action: "close" | "reopen",
   ) => Promise<{ commentPosted: boolean }>;
+  /** Raised to open the composer at the review (the Guide's "Finish review"). */
+  reviewRequest?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [requestedMode, setRequestedMode] = useState<"comment" | "review">("comment");
+  const [seenReviewRequest, setSeenReviewRequest] = useState(reviewRequest);
+  if (reviewRequest !== seenReviewRequest) {
+    setSeenReviewRequest(reviewRequest);
+    setRequestedMode("review");
+    setOpen(true);
+  }
   // What is typed lives in the tab's draft (`pull-request-tab-draft-store`),
   // so leaving the tab and coming back finds it; sending clears it.
   // Field by field, so typing a line comment in the Code tab (same entry)
@@ -368,8 +377,8 @@ export function PullRequestComposer({
             {pending.length > 0 ? (
               <p className="text-2xs text-muted-foreground">
                 {pending.length === 1
-                  ? "1 line comment from the Code tab goes with this review."
-                  : `${pending.length} line comments from the Code tab go with this review.`}
+                  ? "Your 1 line comment goes with this review."
+                  : `Your ${pending.length} line comments go with this review.`}
               </p>
             ) : null}
             {stale.length > 0 ? (
