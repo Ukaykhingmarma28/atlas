@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { ChevronRight, Code2, Eye, RefreshCw, Table2, WrapText } from "lucide-react";
+import { Code2, Eye, RefreshCw, Table2, WrapText } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useEditorStore } from "../stores/editor-store";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
@@ -16,10 +17,14 @@ import { useWordWrap } from "@/features/settings/lib/use-word-wrap";
 import { OpenInEditorButton } from "@/features/external-editor/components/open-in-editor-button";
 import { FileIcon } from "@/features/icon-theme/components/file-icon";
 import { useScopedHotkeys } from "@/features/keybindings/lib/use-scoped-hotkeys";
+import { useFileTabFrame } from "@/features/explorer/lib/file-tab-frame-context";
+import { openInProject } from "@/features/explorer/lib/open-in-project";
+import { revealFiles } from "@/features/layout/lib/files-surface";
 import { BLAME_PART_COLOR } from "../lib/blame";
 import { registerEditorView } from "../lib/editor-views";
 import { FileDecorations } from "../lib/file-decorations";
 import { filePreviewDelimiter } from "../lib/delimited-preview";
+import { retainedBreadcrumbTrail } from "../lib/file-path";
 import {
   readRenderedPreference,
   renderedModeOf,
@@ -29,8 +34,10 @@ import {
 import { useFileSaveCoordinator } from "../lib/use-file-save-coordinator";
 import { CodeFileView, type CodeFileViewHandle } from "./code-file-view";
 import { DelimitedTablePreview } from "./delimited-table-preview";
+import { FileBreadcrumbsRow, type FileBreadcrumbsProps } from "./file-breadcrumbs";
 import { HtmlPreview } from "./html-preview";
 import {
+  FILE_SURFACE_SUBHEADER_CLASS,
   FileSurfaceAction,
   FileSurfaceFailure,
   FileSurfaceLoading,
@@ -84,6 +91,46 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
 
   const relPath = relativeTo(path, projectPath);
   const { wrap: wordWrap, toggle: toggleWordWrap } = useWordWrap();
+
+  // ── Breadcrumbs ──
+  // Rooted at the tab's own project (the frame's), then the active one; a
+  // file outside both is crumbed from the filesystem root.
+  const frame = useFileTabFrame();
+  const projectName = useAppStore.use.currentProject()?.name ?? "";
+  const crumbTarget = (() => {
+    if (!path || isUntitled) return null;
+    const root = frame?.root ?? (relPath !== null ? projectPath : null);
+    const rel = root ? relativeTo(path, root) : null;
+    if (!root || rel === null) {
+      return { root: null, projectName: "", trail: path, current: path };
+    }
+    const name = (frame?.root ? frame.projectName : null) ?? projectName;
+    const folder = frame?.root === root ? frame.crumbFolder : null;
+    const current = folder ?? rel;
+    return {
+      root,
+      projectName: name || root.split("/").pop() || root,
+      trail: retainedBreadcrumbTrail(rel, current),
+      current,
+    };
+  })();
+  const navigateCrumb = (crumbPath: string) => {
+    if (!crumbTarget) return;
+    if (crumbTarget.root === null) {
+      // Outside the project there is no tree to walk: show the folder where
+      // the system keeps it.
+      void import("@tauri-apps/plugin-opener").then(({ revealItemInDir }) =>
+        revealItemInDir(crumbPath).catch(() => {}),
+      );
+      return;
+    }
+    if (frame?.root === crumbTarget.root) {
+      if (crumbPath === crumbTarget.trail) frame.revealFile();
+      else frame.revealFolder(crumbPath);
+      return;
+    }
+    revealFiles(crumbPath ? `${crumbTarget.root}/${crumbPath}` : crumbTarget.root);
+  };
   const gitBlameInline = useProjectSetting(projectPath, "gitBlameInline");
 
   // ── Load ──
@@ -392,20 +439,36 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
   const delimiter = renderedMode === "table" ? filePreviewDelimiter({ name: path }) : null;
   const shownText = renderedText ?? buffer.originalContent;
   const name = path.split("/").pop() ?? path;
+  const crumbs: FileBreadcrumbsProps | null = crumbTarget
+    ? {
+        root: crumbTarget.root,
+        projectName: crumbTarget.projectName,
+        relativePath: crumbTarget.current,
+        trail: crumbTarget.trail,
+        onNavigate: navigateCrumb,
+        onOpenFile: (abs) => void openInProject(abs),
+        identity: frame?.titled === false ? { path, dirty: buffer.dirty } : null,
+      }
+    : null;
 
   return (
     <div
       className="flex flex-col overflow-hidden bg-background"
       style={{ height: containerHeight || "100%" }}
     >
-      <div className="flex h-8 shrink-0 items-center overflow-hidden border-b border-border bg-background px-3">
-        <FileIcon path={path} size={14} className="mr-1.5 shrink-0" />
-        <Breadcrumbs filePath={path} projectPath={projectPath} />
-        {buffer.dirty && (
-          <span
-            className="ml-2 size-1.5 shrink-0 rounded-full bg-primary"
-            role="img"
-            aria-label="Unsaved changes"
+      <div
+        className={cn(
+          "flex items-center gap-2 overflow-hidden bg-background px-3",
+          FILE_SURFACE_SUBHEADER_CLASS,
+        )}
+        data-surface-subheader
+      >
+        {crumbs ? (
+          <FileBreadcrumbsRow {...crumbs} className="shrink" />
+        ) : (
+          <UntitledName
+            name={name}
+            identity={frame?.titled === false ? { path, dirty: buffer.dirty } : null}
           />
         )}
         {!rendered && <HeaderBlame decorations={decorations} />}
@@ -487,8 +550,8 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
   );
 }
 
-/** The cursor line's blame beside the path, for a wrapping view: one row
- *  that truncates before the path does. Subscribes on its own, so a cursor
+/** The cursor line's blame beside the breadcrumbs, for a wrapping view: it
+ *  takes what the crumbs leave and truncates first. Subscribes on its own, so a cursor
  *  move repaints this and nothing else. */
 function HeaderBlame({ decorations }: { decorations: FileDecorations }) {
   const parts = useSyncExternalStore(decorations.subscribe, decorations.headerBlame);
@@ -496,7 +559,7 @@ function HeaderBlame({ decorations }: { decorations: FileDecorations }) {
   const label = parts.map((p) => p.text).join("");
   return (
     <span
-      className="ml-3 min-w-0 flex-1 truncate text-xs italic opacity-80 select-none"
+      className="ml-1 min-w-0 flex-1 basis-0 truncate text-xs italic opacity-80 select-none"
       title={label}
     >
       {parts.map((part, i) => (
@@ -508,28 +571,26 @@ function HeaderBlame({ decorations }: { decorations: FileDecorations }) {
   );
 }
 
-function Breadcrumbs({ filePath, projectPath }: { filePath: string; projectPath: string }) {
-  const relative =
-    projectPath && filePath.startsWith(projectPath)
-      ? filePath.slice(projectPath.length + 1)
-      : filePath;
-  const segments = relative.split("/").filter(Boolean);
-
+/** An untitled buffer has no path to crumb: its name alone, and where no
+ *  tab names it, its icon and unsaved dot too. */
+function UntitledName({
+  name,
+  identity,
+}: {
+  name: string;
+  identity: { path: string; dirty: boolean } | null;
+}) {
   return (
-    <div className="flex min-w-0 items-center overflow-hidden">
-      {segments.map((segment, i) => {
-        const isLast = i === segments.length - 1;
-        return (
-          <span key={i} className="flex shrink-0 items-center">
-            {i > 0 && <ChevronRight size={10} className="mx-0.5 shrink-0 text-muted-foreground" />}
-            <span
-              className={`font-mono text-xs ${isLast ? "text-foreground" : "text-muted-foreground"}`}
-            >
-              {segment}
-            </span>
-          </span>
-        );
-      })}
-    </div>
+    <span className="flex min-w-0 items-center gap-1.5 text-xs">
+      {identity && <FileIcon path={identity.path} size={14} className="shrink-0" />}
+      <span className="truncate px-0.5 font-medium text-foreground">{name}</span>
+      {identity?.dirty && (
+        <span
+          className="size-1.5 shrink-0 rounded-full bg-primary"
+          role="img"
+          aria-label="Unsaved changes"
+        />
+      )}
+    </span>
   );
 }

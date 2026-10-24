@@ -1,12 +1,15 @@
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PanelLeftOpen } from "lucide-react";
 import { IconButton } from "@/ui/icon-button";
+import { cn } from "@/lib/utils";
+import { FILE_SURFACE_SUBHEADER_CLASS } from "@/features/editor/components/file-surface-chrome";
 import { Hint } from "@/ui/tooltip";
 import { PanelSkeleton } from "@/components/panel-skeleton";
 import { useProjectStore } from "@/features/projects/stores/project-store";
 import { groupOf, useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useFileTabTreeStore } from "../stores/file-tab-tree-store";
 import { relativeTo } from "../lib/project-file-ops";
+import { FileTabFrameContext, type FileTabFrameValue } from "../lib/file-tab-frame-context";
 import { showWorkingTreeDiff } from "@/features/git/lib/open-review-file";
 
 // The tree is the heavy part (its model, file operations, drag hooks); a file
@@ -46,14 +49,22 @@ export function FileTabFrame({
   filePath: string | undefined;
   children: ReactNode;
 }) {
-  const root = useProjectStore(
-    (s) => (projectId && s.projects.find((p) => p.id === projectId)?.path) || null,
+  const project = useProjectStore((s) =>
+    projectId ? (s.projects.find((p) => p.id === projectId) ?? null) : null,
   );
+  const root = project?.path || null;
   const shown = useFileTabTreeStore.use.shown();
   const { setShown } = useFileTabTreeStore.use.actions();
   const active = useLayoutStore((s) => {
     const tab = s.tabs.find((t) => t.id === tabId);
     return !!tab && s.activeByGroup[groupOf(tab)] === tabId;
+  });
+  // The main column draws no tab strip; every other column, and the
+  // projectless strip, has a tab naming the file.
+  const titled = useLayoutStore((s) => {
+    if (projectId === null) return true;
+    const tab = s.tabs.find((t) => t.id === tabId);
+    return !tab || groupOf(tab) !== s.groupOrder[0];
   });
 
   // Each time the tab comes back on screen (or its file is opened again,
@@ -65,46 +76,82 @@ export function FileTabFrame({
     wasActive.current = active;
   }, [active]);
 
+  // The folder the file's breadcrumbs walked up to, revealed in the tree.
+  // Back at the file (its tab shown again, the file crumb, another file)
+  // the crumbs end at the file again.
+  const [crumbFolder, setCrumbFolder] = useState<{ path: string; nonce: number } | null>(null);
+  const [crumbFor, setCrumbFor] = useState({ filePath, revealNonce });
+  if (crumbFor.filePath !== filePath || crumbFor.revealNonce !== revealNonce) {
+    setCrumbFor({ filePath, revealNonce });
+    setCrumbFolder(null);
+  }
+
   const inProject =
     !!root &&
     !!filePath &&
     !filePath.startsWith("untitled:") &&
     relativeTo(root, filePath) !== null;
 
+  const frame = useMemo<FileTabFrameValue>(
+    () => ({
+      root: inProject ? root : null,
+      projectName: inProject ? (project?.name ?? null) : null,
+      titled,
+      crumbFolder: crumbFolder?.path ?? null,
+      revealFolder: (path) => {
+        setShown(true);
+        setCrumbFolder((cur) => ({ path, nonce: (cur?.nonce ?? 0) + 1 }));
+      },
+      revealFile: () => {
+        setShown(true);
+        setRevealNonce((n) => n + 1);
+      },
+    }),
+    [inProject, root, project?.name, titled, crumbFolder, setShown],
+  );
+
   // Always this element tree: the tree column is a slot that may be empty,
   // so `children` keeps its position (and its state) whatever the slot holds.
   return (
-    <div className="flex h-full min-h-0 w-full">
-      {!inProject ? null : shown ? (
-        <aside
-          className="flex min-h-0 shrink-0 flex-col border-r border-border"
-          style={{ width: "min(22rem, 46%)" }}
-        >
-          {active && (
-            <Suspense fallback={<PanelSkeleton rows={8} />}>
-              <ProjectFileTree
-                root={root!}
-                activeFile={filePath}
-                revealNonce={revealNonce}
-                onShowDiff={(path) => showWorkingTreeDiff(root!, path)}
-                onHide={() => setShown(false)}
-              />
-            </Suspense>
-          )}
-        </aside>
-      ) : (
-        <div className="flex shrink-0 flex-col items-center border-r border-border py-1">
-          <Hint label="Show file tree">
-            <IconButton
-              size="sm"
-              icon={PanelLeftOpen}
-              label="Show file tree"
-              onClick={() => setShown(true)}
-            />
-          </Hint>
-        </div>
-      )}
-      <div className="h-full min-h-0 min-w-0 flex-1">{children}</div>
-    </div>
+    <FileTabFrameContext.Provider value={frame}>
+      <div className="flex h-full min-h-0 w-full">
+        {!inProject ? null : shown ? (
+          <aside
+            className="flex min-h-0 shrink-0 flex-col border-r border-border"
+            style={{ width: "min(22rem, 46%)" }}
+          >
+            {active && (
+              <Suspense fallback={<PanelSkeleton rows={8} />}>
+                <ProjectFileTree
+                  root={root!}
+                  activeFile={filePath}
+                  revealNonce={revealNonce}
+                  onShowDiff={(path) => showWorkingTreeDiff(root!, path)}
+                  onHide={() => setShown(false)}
+                  revealFolder={crumbFolder}
+                  subheader
+                />
+              </Suspense>
+            )}
+          </aside>
+        ) : (
+          // The rail's button sits in the file's second row, so that row
+          // still reads as one band with the tree hidden.
+          <div className="flex shrink-0 flex-col border-r border-border">
+            <div className={cn("flex items-center px-1", FILE_SURFACE_SUBHEADER_CLASS)}>
+              <Hint label="Show file tree">
+                <IconButton
+                  size="sm"
+                  icon={PanelLeftOpen}
+                  label="Show file tree"
+                  onClick={() => setShown(true)}
+                />
+              </Hint>
+            </div>
+          </div>
+        )}
+        <div className="h-full min-h-0 min-w-0 flex-1">{children}</div>
+      </div>
+    </FileTabFrameContext.Provider>
   );
 }
