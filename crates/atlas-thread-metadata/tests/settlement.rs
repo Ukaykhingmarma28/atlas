@@ -340,12 +340,11 @@ fn the_idle_sweep_leaves_sessions_with_pull_requests_to_their_pull_request() {
     assert!(store.set_pull_request_watch(watched_id, "acme/shop", 1, true));
 
     let cutoff = Utc::now() - Duration::days(3);
-    let idle: Vec<_> = store
-        .idle_sessions_keeping(cutoff, true)
-        .into_iter()
-        .map(|(session, _)| session)
-        .collect();
-    assert_eq!(idle.len(), 1, "only the session with no pull request");
+    assert_eq!(
+        store.idle_sessions_keeping(cutoff, true).len(),
+        1,
+        "only the session with no pull request"
+    );
     assert_eq!(
         store.auto_settle_idle_keeping(cutoff, &HashSet::new(), true),
         1
