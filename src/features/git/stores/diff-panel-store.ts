@@ -49,6 +49,8 @@ interface DiffPanelState {
   layout: DiffLayout;
   /** `null`: follow the `diffIgnoreWhitespace` setting. */
   ignoreWhitespace: boolean | null;
+  /** The tree beside the diff. Closed until asked for: the diff's own file
+   *  rows already name every file. */
   fileTreeOpen: boolean;
   /** Folded files per review scope key (`collapseScopeKey`), as a set of
    *  file keys. Absent: nothing touched yet, the default applies. */
@@ -104,7 +106,7 @@ export const useDiffPanelStore = createSelectors(
         baseRef: {},
         layout: "unified",
         ignoreWhitespace: null,
-        fileTreeOpen: true,
+        fileTreeOpen: false,
         collapsed: {},
         viewed: {},
         actions: {

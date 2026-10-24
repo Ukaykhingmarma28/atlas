@@ -9,8 +9,9 @@
  * the same scope share a chord (first wins — allowed, but flagged as a
  * conflict in the editor).
  *
- * NOT in the registry (fixed, not user-rebindable): the CodeMirror keymap
- * (`editor-panel.tsx`), Tiptap's editing shortcuts, xterm's copy/paste handler,
+ * NOT in the registry (fixed, not user-rebindable): the file view editor's
+ * own keymap (undo, indent, find next…; `@pierre/diffs`), Tiptap's editing
+ * shortcuts, xterm's copy/paste handler,
  * the terminal readline keys (`terminal-keymap.ts`), the native menu bar's
  * AppKit items (Copy, Paste, Hide, Quit…), arrow-key navigation inside
  * palettes/lists, and the Escape-to-close handlers.
@@ -24,6 +25,7 @@ export type When =
   | "global"
   | "terminalFocus"
   | "chatFocus"
+  | "editorFocus"
   | "knowledgePanel"
   | "knowledgeFocus"
   | "pdfFocus"
@@ -39,6 +41,7 @@ export type ActionCategory =
   | "Splits"
   | "View"
   | "Session"
+  | "File"
   | "Terminal"
   | "Knowledge"
   | "PDF"
@@ -59,6 +62,7 @@ export const WHEN_LABELS: Record<When, string> = {
   global: "",
   terminalFocus: "terminalFocus",
   chatFocus: "chatFocus",
+  editorFocus: "editorFocus",
   knowledgePanel: "knowledgeOpen",
   knowledgeFocus: "knowledgeFocus",
   pdfFocus: "pdfFocus",
@@ -99,10 +103,11 @@ export const ACTIONS = [
   },
   {
     id: "workspace.toggleSidebar",
-    title: "Toggle project sidebar",
+    title: "Toggle sidebar",
     category: "Project",
     when: "global",
-    defaults: ["cmd+shift+."],
+    // ⌘⌥J was the session sidebar's; the sessions live in this one now.
+    defaults: ["cmd+shift+.", "cmd+alt+j"],
   },
   {
     id: "app.settings",
@@ -192,13 +197,6 @@ export const ACTIONS = [
     category: "Panels",
     when: "global",
     defaults: ["cmd+j"],
-  },
-  {
-    id: "panels.agentSidebar",
-    title: "Toggle agent sidebar",
-    category: "Panels",
-    when: "global",
-    defaults: ["cmd+alt+j"],
   },
   {
     id: "panels.knowledge",
@@ -469,6 +467,23 @@ export const ACTIONS = [
     when: "terminalFocus",
     defaults: ["cmd+f"],
   },
+  // ── File ──
+  {
+    id: "editor.save",
+    title: "Save file",
+    category: "File",
+    when: "editorFocus",
+    defaults: ["cmd+s"],
+  },
+  {
+    // The file's own find and replace: the editor's panel, over the whole
+    // document rather than the rows on screen.
+    id: "editor.find",
+    title: "Find in file",
+    category: "File",
+    when: "editorFocus",
+    defaults: ["cmd+f"],
+  },
   // ── Review ──
   {
     // The review diff's own find: matches across every changed file, folded
@@ -552,6 +567,7 @@ export const CATEGORY_ORDER: readonly ActionCategory[] = [
   "Splits",
   "View",
   "Session",
+  "File",
   "Terminal",
   "Knowledge",
   "PDF",

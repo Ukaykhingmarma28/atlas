@@ -73,6 +73,8 @@ import type { NativeModelsRefresh } from "@/types/agents";
 import type { MockHandlers, MockResponses, TypedHandlers } from "../types";
 import type { AgentKey, MemoryContent } from "./northwind-content-types";
 import { adoptSession } from "../fake-agent";
+import { sessionLifecycleHandlers } from "../session-lifecycle";
+import { RESTING_LIFECYCLE } from "@/features/chat/lib/session-lifecycle";
 import { NORTHWIND_FILES } from "../fixtures/northwind-repo";
 import { applyAgentConfig } from "../fixtures/skills";
 import { CONTENT } from "./northwind-content";
@@ -491,7 +493,7 @@ function seedThreads(): ThreadRow[] {
       title: s.content.title,
       updatedAt: iso(s.lastMs),
       createdAt: iso(s.startMs),
-      archived: false,
+      ...RESTING_LIFECYCLE,
       // Idle past the default three days: on the Settled shelf, settled at
       // its last activity, as the idle sweep records it.
       settledAt: Date.now() - s.lastMs > SETTLE_AFTER_MS ? iso(s.lastMs) : null,
@@ -511,7 +513,7 @@ const threadsChanged = () => void emit("atlas:threads-changed");
 /** One project; current when the sidebar is scoped to it, as Rust marks it
  *  (unscoped, nothing is current and the sidebar heads the list with it). */
 function threadProjects(cwd: string | null): ThreadProject[] {
-  const live = threads.filter((thread) => !thread.archived);
+  const live = threads.filter((thread) => thread.sessionId !== null);
   if (live.length === 0) return [];
   const isCurrent = cwd !== null && cwd !== "";
   return [{ name: PROJECT.name, paths: [PROJECT.path], isCurrent, threads: live }];
@@ -1668,8 +1670,7 @@ export const northwindMiscRawCommands: MockHandlers = {
   load_editor_state: (): string => "{}",
 
   // ── chat history ────────────────────────────────────────────────────────
-  threads_history: ({ archivedOnly }): ThreadRow[] =>
-    threads.filter((thread) => (archivedOnly ? thread.archived : !thread.archived)),
+  threads_history: (): ThreadRow[] => threads,
   threads_projects: ({ cwd }): ThreadProject[] =>
     threadProjects(cwd === null || cwd === undefined ? null : String(cwd)),
   threads_resume: ({ threadId }): ResumedThread => {
@@ -1693,33 +1694,13 @@ export const northwindMiscRawCommands: MockHandlers = {
     threadsChanged();
     return null;
   },
-  threads_settle: ({ threadId }): boolean => {
-    const due = threads.some((t) => t.threadId === String(threadId) && t.settledAt === null);
-    if (!due) return false;
-    threads = threads.map((thread) =>
-      thread.threadId === String(threadId)
-        ? { ...thread, settledAt: new Date().toISOString() }
-        : thread,
-    );
-    threadsChanged();
-    return true;
-  },
-  threads_unsettle: ({ threadId }): boolean => {
-    const due = threads.some((t) => t.threadId === String(threadId) && t.settledAt !== null);
-    if (!due) return false;
-    threads = threads.map((thread) =>
-      thread.threadId === String(threadId) ? { ...thread, settledAt: null } : thread,
-    );
-    threadsChanged();
-    return true;
-  },
-  threads_archive: ({ threadId }): null => {
-    threads = threads.map((thread) =>
-      thread.threadId === String(threadId) ? { ...thread, archived: true } : thread,
-    );
-    threadsChanged();
-    return null;
-  },
+  ...sessionLifecycleHandlers({
+    get: () => threads,
+    set: (rows) => {
+      threads = rows;
+    },
+    changed: threadsChanged,
+  }),
   threads_import_candidates: (): ImportCandidate[] => [
     {
       pluginId: "claude-acp",

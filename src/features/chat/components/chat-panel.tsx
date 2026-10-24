@@ -9,7 +9,6 @@ import { UNTITLED_SESSION, useChatStore } from "../stores/chat-store";
 import { pinScope, resolvePinIndex, type ChatPin } from "../stores/chat-pins-store";
 import { useDetailPanelStore } from "../stores/detail-panel-store";
 import { overviewScope, useThreadOverviewStore } from "../stores/thread-overview-store";
-import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { appendNextStepsDirective } from "../lib/next-steps";
 import { stripInjectedContext } from "../lib/atlas-context";
 import { agents, ensureAgent, resetAgent } from "../lib/agents-api";
@@ -106,8 +105,9 @@ import { withCitesInline } from "../lib/cited-text";
 import { usePaneFind } from "../lib/use-pane-find";
 import { MessageInput } from "./message-input";
 import { AgentUpdateBar } from "./agent-update-bar";
-import { SessionSidebar } from "./session-sidebar";
 import { ChatHeader } from "./chat-header";
+import { useProjectStore } from "@/features/projects/stores/project-store";
+import { findSession } from "@/features/sidebar/lib/find-session";
 import { openNewAgentChat } from "../lib/open-agent-session";
 import { forkSessionToNewTab } from "../lib/fork-session";
 import { projectPathForTab } from "../lib/tab-project";
@@ -314,10 +314,10 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   // Only read while the rail is open, so a resize drag re-renders this panel
   // only when there is something to re-align.
   const overviewWidth = useThreadOverviewStore((s) => (s.open[overviewKey] ? s.width : 0));
-  // The history rail is layout state, shared by every chat tab — the header
-  // button is one more way in, beside the command palette and the chord.
-  const chatSidebarVisible = useLayoutStore((s) => s.chatSidebar.visible);
-  const { toggleChatSidebar } = useLayoutStore.use.actions();
+  // The app sidebar holds every session; the header's left button shows or
+  // hides it, and its title opens it with the search focused.
+  const appSidebarOpen = useProjectStore.use.sidebarOpen();
+  const { toggleSidebar: toggleAppSidebar } = useProjectStore.use.actions();
   const { toggle: toggleOverview, adopt: adoptOverview } = useThreadOverviewStore.use.actions();
   const onToggleOverviewStable = useCallback(
     () => toggleOverview(overviewKey),
@@ -1528,12 +1528,9 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
       ref={rootRef}
       // `relative` is the positioning context for the bash-history panel,
       // which slides in from the right as an absolute overlay (scrim +
-      // panel) instead of a flex column that shrinks the chat. The session
-      // sidebar (left) stays a normal flex column.
+      // panel) instead of a flex column that shrinks the chat.
       className="relative flex h-full min-h-0 overflow-hidden bg-[var(--background)]"
     >
-      <SessionSidebar tabId={tabId} />
-
       {/* `data-chat-drop-zone`: Finder drops land anywhere on the conversation
           column, not just the composer (see `attachPaths` in message-input). */}
       <div data-chat-drop-zone className="relative flex-1 flex flex-col min-w-0">
@@ -1614,7 +1611,6 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
             </div>
             <div className="absolute inset-x-0 top-0 z-20">
               <ChatHeader
-                tabId={tabId}
                 title={headerTitle}
                 roleFilter={roleFilter}
                 onRoleFilterChange={setRoleFilter}
@@ -1626,8 +1622,9 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
                 onTogglePlans={onTogglePlansStable}
                 overviewOpen={overviewOpen}
                 onToggleOverview={onToggleOverviewStable}
-                sidebarOpen={chatSidebarVisible}
-                onToggleSidebar={toggleChatSidebar}
+                sidebarOpen={appSidebarOpen}
+                onToggleSidebar={toggleAppSidebar}
+                onFindSession={findSession}
                 // Zero-arg wrapper, NOT a bare reference: React would call
                 // openNewAgentChat(SyntheticMouseEvent) and the event object
                 // sailed through `agent?` into the store as agentType —

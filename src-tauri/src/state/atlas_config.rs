@@ -483,8 +483,8 @@ pub struct AppSettings {
     /// Models starred in the composer's model picker, as `agentType:modelId`. Unknown entries are ignored.
     #[serde(default)]
     pub favorite_models: Vec<String>,
-    /// Ask before deleting a chat from the sidebar or history. Archiving never
-    /// asks: it can be undone. Default ON.
+    /// Ask before deleting a session from the sidebar or history. Settling
+    /// never asks: it can be undone. Default ON.
     #[serde(default = "default_true")]
     pub confirm_delete_chat: bool,
     /// Ask before quitting while an agent is mid-turn. A second Quit while

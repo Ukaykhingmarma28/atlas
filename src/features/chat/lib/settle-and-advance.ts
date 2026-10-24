@@ -1,32 +1,29 @@
 /**
- * The settle keybinding's route to the session sidebar.
+ * The settle keybinding's route to the sidebar.
  *
  * Settling the open session has to move the chat somewhere, and only the
  * sidebar knows the list it would move along — so the shell's chord asks the
- * sidebar of the chat tab in front to do it. Each chat tab's sidebar registers
- * itself here while mounted (hidden counts: it stays mounted and renders
- * nothing). The dropdown picker does not register; it is the same list, shown
- * for a moment.
+ * sidebar to do it, naming the chat tab in front. The app has one sidebar; it
+ * registers itself here while mounted.
  */
 
-type SettleHandler = () => void;
+type SettleHandler = (tabId: string) => void;
 
-const handlers = new Map<string, SettleHandler>();
+let handler: SettleHandler | null = null;
 
-/** Make `handler` the settle action for `tabId`'s sidebar; returns the
- *  matching unregister, which leaves a newer registration alone. */
-export function registerSettleAndAdvance(tabId: string, handler: SettleHandler): () => void {
-  handlers.set(tabId, handler);
+/** Make `next` the settle action; returns the matching unregister, which
+ *  leaves a newer registration alone. */
+export function registerSettleAndAdvance(next: SettleHandler): () => void {
+  handler = next;
   return () => {
-    if (handlers.get(tabId) === handler) handlers.delete(tabId);
+    if (handler === next) handler = null;
   };
 }
 
-/** Settle (or un-settle) `tabId`'s open session through its sidebar. Answers
- *  `false` when no sidebar is mounted for that tab. */
+/** Settle (or un-settle) the session open in `tabId`. Answers `false` when no
+ *  sidebar is mounted to do it. */
 export function settleAndAdvance(tabId: string): boolean {
-  const handler = handlers.get(tabId);
   if (!handler) return false;
-  handler();
+  handler(tabId);
   return true;
 }

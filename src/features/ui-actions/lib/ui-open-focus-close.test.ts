@@ -22,7 +22,7 @@ const invokeMock = vi.hoisted(() =>
               title: "Older chat",
               updatedAt: "",
               createdAt: null,
-              archived: false,
+              ...RESTING_LIFECYCLE,
               projectName: "atlas",
               folderPaths: ["/p"],
             },
@@ -74,6 +74,7 @@ import { useSpacesStore } from "@/features/spaces/stores/spaces-store";
 import { performUiAction } from "./ui-actions";
 import { seedWindow, tab, uiRequest } from "./test-fixtures";
 import type { UiActionReply } from "./types";
+import { RESTING_LIFECYCLE } from "@/features/chat/lib/session-lifecycle";
 
 const layout = () => useLayoutStore.getState();
 const result = (reply: UiActionReply) => {
@@ -323,7 +324,7 @@ describe("ui_focus", () => {
     result(await act("ui_focus", { target: "panel", name: "files", visible: false }));
     expect(layout().tabs.some((t) => t.type === "files")).toBe(false);
     result(await act("ui_focus", { target: "panel", name: "chat_sidebar", visible: false }));
-    expect(layout().chatSidebar.visible).toBe(false);
+    expect(useProjectStore.getState().sidebarOpen).toBe(false);
   });
 
   it("reveals a section of source control", async () => {

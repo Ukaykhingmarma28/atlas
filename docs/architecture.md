@@ -26,7 +26,7 @@ src/features/<feature>/components  →  stores (Zustand)  →  lib/*-api.ts (inv
 │  │  (WKWebView on macOS)       │◀──▶│  (tokio + tauri 2)              │ │
 │  │                             │ IPC│                                 │ │
 │  │  • Zustand stores           │    │  • commands/ — 365 IPC verbs    │ │
-│  │  • CodeMirror, xterm,       │    │    across 70 domain modules     │ │
+│  │  • code view, xterm,        │    │    across 70 domain modules     │ │
 │  │    Tiptap, Pixi, TanStack   │    │  • ported ACP stack (10 crates) │ │
 │  │  • Tailwind v4              │    │  • atlas-native-agent (engine)  │ │
 │  │                             │    │  • atlas-terminal (PTY)         │ │
@@ -73,7 +73,7 @@ src/features/<feature>/
 | Subsystem | Store holds (UI only) | Real state lives in |
 |---|---|---|
 | Chat | queues, draft text, scroll position (`chat/stores/chat-store.ts`) | the ported thread behind `AgentConnection` — message log, tool calls, run status, projected to the session-delta wire and streamed over `atlas:agents` |
-| Editor | open-file metadata, dirty flags (`editor/stores/editor-store.ts`) | CodeMirror owns the document text |
+| Editor | open-file metadata, dirty flags (`editor/stores/editor-store.ts`) | the file view's editor (`code-file-view.tsx`) owns the document text |
 | Terminal | split/pane layout (`terminal/stores/terminal-store.ts`) | `atlas-terminal`'s PTY session owns the byte buffer |
 
 This is a deliberate performance boundary, not an oversight to fix by moving more state into the store. Lifting chat messages, document text, or terminal bytes into Zustand degrades streaming, typing, and PTY throughput — every keystroke would touch Immer.
@@ -90,7 +90,7 @@ Other stores: `project/stores/project-store.ts` (current project, recents), `git
 
 `src/lib/constants.ts` holds `TAB_TYPES` (the tab-type registry); `src/features/layout/components/center-panel.tsx` holds the lazy-import map keyed off it. New panel type = lazy import in `center-panel.tsx` + entry in `TAB_TYPES` + entry in `NEW_TAB_OPTIONS` if it should reach the `+` menu.
 
-**Persistent module types — editor, terminal, browser, knowledge-graph, pdf — stay mounted across tab switches** via `display: contents` / `display: none` instead of unmounting. Remounting would rebuild CodeMirror instances, kill the PTY's rendered scrollback, or tear down the native embedded webview.
+**Persistent module types — editor, terminal, browser, knowledge-graph, pdf — stay mounted across tab switches** via `display: contents` / `display: none` instead of unmounting. Remounting would rebuild the file view and drop its unsaved edits, kill the PTY's rendered scrollback, or tear down the native embedded webview.
 
 ## Backend (`src-tauri/src/`)
 
@@ -220,13 +220,13 @@ The **organisation tool server** (`org_server/`, `/org`, `atlas_org`, ADR-0014) 
 
 ### `commands/agents.rs`
 
-37 IPC verbs. The session lifecycle (`agents_spawn`, `agents_new_session`, `agents_send`, `agents_cancel`, `agents_kill`), the capability-gated knobs (`agents_set_mode`, `agents_set_model`, `agents_set_effort`, `agents_set_config_option`), permissions and elicitation (`agents_respond_permission`, `agents_respond_elicitation`), auth (`agents_authenticate`, `agents_list_auth_methods`, `agents_run_auth_method`, `agents_logout`), and the history surface (`threads_history`, `threads_resume`, `threads_archive`, `threads_delete`, `threads_projects`, `threads_import`, `threads_import_candidates`).
+The IPC verbs. Running a session (`agents_spawn`, `agents_new_session`, `agents_send`, `agents_cancel`, `agents_kill`), the capability-gated knobs (`agents_set_mode`, `agents_set_model`, `agents_set_effort`, `agents_set_config_option`), permissions and elicitation (`agents_respond_permission`, `agents_respond_elicitation`), auth (`agents_authenticate`, `agents_list_auth_methods`, `agents_run_auth_method`, `agents_logout`), and the history surface (`threads_history`, `threads_resume`, `threads_delete`, settle/pin/snooze/read state (`threads_settle`, `threads_unsettle`, `threads_pin`, `threads_unpin`, `threads_reorder_pin`, `threads_snooze`, `threads_wake`, `threads_mark_viewed`, `threads_mark_unread`), `threads_projects`, `threads_import`, `threads_import_candidates`).
 
 Deltas return over the single `atlas:agents` channel, payload-typed by `kind`.
 
 ### Three invariants
 
-- **Atlas owns its history.** The sidebar reads the app-owned thread-metadata store (`crates/atlas-thread-metadata`, `threads.db`) and nothing else. Atlas does not read any agent CLI's private storage to build history — the per-agent scrape readers were deleted and must not come back. See [ADR-0001](adr/0001-app-owned-thread-metadata-store.md), and `CONTEXT.md` for the thread/session/draft/archive vocabulary.
+- **Atlas owns its history.** The sidebar reads the app-owned thread-metadata store (`crates/atlas-thread-metadata`, `threads.db`) and nothing else. Atlas does not read any agent CLI's private storage to build history — the per-agent scrape readers were deleted and must not come back. See [ADR-0001](adr/0001-app-owned-thread-metadata-store.md), and `CONTEXT.md` for the thread/session/draft/settled vocabulary.
 - **A thread is not a session.** A *thread* is the conversation Atlas tracks, keyed by an id Atlas mints; it exists before any agent process and outlives one forgetting the session. A *session* is the agent-side conversation, keyed by an ACP session id. A thread references at most one session. Collapsing the two is the mistake the old `acpSessionId`-as-filename design made.
 - **Streams are tab-independent.** The projector owns the broadcast, not any UI component — concurrent prompts in several tabs keep streaming regardless of focus. Switching tabs resubscribes; no in-flight state is created, paused, or lost.
 
@@ -391,7 +391,7 @@ atlas/
 ## Gotchas
 
 - **The old SDK's patch table is gone (#54).** The two forked-SDK `[patch.crates-io]` overrides and their compile guards were deleted with the previous native path itself. The two failure classes they fixed are still guarded, by tests against the engine that replaced them rather than by a patch table: a chunk-split fixture that splits an SSE frame at every byte position, and a cancel test that asserts on the filesystem — the killed command's marker file never appears. See the root `Cargo.toml`'s `[patch.crates-io]` comment.
-- **`vite.config.ts`'s `dedupe` is load-bearing.** Lazy-loaded language packages (`lang-json`, `lang-rust`, …) each transitively import `@codemirror/{state,view,language}` and `@lezer/*`; without `dedupe`, Rollup can ship two copies in the production bundle. `EditorView.theme(...)` then registers against one copy's `StyleModule` while the `EditorView` construction uses the other, and the theme silently no-ops — text renders unstyled. Same story for `pdfjs-dist`: two copies mismatch the worker against the main-thread API version and PDF rendering fails. Dev mode does not reproduce either failure (Vite serves a single pre-bundled instance) — this only shows up in production builds.
+- **`vite.config.ts`'s `dedupe` is load-bearing.** The team-chat draft editor's `lang-markdown` and the grammars it nests each transitively import `@codemirror/{state,view,language}` and `@lezer/*`; without `dedupe`, Rollup can ship two copies in the production bundle. `EditorView.theme(...)` then registers against one copy's `StyleModule` while the `EditorView` construction uses the other, and the theme silently no-ops — text renders unstyled. Same story for `pdfjs-dist`: two copies mismatch the worker against the main-thread API version and PDF rendering fails. Dev mode does not reproduce either failure (Vite serves a single pre-bundled instance) — this only shows up in production builds.
 - **Release-profile `panic = "unwind"` is required.** The local-LLM loader (`atlas-embed`, used by memory chat) `catch_unwind`s candle's Metal kernel-compile panic to fall back to CPU. `panic = "abort"` would crash the app outright instead of degrading gracefully; the cost is a small amount of extra binary size for unwind tables.
 - **The single-instance plugin is release-only.** Registered behind `#[cfg(not(debug_assertions))]` in `src-tauri/src/lib.rs`. Registering it in debug builds kills `tauri dev` the instant it starts whenever the installed `/Applications/Atlas.app` is already running — the dev process gets treated as the "second instance," forwards its argv, and exits.
 - **Telemetry is opt-out and on by default** (`share_telemetry: true` in `state/app_state.rs`), despite `src-tauri/src/telemetry/mod.rs`'s module doc claiming zero analytics until explicit opt-in via a first-run consent prompt that doesn't exist in the code. `app_state.rs` reflects actual behavior; the doc comment is stale. Metadata is coarse and inert without a PostHog key. The auto-updater's remote-config check runs independently of the telemetry opt-in — gated only by the separate `auto_update` setting.

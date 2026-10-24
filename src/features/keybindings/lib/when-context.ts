@@ -11,6 +11,7 @@
  */
 
 import type { TabType } from "@/lib/constants";
+import { deepActiveElement, shadowHost } from "@/lib/deep-active-element";
 import { isLinux, isMac, isWindows } from "@/lib/platform";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { SURFACE_FOCUS_VARIABLES, type WhenContext } from "./when";
@@ -48,9 +49,11 @@ export function liveWhenContext(): WhenContext {
   if (surface) ctx[surface] = true;
   if (tab?.type === "knowledge") ctx.knowledgeOpen = true;
 
-  const active = typeof document !== "undefined" ? document.activeElement : null;
+  const active = typeof document !== "undefined" ? deepActiveElement() : null;
   ctx.inputFocus = isTextInput(active);
-  for (let el = active; el; el = el.parentElement) {
+  // Up through shadow hosts too: focus inside the file view's shadow root
+  // still sits in the scopes around its host.
+  for (let el = active; el; el = el.parentElement ?? shadowHost(el)) {
     const scope = el.getAttribute("data-when-scope");
     if (!scope) continue;
     if ((SURFACE_FOCUS_VARIABLES as readonly string[]).includes(scope)) {

@@ -21,6 +21,16 @@ import remarkRehype from "remark-rehype";
 import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import rehypeStringify from "rehype-stringify";
+import {
+  baseNameOf,
+  fileChipTitle,
+  inlineCodeFileTarget,
+  isAbsolutePath,
+  linkFileTarget,
+  resolveInProject,
+  type FileLinkTarget,
+} from "./file-links";
+import { leadingLinkTextLength, linkFacts, textIsAddress } from "./link-services";
 
 const SANITIZE_SCHEMA = {
   ...defaultSchema,
@@ -29,9 +39,36 @@ const SANITIZE_SCHEMA = {
   attributes: {
     ...defaultSchema.attributes,
     code: [...(defaultSchema.attributes?.code ?? []), ["className"]],
+    // A web link's service, for its icon, and the address a copy carries
+    // when its text was shortened (`rehypeLinkIcons`).
+    // The first definition of a property wins, so the default's own
+    // `className` (footnotes only) is replaced, not added to.
+    a: [
+      ...(defaultSchema.attributes?.a ?? []).filter(
+        (d) => !(Array.isArray(d) && d[0] === "className"),
+      ),
+      ["className", "data-footnote-backref", "atlas-link", "atlas-link--mono"],
+      "title",
+      "dataLinkService",
+      "dataLinkCopy",
+    ],
     pre: [...(defaultSchema.attributes?.pre ?? []), ["className"]],
-    // `span` also carries our mention-chip pills (class + kind + title).
-    span: [...(defaultSchema.attributes?.span ?? []), ["className"], "dataMentionKind", "title"],
+    // `span` also carries our mention-chip pills (class + kind + title), and a
+    // file chip's target and icon slot (`fileChipNode`).
+    span: [
+      ...(defaultSchema.attributes?.span ?? []),
+      ["className"],
+      "dataMentionKind",
+      "title",
+      "dataFilePath",
+      "dataFileLine",
+      "dataFileColumn",
+      "dataFileIcon",
+      "dataLinkService",
+      "ariaHidden",
+      "role",
+      "tabIndex",
+    ],
     svg: [
       "className",
       "viewBox",
@@ -137,11 +174,6 @@ function protectMentions(src: string): { text: string; tokens: MentionToken[] } 
     },
   );
   return { text, tokens };
-}
-
-function baseName(s: string): string {
-  const i = s.lastIndexOf("/");
-  return i >= 0 ? s.slice(i + 1) : s;
 }
 
 // Lucide icon node data (v0.468.0) per mention kind — identical to the glyphs
@@ -324,10 +356,87 @@ const FIXED_LABEL: Record<string, string> = {
   cited_text: "Cited passage",
 };
 
-function chipNode(prefix: string, value: string): Hast {
+/**
+ * A chip for a file or folder: the icon theme's icon for the path, its base
+ * name, and the full path in the tooltip. Clickable when it has a target —
+ * `CachedMarkdown` opens it (`open-path-link.ts`).
+ *
+ * The icon is drawn on the main thread, not here: this runs in the worker, and
+ * the theme's icons live in the icon-theme store. The slot is a box of fixed
+ * size showing the lucide glyph the composer's own fallback draws, so painting
+ * the theme's icon in (`paintFileIcons`) swaps one box's contents and moves
+ * nothing.
+ */
+function fileChipNode(opts: {
+  /** Where a click goes; none for a mention that cannot be resolved. */
+  target: FileLinkTarget | null;
+  /** The path the icon is chosen by. */
+  iconPath: string;
+  folder: boolean;
+  label: string;
+  title: string;
+}): Hast {
+  const kind = opts.folder ? "folder" : "file";
+  const properties: Record<string, unknown> = {
+    className: ["atlas-mention-chip", "atlas-mention-chip--msg", "atlas-file-chip"],
+    dataMentionKind: kind,
+    title: opts.title,
+  };
+  if (opts.target) {
+    properties.dataFilePath = opts.target.path;
+    if (opts.target.line !== undefined) properties.dataFileLine = String(opts.target.line);
+    if (opts.target.column !== undefined) properties.dataFileColumn = String(opts.target.column);
+    properties.role = "link";
+    properties.tabIndex = 0;
+  }
+  // Empty: the fallback glyph is drawn by CSS (`.atlas-file-chip__icon:empty`),
+  // so a chip costs four elements, not a dozen of inline SVG per chip.
+  const icon: Hast = {
+    type: "element",
+    tagName: "span",
+    properties: {
+      className: ["atlas-mention-chip__icon", "atlas-file-chip__icon"],
+      dataFileIcon: kind,
+      dataFilePath: opts.iconPath,
+    },
+    children: [],
+  };
+  return {
+    type: "element",
+    tagName: "span",
+    properties,
+    children: [
+      icon,
+      {
+        type: "element",
+        tagName: "span",
+        properties: { className: ["atlas-mention-chip__label"] },
+        children: [{ type: "text", value: opts.label }],
+      },
+    ],
+  };
+}
+
+function chipNode(prefix: string, value: string, data: RenderData): Hast {
   const kind = MENTION_PREFIX_KIND[prefix] ?? "file";
-  const isPath = kind === "file" || kind === "folder";
-  const label = isPath ? baseName(value) : (FIXED_LABEL[kind] ?? value);
+  if (kind === "file" || kind === "folder") {
+    // A mention's path is project-relative (`toShortForm`), or absolute when
+    // the file is outside the project. Outside it, only a message the user
+    // wrote opens it: they attached that file themselves. An agent's reply
+    // can write any `@file:` it likes, so there it opens project files only,
+    // as its inline code does — never `@file:/Applications/Some.app`.
+    const resolved = data.fileRoot ? resolveInProject(value, data.fileRoot) : null;
+    const outside = data.userAuthored && isAbsolutePath(value) ? value : null;
+    const absolute = resolved ?? outside;
+    return fileChipNode({
+      target: absolute ? { path: absolute, folder: kind === "folder" } : null,
+      iconPath: absolute ?? value,
+      folder: kind === "folder",
+      label: baseNameOf(value),
+      title: absolute ?? value,
+    });
+  }
+  const label = FIXED_LABEL[kind] ?? value;
   const icon = iconWrap(kind);
   const children: Hast[] = [];
   if (icon) children.push(icon);
@@ -351,7 +460,12 @@ function chipNode(prefix: string, value: string): Hast {
 
 /** Split one text value into [text, chip, text, …]; null when it holds no
  *  placeholder. Inside code the token goes back in as literal text instead. */
-function splitMentionText(value: string, tokens: MentionToken[], literal: boolean): Hast[] | null {
+function splitMentionText(
+  value: string,
+  tokens: MentionToken[],
+  literal: boolean,
+  data: RenderData,
+): Hast[] | null {
   PLACEHOLDER_RE.lastIndex = 0;
   const out: Hast[] = [];
   let last = 0;
@@ -363,7 +477,7 @@ function splitMentionText(value: string, tokens: MentionToken[], literal: boolea
     if (m.index > last) out.push({ type: "text", value: value.slice(last, m.index) });
     if (!token) out.push({ type: "text", value: m[0] });
     else if (literal) out.push({ type: "text", value: token.raw });
-    else out.push(chipNode(token.prefix, token.value));
+    else out.push(chipNode(token.prefix, token.value, data));
     last = m.index + m[0].length;
   }
   if (!found) return null;
@@ -378,7 +492,7 @@ function splitMentionText(value: string, tokens: MentionToken[], literal: boolea
 const MENTION_SKIP_TAGS = new Set(["code", "pre"]);
 
 function rehypeMentionChips() {
-  return (tree: Hast, file: { data: { mentionTokens?: MentionToken[] } }) => {
+  return (tree: Hast, file: { data: RenderData }) => {
     const tokens = file.data.mentionTokens;
     if (!tokens || tokens.length === 0) return;
     const walk = (node: Hast, literal: boolean) => {
@@ -386,7 +500,7 @@ function rehypeMentionChips() {
       const next: Hast[] = [];
       for (const child of node.children) {
         if (child.type === "text" && typeof child.value === "string") {
-          const split = splitMentionText(child.value, tokens, literal);
+          const split = splitMentionText(child.value, tokens, literal, file.data);
           next.push(...(split ?? [child]));
           continue;
         }
@@ -402,6 +516,216 @@ function rehypeMentionChips() {
   };
 }
 
+/** What one parse is handed besides the source. */
+type RenderData = {
+  mentionTokens?: MentionToken[];
+  /** The session's project root. Unset, no path becomes a chip. */
+  fileRoot?: string;
+  /** See {@link ParseOptions.userAuthored}. */
+  userAuthored?: boolean;
+};
+
+/** How one string is rendered, besides its project root. */
+export interface ParseOptions {
+  /**
+   * The user wrote this text (a sent message), so an absolute `@file:` or
+   * `@folder:` mention outside the project opens what it names. Unset (an
+   * agent's reply), only paths inside the project are clickable.
+   */
+  userAuthored?: boolean;
+}
+
+// ── File paths in prose ───────────────────────────────────────────────────────
+// Inline code and link destinations that name a file in the session's project
+// become the same chips a mention draws (`file-links.ts` decides which). Runs
+// once per rendered string, and the result is cached with the HTML. Fenced
+// code is never touched.
+
+/** The text of an element whose children are all text (or inline code), or
+ *  null when it holds anything else. */
+function plainText(node: Hast): string | null {
+  let text = "";
+  for (const child of node.children ?? []) {
+    if (child.type === "text" && typeof child.value === "string") text += child.value;
+    else if (child.type === "element" && child.tagName === "code") {
+      const inner = plainText(child);
+      if (inner === null) return null;
+      text += inner;
+    } else return null;
+  }
+  return text;
+}
+
+/** Whether a link's text just restates where it goes (`[src/a.ts](src/a.ts)`,
+ *  `[a.ts](src/a.ts)`), so the chip can stand in for the whole link. */
+function labelRestatesTarget(label: string, href: string): boolean {
+  const clean = (s: string) =>
+    s
+      .trim()
+      .replace(/^\.\//, "")
+      .replace(/(?::\d+){1,2}$|#L\d+(?:C\d+)?$/i, "")
+      .replace(/\/+$/, "");
+  const l = clean(label);
+  const h = clean(href);
+  return l.length > 0 && (h === l || h.endsWith(`/${l}`));
+}
+
+/** A chip for a path found in prose. Its label is the text as written —
+ *  `src/a/index.ts` and `src/b/index.ts` must not both read `index.ts`, and
+ *  copying the reply keeps the path — and its tooltip the resolved path. */
+function fileTargetChip(target: FileLinkTarget, written: string): Hast {
+  return fileChipNode({
+    target,
+    iconPath: target.path,
+    folder: target.folder,
+    label: written.trim(),
+    title: fileChipTitle(target),
+  });
+}
+
+/** A link destination as a person would read it: `file://` dropped and
+ *  percent-escapes decoded. */
+function writtenHref(href: string): string {
+  const bare = href.replace(/^file:\/\//i, "");
+  try {
+    return decodeURIComponent(bare);
+  } catch {
+    return bare;
+  }
+}
+
+function rehypeFileChips() {
+  return (tree: Hast, file: { data: RenderData }) => {
+    const root = file.data.fileRoot;
+    if (!root) return;
+    const walk = (node: Hast) => {
+      if (!node.children) return;
+      const next: Hast[] = [];
+      for (const child of node.children) {
+        if (child.type !== "element" || child.tagName === "pre") {
+          next.push(child);
+          continue;
+        }
+        if (child.tagName === "code") {
+          const text = plainText(child);
+          const target = text === null ? null : inlineCodeFileTarget(text, root);
+          next.push(target && text !== null ? fileTargetChip(target, text) : child);
+          continue;
+        }
+        const href = child.tagName === "a" ? child.properties?.href : undefined;
+        const target = typeof href === "string" ? linkFileTarget(href, root) : null;
+        if (target && typeof href === "string") {
+          const label = plainText(child);
+          if (label !== null && labelRestatesTarget(label, href)) {
+            next.push(fileTargetChip(target, label));
+          } else {
+            // The link's own words stay, as text: an anchor with a relative
+            // href would navigate the webview away. The chip follows them.
+            walk(child);
+            next.push(
+              ...(child.children ?? []),
+              { type: "text", value: " " },
+              fileTargetChip(target, writtenHref(href)),
+            );
+          }
+          continue;
+        }
+        // A mention chip is already a chip.
+        const cls = child.properties?.className;
+        if (!(Array.isArray(cls) && cls.includes("atlas-mention-chip"))) walk(child);
+        next.push(child);
+      }
+      node.children = next;
+    };
+    walk(tree);
+  };
+}
+
+// ── Web links ─────────────────────────────────────────────────────────────────
+// An http(s) link wears its service's icon before its text, and the full
+// address as its tooltip; written bare, a pull request, issue, commit,
+// repository or Linear issue reads short ("PR #42", "ATL-978"). Which service
+// and which label is `link-services.ts`. The icon is an empty span painted by
+// CSS (`.atlas-link__icon`, a mask in the link's own colour), so it follows
+// the theme and costs one element per link. One `URL` parse per anchor, so the
+// streaming tail can run it on every tick.
+
+/** Whether any text under a node is more than whitespace. */
+function hasWords(node: Hast): boolean {
+  for (const child of node.children ?? []) {
+    if (child.type === "text" && child.value?.trim()) return true;
+    if (child.type === "element" && hasWords(child)) return true;
+  }
+  return false;
+}
+
+/** The icon, with the first characters of the link's text kept on its line. */
+function linkLead(service: string, lead: Hast[]): Hast {
+  return {
+    type: "element",
+    tagName: "span",
+    properties: { className: ["atlas-link__lead"] },
+    children: [
+      {
+        type: "element",
+        tagName: "span",
+        properties: {
+          className: ["atlas-link__icon"],
+          dataLinkService: service,
+          ariaHidden: "true",
+        },
+        children: [],
+      },
+      ...lead,
+    ],
+  };
+}
+
+function decorateLink(anchor: Hast, href: string): void {
+  const facts = linkFacts(href);
+  if (!facts) return;
+  // An image link, or one with no words, gets no icon.
+  if (!hasWords(anchor)) return;
+  const text = plainText(anchor);
+  const props = (anchor.properties ??= {});
+  props.title = href;
+  props.dataLinkService = facts.service;
+  const className = ["atlas-link"];
+  let children = anchor.children ?? [];
+  if (facts.short && text !== null && textIsAddress(text, href)) {
+    children = [{ type: "text", value: facts.short }];
+    props.dataLinkCopy = href;
+    if (facts.commit) className.push("atlas-link--mono");
+  }
+  props.className = className;
+  const [first, ...rest] = children;
+  if (first?.type === "text" && typeof first.value === "string") {
+    const n = leadingLinkTextLength(first.value);
+    const tail = first.value.slice(n);
+    anchor.children = [
+      linkLead(facts.service, [{ type: "text", value: first.value.slice(0, n) }]),
+      ...(tail ? [{ type: "text", value: tail }] : []),
+      ...rest,
+    ];
+  } else {
+    anchor.children = [linkLead(facts.service, first ? [first] : []), ...rest];
+  }
+}
+
+function rehypeLinkIcons() {
+  return (tree: Hast) => {
+    const walk = (node: Hast) => {
+      for (const child of node.children ?? []) {
+        if (child.type !== "element" || child.tagName === "pre") continue;
+        const href = child.tagName === "a" ? child.properties?.href : undefined;
+        if (typeof href === "string") decorateLink(child, href);
+        else walk(child);
+      }
+    };
+    walk(tree);
+  };
+}
+
 let processor: Processor | null = null;
 function getProcessor(): Processor {
   if (!processor) {
@@ -411,6 +735,10 @@ function getProcessor(): Processor {
       .use(remarkRehype, { allowDangerousHtml: false })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .use(rehypeMentionChips as any)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .use(rehypeFileChips as any)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .use(rehypeLinkIcons as any)
       // `detect: false`: only highlight fenced blocks with an explicit language
       // tag. Auto-detection ran highlight.js across ~37 languages for EVERY
       // un-tagged code block — the dominant per-parse cost. Agents almost always
@@ -434,11 +762,20 @@ function escapeHtml(s: string): string {
 
 /** Parse one markdown source string to sanitized HTML. Synchronous and
  *  uncached — callers own caching. Never throws: falls back to an escaped
- *  paragraph on parser error. */
-export function parseMarkdown(src: string): string {
+ *  paragraph on parser error.
+ *
+ *  `fileRoot` is the session's project root: given one, file paths in inline
+ *  code and links become chips, and mention chips resolve against it. The
+ *  output depends on it (and on `options`), so a cache must key on them too. */
+export function parseMarkdown(src: string, fileRoot?: string, options?: ParseOptions): string {
   try {
     const { text, tokens } = protectMentions(src);
-    return String(getProcessor().processSync({ value: text, data: { mentionTokens: tokens } }));
+    const data: RenderData = {
+      mentionTokens: tokens,
+      fileRoot: fileRoot || undefined,
+      userAuthored: options?.userAuthored === true,
+    };
+    return String(getProcessor().processSync({ value: text, data }));
   } catch {
     return `<p>${escapeHtml(src)}</p>`;
   }

@@ -634,7 +634,7 @@
       "title": "Confirm before deleting a session",
       "summary": "Ask first when you delete a session from the sidebar or history.",
       "default": "true",
-      "doc": "Ask before deleting a session from the sidebar or the history. A deleted session's transcript stays with its agent, but Atlas forgets the session. Archiving never asks, because it can be undone.",
+      "doc": "Ask before deleting a session from the sidebar or the history. A deleted session's transcript stays with its agent, but Atlas forgets the session. Settling never asks, because it can be undone.",
       "validation": "—"
     },
     {
@@ -718,7 +718,7 @@
       "min": 0,
       "max": 90,
       "default": "3",
-      "doc": "Days a session may sit idle before Atlas settles it: moves it to the Settled shelf at the bottom of the session sidebar, where it stays listed and resumable. A session that is running, waiting for you, archived, or that you un-settled since its last activity is left alone, and sending to a settled session brings it back. 0 turns auto-settling off; settling by hand still works. Must be between 0 and 90.",
+      "doc": "Days a session may sit idle before Atlas settles it: moves it to the Settled shelf at the bottom of the session sidebar, where it stays listed and resumable. A session that is running, waiting for you, pinned, snoozed, or that you un-settled since its last activity is left alone, and sending to a settled session brings it back. 0 turns auto-settling off; settling by hand still works. Must be between 0 and 90.",
       "validation": "0 ≤ n ≤ 90"
     },
     {

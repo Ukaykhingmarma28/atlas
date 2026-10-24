@@ -615,6 +615,41 @@ struct AutoSettledNotice {
     count: usize,
 }
 
+/// The longest the snooze timer sleeps before re-reading the wall clock.
+///
+/// Tokio's timer runs on the monotonic clock, which stops while the machine
+/// sleeps: a timer set for 9:00 before the lid closed at 8:00 would fire an
+/// hour after it opens, not at 9:00. Capping each sleep bounds that lag. It
+/// is still one timer, not a poll per session — each wake-up reads one
+/// minimum and goes back to sleep.
+const SNOOZE_TIMER_MAX_SLEEP: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Wake snoozed sessions when their time comes: one timer, for the soonest
+/// `snoozed_until`, recomputed whenever the store changes (a new snooze, a
+/// wake, a send that cleared one). Every snooze already due — at launch,
+/// after the machine slept — wakes on the first pass. Ends when the store
+/// does.
+pub(crate) async fn run_snooze_waker(store: atlas_thread_metadata::ThreadMetadataStore) {
+    let mut changes = store.subscribe();
+    loop {
+        let now = chrono::Utc::now();
+        store.wake_due(now);
+        let sleep = store
+            .next_snooze_wake()
+            .map(|at| (at - now).to_std().unwrap_or_default())
+            .unwrap_or(SNOOZE_TIMER_MAX_SLEEP)
+            .min(SNOOZE_TIMER_MAX_SLEEP);
+        tokio::select! {
+            () = tokio::time::sleep(sleep) => {}
+            changed = changes.recv() => {
+                if matches!(changed, Err(tokio::sync::broadcast::error::RecvError::Closed)) {
+                    return;
+                }
+            }
+        }
+    }
+}
+
 /// One pass of the idle sweep. Blocking: run it under `spawn_blocking`.
 fn auto_settle_tick(app: &AppHandle, host: &Arc<AgentHost>) {
     let Some(days) = app
@@ -1221,10 +1256,17 @@ pub fn install_manager(app: &AppHandle) {
         });
     }
 
+    // Snoozes wake on one timer, set for the soonest of them and re-read on
+    // every store change (`run_snooze_waker`). A wake is a store change, so
+    // the forwarder above announces it like any other.
+    if let Some(history) = host.history() {
+        tauri::async_runtime::spawn(run_snooze_waker(history.store().clone()));
+    }
+
     // Auto-settle: once a minute, sessions idle for `autoSettleAfterDays`
     // move to the sidebar's Settled shelf (0 turns it off). The host skips the
-    // busy and the live-elsewhere ones, the store the archived and the ones
-    // the user un-settled since their last activity; a settle announces
+    // busy and the live-elsewhere ones, the store the pinned, the snoozed and
+    // the ones the user un-settled since their last activity; a settle announces
     // itself through the forwarder above. The setting is read every pass, so
     // a change takes effect within the minute. Each tick's work reads the
     // store, the watcher and possibly a file, so it runs off the async
@@ -1754,21 +1796,13 @@ pub fn threads_projects(
         .map_err(CmdError::from)
 }
 
-/// Every thread, archived or not, newest-started first — the history view.
+/// Every thread, newest-started first — the history view.
 #[tauri::command]
 pub fn threads_history(
-    archived_only: bool,
     host: State<'_, Arc<AgentHost>>,
     watcher: State<'_, Arc<super::session_watcher::SessionWatcher>>,
 ) -> Result<Vec<super::agent_host::ThreadRow>, CmdError> {
-    host.thread_history(archived_only, &watcher.last_modified())
-        .map_err(CmdError::from)
-}
-
-/// Take a thread out of the active list, keeping it in history.
-#[tauri::command]
-pub fn threads_archive(thread_id: String, host: State<'_, Arc<AgentHost>>) -> Result<(), CmdError> {
-    host.archive_thread(parse_thread_id(&thread_id)?)
+    host.thread_history(&watcher.last_modified())
         .map_err(CmdError::from)
 }
 
@@ -1800,6 +1834,98 @@ pub fn threads_unsettle(
     host: State<'_, Arc<AgentHost>>,
 ) -> Result<bool, CmdError> {
     host.unsettle_thread(parse_thread_id(&thread_id)?)
+        .map_err(CmdError::from)
+}
+
+// The lifecycle commands below touch only the store's in-memory index and its
+// write queue (the disk write happens on the store's own writer thread), so
+// none blocks. `async` keeps them off the main thread all the same: a pin or
+// a debounced "viewed" must never wait behind a frame.
+
+/// Pin a session. `orderKey` places it among the pinned (a fractional key the
+/// frontend mints); omitted, it sorts after every keyed pin. Brings a settled
+/// or snoozed session back. Answers whether anything changed.
+#[tauri::command(async)]
+pub fn threads_pin(
+    thread_id: String,
+    order_key: Option<String>,
+    host: State<'_, Arc<AgentHost>>,
+) -> Result<bool, CmdError> {
+    host.pin_thread(parse_thread_id(&thread_id)?, order_key)
+        .map_err(CmdError::from)
+}
+
+/// Unpin a session. Answers whether it was pinned.
+#[tauri::command(async)]
+pub fn threads_unpin(thread_id: String, host: State<'_, Arc<AgentHost>>) -> Result<bool, CmdError> {
+    host.unpin_thread(parse_thread_id(&thread_id)?)
+        .map_err(CmdError::from)
+}
+
+/// Move a pinned session to `orderKey`. `false` for one that is not pinned.
+#[tauri::command(async)]
+pub fn threads_reorder_pin(
+    thread_id: String,
+    order_key: String,
+    host: State<'_, Arc<AgentHost>>,
+) -> Result<bool, CmdError> {
+    host.reorder_pinned_thread(parse_thread_id(&thread_id)?, order_key)
+        .map_err(CmdError::from)
+}
+
+/// Snooze a session until `until` (RFC 3339). Rejected for a time not in the
+/// future and for a session with a pending permission or question.
+#[tauri::command(async)]
+pub fn threads_snooze(
+    thread_id: String,
+    until: String,
+    host: State<'_, Arc<AgentHost>>,
+) -> Result<bool, CmdError> {
+    let until = chrono::DateTime::parse_from_rfc3339(&until)
+        .map_err(|_| CmdError::new(format!("not a time: {until}"), ErrorClass::Fatal))?
+        .with_timezone(&chrono::Utc);
+    host.snooze_thread(parse_thread_id(&thread_id)?, until)
+        .map_err(CmdError::from)
+}
+
+/// Rename a session. An empty title clears the rename.
+#[tauri::command(async)]
+pub fn threads_rename(
+    thread_id: String,
+    title: String,
+    host: State<'_, Arc<AgentHost>>,
+) -> Result<(), CmdError> {
+    host.rename_thread(parse_thread_id(&thread_id)?, &title)
+        .map_err(CmdError::from)
+}
+
+/// Wake a snoozed session now. Answers whether it was snoozed.
+#[tauri::command(async)]
+pub fn threads_wake(thread_id: String, host: State<'_, Arc<AgentHost>>) -> Result<bool, CmdError> {
+    host.wake_thread(parse_thread_id(&thread_id)?)
+        .map_err(CmdError::from)
+}
+
+/// The user opened or focused the chat tab running `sessionId`. Keyed by the
+/// live session, not the row, because that is what a tab knows. The frontend
+/// debounces it. Answers whether a row was marked.
+#[tauri::command(async)]
+pub fn threads_mark_viewed(
+    session_id: String,
+    host: State<'_, Arc<AgentHost>>,
+) -> Result<bool, CmdError> {
+    host.mark_session_viewed(&session_id)
+        .map_err(CmdError::from)
+}
+
+/// Make a session read as unread again. Rejected for one with no finished
+/// turn. Answers whether anything changed.
+#[tauri::command(async)]
+pub fn threads_mark_unread(
+    thread_id: String,
+    host: State<'_, Arc<AgentHost>>,
+) -> Result<bool, CmdError> {
+    host.mark_thread_unread(parse_thread_id(&thread_id)?)
         .map_err(CmdError::from)
 }
 
@@ -2723,6 +2849,80 @@ impl PendingUpdates {
             }
             super::catalog::emit_catalog_changed(&app, "update");
         });
+    }
+}
+
+#[cfg(test)]
+mod snooze_waker_tests {
+    use std::path::PathBuf;
+    use std::time::Duration as StdDuration;
+
+    use agent_client_protocol::schema::v1 as acp;
+    use atlas_thread_metadata::{PathList, ThreadId, ThreadMetadata, ThreadMetadataStore};
+    use chrono::{Duration, Utc};
+
+    use super::run_snooze_waker;
+
+    fn saved(store: &ThreadMetadataStore) -> ThreadId {
+        let mut thread = ThreadMetadata::new(
+            ThreadId::new(),
+            "some-agent".into(),
+            PathList::new(&[PathBuf::from("/tmp/atlas")]),
+        );
+        thread.session_id = Some(acp::SessionId::new(thread.thread_id.to_key_string()));
+        let id = thread.thread_id;
+        store.save_all(vec![thread]);
+        id
+    }
+
+    async fn until_awake(store: &ThreadMetadataStore, id: ThreadId) -> bool {
+        for _ in 0..60 {
+            if !store.thread(id).unwrap().is_snoozed() {
+                return true;
+            }
+            tokio::time::sleep(StdDuration::from_millis(50)).await;
+        }
+        false
+    }
+
+    /// One timer serves every snooze: one already due when it starts wakes at
+    /// once, one set afterwards is picked up from the change it makes, and
+    /// each wakes at its own time — not before.
+    #[tokio::test]
+    async fn the_timer_wakes_each_snooze_at_its_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ThreadMetadataStore::open(dir.path().join("threads.db")).unwrap();
+
+        let overdue = saved(&store);
+        let mut row = store.thread(overdue).unwrap();
+        row.snoozed_until = Some(Utc::now() - Duration::minutes(5));
+        row.snoozed_at = Some(Utc::now() - Duration::hours(1));
+        store.save_all(vec![row]);
+
+        let waker = tokio::spawn(run_snooze_waker(store.clone()));
+        assert!(
+            until_awake(&store, overdue).await,
+            "a missed wake fires at start"
+        );
+        assert!(store.thread(overdue).unwrap().is_woke());
+
+        let later = saved(&store);
+        let distant = saved(&store);
+        store.snooze(later, Utc::now() + Duration::milliseconds(400));
+        store.snooze(distant, Utc::now() + Duration::hours(2));
+        assert!(
+            store.thread(later).unwrap().is_snoozed(),
+            "not before its time"
+        );
+        assert!(
+            until_awake(&store, later).await,
+            "a new snooze is scheduled"
+        );
+        assert!(
+            store.thread(distant).unwrap().is_snoozed(),
+            "and the distant one sleeps on"
+        );
+        waker.abort();
     }
 }
 

@@ -280,6 +280,12 @@ describe("thread history ↔ agent_host wire shapes (#7)", () => {
     expect(tsInterfaceProps(ts, "ThreadRow")).toContain("settledAt");
   });
 
+  it("ThreadRow carries the lifecycle Rust decides: pin, snooze, unread, woke", () => {
+    expect(tsInterfaceProps(ts, "ThreadRow")).toEqual(
+      expect.arrayContaining(["pinOrder", "snoozedUntil", "unread", "woke"]),
+    );
+  });
+
   it("the threads_* history commands are returned as those structs", () => {
     expect(commands).toMatch(/fn threads_history\([\s\S]*?\) -> Result<Vec<[\w:]*ThreadRow>/);
     expect(commands).toMatch(
@@ -298,6 +304,14 @@ describe("thread history ↔ agent_host wire shapes (#7)", () => {
         "threads_history",
         "threads_settle",
         "threads_unsettle",
+        "threads_pin",
+        "threads_unpin",
+        "threads_reorder_pin",
+        "threads_snooze",
+        "threads_wake",
+        "threads_rename",
+        "threads_mark_viewed",
+        "threads_mark_unread",
       ]),
     );
   });

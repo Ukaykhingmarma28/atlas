@@ -38,6 +38,8 @@ import type { NativeModelsRefresh } from "@/types/agents";
 import type { MockHandlers } from "../types";
 import { abs, MOCK_PROJECT, OTHER_PROJECTS } from "../project";
 import { adoptSession } from "../fake-agent";
+import { sessionLifecycleHandlers, withDerivedLifecycle } from "../session-lifecycle";
+import { RESTING_LIFECYCLE } from "@/features/chat/lib/session-lifecycle";
 
 const nothing = () => null;
 
@@ -54,9 +56,10 @@ const ago = (ms: number) => new Date(T0 - ms).toISOString();
 /**
  * The sidebar and the history view read the same rows, so one list feeds both.
  * The spread is deliberate: a draft with no session id yet, a very long
- * agent-written title, an archived row that only the history view may show,
- * two settled rows for the sidebar's Settled shelf, and two projects so the
- * sidebar's grouping has more than one group.
+ * agent-written title, settled rows for the sidebar's Settled shelf (one of
+ * them archived before Settled replaced archiving), a pinned row, a snoozed
+ * row, an unread one and a woken one, and two projects so the sidebar's
+ * grouping has more than one group.
  */
 const THREADS: ThreadRow[] = [
   {
@@ -66,8 +69,7 @@ const THREADS: ThreadRow[] = [
     title: "Move the user reads onto /v2 and keep the retry helper",
     updatedAt: ago(5 * 60_000),
     createdAt: ago(3 * 3_600_000),
-    archived: false,
-    settledAt: null,
+    ...RESTING_LIFECYCLE,
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     // Another process is writing this one: the live dot, and the composer's
@@ -84,8 +86,7 @@ const THREADS: ThreadRow[] = [
     title: "New conversation",
     updatedAt: ago(40 * 60_000),
     createdAt: ago(40 * 60_000),
-    archived: false,
-    settledAt: null,
+    ...RESTING_LIFECYCLE,
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
@@ -99,8 +100,7 @@ const THREADS: ThreadRow[] = [
       "Regenerate the whole design-token ramp, including the dark-mode steps, and explain every value that moved",
     updatedAt: ago(26 * 3_600_000),
     createdAt: ago(28 * 3_600_000),
-    archived: false,
-    settledAt: null,
+    ...RESTING_LIFECYCLE,
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path, abs("src/styles")],
     liveElsewhere: false,
@@ -113,8 +113,10 @@ const THREADS: ThreadRow[] = [
     title: "Why does the PDF highlight drift after a rotate?",
     updatedAt: ago(3 * 86_400_000),
     createdAt: ago(3 * 86_400_000),
-    archived: false,
-    settledAt: null,
+    ...RESTING_LIFECYCLE,
+    // Unread: its last turn finished after the user last looked.
+    lastViewedAt: ago(3 * 86_400_000 + 600_000),
+    lastTurnCompletedAt: ago(3 * 86_400_000),
     projectName: OTHER_PROJECTS[0].name,
     folderPaths: [OTHER_PROJECTS[0].path],
     liveElsewhere: false,
@@ -127,9 +129,10 @@ const THREADS: ThreadRow[] = [
     title: "Spike: swap HashMap for BTreeMap in the cache",
     updatedAt: ago(9 * 86_400_000),
     createdAt: ago(9 * 86_400_000),
-    // The only archived row — the history view's filter has something to do.
-    archived: true,
-    settledAt: null,
+    // Archived before Settled replaced archiving: the migration settled it at
+    // its last activity.
+    ...RESTING_LIFECYCLE,
+    settledAt: ago(9 * 86_400_000),
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
@@ -143,8 +146,7 @@ const THREADS: ThreadRow[] = [
     title: "Trim the first paint: the titlebar dock mounts before the theme resolves",
     updatedAt: ago(2 * 3_600_000),
     createdAt: ago(2 * 3_600_000),
-    archived: false,
-    settledAt: null,
+    ...RESTING_LIFECYCLE,
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
@@ -160,8 +162,10 @@ const THREADS: ThreadRow[] = [
     title: "Port the seatbelt profile to bubblewrap",
     updatedAt: ago(7 * 3_600_000),
     createdAt: ago(8 * 3_600_000),
-    archived: false,
-    settledAt: null,
+    ...RESTING_LIFECYCLE,
+    // Pinned: the Pinned section, never auto-settled.
+    pinnedAt: ago(6 * 3_600_000),
+    pinOrder: "n",
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
@@ -174,8 +178,10 @@ const THREADS: ThreadRow[] = [
     title: "Explain the delta wire's additive-only rule",
     updatedAt: ago(19 * 3_600_000),
     createdAt: ago(19 * 3_600_000),
-    archived: false,
-    settledAt: null,
+    ...RESTING_LIFECYCLE,
+    // Snoozed for a few hours; the fake backend's timer wakes it.
+    snoozedAt: ago(3_600_000),
+    snoozedUntil: ago(-3 * 3_600_000),
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
@@ -188,8 +194,9 @@ const THREADS: ThreadRow[] = [
     title: "Why is the terminal buffer re-rendering on every keystroke?",
     updatedAt: ago(2 * 86_400_000),
     createdAt: ago(2 * 86_400_000),
-    archived: false,
-    settledAt: null,
+    ...RESTING_LIFECYCLE,
+    // Woke from a snooze an hour ago and not looked at since.
+    lastSnoozeWakeAt: ago(3_600_000),
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
@@ -202,7 +209,7 @@ const THREADS: ThreadRow[] = [
     title: "Checkpoint restore drops the new-file blob",
     updatedAt: ago(5 * 86_400_000),
     createdAt: ago(5 * 86_400_000),
-    archived: false,
+    ...RESTING_LIFECYCLE,
     // Idle past the auto-settle window: on the Settled shelf, settled at its
     // last activity, as the idle sweep records it.
     settledAt: ago(5 * 86_400_000),
@@ -219,7 +226,7 @@ const THREADS: ThreadRow[] = [
     title: "First pass at the memory briefing",
     updatedAt: ago(12 * 86_400_000),
     createdAt: ago(12 * 86_400_000),
-    archived: false,
+    ...RESTING_LIFECYCLE,
     settledAt: ago(12 * 86_400_000),
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
@@ -228,7 +235,7 @@ const THREADS: ThreadRow[] = [
   },
 ];
 
-let threads: ThreadRow[] = THREADS.map((thread) => ({ ...thread }));
+let threads: ThreadRow[] = THREADS.map((thread) => withDerivedLifecycle({ ...thread }));
 
 /** Tell every history surface to re-read, exactly as Rust's store does. */
 function threadsChanged(): void {
@@ -241,7 +248,7 @@ function threadsChanged(): void {
 function threadProjects(cwd: string | null): ThreadProject[] {
   const byProject = new Map<string, ThreadRow[]>();
   for (const thread of threads) {
-    if (thread.archived) continue;
+    if (thread.sessionId === null) continue;
     const rows = byProject.get(thread.projectName) ?? [];
     rows.push(thread);
     byProject.set(thread.projectName, rows);
@@ -406,10 +413,8 @@ function simulateDownload(model: ModelStatus): void {
 
 export const miscHandlers: MockHandlers = {
   // ── chat history ────────────────────────────────────────────────────────
-  // As in Rust: `archivedOnly` narrows to archived rows, otherwise every row,
-  // archived or not (the composer's live-elsewhere feed relies on that).
-  threads_history: ({ archivedOnly }): ThreadRow[] =>
-    archivedOnly ? threads.filter((thread) => thread.archived) : threads,
+  // As in Rust: every row (the composer's live-elsewhere feed relies on that).
+  threads_history: (): ThreadRow[] => threads,
   threads_sync_project: () => 0,
   threads_projects: ({ cwd }): ThreadProject[] =>
     threadProjects(cwd === null || cwd === undefined ? null : String(cwd)),
@@ -430,34 +435,15 @@ export const miscHandlers: MockHandlers = {
     threadsChanged();
     return null;
   },
-  // As in Rust: settling sinks the row to the Settled shelf; it stays listed.
-  threads_settle: ({ threadId }): boolean => {
-    const due = threads.some((t) => t.threadId === String(threadId) && t.settledAt === null);
-    if (!due) return false;
-    threads = threads.map((thread) =>
-      thread.threadId === String(threadId)
-        ? { ...thread, settledAt: new Date().toISOString() }
-        : thread,
-    );
-    threadsChanged();
-    return true;
-  },
-  threads_unsettle: ({ threadId }): boolean => {
-    const due = threads.some((t) => t.threadId === String(threadId) && t.settledAt !== null);
-    if (!due) return false;
-    threads = threads.map((thread) =>
-      thread.threadId === String(threadId) ? { ...thread, settledAt: null } : thread,
-    );
-    threadsChanged();
-    return true;
-  },
-  threads_archive: ({ threadId }): null => {
-    threads = threads.map((thread) =>
-      thread.threadId === String(threadId) ? { ...thread, archived: true } : thread,
-    );
-    threadsChanged();
-    return null;
-  },
+  // As in Rust: settling sinks the row to the Settled shelf, it stays listed;
+  // pin, snooze and viewed/unread follow the store's rules.
+  ...sessionLifecycleHandlers({
+    get: () => threads,
+    set: (rows) => {
+      threads = rows;
+    },
+    changed: threadsChanged,
+  }),
   // Importing is the slowest thing in the app (every agent is started to be
   // asked), so all three answer kinds are represented rather than just "ready".
   threads_import_candidates: (): ImportCandidate[] => [

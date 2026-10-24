@@ -27,6 +27,8 @@ import {
   chatCommentsRepliesOnly,
   chatCommentsTools,
 } from "./chat-comments";
+import { chatFileChips } from "./chat-file-chips";
+import { chatLinkIcons } from "./chat-link-icons";
 import { chatLongPrompt } from "./chat-long-prompt";
 import { chatMarkdown } from "./chat-markdown";
 import { chatTools } from "./chat-tools";
@@ -40,6 +42,7 @@ import { keymapFirstRun } from "./keymap-first-run";
 import { knowledge } from "./knowledge";
 import { memorySetup } from "./memory-setup";
 import { northwind } from "./northwind";
+import { sidebar } from "./sidebar";
 import { timelineEmpty } from "./timeline-empty";
 
 /** Every variant `permission-modal.tsx` renders, callable from any chat
@@ -84,6 +87,8 @@ const all: Scenario[] = [
   chatCommentsError,
   chatLongPrompt,
   chatMarkdown,
+  chatFileChips,
+  chatLinkIcons,
   chatTurnChanges,
   chatTurnChangesLong,
   chatTurnChangesNative,
@@ -94,6 +99,7 @@ const all: Scenario[] = [
   collab,
   northwind,
   memorySetup,
+  sidebar,
   timelineEmpty,
   keymapFirstRun,
   designSystem,

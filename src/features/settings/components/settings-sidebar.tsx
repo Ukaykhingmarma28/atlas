@@ -275,8 +275,8 @@ function NavItem({
       type="button"
       aria-current={active ? "page" : undefined}
       onClick={() => onSelect(entry.id)}
-      // The project rail's row (`NavItem` in project-sidebar.tsx): the same
-      // height, type and icon colours, so the two sidebars read as one app.
+      // A sidebar nav row: the same height, type and icon colours as the
+      // app sidebar's rows, so the two sidebars read as one app.
       className={cn(
         "group/nav flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-sm leading-none whitespace-nowrap",
         "transition-colors duration-fast ease-out-strong",

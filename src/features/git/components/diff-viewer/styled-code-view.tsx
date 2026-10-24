@@ -291,7 +291,7 @@ type StyledCodeViewProps<A> = (
 
 /** The appearance the viewer resolves `light-dark()` with. Re-read on every
  *  theme apply; the colours themselves are variables and need no re-read. */
-function useDiffAppearance(): "light" | "dark" {
+export function useDiffAppearance(): "light" | "dark" {
   useThemeVersion();
   return getActiveTheme()?.appearance ?? "dark";
 }

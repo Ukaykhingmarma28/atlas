@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useProjectStore } from "@/features/projects/stores/project-store";
-import { ProjectSidebar } from "@/features/projects/components/project-sidebar";
+import { AppSidebar } from "@/features/sidebar/components/app-sidebar";
 import { useProjectGitPrefetch } from "@/features/projects/lib/use-project-prefetch";
 import { useSettingsNav } from "@/features/settings/stores/settings-nav-store";
 import { cn } from "@/lib/utils";
@@ -66,7 +66,7 @@ export function AppLayout() {
         // which on an AMOLED theme are ten and zero. The hairline tokens meant
         // to separate a card from the surface it sits on disappear here.
         <div className="atlas-project-rail h-screen w-[244px] shrink-0 border-r">
-          <ProjectSidebar />
+          <AppSidebar />
         </div>
       )}
 
@@ -122,7 +122,7 @@ export function AppLayout() {
             aria-hidden
           />
 
-          {/* Project rail — an OVERLAY (Linear-style), toggled by Cmd+⇧. Always
+          {/* The sidebar — an OVERLAY (Linear-style), toggled by Cmd+⇧. Always
           mounted; it sits ABOVE the content (never in flow), so toggling it does
           zero layout work on the shell — the content underneath stays perfectly
           still. It SLIDES (GPU `translateX`) AND FADES (`opacity`) together for a
@@ -151,7 +151,7 @@ export function AppLayout() {
             }}
             aria-hidden={!sidebarOpen}
           >
-            <ProjectSidebar />
+            <AppSidebar />
           </div>
         </>
       )}

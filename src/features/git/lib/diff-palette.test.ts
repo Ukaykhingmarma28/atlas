@@ -19,7 +19,7 @@ import {
 
 const ROOT = path.resolve(__dirname, "../../../..");
 const GLOBALS = readFileSync(path.join(ROOT, "src/styles/globals.css"), "utf8");
-const GUTTER = readFileSync(path.join(ROOT, "src/features/editor/lib/diff-gutter.ts"), "utf8");
+const GUTTER = readFileSync(path.join(ROOT, "src/features/editor/lib/file-decorations.ts"), "utf8");
 
 const PALETTE_VARS = [
   "--atlas-diff-added-text",
@@ -107,9 +107,9 @@ describe("the diff palette", () => {
     );
   });
 
-  it("is what the editor's change gutter draws with", () => {
-    expect(GUTTER).toContain('background: "var(--atlas-diff-added-text)"');
-    expect(GUTTER).toContain('background: "var(--atlas-diff-changed-bar)"');
-    expect(GUTTER).toContain("var(--atlas-diff-removed-text)");
+  it("is what the file view's change bars draw with", () => {
+    expect(GUTTER).toContain('"var(--atlas-diff-added-text)"');
+    expect(GUTTER).toContain('"var(--atlas-diff-changed-bar)"');
+    expect(GUTTER).toContain('"var(--atlas-diff-removed-text)"');
   });
 });
