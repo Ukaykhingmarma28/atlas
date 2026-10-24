@@ -89,6 +89,9 @@ import { RemovedAgentBar } from "./removed-agent-bar";
 import { ModeRestoreBar, OPEN_MODE_PICKER_EVENT } from "./mode-restore-bar";
 import { LiveElsewhereBar } from "./live-elsewhere-bar";
 import { useSendHeldForTerminal } from "../stores/live-elsewhere-store";
+import { useSessionProjectsStore } from "../stores/session-projects-store";
+import { SessionProjectsContext } from "../hooks/use-session-projects";
+import { attachSessionProject, type AttachSource } from "../lib/session-projects-api";
 import { useLiveElsewhereFeed } from "../hooks/use-live-elsewhere-feed";
 import { grantLocksComposer, useAiGrantProbe, useNoAiGrant } from "../stores/ai-grant-store";
 import {
@@ -839,6 +842,8 @@ export function MessageInput({
   // The composer feeds the live set itself, so the guard holds whichever view
   // (sidebar, History, another project) the session was opened from.
   const acpSessionId = useChatStore((s) => s.sessions[tabId]?.acpSessionId);
+  // The same read keeps the session's attached projects current for the
+  // project chips' access toggles (`session-projects-store`).
   useLiveElsewhereFeed(!!acpSessionId);
   const heldForTerminal = useSendHeldForTerminal(acpSessionId);
   // The BYOK provider/model bindings for the native agent stood here — the
@@ -1068,13 +1073,38 @@ export function MessageInput({
     return () => window.removeEventListener("atlas:auth-required", handler);
   }, [tabId]);
 
-  const handleMentionSelect = useCallback((mention: MentionData) => {
-    const t = triggerRef.current;
-    if (!t) return;
-    inputRef.current?.insertMention(mention, { from: t.from, to: t.to });
-    // Trigger naturally closes when the doc no longer has an `@…` before
-    // the caret; the plugin will fire the null transition for us.
-  }, []);
+  // Picking a project or repo attaches it to the session, read-only, so its
+  // chip can offer the access toggle before the send. A session that has not
+  // bound yet attaches it at the send instead (`attach-mentioned-projects.ts`).
+  // A refused folder (home, a system folder) says why at the send, not here.
+  const attachPicked = useCallback(
+    (mention: MentionData, source: AttachSource = "mention") => {
+      if (mention.kind !== "workspace" && mention.kind !== "repo") return;
+      const sessionId = useChatStore.getState().sessions[tabId]?.acpSessionId;
+      if (!sessionId) return;
+      attachSessionProject(sessionId, mention.absPath, {
+        displayName: mention.displayName,
+        source,
+      })
+        .then((change) =>
+          useSessionProjectsStore.getState().actions.replace(sessionId, change.projects),
+        )
+        .catch(() => {});
+    },
+    [tabId],
+  );
+
+  const handleMentionSelect = useCallback(
+    (mention: MentionData) => {
+      const t = triggerRef.current;
+      if (!t) return;
+      inputRef.current?.insertMention(mention, { from: t.from, to: t.to });
+      attachPicked(mention);
+      // Trigger naturally closes when the doc no longer has an `@…` before
+      // the caret; the plugin will fire the null transition for us.
+    },
+    [attachPicked],
+  );
 
   // ── File chips ──────────────────────────────────────────────────────────
   // A path the agent reads off disk. `attachPaths` (below) decides between
@@ -1246,10 +1276,14 @@ export function MessageInput({
     }
   }, [attachPaths]);
 
-  const handlePickProject = useCallback((project: MentionProject) => {
-    inputRef.current?.insertMention(project);
-    requestAnimationFrame(() => inputRef.current?.focus());
-  }, []);
+  const handlePickProject = useCallback(
+    (project: MentionProject) => {
+      inputRef.current?.insertMention(project);
+      attachPicked(project);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    },
+    [attachPicked],
+  );
 
   // "+" menu → "Attach media". The files picker, with the OS dialog filtered
   // to image/video extensions; video becomes a path chip via `attachPaths`.
@@ -1329,41 +1363,45 @@ export function MessageInput({
   // syncs, then drop a `@repo:` chip carrying the local path so the agent
   // explores it (compose_prompt turns that chip into an "explore this repo"
   // block pointing at the absolute path).
-  const handleCloneRepo = useCallback(async (repo: GithubRepo) => {
-    const proj = useAppStore.getState().currentProject?.path;
-    if (!proj) {
-      toast.error("Open a project before cloning a repo.");
-      return;
-    }
-    setGithubSyncing(repo.full_name);
-    try {
-      const dest = await invoke<string>("clone_github_repo", {
-        projectPath: proj,
-        cloneUrl: repo.clone_url,
-        repoName: repo.full_name.replace(/\//g, "-"),
-        meta: metaFromSearch(repo),
-      });
-      const folderName = dest.split("/").pop() || repo.full_name.replace(/\//g, "-");
-      const mention: MentionRepo = {
-        kind: "repo",
-        id: dest,
-        displayName: folderName,
-        absPath: dest,
-        hasReadme: false,
-      };
-      inputRef.current?.insertMention(mention);
-      // Keep the knowledge sidebar's cloned-repos list in sync (same signal the
-      // GitHub panel emits).
-      window.dispatchEvent(new Event("atlas:repo-cloned"));
-      requestAnimationFrame(() => inputRef.current?.focus());
-    } catch (err) {
-      toast.error(
-        `Couldn't clone ${repo.full_name}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    } finally {
-      setGithubSyncing(null);
-    }
-  }, []);
+  const handleCloneRepo = useCallback(
+    async (repo: GithubRepo) => {
+      const proj = useAppStore.getState().currentProject?.path;
+      if (!proj) {
+        toast.error("Open a project before cloning a repo.");
+        return;
+      }
+      setGithubSyncing(repo.full_name);
+      try {
+        const dest = await invoke<string>("clone_github_repo", {
+          projectPath: proj,
+          cloneUrl: repo.clone_url,
+          repoName: repo.full_name.replace(/\//g, "-"),
+          meta: metaFromSearch(repo),
+        });
+        const folderName = dest.split("/").pop() || repo.full_name.replace(/\//g, "-");
+        const mention: MentionRepo = {
+          kind: "repo",
+          id: dest,
+          displayName: folderName,
+          absPath: dest,
+          hasReadme: false,
+        };
+        inputRef.current?.insertMention(mention);
+        attachPicked(mention, "clone");
+        // Keep the knowledge sidebar's cloned-repos list in sync (same signal the
+        // GitHub panel emits).
+        window.dispatchEvent(new Event("atlas:repo-cloned"));
+        requestAnimationFrame(() => inputRef.current?.focus());
+      } catch (err) {
+        toast.error(
+          `Couldn't clone ${repo.full_name}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      } finally {
+        setGithubSyncing(null);
+      }
+    },
+    [attachPicked],
+  );
 
   // "+" menu → "Attach a session". Reference a past session's transcript; the
   // (potentially large) body is read + formatted at send time by composePrompt.
@@ -1993,22 +2031,24 @@ export function MessageInput({
                 clears the 28px button + 8px inset at any UI scale. */}
             <div className={cn("pr-[40px]", disabled && "pointer-events-none")}>
               {LazyChatInput ? (
-                <LazyChatInput
-                  ref={inputRef}
-                  initialValue={valueRef.current}
-                  placeholder={effectivePlaceholder}
-                  projectPath={projectPath}
-                  onEmptyChange={onEmptyChange}
-                  onDocChange={draft.onDocChange}
-                  onSubmit={submit}
-                  enterToSend={enterToSend}
-                  onMentionTrigger={setTrigger}
-                  onSlashTrigger={setSlashTrigger}
-                  onPasteImages={handlePasteImages}
-                  onPastePaths={attachPaths}
-                  onPasteLargeText={handlePasteLargeText}
-                  keyInterceptor={keyInterceptor}
-                />
+                <SessionProjectsContext.Provider value={acpSessionId ?? null}>
+                  <LazyChatInput
+                    ref={inputRef}
+                    initialValue={valueRef.current}
+                    placeholder={effectivePlaceholder}
+                    projectPath={projectPath}
+                    onEmptyChange={onEmptyChange}
+                    onDocChange={draft.onDocChange}
+                    onSubmit={submit}
+                    enterToSend={enterToSend}
+                    onMentionTrigger={setTrigger}
+                    onSlashTrigger={setSlashTrigger}
+                    onPasteImages={handlePasteImages}
+                    onPastePaths={attachPaths}
+                    onPasteLargeText={handlePasteLargeText}
+                    keyInterceptor={keyInterceptor}
+                  />
+                </SessionProjectsContext.Provider>
               ) : (
                 // Same-height empty slot so the panel layout doesn't reflow when
                 // the editor lands. Non-interactive — by the time the user can

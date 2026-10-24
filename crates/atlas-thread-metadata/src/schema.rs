@@ -91,6 +91,13 @@
 //! prevent. A row an older build archives afterwards reads as active here,
 //! which is the one cost, and a harmless one.
 //!
+//! `threads_attached_projects` adds `attached_projects`, nullable: the
+//! projects attached to a session besides its own folder, as one JSON array
+//! (path, display name, access, when, and how it was attached). `NULL` is
+//! "nothing attached", which is what every existing row is, so no row is
+//! rewritten. An older build at this epoch names its columns in every upsert
+//! and so leaves the column alone; a session it writes keeps its attachments.
+//!
 //! Every migration first leaves a copy behind (`Db::open`, via
 //! [`needs_migration`]), so no build is ever the only holder of a history.
 
@@ -156,6 +163,10 @@ const MIGRATIONS: &[Migration] = &[
     Migration {
         name: "threads_model",
         apply: add_model_column,
+    },
+    Migration {
+        name: "threads_attached_projects",
+        apply: add_attached_projects_column,
     },
 ];
 
@@ -323,6 +334,16 @@ fn add_lifecycle_columns(conn: &Connection) -> Result<()> {
         }
     }
     conn.execute_batch(ARCHIVED_TO_SETTLED)?;
+    Ok(())
+}
+
+/// `attached_projects`, added only when absent — the same guard as
+/// [`add_branch_column`]. A shape change only: every existing row reads
+/// `NULL`, nothing attached, and none is rewritten.
+fn add_attached_projects_column(conn: &Connection) -> Result<()> {
+    if !has_column(conn, "threads", "attached_projects")? {
+        conn.execute_batch("ALTER TABLE threads ADD COLUMN attached_projects TEXT;")?;
+    }
     Ok(())
 }
 
@@ -790,6 +811,46 @@ mod tests {
             .threads()
             .iter()
             .all(|t| t.settled_at.is_none() && t.unsettled_at.is_none()));
+    }
+
+    /// A database from before attached projects gains the column with every
+    /// row `NULL` — nothing attached — at the same epoch, and no row is
+    /// rewritten. The store decodes them as empty lists.
+    #[test]
+    fn a_database_before_attached_projects_gains_a_null_column_at_the_same_epoch() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("threads.db");
+        seed_v1(&path);
+        {
+            let conn = Connection::open(&path).unwrap();
+            migrate(&conn).unwrap();
+            conn.execute_batch(
+                "ALTER TABLE threads DROP COLUMN attached_projects;
+                 DELETE FROM schema_migrations WHERE name = 'threads_attached_projects';",
+            )
+            .unwrap();
+        }
+        {
+            let conn = Connection::open(&path).unwrap();
+            assert!(needs_migration(&conn).unwrap());
+            migrate(&conn).unwrap();
+            assert_eq!(version_of(&conn), SCHEMA_EPOCH);
+            assert_eq!(ledger(&conn), known_names());
+            let (rows, attached): (i64, i64) = conn
+                .query_row(
+                    "SELECT COUNT(*), COUNT(attached_projects) FROM threads",
+                    [],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!((rows, attached), (3, 0));
+            add_attached_projects_column(&conn).unwrap();
+        }
+        let store = ThreadMetadataStore::open(&path).unwrap();
+        assert!(store
+            .threads()
+            .iter()
+            .all(|t| t.attached_projects.is_empty()));
     }
 
     /// Archive is retired: the lifecycle migration settles every archived row

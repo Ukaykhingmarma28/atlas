@@ -17,6 +17,7 @@ import {
   Boxes,
   Bot,
   ClipboardPaste,
+  Eye,
   FolderGit2,
   GitBranch,
   Hash,
@@ -24,6 +25,7 @@ import {
   MessageSquare,
   MessageSquareQuote,
   MessagesSquare,
+  PencilLine,
   Quote,
   Scale,
   SquareSlash,
@@ -38,6 +40,8 @@ import {
 } from "@/components/composer/composer-chip";
 import { SESSION_MENTION } from "../lib/composer-short-forms";
 import { toShortForm, type MentionData } from "../lib/mentions";
+import { changeProjectAccess, useComposerSessionId } from "../hooks/use-session-projects";
+import { useAttachedProject } from "../stores/session-projects-store";
 
 /**
  * What a session chip node carries: the mention, plus whether it came from
@@ -81,7 +85,44 @@ function SessionMentionChip({ data: mention, selected }: ComposerChipViewProps<S
       onMouseLeave={preview.onLeave}
     >
       {preview.card}
+      {(mention.kind === "workspace" || mention.kind === "repo") && (
+        <ProjectAccessToggle path={mention.absPath} name={mention.displayName} />
+      )}
     </ComposerChip>
+  );
+}
+
+/**
+ * The access a project chip's session holds on it, as a one-click toggle:
+ * read-only (the default an `@` mention attaches with) or read and write.
+ * Shown only once the project is attached — a chip in a session that has not
+ * bound yet is attached, read-only, when the message is sent.
+ */
+function ProjectAccessToggle({ path, name }: { path: string; name: string }) {
+  const sessionId = useComposerSessionId();
+  const attached = useAttachedProject(sessionId, path.replace(/\/+$/, ""));
+  if (!sessionId || !attached) return null;
+  const writable = attached.access === "read_write";
+  const label = writable
+    ? `${name}: the agent can edit files here. Click to make it read-only.`
+    : `${name}: read-only for the agent. Click to let it edit files here.`;
+  return (
+    <button
+      type="button"
+      className="inline-flex items-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+      title={label}
+      aria-label={label}
+      aria-pressed={writable}
+      data-project-access={attached.access}
+      // Keep the caret in the composer: a press must not take focus from it.
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={(e) => {
+        e.stopPropagation();
+        void changeProjectAccess(sessionId, attached.path, writable ? "read_only" : "read_write");
+      }}
+    >
+      {writable ? <PencilLine size={10} /> : <Eye size={10} />}
+    </button>
   );
 }
 

@@ -3,6 +3,7 @@ import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-quer
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { onThreadsChanged, threadHistory } from "../lib/history-api";
 import { useLiveElsewhereStore } from "../stores/live-elsewhere-store";
+import { useSessionProjectsStore } from "../stores/session-projects-store";
 
 /*
  * Feeds `live-elsewhere-store` with every session another process is writing
@@ -26,6 +27,10 @@ async function fetchLiveElsewhere(): Promise<string[]> {
   const rows = await threadHistory();
   const ids = rows.flatMap((row) => (row.liveElsewhere && row.sessionId ? [row.sessionId] : []));
   useLiveElsewhereStore.getState().actions.setLive(ids);
+  // The same rows carry each session's attached projects, which the
+  // composer's project chips read. Riding this read keeps it one IPC and one
+  // listener per refresh rather than a second feed doing the same work.
+  useSessionProjectsStore.getState().actions.mergeRows(rows);
   return ids;
 }
 

@@ -27,6 +27,8 @@ import { resetMentionRegistryForTests, rememberMention } from "../lib/mention-re
 import type { MentionData } from "../lib/mentions";
 import { ChatInput, type ChatInputHandle } from "./chat-input";
 import { pickedChip } from "./session-mention-chip";
+import { SessionProjectsContext } from "../hooks/use-session-projects";
+import { useSessionProjectsStore } from "../stores/session-projects-store";
 
 const PROJECT = "/abs";
 const CLIP: MentionData = {
@@ -162,4 +164,73 @@ describe("chips pasted as HTML", () => {
       expect(ref.current!.getValue()).toBe("@file:gone");
     },
   );
+});
+
+describe("a project chip's access toggle", () => {
+  const SERVER: MentionData = {
+    kind: "workspace",
+    id: "ws-2",
+    displayName: "server",
+    absPath: "/work/server",
+    orgName: null,
+  };
+  const attached = (access: "read_only" | "read_write") => ({
+    path: "/work/server",
+    displayName: "server",
+    access,
+    attachedAt: "2026-10-24T00:00:00Z",
+    source: "mention" as const,
+  });
+
+  function mountInSession() {
+    const ref = createRef<ChatInputHandle>();
+    const view = render(
+      <SessionProjectsContext.Provider value="sess-1">
+        <ChatInput ref={ref} projectPath={PROJECT} />
+      </SessionProjectsContext.Provider>,
+    );
+    return { ref, container: view.container };
+  }
+
+  afterEach(() => {
+    act(() => useSessionProjectsStore.getState().actions.replace("sess-1", []));
+    invoke.mockImplementation(async () => null);
+  });
+
+  it("is absent until the project is attached to the session", async () => {
+    const { ref, container } = mountInSession();
+    act(() => ref.current!.insertMention(SERVER));
+    await waitFor(() => expect(container.querySelector(".atlas-mention-chip")).not.toBeNull());
+    expect(container.querySelector("[data-project-access]")).toBeNull();
+  });
+
+  it("shows read-only and asks Rust for write access on a click", async () => {
+    act(() =>
+      useSessionProjectsStore.getState().actions.replace("sess-1", [attached("read_only")]),
+    );
+    invoke.mockImplementation(async (cmd: string) =>
+      cmd === "session_projects_set_access"
+        ? { projects: [attached("read_write")], changed: true, appliedLive: true }
+        : null,
+    );
+    const { ref, container } = mountInSession();
+    act(() => ref.current!.insertMention(SERVER));
+    const toggle = await waitFor(() => {
+      const el = container.querySelector<HTMLElement>("[data-project-access]");
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    expect(toggle.dataset.projectAccess).toBe("read_only");
+    fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(
+        container.querySelector("[data-project-access]")?.getAttribute("data-project-access"),
+      ).toBe("read_write"),
+    );
+    expect(invoke).toHaveBeenCalledWith("session_projects_set_access", {
+      sessionId: "sess-1",
+      path: "/work/server",
+      access: "read_write",
+    });
+  });
 });

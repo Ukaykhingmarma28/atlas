@@ -346,7 +346,9 @@ pub fn handle_complete_elicitation(
 //
 // Bound to the session's granted directories (`AcpThread::work_dirs` — cwd
 // plus any `additionalDirectories`), the same set advertised to the agent in
-// `session/new`. Without this an agent that merely knows a session id can
+// `session/new` — widened by the projects attached to the session at their
+// access: reads may reach every attached project, writes only the read-write
+// ones (`AcpThread::readable_roots` / `writable_roots`). Without this an agent that merely knows a session id can
 // hand back an absolute path or a `../` climb and read or overwrite anything
 // the OS user can touch, not just the project the user granted.
 
@@ -359,7 +361,9 @@ pub fn handle_write_text_file(
         Ok(thread) => thread,
         Err(err) => return respond_err(responder, err),
     };
-    let roots = lock(&thread).work_dirs().to_vec();
+    // The session's own folders and its read-write attached projects; a
+    // read-only attached project is never written through here.
+    let roots = lock(&thread).writable_roots();
 
     // Disk IO off the queue: a write to a slow volume must not stall the
     // messages behind it.
@@ -400,7 +404,9 @@ pub fn handle_read_text_file(
         Ok(thread) => thread,
         Err(err) => return respond_err(responder, err),
     };
-    let roots = lock(&thread).work_dirs().to_vec();
+    // The session's own folders and every attached project, read-only ones
+    // included.
+    let roots = lock(&thread).readable_roots();
 
     let cancellation = responder.cancellation();
     let path = args.path.clone();
@@ -989,8 +995,10 @@ pub fn handle_create_terminal(
 
     // The cwd is held to the same rule as fs reads/writes: inside a granted
     // root or nowhere. Without this, "run `git status` in /Users/x/.ssh" was
-    // a legal request.
-    let roots = lock(&thread).work_dirs().to_vec();
+    // a legal request. Writable roots, not readable ones: a command can
+    // write wherever it runs, so a read-only attached project is no place to
+    // start one.
+    let roots = lock(&thread).writable_roots();
     if let Some(dir) = cwd.as_deref() {
         if let Err(err) = resolve_within_roots(dir, &roots) {
             return respond_err(

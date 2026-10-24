@@ -86,6 +86,30 @@ export interface ThreadRow {
   /** The model its latest turn ran on, by the agent's display name. `null`
    *  when Atlas never saw one — an import, or a row older than the column. */
   model: string | null;
+  /**
+   * The projects attached to the session besides its own folder, in the order
+   * they were attached. A project filter matches a session on these paths as
+   * well as `folderPaths`. Empty for nearly every session.
+   */
+  attachedProjects: AttachedProject[];
+}
+
+/** What a session may do in an attached project. Read-only unless granted. */
+export type ProjectAccess = "read_only" | "read_write";
+
+/** How a project came to be attached: an `@` mention in the composer, the
+ *  agent asking and the user approving, or a repo cloned from the composer. */
+export type AttachSource = "mention" | "agent_request" | "clone";
+
+/** A project attached to a session — Rust's `AttachedProjectWire`. */
+export interface AttachedProject {
+  /** Canonical absolute path. The identity: one entry per path. */
+  path: string;
+  displayName: string;
+  access: ProjectAccess;
+  /** RFC 3339. */
+  attachedAt: string;
+  source: AttachSource;
 }
 
 /** One project's threads, as the sidebar groups them. */

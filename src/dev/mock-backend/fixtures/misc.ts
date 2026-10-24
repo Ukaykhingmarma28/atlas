@@ -15,6 +15,8 @@
 
 import { emit } from "@tauri-apps/api/event";
 import type { ComposedPrompt } from "@/features/chat/lib/mentions";
+import type { AttachedProject } from "@/features/chat/lib/history-api";
+import type { SessionProjectsChange } from "@/features/chat/lib/session-projects-api";
 import type {
   AtlasTranscriptMessage,
   AtlasTranscriptMeta,
@@ -75,6 +77,17 @@ const THREADS: ThreadRow[] = [
     // Another process is writing this one: the live dot, and the composer's
     // "Send anyway" hold when it is opened.
     liveElsewhere: true,
+    // A sibling project attached read-only: the composer chip's access toggle
+    // and the row's attached-projects data both have something to show.
+    attachedProjects: [
+      {
+        path: OTHER_PROJECTS[0].path,
+        displayName: OTHER_PROJECTS[0].name,
+        access: "read_only",
+        attachedAt: ago(2 * 3_600_000),
+        source: "mention",
+      },
+    ],
     model: "Claude Sonnet 4.5",
     // One of the fake repo's own branches (`fixtures/git.ts`).
     branch: "feature/auth-v2",
@@ -91,6 +104,7 @@ const THREADS: ThreadRow[] = [
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
+    attachedProjects: [],
     model: null,
     branch: "main",
   },
@@ -106,6 +120,7 @@ const THREADS: ThreadRow[] = [
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path, abs("src/styles")],
     liveElsewhere: false,
+    attachedProjects: [],
     model: null,
     branch: "main",
   },
@@ -123,6 +138,7 @@ const THREADS: ThreadRow[] = [
     projectName: OTHER_PROJECTS[0].name,
     folderPaths: [OTHER_PROJECTS[0].path],
     liveElsewhere: false,
+    attachedProjects: [],
     model: null,
     branch: "main",
   },
@@ -140,6 +156,7 @@ const THREADS: ThreadRow[] = [
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
+    attachedProjects: [],
     model: null,
     // Detached HEAD when it ran, so Atlas never learned a branch.
     branch: null,
@@ -155,6 +172,7 @@ const THREADS: ThreadRow[] = [
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
+    attachedProjects: [],
     model: null,
     // A branch nobody would size a column for. The card trims it rather than
     // pushing the agent's mark off its own edge — the only row here that
@@ -175,6 +193,7 @@ const THREADS: ThreadRow[] = [
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
+    attachedProjects: [],
     model: null,
     branch: "feature/auth-v2",
   },
@@ -192,6 +211,7 @@ const THREADS: ThreadRow[] = [
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
+    attachedProjects: [],
     model: null,
     branch: null,
   },
@@ -208,6 +228,7 @@ const THREADS: ThreadRow[] = [
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
+    attachedProjects: [],
     model: null,
     branch: "main",
   },
@@ -225,6 +246,7 @@ const THREADS: ThreadRow[] = [
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
+    attachedProjects: [],
     model: null,
     branch: "fix/checkpoint-blobs",
   },
@@ -241,6 +263,7 @@ const THREADS: ThreadRow[] = [
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
     liveElsewhere: false,
+    attachedProjects: [],
     model: null,
     branch: "main",
   },
@@ -251,6 +274,34 @@ let threads: ThreadRow[] = THREADS.map((thread) => withDerivedLifecycle({ ...thr
 /** Tell every history surface to re-read, exactly as Rust's store does. */
 function threadsChanged(): void {
   void emit("atlas:threads-changed");
+}
+
+/** Attached projects of sessions with no history row (a fresh mock tab). */
+const draftProjects = new Map<string, AttachedProject[]>();
+
+function sessionProjects(sessionId: string): AttachedProject[] {
+  return (
+    threads.find((t) => t.sessionId === sessionId)?.attachedProjects ??
+    draftProjects.get(sessionId) ??
+    []
+  );
+}
+
+function projectsChange(
+  sessionId: string,
+  projects: AttachedProject[],
+  changed: boolean,
+): SessionProjectsChange {
+  if (changed) {
+    const row = threads.find((t) => t.sessionId === sessionId);
+    if (row) {
+      threads = threads.map((t) => (t === row ? { ...t, attachedProjects: projects } : t));
+    } else {
+      draftProjects.set(sessionId, projects);
+    }
+    threadsChanged();
+  }
+  return { projects, changed, appliedLive: true };
 }
 
 /** As Rust answers it (`AgentHost::thread_projects`): scoped to `cwd`, only
@@ -445,6 +496,56 @@ export const miscHandlers: MockHandlers = {
     threads = threads.filter((thread) => thread.threadId !== String(threadId));
     threadsChanged();
     return null;
+  },
+  // Projects attached to a session (`session_projects.rs`). Keyed by the live
+  // session id; a session with a history row keeps the list on the row. The
+  // fake agent takes a change from the next turn, as the native agent does.
+  session_projects_list: ({ sessionId }): AttachedProject[] => sessionProjects(String(sessionId)),
+  session_projects_attach: ({
+    sessionId,
+    path,
+    displayName,
+    access,
+    source,
+  }): SessionProjectsChange => {
+    const id = String(sessionId);
+    const want = String(path).replace(/\/+$/, "");
+    if (want === "/" || want === "/Users/dev" || !want.startsWith("/")) {
+      throw new Error(
+        `${want} is your home folder or above it; attach a project inside it instead.`,
+      );
+    }
+    const current = sessionProjects(id);
+    if (current.some((p) => p.path === want)) return projectsChange(id, current, false);
+    const next: AttachedProject[] = [
+      ...current,
+      {
+        path: want,
+        displayName: displayName ? String(displayName) : (want.split("/").pop() ?? want),
+        access: access === "read_write" ? "read_write" : "read_only",
+        attachedAt: new Date().toISOString(),
+        source: source === "agent_request" || source === "clone" ? source : "mention",
+      },
+    ];
+    return projectsChange(id, next, true);
+  },
+  session_projects_detach: ({ sessionId, path }): SessionProjectsChange => {
+    const id = String(sessionId);
+    const current = sessionProjects(id);
+    const next = current.filter((p) => p.path !== String(path));
+    return projectsChange(id, next, next.length !== current.length);
+  },
+  session_projects_set_access: ({ sessionId, path, access }): SessionProjectsChange => {
+    const id = String(sessionId);
+    const current = sessionProjects(id);
+    const want = access === "read_write" ? "read_write" : "read_only";
+    let changed = false;
+    const next = current.map((p) => {
+      if (p.path !== String(path) || p.access === want) return p;
+      changed = true;
+      return { ...p, access: want } satisfies AttachedProject;
+    });
+    return projectsChange(id, next, changed);
   },
   // As in Rust: settling sinks the row to the Settled shelf, it stays listed;
   // pin, snooze and viewed/unread follow the store's rules.

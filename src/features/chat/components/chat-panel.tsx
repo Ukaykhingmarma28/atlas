@@ -15,6 +15,8 @@ import { agents, ensureAgent, resetAgent } from "../lib/agents-api";
 import { isDeadlineError, progressSince, withDeadline } from "../lib/with-deadline";
 import { drainEdge } from "../lib/drain-gate";
 import { isSendHeldElsewhere, useSendHeldForTerminal } from "../stores/live-elsewhere-store";
+import { useSessionProjectsStore } from "../stores/session-projects-store";
+import { attachMentionedProjects, isProjectMention } from "../lib/attach-mentioned-projects";
 import { CHAT_STOP_EVENT, cycleChatAgent, isSwitchPending } from "../lib/switch-agent";
 import { loadCachedAcpModes } from "../lib/acp-modes-cache";
 import { configOptionPushes, loadConfigOptionPrefs } from "../lib/config-option-prefs";
@@ -1462,8 +1464,24 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     let wirePrompt: string;
     let resourceLinks: { uri: string; name: string }[] = [];
     let pastedTexts: { id: string; text: string }[] = [];
+    // A project or repo the message mentions is attached to the session
+    // (read-only unless already granted more), and its mention tells the
+    // agent the access it holds there.
+    let composeMentions = mentions;
+    if (mentions.some(isProjectMention)) {
+      const attached = await attachMentionedProjects(bound.acpSessionId, mentions);
+      composeMentions = attached.mentions;
+      if (attached.projects) {
+        useSessionProjectsStore.getState().actions.replace(bound.acpSessionId, attached.projects);
+      }
+      for (const r of attached.refused) {
+        toast.warning(`${r.displayName} was not attached to this session`, {
+          description: r.reason,
+        });
+      }
+    }
     try {
-      const composed = await composePrompt(actualContent, mentions);
+      const composed = await composePrompt(actualContent, composeMentions);
       wirePrompt = composed.prose;
       resourceLinks = composed.resourceLinks;
       pastedTexts = composed.pastedTexts;

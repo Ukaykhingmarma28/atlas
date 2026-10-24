@@ -201,8 +201,9 @@ impl ThreadRecorder {
     }
 
     /// The row a live session writes to, without minting one: its binding,
-    /// else the row carrying its session id.
-    fn thread_for(&self, session_id: &acp::SessionId) -> Option<ThreadId> {
+    /// else the row carrying its session id. A draft is found through its
+    /// binding, since its session id is never persisted.
+    pub fn thread_for(&self, session_id: &acp::SessionId) -> Option<ThreadId> {
         let bound = self.lock().get(session_id).copied();
         bound.or_else(|| {
             self.store

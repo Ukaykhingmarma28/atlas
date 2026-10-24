@@ -1036,8 +1036,14 @@ pub fn install_manager(app: &AppHandle) {
         // The code index (Phase 2) serves the symbol tools and names grep
         // hits by their enclosing symbol; it is managed in `setup` before
         // this runs.
-        let code_router =
-            super::code_server::router(super::code_server::CodeTools::new(code_tools.clone()));
+        // `request_project_access` rides the same server: every agent that
+        // gets the code tools can ask for a folder, and the host puts the
+        // request on the session's approval card.
+        let code_router = super::code_server::router(
+            super::code_server::CodeTools::new(code_tools.clone()).with_access(Arc::new(
+                super::session_projects::HostAccessBroker(Arc::downgrade(&host)),
+            )),
+        );
         // Every agent that can take the server is handed it on each session
         // request, with a token of its own. It is the only way memory reaches
         // an agent (ADR-0010): nothing is prepended to a prompt. A connection
@@ -1468,7 +1474,7 @@ pub struct CmdError {
 
 impl CmdError {
     #[cfg_attr(not(test), allow(dead_code))]
-    fn new(message: impl Into<String>, kind: ErrorClass) -> Self {
+    pub(crate) fn new(message: impl Into<String>, kind: ErrorClass) -> Self {
         Self {
             message: message.into(),
             kind: kind.wire_token().to_string(),

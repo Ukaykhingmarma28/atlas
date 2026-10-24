@@ -28,6 +28,8 @@ use serde_json::{json, Value};
 
 use super::{CodeToolsGate, CODE_PATH};
 use crate::commands::memory_server::{Grant, TOOLS_LIST_TTL_MS};
+use crate::commands::session_projects::ProjectAccessBroker;
+use atlas_thread_metadata::ProjectAccess;
 
 /// What the server tells the agent about itself. The engine shows it as the
 /// description of the `atlas_code` tool namespace; Claude Code as "MCP Server
@@ -38,7 +40,10 @@ literal=true); find_files finds paths by glob or fuzzy name. Both read the worki
 now, including your own edits, respect .gitignore, and skip binary and secret files (.env, keys). \
 Prefer them to rg, grep or find in a shell: they are faster, read-only, and page their \
 output, so follow next_offset instead of re-running a broader search. Paths are relative to your cwd. \
-These two are the whole surface: there is no symbol, semantic or impact tool here (ADR-0021).";
+Those two are the whole search surface: there is no symbol, semantic or impact tool here (ADR-0021). \
+When you need a folder outside your working directory and the session's attached projects (another \
+repository, say), call request_project_access: the user approves or denies it in the session, and \
+an approved folder is attached at the access granted.";
 
 /// How long one call may search before it answers with what it has.
 pub(crate) const DEADLINE: Duration = Duration::from_secs(15);
@@ -49,6 +54,10 @@ const OFF_NOTE: &str =
 const GREP_DESCRIPTION: &str = "Search file contents with a Rust regex (ripgrep engine). Respects .gitignore; skips binary and secret files. Default: matching file paths, newest first. output_mode=content for matching lines (at most 20 per file), count for per-file counts. No look-around or backreferences; literal=true for plain text. Paged: follow next_offset.";
 
 const FIND_DESCRIPTION: &str = "Find files by path. A glob (contains * ? [ {) matches exactly, newest first: without / it matches file names at any depth (\"*.toml\"), with / the relative path (\"src/**/*.rs\"). Anything else is fuzzy text on the path (fzf syntax: 'exact ^prefix suffix$ !not), best first. Paged: follow next_offset.";
+
+const ACCESS_DESCRIPTION: &str = "Ask the user to attach a folder outside your working directory to this session — another project or repository you need to read or change. The user approves or denies it in the session; approved, it is attached at the access granted (read_only by default) and your sandbox includes it from your next turn. Not for system folders, the home folder or anything above it. Blocks up to 45 s for the answer; if it is still pending, carry on and call again later.";
+
+const NO_ACCESS_NOTE: &str = "Project access requests are not available in this session.";
 
 fn schema(value: Value) -> Arc<JsonObject> {
     match value {
@@ -113,7 +122,34 @@ pub(super) fn tools() -> Vec<Tool> {
                 "required": ["query"]
             }),
         ),
+        // Not read-only: an approval attaches a folder to the session. And not
+        // safe to run in parallel with itself for one folder — the host
+        // folds a second request into the card already up.
+        Tool::new(
+            Cow::Borrowed(REQUEST_ACCESS_TOOL),
+            Cow::Borrowed(ACCESS_DESCRIPTION),
+            schema(json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "Absolute path of the folder (~ for home)." },
+                    "access": { "type": "string", "enum": ["read_only", "read_write"], "description": "Default read_only. Ask for read_write only when you must change files there." },
+                    "reason": { "type": "string", "description": "One sentence the user sees: why you need it." }
+                },
+                "required": ["path"]
+            })),
+        )
+        .with_annotations(ToolAnnotations::new().read_only(false)),
     ]
+}
+
+/// The tool an agent asks for a folder with.
+pub(crate) const REQUEST_ACCESS_TOOL: &str = "request_project_access";
+
+#[derive(Debug, Deserialize)]
+struct AccessArgs {
+    path: String,
+    access: Option<String>,
+    reason: Option<String>,
 }
 
 #[cfg(test)]
@@ -272,11 +308,51 @@ type Job = Box<dyn FnOnce(&CancelToken) -> Result<String, String> + Send>;
 #[derive(Clone)]
 pub struct CodeTools {
     gate: CodeToolsGate,
+    /// Where `request_project_access` goes; `None` answers that it is not
+    /// available (the tests that need no host).
+    access: Option<Arc<dyn ProjectAccessBroker>>,
 }
 
 impl CodeTools {
     pub fn new(gate: CodeToolsGate) -> Self {
-        Self { gate }
+        Self { gate, access: None }
+    }
+
+    /// Route `request_project_access` to `broker`.
+    pub fn with_access(mut self, broker: Arc<dyn ProjectAccessBroker>) -> Self {
+        self.access = Some(broker);
+        self
+    }
+
+    /// `request_project_access`: validated and asked by the broker, which
+    /// raises the approval card in the session and waits (bounded) for the
+    /// user. Not a search, so not run under the search deadline.
+    async fn request_access(&self, grant: Grant, args: Value) -> CallToolResult {
+        let Some(broker) = self.access.clone() else {
+            return tool_error(NO_ACCESS_NOTE);
+        };
+        let args: AccessArgs = match serde_json::from_value(args) {
+            Ok(args) => args,
+            Err(e) => return tool_error(format!("{REQUEST_ACCESS_TOOL}: {e}")),
+        };
+        let access = match args.access.as_deref() {
+            None => ProjectAccess::ReadOnly,
+            Some(raw) => match ProjectAccess::parse(raw) {
+                Some(access) => access,
+                None => {
+                    return tool_error(format!(
+                        "{REQUEST_ACCESS_TOOL}: access {raw:?} is not read_only or read_write"
+                    ))
+                }
+            },
+        };
+        match broker
+            .request(grant.session_id, grant.cwd, args.path, access, args.reason)
+            .await
+        {
+            Ok(text) => CallToolResult::success(vec![Content::text(text)]),
+            Err(e) => tool_error(e),
+        }
     }
 
     /// One call, answered under `grant`: its session's launch directory is the
@@ -292,6 +368,9 @@ impl CodeTools {
         }
         let name = request.name.to_string();
         let args = Value::Object(request.arguments.unwrap_or_default());
+        if name == REQUEST_ACCESS_TOOL {
+            return self.request_access(grant, args).await;
+        }
         let root = PathBuf::from(&grant.cwd);
         let job: Job = match name.as_str() {
             "grep" => {

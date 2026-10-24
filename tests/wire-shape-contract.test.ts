@@ -47,6 +47,13 @@ import { fileURLToPath } from "node:url";
  *    The surface is wide (dozens of shapes) and read by UI that does not
  *    exist yet, so a renamed field would otherwise surface as `undefined`
  *    long after the change that caused it.
+ * #14 pins attached projects: the session row's `attachedProjects` entries
+ *    and an attach's answer against `agent_host.rs`, the access and source
+ *    words against the store's enums, every `session_projects_*` command's
+ *    argument names against `session-projects-api.ts`, and the `access` a
+ *    project or repo mention carries into `compose_prompt`. A renamed access
+ *    word would read every project as unattached — the agent told nothing
+ *    about what it may edit, and the chip's toggle never shown.
  *
  * Unlike `tests/state-payload-contract.test.ts` (which is specifically the
  * `save_app_state` / `bootstrap_app_state` payload and generalises over many
@@ -640,5 +647,74 @@ describe("pull requests: model.rs ↔ pull-requests-types.ts, and every pr_* com
         rustCommandArgKeys(commands, name).sort(),
       );
     }
+  });
+});
+
+describe("attached projects: session row, commands and mentions (#14)", () => {
+  const host = read("src-tauri", "src", "commands", "agent_host.rs");
+  const commands = read("src-tauri", "src", "commands", "session_projects.rs");
+  const store = read("crates", "atlas-thread-metadata", "src", "projects.rs");
+  const compose = read("src-tauri", "src", "commands", "compose_prompt.rs");
+  const history = read("src", "features", "chat", "lib", "history-api.ts");
+  const api = read("src", "features", "chat", "lib", "session-projects-api.ts");
+  const mentions = read("src", "features", "chat", "lib", "mentions.ts");
+
+  const PAIRS: Array<[rust: string, ts: string, source: string]> = [
+    ["AttachedProjectWire", "AttachedProject", history],
+    ["SessionProjectsChange", "SessionProjectsChange", api],
+  ];
+  for (const [rustName, tsName, source] of PAIRS) {
+    it(`${tsName} matches Rust ${rustName} field for field`, () => {
+      const { attrs, body } = rustItem(host, "struct", rustName);
+      expect(attrs).toMatch(/rename_all\s*=\s*"camelCase"/);
+      const rustWire = rustStructFields(body).map(snakeToCamel);
+      expect(rustWire.length).toBeGreaterThan(1);
+      expect([...tsInterfaceProps(source, tsName)].sort()).toEqual([...rustWire].sort());
+    });
+  }
+
+  it("ThreadRow carries attachedProjects, which a project filter will match on", () => {
+    expect(tsInterfaceProps(history, "ThreadRow")).toContain("attachedProjects");
+  });
+
+  const ENUMS: Array<[rust: string, ts: string]> = [
+    ["ProjectAccess", "ProjectAccess"],
+    ["AttachSource", "AttachSource"],
+  ];
+  for (const [rustName, tsName] of ENUMS) {
+    it(`the ${tsName} words are the store's ${rustName} variants`, () => {
+      const { attrs, body } = rustItem(store, "enum", rustName);
+      expect(attrs).toMatch(/rename_all\s*=\s*"snake_case"/);
+      const rustWire = rustEnumVariants(body).map(pascalToSnake);
+      expect(rustWire.length).toBeGreaterThan(1);
+      expect([...tsUnionLiterals(history, tsName)].sort()).toEqual([...rustWire].sort());
+    });
+  }
+
+  const invoked = [...api.matchAll(/invoke(?:<[^(]*>)?\(\s*"(session_projects_\w+)"/g)].map(
+    (m) => m[1],
+  );
+  it("covers every session_projects_* command", () => {
+    expect([...invoked].sort()).toEqual([
+      "session_projects_attach",
+      "session_projects_detach",
+      "session_projects_list",
+      "session_projects_set_access",
+    ]);
+  });
+  for (const name of invoked) {
+    it(`${name}'s argument keys match its Rust parameters`, () => {
+      expect([...tsInvokeArgKeys(api, name)].sort()).toEqual(
+        [...rustCommandArgKeys(commands, name)].sort(),
+      );
+    });
+  }
+
+  it("a project or repo mention carries `access` into compose_prompt", () => {
+    const { body } = rustItem(compose, "enum", "MentionSpec");
+    expect(rustVariantFields(body, "Workspace")).toContain("access");
+    expect(rustVariantFields(body, "Repo")).toContain("access");
+    expect(tsInterfaceProps(mentions, "MentionProject")).toContain("access");
+    expect(tsInterfaceProps(mentions, "MentionRepo")).toContain("access");
   });
 });

@@ -118,11 +118,22 @@ async fn grep_and_find_files_answer_from_the_session_directory() {
     let tools = client.list_all_tools().await.unwrap();
     let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
     assert_eq!(names, tool_names());
-    assert!(
+    let read_only = |name: &str| {
         tools
             .iter()
-            .all(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true)),
-        "both tools are read-only, so an agent may run them in parallel"
+            .find(|t| t.name == name)
+            .and_then(|t| t.annotations.as_ref())
+            .and_then(|a| a.read_only_hint)
+    };
+    assert_eq!(
+        (read_only("grep"), read_only("find_files")),
+        (Some(true), Some(true)),
+        "both search tools are read-only, so an agent may run them in parallel"
+    );
+    assert_eq!(
+        read_only("request_project_access"),
+        Some(false),
+        "an approved access request attaches a folder: not read-only"
     );
 
     let (err, text) = call(
@@ -248,6 +259,77 @@ async fn with_code_tools_off_every_call_is_refused() {
         let (err, text) = call(&client, tool, args).await;
         assert!(err && text.contains("Settings"), "{tool}: {text}");
     }
+    client.cancel().await.ok();
+}
+
+/// A broker that records what it was asked and answers with a fixed text.
+struct RecordingBroker(
+    std::sync::Mutex<Vec<(String, String, atlas_thread_metadata::ProjectAccess)>>,
+);
+
+impl crate::commands::session_projects::ProjectAccessBroker for RecordingBroker {
+    fn request(
+        &self,
+        _session_id: String,
+        cwd: String,
+        path: String,
+        access: atlas_thread_metadata::ProjectAccess,
+        _reason: Option<String>,
+    ) -> futures::future::BoxFuture<'static, Result<String, String>> {
+        self.0.lock().unwrap().push((cwd, path, access));
+        Box::pin(async { Ok("Granted: test".to_string()) })
+    }
+}
+
+/// `request_project_access` reaches the host's broker with the session's
+/// launch directory, read-only unless write is asked for, and answers with
+/// the broker's words. A bad access level never reaches it.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_access_request_reaches_the_broker_with_the_sessions_directory() {
+    let dir = project(&[("a.txt", "x\n")]);
+    let broker = Arc::new(RecordingBroker(std::sync::Mutex::new(Vec::new())));
+    let host = running_host_with(CodeTools::new(enabled(true)).with_access(broker.clone())).await;
+    let client = client_in(&host, dir.path()).await;
+
+    let (err, text) = call(
+        &client,
+        "request_project_access",
+        json!({ "path": "/work/server" }),
+    )
+    .await;
+    assert!(!err, "{text}");
+    assert_eq!(text, "Granted: test");
+    let (err, _) = call(
+        &client,
+        "request_project_access",
+        json!({ "path": "/work/server", "access": "read_write" }),
+    )
+    .await;
+    assert!(!err);
+    let (err, text) = call(
+        &client,
+        "request_project_access",
+        json!({ "path": "/work/server", "access": "everything" }),
+    )
+    .await;
+    assert!(err, "{text}");
+
+    let asked = broker.0.lock().unwrap().clone();
+    assert_eq!(asked.len(), 2, "the bad level never reached the broker");
+    assert_eq!(asked[0].0, dir.path().to_string_lossy());
+    assert_eq!(asked[0].2, atlas_thread_metadata::ProjectAccess::ReadOnly);
+    assert_eq!(asked[1].2, atlas_thread_metadata::ProjectAccess::ReadWrite);
+    client.cancel().await.ok();
+}
+
+/// Without a broker (no host behind the server) the tool says so.
+#[tokio::test(flavor = "multi_thread")]
+async fn without_a_broker_an_access_request_is_refused() {
+    let dir = project(&[("a.txt", "x\n")]);
+    let host = running_host(enabled(true)).await;
+    let client = client_in(&host, dir.path()).await;
+    let (err, text) = call(&client, "request_project_access", json!({ "path": "/x" })).await;
+    assert!(err && text.contains("not available"), "{text}");
     client.cancel().await.ok();
 }
 
