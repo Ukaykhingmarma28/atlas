@@ -147,6 +147,11 @@ interface LayoutActions {
     setSourceControlSection: (section: SourceControlSection) => void;
     addTab: (tab: Tab, groupId?: string) => void;
     closeTab: (id: string) => void;
+    /** Move a tab to `toIndex` among its own column's tabs (a drag in the
+     *  strip). It never leaves its column, and every other column's tabs keep
+     *  their places. The order is the column's order everywhere: the strip,
+     *  ⌘1–9, and the per-project layout file. */
+    moveTab: (id: string, toIndex: number) => void;
     setActiveTab: (id: string) => void;
     /** Back to the session from a destination; it stays mounted, hidden. */
     hideDestination: () => void;
@@ -702,6 +707,22 @@ export const useLayoutStore = createSelectors(
                 s.activeByGroup[grp] = next.id;
               }
               syncActiveMirror(s);
+            }),
+          moveTab: (id, toIndex) =>
+            set((s) => {
+              const tab = s.tabs.find((t) => t.id === id);
+              if (!tab) return;
+              const grp = groupOf(tab);
+              const column = s.tabs.filter((t) => groupOf(t) === grp);
+              const from = column.indexOf(tab);
+              const to = Math.max(0, Math.min(toIndex, column.length - 1));
+              if (from === to) return;
+              column.splice(from, 1);
+              column.splice(to, 0, tab);
+              // Refill the column's own slots in `tabs`, in the new order, so
+              // the tabs of every other column stay exactly where they were.
+              let next = 0;
+              s.tabs = s.tabs.map((t) => (groupOf(t) === grp ? column[next++] : t));
             }),
           hideDestination: () =>
             set((s) => {

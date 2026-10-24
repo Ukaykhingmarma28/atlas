@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState, useMemo, memo, lazy, Suspense, Fragment } from "react";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { cn } from "@/lib/utils";
-import { copyText } from "@/lib/clipboard";
 import { deepActiveElement } from "@/lib/deep-active-element";
 import { HintGroup, HintItem } from "@/ui/hint-group";
-import { requestCloseTab } from "@/features/chat/lib/close-tab";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,13 +11,6 @@ import {
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 import { Kbd } from "@/ui/kbd";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from "@/ui/context-menu";
 import { IconButton } from "@/ui/icon-button";
 import { PaneHeader } from "@/components/titlebar";
 import { columnChrome } from "../lib/shell-edges";
@@ -32,7 +23,6 @@ import {
   type SurfacesDock,
 } from "../stores/layout-store";
 import { useProjectStore } from "@/features/projects/stores/project-store";
-import { FileIcon, type FallbackIcon } from "@/features/icon-theme/components/file-icon";
 // Chat is the default landing surface — always loaded so the first paint
 // shows the agent UI without a Suspense flash.
 import { ChatPanel } from "@/features/chat/components/chat-panel";
@@ -40,6 +30,8 @@ import { WelcomeScreen } from "@/features/app/components/welcome-screen";
 import { UnsupportedView } from "@/features/unsupported/components/unsupported-view";
 import { FileTabFrame } from "@/features/explorer/components/file-tab-frame";
 import { FileDockColumn } from "@/features/explorer/components/file-dock";
+import { PaneTab, tabIcons } from "./pane-tab";
+import { PaneTabStrip } from "./pane-tab-strip";
 
 // Every other tab type is lazy. Editor/Terminal in particular pull in
 // CodeMirror+Lezer (~600 KB) and xterm (~250 KB) respectively — keeping
@@ -125,43 +117,19 @@ const LogPanel = lazy(() =>
 );
 import { useAppStore } from "@/features/app/stores/app-store";
 import { PanelSkeleton } from "@/components/panel-skeleton";
-import { AtlasIcon } from "@/components/atlas-icon";
 import { useChatStore } from "@/features/chat/stores/chat-store";
 import { sessionDisplayTitle } from "@/features/chat/lib/session-title";
 import { SessionHeaderSlot } from "@/features/chat/components/session-header-slot";
 import { useShallow } from "zustand/react/shallow";
 import {
   MessageSquare,
-  Map,
-  Globe,
-  Loader2,
-  Code,
-  Brain,
-  BrainCircuit,
-  Network,
-  Terminal,
-  GitCompare,
-  GitBranch,
-  FileDiff,
-  GitCommitHorizontal,
   Plus,
-  X,
-  CheckSquare,
-  ScrollText,
-  FileText,
   House,
-  Gauge,
-  Layers,
-  Frame,
-  NotebookText,
   PanelBottom,
   PanelRight,
   Maximize2,
   Minimize2,
   MessagesSquare,
-  FolderTree,
-  GitPullRequest,
-  GitPullRequestArrow,
 } from "lucide-react";
 import { readPullRequestTabData } from "@/features/pull-requests/lib/open-pull-request-tab";
 import { readPullRequestListTabData } from "@/features/pull-requests/lib/open-pull-request-list-tab";
@@ -171,40 +139,6 @@ import { teamChatShown, toggleTeamChat } from "../lib/team-chat";
 import { SessionContextButton } from "@/features/session-context/components/session-context-button";
 import { unlockHint, useTeamAccess } from "@/features/comms/lib/team-chat-access";
 import { useSettingsNav } from "@/features/settings/stores/settings-nav-store";
-
-// Typed as the icon-theme fallback rather than `React.ElementType`: these are
-// what a tab falls back to when the icon theme has nothing for it, and
-// `ElementType` also admits raw tag names, which a fallback cannot be.
-const tabIcons: Record<TabType, FallbackIcon> = {
-  chat: AtlasIcon,
-  canvas: Map,
-  browser: Globe,
-  tasks: CheckSquare,
-  editor: Code,
-  files: FolderTree,
-  knowledge: Brain,
-  "knowledge-graph": Network,
-  memory: BrainCircuit,
-  terminal: Terminal,
-  diff: GitCompare,
-  commit: GitCommitHorizontal,
-  "pull-request": GitPullRequestArrow,
-  "pull-requests": GitPullRequest,
-  "session-pull-requests": GitPullRequest,
-  "session-changes": FileDiff,
-  "source-control": GitBranch,
-  log: ScrollText,
-  media: Code,
-  svg: Code,
-  pdf: FileText,
-  notebook: NotebookText,
-  unsupported: Code,
-  usage: Gauge,
-  artifacts: Layers,
-  "comms-draft": FileText,
-  spaces: Frame,
-  "team-chat": MessagesSquare,
-};
 
 const GROUP_OF = (t: Tab) => t.groupId ?? "main";
 /**
@@ -542,7 +476,7 @@ const TabColumn = memo(function TabColumn({
   placementControls: boolean;
   projectId: string;
 }) {
-  const { setActiveTab, setFocusedGroup } = useLayoutStore.use.actions();
+  const { setActiveTab, setFocusedGroup, moveTab } = useLayoutStore.use.actions();
 
   const tabsAll = view.tabs;
   const tabs = useMemo(() => tabsAll.filter((t) => GROUP_OF(t) === groupId), [tabsAll, groupId]);
@@ -576,30 +510,25 @@ const TabColumn = memo(function TabColumn({
             <MainTitle tab={activeTab} />
           </>
         )}
-        {showStrip && (
-          // Tabs then `+`, left-aligned together: the `+` sits where the next
-          // tab will appear.
-          <div
-            role="tablist"
-            className="flex min-w-0 shrink items-center gap-0.5 overflow-x-auto hide-scrollbar"
-          >
-            {tabs.map((tab) => (
-              <PaneTab
-                key={tab.id}
-                tab={tab}
-                active={tab.id === activeId}
-                // With two panes on screen, only the focused one's active tab
-                // is fully lit, so it is clear where the next keystroke lands.
-                focused={solo || isFocused}
-                running={runningTabIds.has(tab.id)}
-                onSelect={() => setActiveTab(tab.id)}
-                strip={tabs}
-              />
-            ))}
-          </div>
-        )}
         <HintGroup>
-          <div className="flex min-w-0 flex-1 items-center gap-0.5">
+          {showStrip && (
+            // Tabs then `+`, left-aligned together: the `+` sits where the
+            // next tab will appear. Only the tabs scroll; the `+` and the
+            // controls after it stay put.
+            <PaneTabStrip
+              tabs={tabs}
+              activeId={activeId}
+              // With two panes on screen, only the focused one's active tab
+              // is fully lit, so it is clear where the next keystroke lands.
+              focused={solo || isFocused}
+              runningTabIds={runningTabIds}
+              onSelect={setActiveTab}
+              onMove={moveTab}
+            />
+          )}
+          {/* Never narrower than its controls: when space runs out it is the
+              tab strip that gives way and scrolls. */}
+          <div className="flex min-w-fit flex-1 items-center gap-0.5">
             {!main && <SurfaceAdd groupId={groupId} />}
             <span className="flex-1" />
             {/* The session's own controls (its ⋯ menu, the overview button),
@@ -887,10 +816,17 @@ const TabContentContainer = memo(function TabContentContainer({
   // The explicit predicate is load-bearing: `Set.has` does not narrow, and
   // `PersistentPanel` below relies on `tab.type` being the `PersistentTabType`
   // union for its exhaustiveness check.
-  const persistentTabs = tabs.filter(
-    (t): t is PersistentTab =>
-      PERSISTENT_TYPES.has(t.type) && (isActive || !IDLE_EXPENSIVE_TYPES.has(t.type)),
-  );
+  //
+  // Mounted in id order, not strip order. Dragging a tab to a new place in the
+  // strip must not move its panel's DOM: React reorders keyed siblings with
+  // `insertBefore`, and moving an iframe reloads it. Id order never changes
+  // for the tabs already open, so a reorder touches nothing here.
+  const persistentTabs = tabs
+    .filter(
+      (t): t is PersistentTab =>
+        PERSISTENT_TYPES.has(t.type) && (isActive || !IDLE_EXPENSIVE_TYPES.has(t.type)),
+    )
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const activeIsNonPersistent = !persistentTabs.find((t) => t.id === activeTab.id);
 
   // `@container`: the column's width is what the docked file tree and the
@@ -1240,147 +1176,6 @@ function PlaceholderContent({ tab }: { tab: Tab }) {
         </div>
       </div>
     </div>
-  );
-}
-
-/**
- * One tab in a column header. A small rounded chip, not a
- * full-height cell between rules: the strip reads as a row of things you can
- * pick rather than as more chrome.
- *
- * Closing lives where the icon is: on hover a closable tab's icon becomes its
- * ×, so the close target is always in the same place and never pushes the
- * label around. Middle-click closes too, and the right-click menu closes this
- * tab, the others, the ones to its right or all of them (each through
- * `requestCloseTab`, so unsaved files and running sessions still ask), and
- * copies a file tab's path.
- *
- * Every tab stays until it is closed: there is no italic preview tab that the
- * next click replaces. The one tab another replaces is Files: a file picked
- * from it takes its place (`file-dock.tsx`), and every file after that adds
- * its own tab, or focuses the tab it already has.
- */
-function PaneTab({
-  tab,
-  icon,
-  active,
-  focused,
-  running,
-  onSelect,
-  strip,
-}: {
-  tab: Tab;
-  /** Overrides the tab type's icon (the projectless strip's Home). */
-  icon?: FallbackIcon;
-  active: boolean;
-  focused: boolean;
-  running: boolean;
-  onSelect: () => void;
-  /** The strip the tab sits in, for the menu's close-others commands; left
-   *  out, the tab has no menu (the projectless strip's pseudo-tabs). */
-  strip?: readonly Tab[];
-}) {
-  const Icon = icon ?? tabIcons[tab.type as TabType] ?? MessageSquare;
-  // A tab opened from a path carries it in `data.filePath`, so the strip
-  // shows the same icon the tree row it came from does.
-  const filePath = typeof tab.data?.filePath === "string" ? tab.data.filePath : null;
-  const close = () => requestCloseTab(tab.id);
-
-  const chip = (
-    <div
-      role="tab"
-      aria-selected={active}
-      tabIndex={0}
-      title={filePath ?? undefined}
-      onClick={onSelect}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") onSelect();
-      }}
-      // Middle-click must not paste the primary selection on Linux, nor
-      // start an autoscroll elsewhere.
-      onMouseDown={(e) => {
-        if (e.button === 1) e.preventDefault();
-      }}
-      onAuxClick={(e) => {
-        if (e.button === 1 && tab.closable) {
-          e.preventDefault();
-          close();
-        }
-      }}
-      className={cn(
-        "group/tab flex h-6 max-w-44 shrink-0 cursor-pointer select-none items-center gap-1.5 rounded-md pr-2 pl-1 text-xs outline-none transition-colors",
-        active
-          ? focused
-            ? "bg-element-selected text-foreground"
-            : "bg-element-hover text-secondary-foreground"
-          : "text-muted-foreground hover:bg-element-hover hover:text-foreground",
-      )}
-    >
-      <span className="relative flex size-4 shrink-0 items-center justify-center">
-        <span
-          className={cn(
-            "flex items-center justify-center",
-            tab.closable && "group-hover/tab:invisible",
-          )}
-        >
-          {running ? (
-            <Loader2 size={14} className="animate-spin text-primary" />
-          ) : filePath ? (
-            <FileIcon path={filePath} size={14} fallback={Icon} />
-          ) : (
-            <Icon size={14} />
-          )}
-        </span>
-        {tab.closable && (
-          // No tooltip: an × on the tab you are pointing at is not ambiguous.
-          <button
-            aria-label="Close tab"
-            onClick={(e) => {
-              e.stopPropagation();
-              close();
-            }}
-            className="absolute inset-0 hidden items-center justify-center rounded-sm text-muted-foreground hover:bg-element-active hover:text-foreground group-hover/tab:flex"
-          >
-            <X size={12} />
-          </button>
-        )}
-      </span>
-      <span className={cn("truncate", tab.dirty && "italic")}>{tab.title}</span>
-    </div>
-  );
-
-  if (!strip) return chip;
-  const closable = strip.filter((t) => t.closable);
-  const index = strip.findIndex((t) => t.id === tab.id);
-  const others = closable.filter((t) => t.id !== tab.id);
-  const toRight = strip.slice(index + 1).filter((t) => t.closable);
-  const closeAll = (tabs: readonly Tab[]) => {
-    for (const t of tabs) requestCloseTab(t.id);
-  };
-  return (
-    <ContextMenu>
-      <ContextMenuTrigger render={chip} />
-      <ContextMenuContent className="min-w-44">
-        <ContextMenuItem disabled={!tab.closable} onClick={close}>
-          Close
-        </ContextMenuItem>
-        <ContextMenuItem disabled={others.length === 0} onClick={() => closeAll(others)}>
-          Close others
-        </ContextMenuItem>
-        <ContextMenuItem disabled={toRight.length === 0} onClick={() => closeAll(toRight)}>
-          Close to the right
-        </ContextMenuItem>
-        <ContextMenuItem disabled={closable.length === 0} onClick={() => closeAll(closable)}>
-          Close all
-        </ContextMenuItem>
-        {filePath && !filePath.startsWith("untitled:") && (
-          <>
-            <ContextMenuSeparator />
-            <ContextMenuItem onClick={() => void copyText(filePath)}>Copy path</ContextMenuItem>
-          </>
-        )}
-      </ContextMenuContent>
-    </ContextMenu>
   );
 }
 
