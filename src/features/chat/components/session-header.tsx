@@ -11,6 +11,8 @@
 //  - the pinned-messages pill, only while something is pinned;
 //  - the ⋯ menu: search in session, the role filter, pinned messages, the Bash
 //    and Plans panels, and "branch from here" where the agent can fork;
+//  - the terminal drawer button: shows or hides the session's own shells
+//    under the composer (`session-terminal-drawer.tsx`);
 //  - the session overview button. Where the chat panel keeps room at its
 //    top-right it toggles the docked card; anywhere else it opens the card
 //    as a popover under itself (`session-overview-store.ts`).
@@ -53,6 +55,7 @@ import { IconButton } from "@/ui/icon-button";
 
 import { OVERVIEW_CARD_GAP } from "../lib/session-overview-layout";
 import { useElementHeight } from "../lib/use-element-height";
+import { TerminalDrawerToggle } from "@/features/terminal/components/terminal-drawer-toggle";
 import { pinsFor, useChatPinsStore, type ChatPin } from "../stores/chat-pins-store";
 import { useSessionOverviewStore } from "../stores/session-overview-store";
 import { ChatPinnedMenu } from "./chat-pinned-menu";
@@ -136,6 +139,7 @@ export const SessionHeaderControls = memo(function SessionHeaderControls({
         onTogglePlans={onTogglePlans}
         onForkSession={onForkSession}
       />
+      <TerminalDrawerToggle tabId={tabId} />
       {docked ? (
         <OverviewDockToggle overviewKey={overviewKey} />
       ) : (

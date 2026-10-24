@@ -19,6 +19,7 @@ import { useAppStore } from "@/features/app/stores/app-store";
 import { deleteThread, markSessionViewed, threadProjects } from "@/features/chat/lib/history-api";
 import { isUnderRoot } from "@/features/chat/lib/session-roots";
 import { confirmDeleteChat } from "@/features/chat/lib/confirm-delete-chat";
+import { discardSessionDrawerFor } from "@/features/terminal/lib/session-drawer";
 import { openNewAgentChat } from "@/features/chat/lib/open-agent-session";
 import { openThread, tabShowingSession } from "@/features/chat/lib/open-thread";
 import { AGENT_TYPE_BY_SIDEBAR } from "@/features/chat/lib/sidebar-agents";
@@ -166,6 +167,9 @@ export async function deleteSession(session: SidebarSession): Promise<void> {
     // One call for every agent: Atlas's row always, the agent's copy only
     // when it advertised that it can forget it (ADR-0001).
     await deleteThread(session.threadId);
+    // Its terminal drawer's shells end with it. (Settling keeps them: a
+    // settled session comes back with Undo or a pin, shells and all.)
+    discardSessionDrawerFor(session.sessionId);
     const tabId = tabShowingSession(session.sessionId);
     if (tabId) useChatStore.getState().actions.clearSession(tabId);
   } catch (err) {

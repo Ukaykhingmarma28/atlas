@@ -20,6 +20,7 @@ import {
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useChatStore } from "@/features/chat/stores/chat-store";
 import { useTerminalStore } from "@/features/terminal/stores/terminal-store";
+import { drawerTabsOwnedBy } from "@/features/terminal/stores/session-drawer-store";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 import { isProjectRunning } from "../lib/agent-activity";
 import {
@@ -173,6 +174,10 @@ function teardownHot(id: string): void {
     useChatStore.getState().actions.removeSessions(tabIds);
     useTerminalStore.getState().actions.removeTabs(tabIds);
   }
+  // Session terminal drawers are not layout tabs; their shells go with the
+  // project too.
+  const drawerTabs = drawerTabsOwnedBy(useTerminalStore.getState().owners, id);
+  if (drawerTabs.length) useTerminalStore.getState().actions.removeTabs(drawerTabs);
   evictSnapshot(id);
   useLayoutStore.getState().actions.removeProjectView(id);
   // The picker's no-IPC fast path must stop vouching for an index that is
