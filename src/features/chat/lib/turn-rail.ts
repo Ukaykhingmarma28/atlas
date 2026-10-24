@@ -13,6 +13,7 @@ import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 
+import { TURN_RAIL_PERSISTENT_GUTTER } from "./row-metrics";
 import { RowKind, type Projection, type Row } from "./turn-rows";
 
 export interface TurnRailItem {
@@ -34,9 +35,6 @@ const TURN_RAIL_ITEM_SPACING = 8;
 /** The rail never grows past this, however long the session: past it the ticks
  *  compress toward each other instead. */
 const TURN_RAIL_MAX_HEIGHT_CSS = "calc(100vh - 18rem)";
-/** A gutter at least this wide shows the rail at rest; a narrower one shows it
- *  only while hovered. */
-const TURN_RAIL_PERSISTENT_GUTTER = 48;
 /** The hit strip starts this far into the gutter (the ticks' own inset). */
 const TURN_RAIL_HIT_STRIP_LEFT = 12;
 const TURN_RAIL_HIT_STRIP_MAX_WIDTH = 40;

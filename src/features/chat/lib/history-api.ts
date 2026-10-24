@@ -92,6 +92,13 @@ export interface ThreadRow {
    * well as `folderPaths`. Empty for nearly every session.
    */
   attachedProjects: AttachedProject[];
+  /**
+   * The session this one was branched from ("Branch from here"), as the
+   * parent's agent session id; `null` for a session not forked in Atlas.
+   * The session context overlay's Lineage reads it both ways: this row's
+   * parent, and the rows that name this one as theirs.
+   */
+  forkedFromSessionId: string | null;
 }
 
 /** What a session may do in an attached project. Read-only unless granted. */

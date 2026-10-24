@@ -418,6 +418,19 @@ const currentBranch = (): BranchInfo =>
 
 const branchByName = (name: string) => BRANCHES.find((branch) => branch.name === name);
 
+/** The checked-out branch's name, for a fixture that answers per branch
+ *  (Create PR's prefill in `pull-requests.ts`). */
+export function mockCurrentBranchName(): string {
+  return currentBranch().name;
+}
+
+/** Start a scenario on `name`, one of the seeded local branches. Runs at
+ *  install, before the app reads anything, so no change event is needed. */
+export function seedCurrentBranch(name: string): void {
+  const target = branchByName(name);
+  if (target && !target.isRemote) switchTo(target);
+}
+
 const INITIAL_STASHES: StashEntry[] = [
   { index: 0, message: "WIP on main: 4f21a90 spike the token ramp", branch: "main" },
   {

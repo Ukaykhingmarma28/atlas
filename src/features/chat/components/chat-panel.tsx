@@ -168,6 +168,10 @@ import { PanelSkeleton } from "@/components/panel-skeleton";
 import { logEvent } from "@/features/log/lib/log";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/features/app/stores/app-store";
+import {
+  DockedSessionContext,
+  useContextDock,
+} from "@/features/session-context/components/session-context-dock";
 import { loadCachedAcpModels } from "../lib/acp-models-cache";
 import { resolveEffectiveMode, applyModeOnResume, holdUnrestoredMode } from "../lib/resume-mode";
 import { snapshotMessageToWire } from "../lib/snapshot-message";
@@ -368,6 +372,18 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   // Cmd+F find — scoped to this pane + tab (see usePaneFind).
   const [searchPaletteOpen, setSearchPaletteOpen] = usePaneFind(tabId);
   const rootRef = useRef<HTMLDivElement>(null);
+  // The session context card docks at this column's top-right when the panel
+  // is wide enough (`session-context-dock.tsx`). The room it needs is reserved
+  // from the panel's width alone, open or not, so toggling the card never
+  // moves the transcript or the composer. Off while the overview rail holds
+  // the right side, and on an empty session, which has no column to clear:
+  // the card is the header button's popover there.
+  const conversationRef = useRef<HTMLDivElement>(null);
+  const contextDock = useContextDock(
+    tabId,
+    conversationRef,
+    !overviewOpen && (session?.messages.length ?? 0) > 0,
+  );
 
   // Scroll-to-bottom state is owned here so the floating button can live
   // next to the Claude-setup pill above the input (instead of inside
@@ -1554,7 +1570,11 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     >
       {/* `data-chat-drop-zone`: Finder drops land anywhere on the conversation
           column, not just the composer (see `attachPaths` in message-input). */}
-      <div data-chat-drop-zone className="relative flex-1 flex flex-col min-w-0">
+      <div
+        ref={conversationRef}
+        data-chat-drop-zone
+        className="relative flex-1 flex flex-col min-w-0"
+      >
         {/* The header FLOATS over the transcript rather than sitting above it in
             the column. That is what lets the thread scroll underneath and be
             progressively blurred by the band the transcript draws at its top
@@ -1576,7 +1596,20 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
                   this column sat a third of the window away from the button
                   that opened it, with the transcript still centred in the
                   space between. */}
-            <div className="relative flex min-h-0 flex-1 justify-center">
+            <div
+              data-chat-row
+              className="relative flex min-h-0 flex-1 justify-center"
+              // The docked card's room, as padding on the row the column is
+              // centred in: the column centres in what is left, and once it
+              // has to narrow, the left padding keeps the turn rail's gutter.
+              // Padding, so the rail — which measures from this row's left
+              // edge to the column — still reads the real gutter.
+              style={
+                contextDock.docked
+                  ? { paddingLeft: contextDock.inset, paddingRight: contextDock.reserve }
+                  : undefined
+              }
+            >
               {/* Capped at the transcript's own column width, so the thread
                     and the rail read as one composition centred in whatever
                     space there is. Left to `flex-1` the transcript took the
@@ -1586,7 +1619,10 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
                     attached to the thread it describes. Unchanged when the
                     rail is closed: 760 is what `Column` was already giving
                     the rows. */}
-              <div className="relative flex min-h-0 w-full min-w-0 max-w-(--atlas-chat-column) flex-1 flex-col">
+              <div
+                data-chat-column
+                className="relative flex min-h-0 w-full min-w-0 max-w-(--atlas-chat-column) flex-1 flex-col"
+              >
                 <Suspense fallback={<LoadingTranscriptState />}>
                   <Transcript
                     ref={messagesListRef}
@@ -1655,10 +1691,12 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
                 onForkSession={canFork ? onForkSessionStable : undefined}
               />
             </div>
+            <DockedSessionContext tabId={tabId} docked={contextDock.docked} />
           </div>
         )}
 
         <div
+          data-chat-composer-stack
           className="relative"
           // The composer stack has to sit under the THREAD, not under the
           // thread-plus-rail. The transcript row centres a 760px column and
@@ -1681,10 +1719,16 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
           // keyed per thread, but an unbound thread is keyed by its tab, so
           // an empty welcome screen can still read an open flag; reserving
           // then pushed that composer half a rail left of everything else.
+          //
+          // The docked session context card's reservation is the same bargain,
+          // so the composer stays under the column the row centres. The two
+          // never stack: the card does not dock while the rail is open.
           style={
             overviewWidth > 0 && session.messages.length > 0
               ? { marginRight: `min(${overviewWidth}px, 50%)` }
-              : undefined
+              : contextDock.docked
+                ? { marginLeft: contextDock.inset, marginRight: contextDock.reserve }
+                : undefined
           }
         >
           {/* Anchored to this whole stack, not to the composer: the card below

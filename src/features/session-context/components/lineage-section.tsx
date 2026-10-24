@@ -1,18 +1,17 @@
-// The agents this session delegated to — the Lineage group.
+// Where this session sits among the others — the Lineage group.
 //
-// The title carries the running count ("Lineage · 2 running");
-// live children list first, expanded; finished ones fold under a collapsed
+// Three kinds of row: the session it was branched from ("Branch from here"),
+// the sessions branched from it, and the agents it delegated to. The first
+// two are Atlas's own fork record (`useSessionLineage`); each opens that
+// session, in its tab if one shows it. The agents come from the transcript:
+// live ones list first, expanded; finished ones fold under a collapsed
 // "Previous agents (N)" header; each list pages six at a time, then twelve,
-// behind "Show N more"; the header's ⋯ menu holds the thread-level action.
-//
-// Atlas has no record of a session's parent, fork or context transfer, so
-// there are no such edges to show. An Atlas fork opens a new tab and remembers nothing of where
-// it came from, so there is no "Parent thread" row to show. The ⋯ menu offers
-// the fork itself instead, gated on the agent advertising it exactly as the
-// chat header's menu is.
+// behind "Show N more". The title carries the running count
+// ("Lineage · 2 running"), and the header's ⋯ menu offers the fork itself,
+// gated on the agent advertising it exactly as the chat header's menu is.
 
 import { useMemo, useState, type ReactNode } from "react";
-import { ChevronDown, Ellipsis, GitFork, Plus } from "lucide-react";
+import { ChevronDown, CornerLeftUp, Ellipsis, GitFork, Plus } from "lucide-react";
 
 import { catalogEntry } from "@/features/agents/lib/agent-meta";
 import { LiveElapsed, settledFigure } from "@/features/chat/components/transcript-rows";
@@ -31,14 +30,23 @@ import {
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 
-import { ContextRow, ContextSection, RowLabel, RowMeta } from "./context-rows";
+import { openLineageSession, useSessionLineage, type LineageEdge } from "../lib/session-lineage";
+import { ContextRow, ContextSection, RowIcon, RowLabel, RowMeta } from "./context-rows";
 
 /** How many children a list shows first, then how many each "Show N more" adds. */
 const INITIAL_COUNT = 6;
 const PAGE_COUNT = 12;
 
-export function LineageSection({ tabId }: { tabId: string }) {
+export function LineageSection({
+  tabId,
+  projectPath,
+}: {
+  tabId: string;
+  projectPath: string | null;
+}) {
   const children = useSubagents(tabId);
+  const sessionId = useChatStore((s) => s.sessions[tabId]?.acpSessionId ?? null);
+  const edges = useSessionLineage(sessionId);
   const canFork = useChatStore((s) => {
     const sess = s.sessions[tabId];
     if (!sess?.acpAgentId || !sess.acpSessionId || !sess.agentType) return false;
@@ -52,14 +60,19 @@ export function LineageSection({ tabId }: { tabId: string }) {
   }, [children]);
   const running = active.filter(isRunning).length;
 
-  if (children.length === 0 && !canFork) return null;
+  if (children.length === 0 && edges.length === 0 && !canFork) return null;
   return (
     <ContextSection
       title={running > 0 ? `Lineage · ${running} running` : "Lineage"}
       actions={canFork ? <LineageMenu tabId={tabId} /> : null}
     >
-      {children.length === 0 ? (
-        <p className="px-2.5 pb-1 text-2xs text-muted-foreground">No agents delegated to.</p>
+      {edges.map((edge) => (
+        <SessionEdgeRow key={edge.row.threadId} edge={edge} projectPath={projectPath ?? ""} />
+      ))}
+      {children.length === 0 && edges.length === 0 ? (
+        <p className="px-2.5 pb-1 text-2xs text-muted-foreground">
+          No branches or delegated agents.
+        </p>
       ) : (
         <>
           <LineageGroup label={null} rows={active} tabId={tabId} defaultExpanded />
@@ -83,6 +96,22 @@ function LineageMenu({ tabId }: { tabId: string }) {
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/** The session this one branched from, or one branched from it. */
+function SessionEdgeRow({ edge, projectPath }: { edge: LineageEdge; projectPath: string }) {
+  const title = edge.row.title || "Untitled session";
+  const parent = edge.relation === "parent";
+  return (
+    <ContextRow
+      onClick={() => openLineageSession(edge.row, projectPath)}
+      title={parent ? `Branched from ${title}` : `Branched into ${title}`}
+    >
+      <RowIcon icon={parent ? CornerLeftUp : GitFork} />
+      <RowLabel>{title}</RowLabel>
+      <RowMeta>{parent ? "Parent" : "Branch"}</RowMeta>
+    </ContextRow>
   );
 }
 
@@ -127,8 +156,8 @@ function LineageGroup({
       )}
       {expanded && (
         <>
-          {/* Plain overflow, as T3 notes: this sits inside a popover that can
-              itself scroll, where a nested virtual viewport measures badly. */}
+          {/* Plain overflow, not a virtual list: this sits inside a card that
+              can itself scroll, where a nested virtual viewport measures badly. */}
           <ul
             aria-label={label ?? "Running agents"}
             className="m-0 max-h-56 list-none overflow-y-auto overscroll-contain p-0"

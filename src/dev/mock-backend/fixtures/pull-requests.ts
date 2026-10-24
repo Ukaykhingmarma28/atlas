@@ -25,6 +25,8 @@ import type {
   PrComment,
   PrCommit,
   PrCommitsPage,
+  PrCreated,
+  PrCreateDraft,
   PrDetail,
   PrDiffFile,
   PrDiffFileContents,
@@ -46,6 +48,7 @@ import type {
   PrViewerPermissions,
 } from "@/features/pull-requests/lib/pull-requests-types";
 import type { MockArgs, TypedHandlers, Unit } from "../types";
+import { mockCurrentBranchName } from "./git";
 
 function fail(error: PrError): never {
   // oxlint-disable-next-line no-throw-literal -- Rust's `Err(PrError)`, a plain object.
@@ -825,12 +828,20 @@ export interface PullRequestsResponses {
   pr_request_reviewers: Unit;
   pr_set_labels: Unit;
   pr_image: PrImage;
+  pr_create_draft: PrCreateDraft;
+  pr_create: PrCreated;
 }
 
 function listMatches(entry: PrListEntry, args: MockArgs): boolean {
-  const query = (args.query ?? {}) as { state?: string; search?: string; involvement?: string };
+  const query = (args.query ?? {}) as {
+    state?: string;
+    search?: string;
+    involvement?: string;
+    head?: string | null;
+  };
   const state = query.state ?? "open";
   if (state !== "all" && entry.state !== state) return false;
+  if (query.head && entry.headBranch !== query.head) return false;
   if (query.involvement === "authored" && entry.author?.login !== VIEWER.login) return false;
   if (query.involvement === "reviewing" && !entry.viewerReviewRequested) return false;
   const text = query.search?.trim().toLowerCase();
@@ -977,4 +988,22 @@ export const pullRequestsHandlers: TypedHandlers<PullRequestsResponses> = {
     return null;
   },
   pr_image: () => ({ contentType: "image/png", data: PIXEL }),
+  // What `gh pr create --fill` would write for the fake repo's current branch.
+  pr_create_draft: (): PrCreateDraft => {
+    const head = mockCurrentBranchName();
+    return {
+      headBranch: head,
+      baseBranch: "main",
+      title: head === "main" ? "" : (head.split("/").pop() ?? head).replace(/-/g, " "),
+      body: "- Keep highlight rects on rotate\n- Cover the rotated page in a test",
+      commitCount: 2,
+    };
+  },
+  pr_create: (): PrCreated => {
+    const number = 500 + created++;
+    return { number, url: `${URL_BASE}/${number}` };
+  },
 };
+
+/** How many pull requests `pr_create` has opened this session. */
+let created = 0;

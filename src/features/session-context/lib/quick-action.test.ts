@@ -10,10 +10,14 @@ const base: QuickActionInput = {
   ahead: 0,
   behind: 0,
   busy: false,
+  hasOpenPr: false,
+  isDefaultBranch: false,
 };
 
 const kindOf = (patch: Partial<QuickActionInput>) =>
   resolveQuickAction({ ...base, ...patch })?.kind ?? null;
+const labelOf = (patch: Partial<QuickActionInput>) =>
+  resolveQuickAction({ ...base, ...patch })?.label ?? null;
 
 describe("resolveQuickAction", () => {
   it("offers nothing outside a repository", () => {
@@ -28,27 +32,46 @@ describe("resolveQuickAction", () => {
     expect(kindOf({ detached: true, ahead: 1 })).toBe("hint");
   });
 
-  it("sends local changes to Source Control, since a commit needs a message", () => {
-    const action = resolveQuickAction({ ...base, changedFiles: 2 });
-    expect(action).toEqual({ kind: "open-changes", label: "Commit & push…" });
-    expect(resolveQuickAction({ ...base, changedFiles: 2, upstream: null })?.label).toBe("Commit…");
+  it("sends local changes to Source Control, naming where they lead", () => {
+    expect(resolveQuickAction({ ...base, changedFiles: 2 })).toEqual({
+      kind: "open-changes",
+      label: "Commit, push & PR…",
+    });
+    expect(labelOf({ changedFiles: 2, hasOpenPr: true })).toBe("Commit & push…");
+    expect(labelOf({ changedFiles: 2, isDefaultBranch: true, upstream: null })).toBe("Commit…");
   });
 
-  it("publishes a branch with no upstream", () => {
-    expect(kindOf({ upstream: null })).toBe("publish");
-    expect(kindOf({ upstream: null, ahead: 4 })).toBe("publish");
+  it("pushes a new branch on the way to its pull request", () => {
+    expect(resolveQuickAction({ ...base, upstream: null })).toEqual({
+      kind: "create-pr",
+      label: "Push & create PR",
+    });
+    expect(kindOf({ upstream: null, hasOpenPr: true })).toBe("publish");
+    expect(kindOf({ upstream: null, isDefaultBranch: true })).toBe("publish");
   });
 
   it("refuses to guess on a diverged branch", () => {
     expect(kindOf({ ahead: 1, behind: 1 })).toBe("hint");
   });
 
-  it("pulls when behind and pushes when ahead", () => {
+  it("pulls when behind", () => {
     expect(kindOf({ behind: 2 })).toBe("pull");
-    expect(kindOf({ ahead: 2 })).toBe("push");
+  });
+
+  it("pushes and opens a PR when ahead, or only pushes when one is open", () => {
+    expect(labelOf({ ahead: 2 })).toBe("Push & create PR");
+    expect(kindOf({ ahead: 2, hasOpenPr: true })).toBe("push");
+    expect(kindOf({ ahead: 2, isDefaultBranch: true })).toBe("push");
+  });
+
+  it("offers Create PR on a pushed branch without one", () => {
+    expect(resolveQuickAction(base)).toEqual({ kind: "create-pr", label: "Create PR" });
   });
 
   it("says so when there is nothing to do", () => {
-    expect(resolveQuickAction(base)).toMatchObject({ kind: "hint", label: "Push" });
+    expect(resolveQuickAction({ ...base, hasOpenPr: true })).toMatchObject({
+      kind: "hint",
+      label: "Push",
+    });
   });
 });

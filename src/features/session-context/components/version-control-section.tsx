@@ -1,38 +1,38 @@
-// Branch, pull request, the one git action worth a click, and what changed —
+// Branch, pull requests, the one git action worth a click, and what changed —
 // the Version Control group.
 //
 // Reads the git store, which mirrors the ACTIVE project's repository. The
 // section renders only when that repository is this session's project, so a
 // background project's chat never shows another repo's branch.
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useState } from "react";
 import {
-  Check,
+  CircleCheck,
+  CircleDashed,
+  CircleX,
   CloudDownload,
   CloudUpload,
   FileDiff,
-  GitBranch,
   GitCommitHorizontal,
   GitMerge,
   GitPullRequest,
+  GitPullRequestArrow,
   GitPullRequestClosed,
   GitPullRequestDraft,
+  Plus,
   RefreshCw,
   type LucideIcon,
 } from "lucide-react";
 
 import { openSessionChanges } from "@/features/git/lib/open-session-changes";
-import {
-  openPullRequest,
-  useBranchPullRequest,
-  type BranchPullRequest,
-} from "@/features/git/lib/git-pr-api";
+import { openPullRequest } from "@/features/git/lib/git-pr-api";
 import { useGitStore } from "@/features/git/stores/git-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
-import { DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from "@/ui/dropdown-menu";
+import type { PrChecksState, PrListEntry } from "@/features/pull-requests/lib/pull-requests-types";
+import { DropdownMenuItem, DropdownMenuSeparator } from "@/ui/dropdown-menu";
 
+import { startCreatePr, useCreatePrDraft } from "../lib/create-pr";
 import {
-  checkoutBranch,
   fetchRemotes,
   publishBranch,
   pullBranch,
@@ -40,11 +40,12 @@ import {
   revealSourceControl,
 } from "../lib/git-actions";
 import { resolveQuickAction, type QuickAction } from "../lib/quick-action";
+import { useSessionPullRequests, type SessionPullRequests } from "../lib/session-pull-requests";
 import { useSessionChanges } from "../lib/use-session-changes";
+import { BranchPicker } from "./branch-picker";
 import {
   ContextRow,
   ContextSection,
-  ContextSelectRow,
   ContextSplitRow,
   RowIcon,
   RowLabel,
@@ -69,81 +70,68 @@ export function VersionControlSection({
   }, [ours, projectPath]);
 
   if (!ours) return null;
+  return <VersionControlRows tabId={tabId} projectPath={projectPath} />;
+}
+
+function VersionControlRows({ tabId, projectPath }: { tabId: string | null; projectPath: string }) {
+  const branch = useGitStore.use.branch();
+  const prs = useSessionPullRequests(projectPath, branch || null);
   return (
     <ContextSection title="Version control" showHeading={false}>
-      <BranchRow />
-      <PullRequestRow projectPath={projectPath} />
-      <QuickActionRow />
+      <BranchPicker />
+      <PullRequestRows prs={prs} />
+      <QuickActionRow projectPath={projectPath} prs={prs} />
       <ChangesRow tabId={tabId} projectPath={projectPath} />
     </ContextSection>
   );
 }
 
-function BranchRow() {
-  const branch = useGitStore.use.branch();
-  const branches = useGitStore.use.branchesFull();
-  const local = useMemo(() => branches.filter((b) => !b.isRemote), [branches]);
+function prIcon(pr: PrListEntry): { icon: LucideIcon; className?: string } {
+  if (pr.state === "merged") return { icon: GitMerge, className: "text-primary" };
+  if (pr.state === "closed") return { icon: GitPullRequestClosed };
+  if (pr.isDraft) return { icon: GitPullRequestDraft };
+  return { icon: GitPullRequest, className: "text-success" };
+}
 
+const CHECKS: Record<PrChecksState, { icon: LucideIcon; className: string; label: string }> = {
+  passing: { icon: CircleCheck, className: "text-success", label: "Checks passing" },
+  failing: { icon: CircleX, className: "text-error", label: "Checks failing" },
+  pending: { icon: CircleDashed, className: "text-warning", label: "Checks running" },
+};
+
+/**
+ * The branch's pull requests (`useSessionPullRequests`): the one that matters
+ * now, then the rest behind "Show N more". Each opens on the host.
+ */
+function PullRequestRows({ prs }: { prs: SessionPullRequests }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!prs.current) return null;
   return (
-    <ContextSelectRow
-      menuLabel="Switch branch"
-      menu={
-        <>
-          <DropdownMenuLabel>Branches</DropdownMenuLabel>
-          {local.length === 0 ? (
-            <DropdownMenuItem disabled>No local branches</DropdownMenuItem>
-          ) : (
-            local.map((b) => (
-              <DropdownMenuItem
-                key={b.name}
-                onClick={b.isCurrent ? undefined : () => void checkoutBranch(b.name)}
-              >
-                {b.isCurrent ? <Check /> : <GitBranch />}
-                <span className="min-w-0 flex-1 truncate">{b.name}</span>
-              </DropdownMenuItem>
-            ))
-          )}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={revealSourceControl}>
-            <GitCommitHorizontal />
-            Open Source Control
-          </DropdownMenuItem>
-        </>
-      }
-    >
-      <RowIcon icon={GitBranch} />
-      <RowLabel>{branch || "No branch"}</RowLabel>
-    </ContextSelectRow>
+    <>
+      <PullRequestRow pr={prs.current} />
+      {expanded && prs.rest.map((pr) => <PullRequestRow key={pr.number} pr={pr} />)}
+      {!expanded && prs.rest.length > 0 && (
+        <ContextRow onClick={() => setExpanded(true)} className="text-muted-foreground">
+          <Plus size={14} className="shrink-0" aria-hidden />
+          <RowLabel>Show {prs.rest.length} more</RowLabel>
+        </ContextRow>
+      )}
+    </>
   );
 }
 
-const PR_ICON: Record<BranchPullRequest["state"], LucideIcon> = {
-  open: GitPullRequest,
-  merged: GitMerge,
-  closed: GitPullRequestClosed,
-};
-
-/** The branch's pull request, from `gh` (`git_repo_pull_requests`). T3 also
- *  shows the checks' state and every PR the thread has touched ("Show 4
- *  more"); Atlas's read carries one PR per branch and no checks. */
-function PullRequestRow({ projectPath }: { projectPath: string }) {
-  const branch = useGitStore.use.branch();
-  const pr = useBranchPullRequest(projectPath, branch || null, true);
-  if (!pr) return null;
-  const Icon = pr.isDraft && pr.state === "open" ? GitPullRequestDraft : PR_ICON[pr.state];
+function PullRequestRow({ pr }: { pr: PrListEntry }) {
+  const { icon, className } = prIcon(pr);
+  const checks = pr.state === "open" && pr.checksState ? CHECKS[pr.checksState] : null;
   return (
     <ContextRow onClick={() => openPullRequest(pr.url)} title={`${pr.title} — ${pr.url}`}>
-      <RowIcon
-        icon={Icon}
-        className={
-          pr.state === "merged"
-            ? "text-primary"
-            : pr.state === "open" && !pr.isDraft
-              ? "text-success"
-              : undefined
-        }
-      />
+      <RowIcon icon={icon} className={className} />
       <RowLabel>{pr.title}</RowLabel>
+      {checks && (
+        <span title={checks.label} className="inline-flex shrink-0">
+          <checks.icon size={12} className={checks.className} aria-label={checks.label} />
+        </span>
+      )}
       <RowMeta>#{pr.number}</RowMeta>
     </ContextRow>
   );
@@ -153,11 +141,12 @@ const QUICK_ICON: Record<QuickAction["kind"], LucideIcon> = {
   push: CloudUpload,
   publish: CloudUpload,
   pull: CloudDownload,
+  "create-pr": GitPullRequestArrow,
   "open-changes": GitCommitHorizontal,
   hint: CloudUpload,
 };
 
-function runQuickAction(action: QuickAction): void {
+function runQuickAction(action: QuickAction, projectPath: string): void {
   switch (action.kind) {
     case "push":
       void pushBranch();
@@ -168,6 +157,9 @@ function runQuickAction(action: QuickAction): void {
     case "pull":
       void pullBranch();
       return;
+    case "create-pr":
+      void startCreatePr(projectPath, false);
+      return;
     case "open-changes":
       revealSourceControl();
       return;
@@ -176,7 +168,7 @@ function runQuickAction(action: QuickAction): void {
   }
 }
 
-function QuickActionRow() {
+function QuickActionRow({ projectPath, prs }: { projectPath: string; prs: SessionPullRequests }) {
   const isRepo = useGitStore.use.isRepo();
   const branch = useGitStore.use.branch();
   const branches = useGitStore.use.branchesFull();
@@ -185,6 +177,7 @@ function QuickActionRow() {
   const behind = useGitStore.use.behind();
   const busy = useGitStore((s) => !!s.activeOp?.running);
   const current = branches.find((b) => b.isCurrent && !b.isRemote);
+  const draft = useCreatePrDraft(projectPath, branch || null).data;
 
   const action = resolveQuickAction({
     isRepo,
@@ -195,18 +188,32 @@ function QuickActionRow() {
     ahead,
     behind,
     busy,
+    // Until both reads answer, nothing offers a PR: a "Create PR" that turns
+    // into "Push" a moment later is a button that moved under the pointer.
+    hasOpenPr: prs.loading || prs.hasOpen,
+    isDefaultBranch: draft ? draft.baseBranch === branch : true,
   });
   if (!action) return null;
 
   const hasUpstream = !!current?.upstream;
+  const offersPr = action.kind === "create-pr";
   return (
     <ContextSplitRow
-      onClick={() => runQuickAction(action)}
+      onClick={() => runQuickAction(action, projectPath)}
       disabled={action.kind === "hint"}
       title={action.kind === "hint" ? action.hint : undefined}
       menuLabel="More git actions"
       menu={
         <>
+          {offersPr && (
+            <>
+              <DropdownMenuItem onClick={() => void startCreatePr(projectPath, true)}>
+                <GitPullRequestDraft />
+                {hasUpstream && ahead === 0 ? "Create draft PR" : "Push & create draft PR"}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          )}
           <DropdownMenuItem onClick={() => void pullBranch()} disabled={!hasUpstream || busy}>
             <CloudDownload />
             Pull

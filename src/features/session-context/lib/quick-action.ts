@@ -1,15 +1,18 @@
-// The one git action the overlay offers up front.
+// The one git action the overlay offers up front: the split row's main
+// button ("Create PR", "Push & create PR", "Pull", …).
 //
-// Reading order: busy beats everything, then "is there a branch", then local
-// changes, then upstream, then divergence, behind, ahead. What it offers is
-// what Atlas can do from one click:
+// The decision table, read top to bottom: busy beats everything, then "is
+// there a branch", then local changes, then upstream, then divergence,
+// behind, ahead, and finally "nothing to push — open a pull request". Two
+// rules shape it:
 //
-//  * Atlas's commit needs the summary the user writes, so "you have changes"
-//    opens Source Control on its commit box rather than committing.
-//  * There is no "Push & create PR" yet — no command opens a pull request —
-//    so an unpublished branch offers "Publish branch", the push half of it.
+//  * A commit needs the summary the user writes, so "you have changes"
+//    opens Source Control on its commit box rather than committing; the label
+//    still says where it leads ("Commit, push & PR…").
+//  * The default branch is never offered a pull request — it is what a pull
+//    request merges into.
 //
-// Pure, so the whole decision table is a unit test.
+// Pure, so the whole table is a unit test.
 
 export interface QuickActionInput {
   isRepo: boolean;
@@ -23,12 +26,17 @@ export interface QuickActionInput {
   behind: number;
   /** A streaming git op (push, pull, commit hooks) is running. */
   busy: boolean;
+  /** The branch already has an open pull request. */
+  hasOpenPr: boolean;
+  /** The branch is the repository's default (`main`): no PR from it. */
+  isDefaultBranch: boolean;
 }
 
 export type QuickAction =
   | { kind: "push"; label: string }
   | { kind: "publish"; label: string }
   | { kind: "pull"; label: string }
+  | { kind: "create-pr"; label: string }
   | { kind: "open-changes"; label: string }
   | { kind: "hint"; label: string; hint: string };
 
@@ -38,20 +46,21 @@ export function resolveQuickAction(input: QuickActionInput): QuickAction | null 
   if (input.detached || !input.branch) {
     return {
       kind: "hint",
-      label: "Push",
-      hint: "Check out a branch before pushing.",
+      label: "Commit",
+      hint: "Check out a branch before pushing or opening a pull request.",
     };
   }
+  const prDone = input.hasOpenPr || input.isDefaultBranch;
   if (input.changedFiles > 0) {
     return {
       kind: "open-changes",
-      label: input.upstream ? "Commit & push…" : "Commit…",
+      label: prDone ? (input.upstream ? "Commit & push…" : "Commit…") : "Commit, push & PR…",
     };
   }
   if (!input.upstream) {
-    // A brand-new branch with nothing on it still publishes: it is how the
-    // remote learns the branch exists, which is what a PR needs first.
-    return { kind: "publish", label: "Publish branch" };
+    if (prDone) return { kind: "publish", label: "Publish branch" };
+    // A new branch reaches the remote on the way to its pull request.
+    return { kind: "create-pr", label: "Push & create PR" };
   }
   if (input.ahead > 0 && input.behind > 0) {
     return {
@@ -61,6 +70,11 @@ export function resolveQuickAction(input: QuickActionInput): QuickAction | null 
     };
   }
   if (input.behind > 0) return { kind: "pull", label: "Pull" };
-  if (input.ahead > 0) return { kind: "push", label: "Push" };
+  if (input.ahead > 0) {
+    return prDone
+      ? { kind: "push", label: "Push" }
+      : { kind: "create-pr", label: "Push & create PR" };
+  }
+  if (!prDone) return { kind: "create-pr", label: "Create PR" };
   return { kind: "hint", label: "Push", hint: "Up to date. Nothing to push." };
 }

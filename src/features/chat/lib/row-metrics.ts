@@ -27,6 +27,14 @@
 export const HEADER_INSET = 46;
 
 /**
+ * The turn rail shows at rest in a left gutter at least this wide; a narrower
+ * one shows it only while hovered (`turn-rail.ts`). Here so the session
+ * context dock (`context-dock.ts`), which slides the column left to clear its
+ * card, can stop short of this gutter without importing the rail's chunk.
+ */
+export const TURN_RAIL_PERSISTENT_GUTTER = 48;
+
+/**
  * The conversation's content frame: centred, `chatWidth` at most (760px unless
  * the user widened it, `--atlas-chat-column` in globals.css), padded the same on
  * both sides.

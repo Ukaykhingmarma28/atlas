@@ -21,29 +21,33 @@ export function revealSourceControl(): void {
   if (id) void openGitPanel(id);
 }
 
-async function runRemote(label: RemoteOp, fn: () => Promise<void>): Promise<void> {
+/** Run a remote op and report it. Resolves whether it succeeded, so a flow
+ *  that needs the branch on the remote (Create PR) can stop on a failure. */
+async function runRemote(label: RemoteOp, fn: () => Promise<void>): Promise<boolean> {
   const path = useGitStore.getState().repoPath;
   const startedAt = Date.now();
   try {
     await fn();
     notifyGitRemoteOp(label, path, startedAt, null);
+    return true;
   } catch (e) {
     notifyGitRemoteOp(label, path, startedAt, gitErrorText(e));
     handleGitError(e);
     const { errorDialog, pullChoice } = useGitStore.getState();
     if (errorDialog || pullChoice) revealSourceControl();
+    return false;
   }
 }
 
-export function pushBranch(): Promise<void> {
+export function pushBranch(): Promise<boolean> {
   return runRemote("push", () => useGitStore.getState().actions.push());
 }
 
-export function publishBranch(): Promise<void> {
+export function publishBranch(): Promise<boolean> {
   return runRemote("publish", () => useGitStore.getState().actions.publishBranch());
 }
 
-export function fetchRemotes(): Promise<void> {
+export function fetchRemotes(): Promise<boolean> {
   return runRemote("fetch", () => useGitStore.getState().actions.fetch());
 }
 
@@ -68,5 +72,18 @@ export async function checkoutBranch(branch: string): Promise<void> {
   } catch (e) {
     handleGitError(e);
     if (useGitStore.getState().errorDialog) revealSourceControl();
+  }
+}
+
+/** Create `name` from HEAD and switch to it — the branch picker's "Create
+ *  branch". Resolves whether it did. */
+export async function createAndCheckoutBranch(name: string): Promise<boolean> {
+  try {
+    await useGitStore.getState().actions.createBranch(name);
+    return true;
+  } catch (e) {
+    handleGitError(e);
+    if (useGitStore.getState().errorDialog) revealSourceControl();
+    return false;
   }
 }
