@@ -939,6 +939,57 @@
   font-size: 11px;
 }
 
+/* A file or folder chip in a sent message or an agent's reply
+   (`markdown-render.ts`): clickable, and wearing the icon theme's icon. The
+   icon slot is a fixed box, so the theme's icon painting in over the fallback
+   glyph (`icon-markup.ts`) never moves the line. */
+.atlas-file-chip[data-file-path] {
+  cursor: pointer;
+}
+.atlas-file-chip[data-file-path]:hover {
+  border-color: var(--atlas-border-strong);
+  background: var(--accent);
+}
+.atlas-file-chip:focus-visible {
+  outline: 1px solid var(--primary);
+  outline-offset: 1px;
+}
+.atlas-file-chip__icon {
+  width: 11px;
+  height: 11px;
+  opacity: 1;
+}
+/* The fallback while the theme's icon is unknown, or when the theme has none:
+   lucide's file-text and folder glyphs as masks in the chip's own colour. CSS
+   rather than markup, so the hundreds of chips a transcript can hold carry no
+   SVG subtree each. */
+.atlas-file-chip__icon:empty {
+  background-color: currentColor;
+  opacity: 0.85;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Cpath d='M10 9H8'/%3E%3Cpath d='M16 13H8'/%3E%3Cpath d='M16 17H8'/%3E%3C/svg%3E")
+    center / 11px 11px no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Cpath d='M10 9H8'/%3E%3Cpath d='M16 13H8'/%3E%3Cpath d='M16 17H8'/%3E%3C/svg%3E")
+    center / 11px 11px no-repeat;
+}
+.atlas-file-chip__icon[data-file-icon="folder"]:empty {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'/%3E%3C/svg%3E");
+}
+.atlas-file-chip__icon > svg,
+.atlas-file-chip__icon > img {
+  display: block;
+  width: 11px;
+  height: 11px;
+}
+.atlas-file-icon-glyph {
+  display: block;
+  width: 11px;
+  height: 11px;
+  font-size: 11px;
+  line-height: 11px;
+  text-align: center;
+}
+
 @layer base {
   *,
   ::after,
