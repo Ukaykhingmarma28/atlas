@@ -13,6 +13,7 @@ export const TAB_TYPES = [
   "commit",
   "session-changes",
   "pull-request",
+  "pull-requests",
   "source-control",
   "log",
   "media",
@@ -114,6 +115,9 @@ export const TAB_PLACEMENT = {
   // One pull request: read and acted on while the session that opened it
   // works, and its header, Summary and composer are built for a column.
   "pull-request": { kind: "surface", minWidth: 360 },
+  // A repository's pull requests: scanned while a session works, to pick the
+  // next one to open beside it, and its rows and filter bar fit a column.
+  "pull-requests": { kind: "surface", minWidth: 360 },
   "source-control": { kind: "surface", minWidth: 300 },
   "team-chat": { kind: "surface", minWidth: 320 },
   "comms-draft": { kind: "surface", minWidth: 320 },
