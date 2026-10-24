@@ -177,7 +177,7 @@ export async function deleteSession(session: SidebarSession): Promise<void> {
 
 /** Make `path` the active project, registering it in the active organisation
  *  when it is not open there. */
-async function activateProject(path: string): Promise<void> {
+export async function activateProject(path: string): Promise<void> {
   if (useAppStore.getState().currentProject?.path === path) return;
   const store = useProjectStore.getState();
   const orgId = useOrgStore.getState().activeOrganisationId;

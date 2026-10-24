@@ -1,5 +1,7 @@
 import {
   CodeView,
+  FileDiff,
+  type FileDiffProps,
   type CodeViewHandle,
   type CodeViewProps,
   type ControlledCodeViewProps,
@@ -357,4 +359,51 @@ function PoolAwareCodeView<A>({
     return <CodeView<A> {...plain} {...ref} />;
   }
   return <CodeView<A> {...props} {...ref} />;
+}
+
+export type StyledFileDiffProps<A> = Omit<FileDiffProps<A, undefined>, "options"> & {
+  readonly options?: Omit<
+    NonNullable<FileDiffProps<A, undefined>["options"]>,
+    "unsafeCSS" | "theme" | "themeType" | "preferredHighlighter"
+  >;
+  /** Appended to {@link DIFF_VIEW_CSS}; same theme-variable rule. */
+  readonly extraCSS?: string;
+  readonly fallback?: ReactNode;
+};
+
+/**
+ * One file's diff, not virtualized: for a short excerpt that sits in a page's
+ * flow (the pull request Guide's stops) rather than a scrolling list. Styled
+ * and pooled exactly as {@link StyledCodeView}.
+ */
+export function StyledFileDiff<A = undefined>({
+  options,
+  extraCSS,
+  fallback,
+  ...props
+}: StyledFileDiffProps<A>) {
+  const appearance = useDiffAppearance();
+  return (
+    <DiffWorkerPoolProvider fallback={fallback}>
+      <PoolAwareFileDiff<A>
+        {...props}
+        options={{
+          ...options,
+          theme: DIFF_THEME_NAME,
+          themeType: appearance,
+          preferredHighlighter: PREFERRED_HIGHLIGHTER,
+          unsafeCSS: extraCSS ? `${DIFF_VIEW_CSS}\n${extraCSS}` : DIFF_VIEW_CSS,
+        }}
+      />
+    </DiffWorkerPoolProvider>
+  );
+}
+
+function PoolAwareFileDiff<A>(props: FileDiffProps<A, undefined>) {
+  const failed = useDiffPoolFailed();
+  const fileDiff = useMemo(
+    () => (failed ? { ...props.fileDiff, lang: "text" as const } : props.fileDiff),
+    [failed, props.fileDiff],
+  );
+  return <FileDiff<A> {...props} fileDiff={fileDiff} />;
 }

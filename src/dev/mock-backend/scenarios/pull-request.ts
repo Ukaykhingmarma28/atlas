@@ -9,11 +9,14 @@
 //  - `pull-request-not-installed`, `-signed-out`, `-rate-limited`, `-offline`
 //    — every read fails the way `gh` would, for the unavailable states.
 //
-// Writes are real for the page's life (see `fixtures/pull-requests.ts`).
+// Writes are real for the page's life (see `fixtures/pull-requests.ts`). The
+// agent actions work too: Fix and Explain open a session with the task in its
+// composer, and Write guide gets the fixture tour back (number 412 starts with one).
 
 import type { PrError } from "@/features/pull-requests/lib/pull-requests-types";
 import type { Scenario } from "../types";
-import { failPullRequestReads } from "../fixtures/pull-requests";
+import { answerGuidePrompt, failPullRequestReads } from "../fixtures/pull-requests";
+import { setPromptHandler } from "../fake-agent";
 import { MOCK_PROJECT } from "../project";
 
 function pullRequestScenario(
@@ -25,7 +28,11 @@ function pullRequestScenario(
   return {
     name,
     description,
-    init: () => failPullRequestReads(failure),
+    init: () => {
+      failPullRequestReads(failure);
+      // "Write guide" sends its prompt to a background session; answer it.
+      setPromptHandler(answerGuidePrompt);
+    },
     setup: async () => {
       const { openPullRequestTab } =
         await import("@/features/pull-requests/lib/open-pull-request-tab");

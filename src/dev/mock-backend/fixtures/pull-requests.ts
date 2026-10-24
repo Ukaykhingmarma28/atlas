@@ -52,7 +52,14 @@ import type {
   PrTimelinePage,
   PrViewerPermissions,
 } from "@/features/pull-requests/lib/pull-requests-types";
+import type { PrCheckout } from "@/features/pull-requests/lib/pull-requests-api";
+import type {
+  GeneratedGuide,
+  GuideChange,
+  GuideCheckout,
+} from "@/features/pull-requests/lib/pull-request-guide-types";
 import type { MockArgs, TypedHandlers, Unit } from "../types";
+import { setStatus, streamText } from "../fake-agent";
 import { mockCurrentBranchName } from "./git";
 
 function fail(error: PrError): never {
@@ -1452,6 +1459,150 @@ function setReaction(id: string, content: PrReactionContent, reacted: boolean): 
   reactions.set(id, list);
 }
 
+// ── agent actions: checkouts and review guides ──────────────────────────────
+
+/** The change a guide is fitted to, read off the fake diff: the same hunks
+ *  `hunkFor` writes. */
+function guideChange(number: number): GuideChange {
+  const files = filesOf(number);
+  const hunks: GuideChange["hunks"] = {};
+  for (const f of files) {
+    if (!f.hasPatch) continue;
+    const layout = layoutOf(f);
+    hunks[f.path] = {
+      new: layout.hunks
+        .filter((h) => h.newCount > 0)
+        .map((h): [number, number] => [h.newStart, h.newStart + h.newCount - 1]),
+      old: layout.hunks
+        .filter((h) => h.oldCount > 0)
+        .map((h): [number, number] => [h.oldStart, h.oldStart + h.oldCount - 1]),
+    };
+  }
+  return { files: files.map((f) => f.path), hunks };
+}
+
+/** The new-side span of a file's first hunk, for an excerpt that shows. */
+function firstHunk(file: PrDiffFile): { start: number; end: number } {
+  const hunk = layoutOf(file).hunks[0];
+  if (!hunk || hunk.newCount === 0) return { start: 1, end: 1 };
+  return { start: hunk.newStart, end: hunk.newStart + hunk.newCount - 1 };
+}
+
+/** A guide an agent might write for the fake change: four stops through its
+ *  first files, each with an excerpt the diff can show. */
+function fixtureGuide(number: number): GeneratedGuide {
+  const files = filesOf(number).filter((f) => f.hasPatch);
+  const ofStatus = (status: PrDiffFile["status"]) => files.filter((f) => f.status === status);
+  const modified = ofStatus("modified");
+  const pick = (list: PrDiffFile[], i: number) => list[i % list.length] ?? files[0];
+  const core = pick(modified, 0);
+  const coreSpan = firstHunk(core);
+  const ui = pick(modified, 1);
+  const added = pick(ofStatus("added"), 0);
+  return {
+    stops: [
+      {
+        title: "Retries become machine events",
+        summary:
+          "The heart of the change. A failed step no longer calls `retry()` itself: it sends a `retry` event, so the state machine owns every transition and a retry shows up in its history like any other step.",
+        attention: {
+          kind: "contract",
+          note: "Anything that listened for the old direct retry now has to subscribe to the machine instead. Decide whether that is a break worth calling out in the release notes.",
+        },
+        excerpts: [
+          {
+            path: core.path,
+            side: "new",
+            ...coreSpan,
+            caption: "The step sends an event instead of retrying in place.",
+          },
+        ],
+        files: [{ path: pick(modified, 2).path, note: "The same swap, in the payment step." }],
+        notes: [
+          {
+            path: core.path,
+            line: coreSpan.start + 4,
+            title: "No retry limit here",
+            body: "The cap lives in the machine's guard, so this call site stays simple.",
+          },
+        ],
+        questions: ["Should a retry from the last step reset the payment intent?"],
+      },
+      {
+        title: "A new entry point for checkout",
+        summary:
+          "A small module the rest of the change hangs off. It only exports a flag today; the follow-up wires the machine through it.",
+        attention: null,
+        excerpts: [
+          { path: added.path, side: "new", ...firstHunk(added), caption: "The whole new module." },
+        ],
+        files: [],
+        notes: [],
+        questions: [],
+      },
+      {
+        title: "Moves and removals",
+        summary:
+          "One module is renamed into `steps/` and one dead helper is removed. Neither changes behaviour.",
+        attention: null,
+        excerpts: [],
+        files: [
+          { path: pick(ofStatus("renamed"), 0).path, note: "Renamed, unchanged." },
+          { path: pick(ofStatus("removed"), 0).path, note: "Removed: nothing imported it." },
+        ],
+        notes: [],
+        questions: [],
+      },
+      {
+        title: "The cart and UI follow along",
+        summary:
+          "Callers in the cart and the UI make the same one-line swap. Skim these; the tests cover them.",
+        attention: {
+          kind: "product",
+          note: "A failed payment now shows the retry state for a moment before the button comes back. Confirm that is the feel you want.",
+        },
+        excerpts: [
+          { path: ui.path, side: "new", ...firstHunk(ui), caption: "The UI's retry path." },
+        ],
+        files: [{ path: pick(modified, 3).path, note: "Tests for the new event." }],
+        notes: [],
+        questions: [],
+      },
+    ],
+  };
+}
+
+/** Guides kept for the page's life, seeded with one for the review scenario. */
+const guides = new Map<number, unknown>();
+function storedGuide(number: number): unknown {
+  if (!guides.has(number) && number === 412) {
+    guides.set(412, {
+      ...fixtureGuide(412),
+      headSha: find(412).detail.headSha,
+      generatedAt: iso(1),
+      agent: "claude-code",
+    });
+  }
+  return guides.get(number) ?? null;
+}
+
+/** Answers a guide run's prompt with the fixture guide as JSON, so "Write
+ *  guide" completes in the browser. Other prompts are left to the echo. */
+export function answerGuidePrompt(info: { sessionId: string; text: string }): boolean {
+  const match = /guided tour of change request #(\d+)/.exec(info.text);
+  if (!match) return false;
+  const body = JSON.stringify(fixtureGuide(Number(match[1])), null, 2);
+  void (async () => {
+    await setStatus("running", info.sessionId);
+    await streamText(`I read the change. Here is the tour.\n\n\`\`\`json\n${body}\n\`\`\``, {
+      sessionId: info.sessionId,
+      chunkMs: 4,
+    });
+    await setStatus("idle", info.sessionId);
+  })();
+  return true;
+}
+
 export interface PullRequestsResponses {
   pr_provider: PrProvider;
   pr_list: PrListResult;
@@ -1478,6 +1629,11 @@ export interface PullRequestsResponses {
   pr_label_candidates: PrLabelCandidates;
   pr_create_draft: PrCreateDraft;
   pr_create: PrCreated;
+  pr_prepare_checkout: PrCheckout;
+  pr_guide_read: unknown;
+  pr_guide_write: Unit;
+  pr_guide_prepare: GuideCheckout;
+  pr_guide_finish: Unit;
 }
 
 function listMatches(entry: PrListEntry, args: MockArgs): boolean {
@@ -1693,6 +1849,29 @@ export const pullRequestsHandlers: TypedHandlers<PullRequestsResponses> = {
     PULLS.push(opened);
     return { number, url: opened.detail.url };
   },
+  pr_prepare_checkout: ({ path, number, headBranch }): PrCheckout => {
+    const worktreePath = `${String(path)}/.atlas-worktrees/pr-${Number(number)}`;
+    return {
+      branch: String(headBranch),
+      worktreePath,
+      cwd: worktreePath,
+      isOnPullRequestHead: true,
+      reused: false,
+    };
+  },
+  pr_guide_read: ({ number }) => storedGuide(Number(number)),
+  pr_guide_write: ({ number, guide }) => {
+    guides.set(Number(number), guide);
+    return null;
+  },
+  pr_guide_prepare: ({ path, number, headSha }): GuideCheckout => ({
+    runId: `guide-${Number(number)}-${Date.now()}`,
+    path: `${String(path)}/.atlas-guide-runs/pr-${Number(number)}`,
+    baseCommit: find(number).detail.baseSha ?? "1a2b3c4d5e6f708192a3b4c5d6e7f80912345678",
+    headCommit: String(headSha),
+    change: guideChange(Number(number)),
+  }),
+  pr_guide_finish: () => null,
 };
 
 /** How many pull requests `pr_create` has opened this session. */

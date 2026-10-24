@@ -7,7 +7,7 @@
 
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { CircleCheck, Circle, MessageSquare, Trash2 } from "lucide-react";
+import { CircleCheck, Circle, Hammer, MessageSquare, Trash2 } from "lucide-react";
 
 import { timeAgo } from "@/lib/time-ago";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,7 @@ import { Button } from "@/ui/button";
 import { IconButton } from "@/ui/icon-button";
 
 import { classifyPrError } from "../lib/pr-errors";
+import { findingKey } from "../lib/pull-request-logic";
 import { prThreadComments } from "../lib/pull-requests-api";
 import { usePrReplyMutation, usePrResolveMutation } from "../lib/pull-requests-queries";
 import type { PrReviewThread, PrThreadComment } from "../lib/pull-requests-types";
@@ -60,7 +61,8 @@ export function ReviewThreadCard({
   canResolve: boolean;
   canReact: boolean;
 }) {
-  const { repoPath, number } = usePullRequestScope();
+  const { repoPath, number, agent } = usePullRequestScope();
+  const fixKey = findingKey({ kind: "thread", thread });
   const replyMutation = usePrReplyMutation(repoPath, number);
   const resolveMutation = usePrResolveMutation(repoPath, number);
   const [expanded, setExpanded] = useState(!thread.isResolved);
@@ -154,11 +156,24 @@ export function ReviewThreadCard({
           {commentCount === 1 ? "comment" : "comments"}
         </button>
         {thread.isOutdated ? <span>Outdated</span> : null}
-        {canResolve ? (
+        {/* An open thread can go to an agent, on the pull request's branch. */}
+        {agent?.fixFinding && !thread.isResolved ? (
           <Button
             size="xs"
             variant="ghost"
             className="ml-auto"
+            disabled={agent.pending !== null}
+            onClick={() => agent.fixFinding?.({ kind: "thread", thread })}
+          >
+            <Hammer aria-hidden className="size-3" />
+            {agent.pending === fixKey ? "Preparing…" : "Fix in session"}
+          </Button>
+        ) : null}
+        {canResolve ? (
+          <Button
+            size="xs"
+            variant="ghost"
+            className={cn(!(agent?.fixFinding && !thread.isResolved) && "ml-auto")}
             disabled={pending}
             onClick={toggleResolved}
           >

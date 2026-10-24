@@ -7,16 +7,19 @@ import { useState } from "react";
 import { toast } from "sonner";
 import {
   ArrowUpRight,
+  BookOpen,
   Check,
   Copy,
   GitMerge,
   GitPullRequestArrow,
   GitPullRequestClosed,
   GitPullRequestDraft,
+  Hammer,
   Link,
   MoreHorizontal,
   RefreshCw,
   RotateCcw,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 
@@ -55,6 +58,7 @@ import type {
 } from "../lib/pull-requests-types";
 import { useInlineConfirm } from "../lib/use-inline-confirm";
 import type { PerformPullRequestAction } from "../lib/use-pull-request-actions";
+import type { PullRequestAgentActions } from "../lib/use-pull-request-agent-actions";
 import { StatePill } from "./pull-request-header";
 import {
   CheckStatusIcon,
@@ -200,9 +204,14 @@ export function PullRequestActionsMenu({
   showsDeleteBranch,
   pendingAction,
   perform,
+  agent,
+  onWriteGuide,
 }: {
   scopeKey: string;
   detail: Pick<PrDetail, "url" | "number" | "state" | "isDraft" | "headBranch">;
+  agent: PullRequestAgentActions;
+  /** Starts the guide and shows its tab. */
+  onWriteGuide: () => void;
   refreshing: boolean;
   onRefresh: () => void;
   can: (action: PrAction) => boolean;
@@ -254,6 +263,7 @@ export function PullRequestActionsMenu({
           <RefreshCw className={cn(refreshing && "animate-spin")} />
           Refresh
         </DropdownMenuItem>
+        <AgentMenuItems agent={agent} onWriteGuide={onWriteGuide} />
         {stateGroup ? <DropdownMenuSeparator /> : null}
         {detail.state === "open" ? (
           <>
@@ -376,9 +386,76 @@ export function PullRequestActionsMenu({
   );
 }
 
+/** The ⋯ menu's agent group: each item names the agent it hands work to. */
+function AgentMenuItems({
+  agent,
+  onWriteGuide,
+}: {
+  agent: PullRequestAgentActions;
+  onWriteGuide: () => void;
+}) {
+  const handing = agent.pending !== null;
+  const inCurrent = agent.canExplainInCurrent();
+  const { guide } = agent;
+  return (
+    <>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem disabled={handing} onClick={() => agent.explain("new")}>
+        <BookOpen className="mt-0.5 self-start" />
+        <span className="flex min-w-0 flex-col">
+          <span>{agent.pending === "explain" ? "Opening…" : "Explain this PR"}</span>
+          <span className="text-2xs text-muted-foreground">
+            In a new {agent.agentLabel} session
+          </span>
+        </span>
+      </DropdownMenuItem>
+      {inCurrent ? (
+        <DropdownMenuItem disabled={handing} onClick={() => agent.explain("current")}>
+          <BookOpen className="mt-0.5 self-start" />
+          <span className="flex min-w-0 flex-col">
+            <span>Explain in this session</span>
+            <span className="text-2xs text-muted-foreground">
+              Adds it to the session beside this tab
+            </span>
+          </span>
+        </DropdownMenuItem>
+      ) : null}
+      {agent.fixFindings ? (
+        <DropdownMenuItem disabled={handing} onClick={agent.fixFindings}>
+          <Hammer className="mt-0.5 self-start" />
+          <span className="flex min-w-0 flex-col">
+            <span>{agent.pending === "findings" ? "Preparing…" : "Fix findings"}</span>
+            <span className="text-2xs text-muted-foreground">
+              {agent.agentLabel}, on the pull request&apos;s branch
+            </span>
+          </span>
+        </DropdownMenuItem>
+      ) : null}
+      {guide.canWrite ? (
+        <DropdownMenuItem disabled={guide.running} onClick={onWriteGuide}>
+          <Sparkles />
+          {guide.running
+            ? "Writing guide…"
+            : guide.guide === null
+              ? "Write guide"
+              : "Rewrite guide"}
+        </DropdownMenuItem>
+      ) : null}
+    </>
+  );
+}
+
 // ── checks ──────────────────────────────────────────────────────────────
 
-function ChecksList({ checks }: { checks: readonly PrCheck[] }) {
+function ChecksList({
+  checks,
+  onFix,
+  fixing,
+}: {
+  checks: readonly PrCheck[];
+  onFix: ((check: PrCheck) => void) | null;
+  fixing: boolean;
+}) {
   const [showAll, setShowAll] = useState(false);
   const { attention, running, completed } = groupChecks(checks);
   const canCollapse = attention.length + running.length > 0 && completed.length > 0;
@@ -392,7 +469,7 @@ function ChecksList({ checks }: { checks: readonly PrCheck[] }) {
         {visible.map((check, index) => (
           <li
             key={`${index}:${check.name}`}
-            className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 text-xs"
+            className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto] items-center gap-2 text-xs"
           >
             <CheckStatusIcon status={check.status} />
             <span className="min-w-0 truncate" title={check.description ?? check.name}>
@@ -409,6 +486,14 @@ function ChecksList({ checks }: { checks: readonly PrCheck[] }) {
               >
                 Details
               </button>
+            ) : (
+              <span />
+            )}
+            {onFix && (check.status === "failure" || check.status === "cancelled") ? (
+              <Button size="xs" variant="ghost" disabled={fixing} onClick={() => onFix(check)}>
+                <Hammer aria-hidden className="size-3" />
+                Fix
+              </Button>
             ) : (
               <span />
             )}
@@ -434,10 +519,15 @@ export function PullRequestChecksStatus({
   checks,
   checksState,
   truncated,
+  onFix = null,
+  fixing = false,
 }: {
   checks: readonly PrCheck[];
   checksState: PrChecksState | null;
   truncated: boolean;
+  /** "Fix" on a failing check: a session on the pull request's branch. */
+  onFix?: ((check: PrCheck) => void) | null;
+  fixing?: boolean;
 }) {
   const summary = summarizeChecks(checks);
   if (checksState === null) {
@@ -459,7 +549,7 @@ export function PullRequestChecksStatus({
           {summary}
           {truncated ? " · more checks ran than GitHub lists here" : ""}
         </p>
-        <ChecksList checks={checks} />
+        <ChecksList checks={checks} onFix={onFix} fixing={fixing} />
       </PopoverContent>
     </Popover>
   );
