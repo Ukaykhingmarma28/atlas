@@ -4,7 +4,7 @@ import {
   parseTransientOffThread,
   transientWorkerAvailable,
 } from "@/lib/markdown-cache";
-import { onMarkdownClick, onMarkdownKeyDown } from "@/lib/markdown-links";
+import { onMarkdownClick, onMarkdownCopy, onMarkdownKeyDown } from "@/lib/markdown-links";
 import { hasFileIcons, paintFileIcons } from "@/features/icon-theme/lib/icon-markup";
 import { parseMarkdown } from "@/lib/markdown-render";
 import {
@@ -141,9 +141,11 @@ const TransientMarkdown = memo(function TransientMarkdown({
     const onClick = (e: MouseEvent) => void onMarkdownClick(e);
     node.addEventListener("click", onClick);
     node.addEventListener("keydown", onMarkdownKeyDown);
+    node.addEventListener("copy", onMarkdownCopy);
     return () => {
       node.removeEventListener("click", onClick);
       node.removeEventListener("keydown", onMarkdownKeyDown);
+      node.removeEventListener("copy", onMarkdownCopy);
     };
   }, []);
 

@@ -14,7 +14,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { hasFileIcons, paintFileIcons } from "@/features/icon-theme/lib/icon-markup";
 import { isTypingHot } from "./input-activity";
-import { onMarkdownClick, onMarkdownKeyDown } from "./markdown-links";
+import { onMarkdownClick, onMarkdownCopy, onMarkdownKeyDown } from "./markdown-links";
 import MarkdownWorker from "./markdown.worker?worker";
 import "@/styles/hljs.css";
 import { cn } from "./utils";
@@ -584,9 +584,11 @@ export function CachedMarkdown({
     };
     node.addEventListener("click", onClick);
     node.addEventListener("keydown", onMarkdownKeyDown);
+    node.addEventListener("copy", onMarkdownCopy);
     return () => {
       node.removeEventListener("click", onClick);
       node.removeEventListener("keydown", onMarkdownKeyDown);
+      node.removeEventListener("copy", onMarkdownCopy);
     };
   }, []);
 

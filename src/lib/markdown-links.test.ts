@@ -11,7 +11,7 @@ const openUrl = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl }));
 
 import { parseMarkdown } from "./markdown-render";
-import { onMarkdownClick, onMarkdownKeyDown } from "./markdown-links";
+import { onMarkdownClick, onMarkdownCopy, onMarkdownKeyDown } from "./markdown-links";
 
 const ROOT = "/Users/dev/acme-app";
 
@@ -75,5 +75,40 @@ describe("clicks in rendered markdown", () => {
     const event = new MouseEvent("click", { bubbles: true, cancelable: true });
     root.querySelector("code")!.dispatchEvent(event);
     expect(event.defaultPrevented).toBe(false);
+  });
+});
+
+describe("copying a shortened link", () => {
+  /** Select all of `root` and fire a copy at it; what landed on the clipboard. */
+  function copyAll(root: HTMLElement): { text: string; html: string; taken: boolean } {
+    const range = document.createRange();
+    range.selectNodeContents(root);
+    const selection = window.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    const data = new Map<string, string>();
+    const event = new Event("copy", { cancelable: true }) as ClipboardEvent;
+    Object.defineProperty(event, "clipboardData", {
+      value: { setData: (k: string, v: string) => data.set(k, v) },
+    });
+    onMarkdownCopy(event);
+    return {
+      text: data.get("text/plain") ?? "",
+      html: data.get("text/html") ?? "",
+      taken: event.defaultPrevented,
+    };
+  }
+
+  it("carries the full address in place of the short label", () => {
+    const pr = "https://github.com/acme/web/pull/415";
+    const copied = copyAll(render(`See ${pr} now.`));
+    expect(copied.taken).toBe(true);
+    expect(copied.text).toContain(pr);
+    expect(copied.text).not.toContain("PR #415");
+    expect(copied.html).toContain(`>${pr}</a>`);
+  });
+
+  it("leaves a selection without one to the browser", () => {
+    expect(copyAll(render("See [the docs](https://example.com/docs).")).taken).toBe(false);
   });
 });
