@@ -1405,14 +1405,15 @@ function projectSegment(
     if (footerMsg?.turnSummary) {
       // The response's footer goes at the end of the response, below the
       // card, so it is the last thing the turn shows (see `ProseRow.footerBelow`).
-      let response: ProseRow | null = null;
-      for (let r = rows.length - 1; r >= rowStart; r--) {
-        const row = rows[r];
-        if (row.kind === RowKind.Prose) {
-          if (!row.streaming) response = row;
-          break;
-        }
-      }
+      // Only when the response is the row right above the footer row: hovering
+      // its text reveals the footer through a next-sibling selector
+      // (`globals.css`, `[data-footer-below]:hover + .atlas-row`), and a
+      // delegated subagent or a trailing tool call between the two would leave
+      // the footer unreachable from the text. Then the response keeps its own
+      // footer, and the footer row carries only the card.
+      const last = rows.length > rowStart ? rows[rows.length - 1] : null;
+      const response: ProseRow | null =
+        last?.kind === RowKind.Prose && !last.streaming ? last : null;
       if (response) response.footerBelow = true;
       rows.push({
         kind: RowKind.TurnFooter,

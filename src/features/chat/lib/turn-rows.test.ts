@@ -880,6 +880,54 @@ describe("the response footer at the end of a turn", () => {
     expect(footer).toMatchObject({ responseShowTimestamp: false });
   });
 
+  it("keeps the footer on the response when rows sit between it and the footer row", () => {
+    // The response, then a tool call it made afterwards: a row between the
+    // response and the footer row, which a next-sibling hover cannot cross.
+    const messages: ChatMessage[] = [
+      {
+        id: "m1",
+        role: "assistant",
+        content: "Done.",
+        toolCalls: [],
+        fileChanges: [],
+        plan: null,
+        timestamp: "2026-08-23T00:00:05Z",
+        mode: "text",
+      } as ChatMessage,
+      {
+        id: "m2",
+        role: "assistant",
+        content: "",
+        toolCalls: [toolCall({ id: "tc-after" })],
+        fileChanges: [],
+        plan: null,
+        timestamp: "2026-08-23T00:00:06Z",
+        mode: "tool",
+        turnSummary: {
+          turnSeq: 1,
+          files: [{ path: "a.ts", kind: "edit", added: 1, removed: 0 }],
+          repoAtTurn: true,
+        },
+      } as ChatMessage,
+    ];
+    const rows = projectRows(messages, OPTS).rows;
+    const proseIndex = rows.findIndex((r) => r.kind === RowKind.Prose);
+    const footerIndex = rows.findIndex((r) => r.kind === RowKind.TurnFooter);
+    expect(footerIndex - proseIndex).toBeGreaterThan(1);
+    const prose = rows[proseIndex];
+    expect(prose.kind === RowKind.Prose && prose.footerBelow).toBeFalsy();
+    expect(rows[footerIndex]).not.toHaveProperty("responseRowId");
+  });
+
+  it("puts the footer row right after the response it carries", () => {
+    const rows = projectRows(editedTurn(), OPTS).rows;
+    for (const [index, row] of rows.entries()) {
+      if (row.kind === RowKind.Prose && row.footerBelow) {
+        expect(rows[index + 1]?.kind).toBe(RowKind.TurnFooter);
+      }
+    }
+  });
+
   it("leaves a turn without a footer row alone", () => {
     const messages = editedTurn();
     delete messages[0].turnSummary;
