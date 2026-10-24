@@ -125,6 +125,7 @@ import type { MentionData } from "../lib/mentions";
 import { COMMENT_LINK_EVENT, type CommentLinkDetail } from "../lib/comment-mentions";
 import { collapsePastes, pastedTextMention } from "../lib/pasted-text";
 import { collapseCites } from "../lib/cited-text";
+import { REVIEW_UNLINK_EVENT, type ReviewUnlinkDetail } from "../lib/review-comments";
 import { forgetSentTexts, rememberMention } from "../lib/mention-registry";
 
 // Start the editor chunk download at module-evaluation time. Vite still
@@ -963,6 +964,7 @@ export function MessageInput({
     () => inputRef.current?.getValue(),
   );
   const valueRef = draft.latest;
+  const flushDraft = draft.flush;
   const [hasText, setHasText] = useState(() => draft.initialValue.trim().length > 0);
   const onEmptyChange = useCallback((blank: boolean) => setHasText(!blank), []);
   // Every programmatic rewrite — reply, prefill, insert, queue recall — goes
@@ -1735,11 +1737,30 @@ export function MessageInput({
       if (!linked) input.insertMention(detail.mention, { padBefore: true });
       // Handled: the cite popover closes only on this (`linkCiteToComposer`).
       e.preventDefault();
+      // Now, not after the debounce: the diff draws a review comment back
+      // from the draft (`useComposerReviewComments`).
+      if (detail.mention.kind === "review_comment") flushDraft();
       requestAnimationFrame(() => inputRef.current?.focus());
     };
     window.addEventListener(COMMENT_LINK_EVENT, handler);
     return () => window.removeEventListener(COMMENT_LINK_EVENT, handler);
-  }, [tabId, disabled]);
+  }, [tabId, disabled, flushDraft]);
+
+  // A review comment deleted where it was written (its annotation in the
+  // diff or the file view): its chip leaves the prompt too.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<ReviewUnlinkDetail>).detail;
+      if (!detail || detail.tabId !== tabId) return;
+      const input = inputRef.current;
+      if (!input) return;
+      input.removeMention("review_comment", detail.id);
+      e.preventDefault();
+      flushDraft();
+    };
+    window.addEventListener(REVIEW_UNLINK_EVENT, handler);
+    return () => window.removeEventListener(REVIEW_UNLINK_EVENT, handler);
+  }, [tabId, flushDraft]);
 
   // An agent switch with `agentSwitchBehavior: "handoff"`: the conversation
   // the tab just left, as a past-session chip at the start of the draft, so

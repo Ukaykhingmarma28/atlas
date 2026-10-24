@@ -20,20 +20,21 @@ import type { OrgDirectory } from "@/features/organisations/lib/use-org-director
 
 import type { AnchorEntry } from "./comment-anchors";
 import type { MentionComment } from "./org-mentions";
-import type { MentionCitedText } from "./mentions";
+import type { MentionCitedText, MentionReviewComment } from "./mentions";
 import { useChatCommentsStore, type TabComments } from "../stores/chat-comments-store";
 
 /** How much of the body the chip shows after the author. */
 const EXCERPT_CHARS = 48;
 
 /** The window event the link button fires; the composer of `tabId` inserts.
- *  A reply passage's Cite rides the same event (`linkCiteToComposer`): both
- *  drop one chip, once, into one session's composer. */
+ *  A reply passage's Cite rides the same event (`linkCiteToComposer`), and so
+ *  does a comment on diff or file lines (`review-comments.ts`): each drops one
+ *  chip, once, into one session's composer. */
 export const COMMENT_LINK_EVENT = "atlas:chat-link-comment";
 
 export interface CommentLinkDetail {
   tabId: string;
-  mention: MentionComment | MentionCitedText;
+  mention: MentionComment | MentionCitedText | MentionReviewComment;
 }
 
 /**

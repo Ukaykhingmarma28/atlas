@@ -106,6 +106,7 @@ const signInAttempted = new Set<string>();
 import { composePrompt, type MentionData } from "../lib/mentions";
 import { trustedMentionPaths } from "../lib/picked-mentions";
 import { withCitesInline } from "../lib/cited-text";
+import { withReviewCommentsInline } from "../lib/review-comments";
 import { usePaneFind } from "../lib/use-pane-find";
 import { MessageInput } from "./message-input";
 import { AgentUpdateBar } from "./agent-update-bar";
@@ -1490,7 +1491,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
       console.warn("composePrompt failed, sending raw text:", err);
       // A cite's passage is only in the context block `compose_prompt`
       // writes, so without one it is written out after the prose.
-      wirePrompt = withCitesInline(actualContent, mentions);
+      wirePrompt = withReviewCommentsInline(withCitesInline(actualContent, mentions), mentions);
       // A paste is never only in the prose (just its `@paste:` token), so it
       // must survive a failed compose too.
       pastedTexts = mentions.flatMap((m) =>

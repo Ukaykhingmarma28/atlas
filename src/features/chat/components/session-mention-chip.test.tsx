@@ -234,3 +234,67 @@ describe("a project chip's access toggle", () => {
     });
   });
 });
+
+describe("a review comment's chip", () => {
+  const REVIEW: MentionData = {
+    kind: "review_comment",
+    id: "r1x2y3",
+    displayName: "src/a.ts:2-3",
+    sectionId: "changes",
+    sectionTitle: "Changes",
+    filePath: "src/a.ts",
+    rangeLabel: "2 to 3",
+    diff: "+TWO",
+    fenceLanguage: "diff",
+    text: "Why uppercase?",
+    start: 2,
+    end: 3,
+    side: "additions",
+    endSide: "additions",
+  };
+
+  it("comes back from its token, labelled with the line reference", async () => {
+    rememberMention(REVIEW, PROJECT);
+    const { ref, container } = mount("see @review:r1x2y3");
+    expect(ref.current!.getMentions()).toEqual([REVIEW]);
+    const chip = await waitFor(() => {
+      const el = container.querySelector(".atlas-mention-chip");
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    expect(chip.textContent).toContain("src/a.ts:2-3");
+  });
+
+  it("its × takes it out of the draft", async () => {
+    const { ref, container } = mount();
+    act(() => ref.current!.insertMention(REVIEW));
+    const x = await waitFor(() => {
+      const el = container.querySelector<HTMLElement>("[data-chip-remove]");
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    act(() => {
+      fireEvent.click(x);
+    });
+    expect(ref.current!.getMentions()).toEqual([]);
+  });
+
+  it("is removed by kind and id, as an annotation's delete asks", () => {
+    const { ref } = mount();
+    act(() => ref.current!.insertMention(REVIEW));
+    let removed = false;
+    act(() => {
+      removed = ref.current!.removeMention("review_comment", "r1x2y3");
+    });
+    expect(removed).toBe(true);
+    expect(ref.current!.getMentions()).toEqual([]);
+    expect(ref.current!.removeMention("review_comment", "r1x2y3")).toBe(false);
+  });
+
+  it("a file chip has no ×", async () => {
+    const { ref, container } = mount();
+    act(() => ref.current!.insertMention(CLIP));
+    await waitFor(() => expect(container.querySelector(".atlas-mention-chip")).not.toBeNull());
+    expect(container.querySelector("[data-chip-remove]")).toBeNull();
+  });
+});

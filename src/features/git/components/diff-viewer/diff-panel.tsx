@@ -22,6 +22,8 @@ import { fnv1a32 } from "../../lib/diff-rendering";
 import { invalidateReviewFiles, useReviewFiles } from "../../lib/use-review-files";
 import { combineReviews, useAttachedRootReviews } from "../../lib/use-root-review";
 import { useSessionRoots } from "@/features/chat/hooks/use-session-roots";
+import { useChatTabOfSession } from "@/features/chat/lib/review-comments";
+import { useDiffReviewComments } from "../../lib/use-diff-review-comments";
 import {
   useSessionEditTurns,
   useTurnEdits,
@@ -408,10 +410,28 @@ function GitDiffPanel({
     },
     [repoPath],
   );
+  const absPathOf = useCallback(
+    (path: string) => keysRef.current.keys.get(path)?.abs ?? `${repoPath}/${path}`,
+    [repoPath],
+  );
   const tree = useMemo(
     () => ({ files: treeFiles, groups: combined.grouped ? combined.groups : undefined }),
     [treeFiles, combined.grouped, combined.groups],
   );
+
+  // ── Comments on lines, for the session beside the diff. Without one the
+  // diff offers none: there is no prompt for a comment to go in. ──
+  const chatTabId = useChatTabOfSession(sessionId);
+  const section = useMemo(
+    () => ({ id: collapseScopeKey, title: scopeLabel }),
+    [collapseScopeKey, scopeLabel],
+  );
+  const annotations = useDiffReviewComments({
+    chatTabId,
+    section,
+    files,
+    displayPathOf: copyPathOf,
+  });
 
   return (
     <DiffPanelView
@@ -442,9 +462,11 @@ function GitDiffPanel({
           : null,
         placeholder,
         copyPathOf,
+        absPathOf,
         resolvePath,
         openFile,
         turn: !git,
+        annotations,
       }}
     />
   );

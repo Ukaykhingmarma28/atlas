@@ -92,7 +92,10 @@ export type MentionKind =
   // A passage of one of this session's own agent replies, cited back to the
   // agent with an optional note (`cited-text.ts`). Never in the picker: only
   // the transcript's selection pill makes one.
-  | "cited_text";
+  | "cited_text"
+  // A comment on lines of a diff or a file, written in the gutter beside a
+  // session (`review-comments.ts`). Never in the picker.
+  | "review_comment";
 
 export interface MentionFile {
   kind: "file";
@@ -241,6 +244,41 @@ export interface MentionCitedText {
   note: string;
 }
 
+/**
+ * A comment on lines of a diff or a file, written beside a session and sent
+ * with its next prompt (`review-comments.ts`). Local to the draft: nothing is
+ * posted anywhere. The prompt carries its `@review:<id>` token, and
+ * `compose_prompt` (Rust) appends the file, the range, the quoted lines and
+ * the comment.
+ */
+export interface MentionReviewComment {
+  kind: "review_comment";
+  /** Short and unique — the `@review:<id>` token. */
+  id: string;
+  /** The chip's label: `path:from-to`, as the file view's line reference. */
+  displayName: string;
+  /** Where it was written: a diff scope's key, or `file:<abs path>`. The
+   *  surface draws back only the comments of its own section. */
+  sectionId: string;
+  /** That section for a reader: "Changes", "Uncommitted", "Turn 3", "File". */
+  sectionTitle: string;
+  /** The path as the diff or the file view shows it. */
+  filePath: string;
+  /** `+12 to +14`, `L3`, …: the range in the section's numbering. */
+  rangeLabel: string;
+  /** The quoted lines: a hunk (`diff`) or the file's own text. Capped. */
+  diff: string;
+  /** The fence the quote goes in: `diff`, or the file's extension. */
+  fenceLanguage: string;
+  /** What the user wrote. */
+  text: string;
+  /** The picked range, to draw the comment back on its lines. */
+  start: number;
+  end: number;
+  side: "additions" | "deletions";
+  endSide: "additions" | "deletions";
+}
+
 export type MentionData =
   | MentionFile
   | MentionFolder
@@ -257,7 +295,8 @@ export type MentionData =
   | MentionRecordedSession
   | MentionComment
   | MentionPastedText
-  | MentionCitedText;
+  | MentionCitedText
+  | MentionReviewComment;
 
 // ── Catalog ──────────────────────────────────────────────────────────────────
 
@@ -485,6 +524,8 @@ export function toShortForm(m: MentionData): string {
       return `@paste:${m.id}`;
     case "cited_text":
       return `@cite:${m.id}`;
+    case "review_comment":
+      return `@review:${m.id}`;
   }
 }
 

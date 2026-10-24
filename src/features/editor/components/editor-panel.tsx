@@ -61,7 +61,8 @@ import {
   FileTreeToggle,
 } from "./file-surface-chrome";
 import { FILE_DOCK_RESERVE } from "@/features/explorer/lib/file-tabs";
-import { sendToAgentChat } from "@/features/chat/lib/send-to-agent";
+import { useAgentChatTarget } from "@/features/chat/lib/send-to-agent";
+import { useFileReviewComments } from "../lib/use-file-review-comments";
 
 /**
  * A file tab: the file's text in the code view (`code-file-view.tsx`),
@@ -464,16 +465,18 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
 
   useEffect(() => registerEditorView(tabId, () => viewRef.current?.position()), [tabId]);
 
-  // The gutter's `+` on a line (or a dragged range): a reference to those
-  // lines in the session's composer, root-relative when the file is in the
-  // project, so the agent reads exactly the lines meant.
-  const addLinesToSession = (range: { start: number; end: number }) => {
-    const root = frame?.root ?? (relPath !== null ? projectPath : null);
-    const shown = (root ? relativeTo(path, root) : null) ?? path;
-    const from = Math.min(range.start, range.end);
-    const to = Math.max(range.start, range.end);
-    sendToAgentChat(`\`${shown}:${from === to ? from : `${from}-${to}`}\``);
-  };
+  // The gutter's `+` on a line (or a dragged range): a comment on those
+  // lines for the session, quoting them, as the diff's line comments do. The
+  // path it names is root-relative when the file is in the project. The
+  // session is the one `sendToAgentChat` writes to; with none open the
+  // gutter offers nothing.
+  const commentRoot = frame?.root ?? (relPath !== null ? projectPath : null);
+  const comments = useFileReviewComments({
+    chatTabId: useAgentChatTarget(),
+    absPath: path,
+    filePath: (commentRoot ? relativeTo(path, commentRoot) : null) ?? path,
+    getContents: () => viewRef.current?.getText() ?? buffer?.originalContent ?? "",
+  });
 
   useEffect(() => {
     decorations.setLayout(wordWrap, gitBlameInline);
@@ -637,7 +640,7 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
             reveal={pendingReveal}
             onRevealed={(nonce) => consumeReveal(path, nonce)}
             onChange={(content) => save.change(content)}
-            onAddLines={isUntitled ? undefined : addLinesToSession}
+            comments={isUntitled ? null : comments}
           />
         </div>
       )}

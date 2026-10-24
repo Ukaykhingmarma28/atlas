@@ -210,6 +210,39 @@ pub enum MentionSpec {
         #[serde(default)]
         note: Option<String>,
     },
+    /// A comment on lines of a diff or a file, written in the gutter beside
+    /// the session and referenced with `@review:<id>` (`review-comments.ts`).
+    /// Local to the draft: it is a block in the prompt, never posted. The
+    /// block names the file and the range, quotes the lines, then the comment.
+    ReviewComment {
+        /// Short and unique within the draft — the token's value.
+        id: String,
+        display_name: String,
+        /// The diff scope or `file:<path>` it was written in (drawing only).
+        #[serde(default)]
+        section_id: String,
+        /// That section for a reader: "Changes", "Turn 3", "File".
+        section_title: String,
+        /// The path as the diff or the file view showed it.
+        file_path: String,
+        /// `+12 to +14`, `L3`: the range in the section's numbering.
+        range_label: String,
+        /// The quoted lines, already capped by the frontend.
+        diff: String,
+        /// The fence for the quote: `diff`, or the file's extension.
+        fence_language: String,
+        /// The comment, already capped by the frontend.
+        text: String,
+        /// The picked range, for drawing it back (unused here).
+        #[serde(default)]
+        start: u32,
+        #[serde(default)]
+        end: u32,
+        #[serde(default)]
+        side: String,
+        #[serde(default)]
+        end_side: String,
+    },
 }
 
 impl MentionSpec {
@@ -230,7 +263,8 @@ impl MentionSpec {
             | MentionSpec::Conversation { id, .. }
             | MentionSpec::RecordedSession { id, .. }
             | MentionSpec::Comment { id, .. }
-            | MentionSpec::CitedText { id, .. } => id,
+            | MentionSpec::CitedText { id, .. }
+            | MentionSpec::ReviewComment { id, .. } => id,
         }
     }
 
@@ -272,6 +306,7 @@ impl MentionSpec {
             }
             MentionSpec::Comment { display_name, .. } => format!("@comment:{}", v(display_name)),
             MentionSpec::CitedText { id, .. } => format!("@cite:{id}"),
+            MentionSpec::ReviewComment { id, .. } => format!("@review:{id}"),
         }
     }
 }
@@ -655,7 +690,59 @@ fn render_block(m: &MentionSpec) -> Option<String> {
             text,
             note.as_deref(),
         )),
+        MentionSpec::ReviewComment {
+            section_title,
+            file_path,
+            range_label,
+            diff,
+            fence_language,
+            text,
+            ..
+        } => Some(render_review_comment_block(
+            &m.short_form(),
+            section_title,
+            file_path,
+            range_label,
+            diff,
+            fence_language,
+            text,
+        )),
     }
+}
+
+/// The block a review comment contributes: where it is, the user's comment,
+/// then the lines it is on in a fence neither can close.
+fn render_review_comment_block(
+    short_form: &str,
+    section_title: &str,
+    file_path: &str,
+    range_label: &str,
+    diff: &str,
+    fence_language: &str,
+    text: &str,
+) -> String {
+    let quote = clip_body(diff.trim_matches('\n'));
+    let longest = quote.split(|c| c != '`').map(str::len).max().unwrap_or(0);
+    let fence = "`".repeat((longest + 1).max(3));
+    let comment = clip_body(text.trim())
+        .lines()
+        .map(|line| format!("> {line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let section = section_title.trim();
+    let section = if section.is_empty() {
+        String::new()
+    } else {
+        format!(" ({section})")
+    };
+    let language = fence_language.trim();
+    format!(
+        "## {short_form}\n\n\
+         The user left a review comment on `{file_path}`, {range_label}{section}:\n\n\
+         {comment}\n\n\
+         The lines it is on:\n\n\
+         {fence}{language}\n{quote}\n{fence}"
+    )
 }
 
 /// The block a cited passage contributes: the passage, said to be from an
@@ -1266,5 +1353,70 @@ mod short_form_tests {
     fn a_bare_value_is_left_alone() {
         assert_eq!(short_form_value("src/main.rs"), "src/main.rs");
         assert_eq!(short_form_value("Shot@2x.png"), "Shot@2x.png");
+    }
+}
+
+#[cfg(test)]
+mod review_comment_tests {
+    use super::*;
+
+    fn review(diff: &str) -> MentionSpec {
+        serde_json::from_value(serde_json::json!({
+            "kind": "review_comment",
+            "id": "r4n2c8",
+            "displayName": "src/app.ts:12-13",
+            "sectionId": "/repo\u{0}branch-range\u{0}\u{0}s-1",
+            "sectionTitle": "Changes",
+            "filePath": "src/app.ts",
+            "rangeLabel": "+12 to +13",
+            "diff": diff,
+            "fenceLanguage": "diff",
+            "text": "Rename this.\nIt shadows the import.",
+            "start": 12,
+            "end": 13,
+            "side": "additions",
+            "endSide": "additions",
+        }))
+        .expect("the frontend's review comment shape")
+    }
+
+    /// The comment reaches the agent with its file, range, quote and text,
+    /// under the token the prose carries; it is not a link.
+    #[tokio::test]
+    async fn a_review_comment_names_the_file_and_range_then_quotes_the_lines() {
+        let composed = compose_prompt(
+            "fix these @review:r4n2c8".into(),
+            vec![review("@@ -10,2 +12,2 @@\n-let a = 1;\n+let b = 1;")],
+        )
+        .await
+        .unwrap();
+        assert!(
+            composed.resource_links.is_empty(),
+            "a review comment is not a link"
+        );
+        let prose = &composed.prose;
+        assert!(
+            prose.starts_with(
+                "fix these @review:r4n2c8\n\n---\n# Atlas context\n\n## @review:r4n2c8\n\n"
+            ),
+            "{prose}"
+        );
+        assert!(
+            prose.contains(
+                "The user left a review comment on `src/app.ts`, +12 to +13 (Changes):\n\n\
+                 > Rename this.\n> It shadows the import.\n\n\
+                 The lines it is on:\n\n\
+                 ```diff\n@@ -10,2 +12,2 @@\n-let a = 1;\n+let b = 1;\n```"
+            ),
+            "{prose}"
+        );
+    }
+
+    /// A quote holding a fence gets a longer one, so it cannot close early.
+    #[test]
+    fn a_quote_with_backticks_gets_a_longer_fence() {
+        let block = render_block(&review("+```js\n+x\n+```")).unwrap();
+        assert!(block.contains("\n````diff\n+```js"), "{block}");
+        assert!(block.ends_with("+```\n````"), "{block}");
     }
 }
