@@ -7,7 +7,14 @@
 
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { CircleCheck, Circle, Hammer, MessageSquare, Trash2 } from "lucide-react";
+import {
+  CircleCheck,
+  Circle,
+  Hammer,
+  MessageCircleQuestion,
+  MessageSquare,
+  Trash2,
+} from "lucide-react";
 
 import { timeAgo } from "@/lib/time-ago";
 import { cn } from "@/lib/utils";
@@ -310,6 +317,8 @@ export function DraftCommentCard({
   onAddToReview,
   onPostNow,
   onCancel,
+  canComment = true,
+  onAsk,
 }: {
   /** `path:line`, for the box's name. */
   label: string;
@@ -320,6 +329,11 @@ export function DraftCommentCard({
   /** Settles once the post has; the card stays locked until then. */
   onPostNow: (body: string) => Promise<unknown>;
   onCancel: () => void;
+  /** `false` for a reader who may not comment: the box only asks. */
+  canComment?: boolean;
+  /** "Ask about these lines": the text as a question to an agent session,
+   *  with the picked lines attached. Absent, the box only comments. */
+  onAsk?: (question: string) => void;
 }) {
   const [text, setText] = useState(initialText);
   // The posting state is the card's own: the diff viewer re-renders an
@@ -344,6 +358,11 @@ export function DraftCommentCard({
     if (postingRef.current || !body) return;
     onAddToReview(body);
   };
+  const ask = () => {
+    if (postingRef.current || !onAsk) return;
+    onAsk(text);
+  };
+  const submit = canComment ? addToReview : ask;
   return (
     <div className="px-3 py-2 font-sans" contentEditable={false} onPointerDown={stop}>
       <textarea
@@ -352,8 +371,8 @@ export function DraftCommentCard({
         rows={3}
         value={text}
         disabled={posting}
-        placeholder="Leave a comment"
-        aria-label={`Comment on ${label}`}
+        placeholder={canComment ? "Leave a comment" : "Ask about these lines"}
+        aria-label={canComment ? `Comment on ${label}` : `Ask about ${label}`}
         className={TEXTAREA_CLASS}
         onChange={(event) => {
           setText(event.target.value);
@@ -363,23 +382,40 @@ export function DraftCommentCard({
           if (event.key === "Escape") {
             event.preventDefault();
             onCancel();
-          } else if (isSubmitChord(event) && body && !event.repeat) {
+          } else if (isSubmitChord(event) && (body || !canComment) && !event.repeat) {
             event.preventDefault();
-            addToReview();
+            submit();
           }
         }}
       />
       <div className="mt-1.5 flex items-center gap-1">
-        <span className="mr-auto text-2xs text-muted-foreground">⌘↵ adds to your review</span>
+        <span className="mr-auto text-2xs text-muted-foreground">
+          {canComment ? "⌘↵ adds to your review" : "⌘↵ asks an agent"}
+        </span>
         <Button size="xs" variant="ghost" onClick={onCancel}>
           Cancel
         </Button>
-        <Button size="xs" variant="outline" disabled={!body || posting} onClick={postNow}>
-          {posting ? "Posting…" : "Comment now"}
-        </Button>
-        <Button size="xs" disabled={!body || posting} onClick={addToReview}>
-          Add to review
-        </Button>
+        {onAsk ? (
+          <Button
+            size="xs"
+            variant={canComment ? "ghost" : "default"}
+            disabled={posting}
+            onClick={ask}
+          >
+            <MessageCircleQuestion aria-hidden className="size-3" />
+            Ask about these lines
+          </Button>
+        ) : null}
+        {canComment ? (
+          <>
+            <Button size="xs" variant="outline" disabled={!body || posting} onClick={postNow}>
+              {posting ? "Posting…" : "Comment now"}
+            </Button>
+            <Button size="xs" disabled={!body || posting} onClick={addToReview}>
+              Add to review
+            </Button>
+          </>
+        ) : null}
       </div>
     </div>
   );

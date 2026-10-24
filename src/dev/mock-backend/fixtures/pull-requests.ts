@@ -103,6 +103,8 @@ const CAPABILITIES: PrCapabilities = {
     "update-branch",
     "enable-auto-merge",
     "disable-auto-merge",
+    "revert",
+    "approve-workflows",
   ],
   mergeMethods: ["merge", "squash", "rebase"],
   deleteBranch: true,
@@ -353,10 +355,15 @@ const PULLS: FakePull[] = [
         description: "CouponStore › restores on load",
       }),
       check("lint", "success", 1),
+      // A fork's workflow waiting for someone with write access.
+      check("e2e", "action-required", null, { description: "Waiting for approval" }),
     ],
     checksState: "failing",
     checksTruncated: false,
-    viewerPermissions: permissions(true, false),
+    viewerPermissions: {
+      ...permissions(true, false),
+      actions: [...permissions(true, false).actions, "approve-workflows"],
+    },
     baseComparison: "behind",
     behindBy: 12,
     autoMergeEnabled: null,
@@ -392,7 +399,11 @@ const PULLS: FakePull[] = [
     checks: [check("unit", "success", 5), check("lint", "success", 1), check("e2e", "success", 12)],
     checksState: "passing",
     checksTruncated: false,
-    viewerPermissions: permissions(false, false),
+    // Merged, with push access: it can be reverted.
+    viewerPermissions: {
+      ...permissions(false, false),
+      actions: [...permissions(false, false).actions, "revert"],
+    },
     baseComparison: "unknown",
     behindBy: null,
     autoMergeEnabled: null,
@@ -2009,6 +2020,13 @@ export const pullRequestsHandlers: TypedHandlers<PullRequestsResponses> = {
       set({ autoMergeEnabled: true, autoMergeMethod: "squash" });
     else if (action === "disable-auto-merge")
       set({ autoMergeEnabled: false, autoMergeMethod: null });
+    // The waiting runs start: their checks go back to pending.
+    else if (action === "approve-workflows")
+      set({
+        checks: target.detail.checks.map((c) =>
+          c.status === "action-required" ? { ...c, status: "pending", description: null } : c,
+        ),
+      });
     return null;
   },
   pr_update: ({ number, title, body }) => {
@@ -2126,7 +2144,17 @@ export const pullRequestsHandlers: TypedHandlers<PullRequestsResponses> = {
     PULLS.push(opened);
     return { number, url: opened.detail.url };
   },
-  pr_prepare_checkout: ({ path, number, headBranch }): PrCheckout => {
+  pr_prepare_checkout: ({ path, number, headBranch, inPlace }): PrCheckout => {
+    // In this repository: the fake checkout is always clean, so it switches.
+    if (inPlace === true) {
+      return {
+        branch: String(headBranch),
+        worktreePath: null,
+        cwd: String(path),
+        isOnPullRequestHead: true,
+        reused: false,
+      };
+    }
     const worktreePath = `${String(path)}/.atlas-worktrees/pr-${Number(number)}`;
     return {
       branch: String(headBranch),

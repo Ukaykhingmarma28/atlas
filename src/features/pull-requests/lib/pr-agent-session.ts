@@ -55,6 +55,21 @@ export function currentSessionTab(projectPath: string): string | null {
   return useAppStore.getState().currentProject?.path === root ? tabId : null;
 }
 
+/** `currentSessionTab`, re-read as the session beside the tab changes. */
+export function useCurrentSessionTab(projectPath: string): string | null {
+  // Subscribed for the re-render; the answer is read whole each time.
+  useChatStore((s) => s.activeSessionId);
+  useLayoutStore((s) => s.tabs.length);
+  return currentSessionTab(projectPath);
+}
+
+/** The folder a session tab works in: its bound worktree, else its working
+ *  directory, else (not started yet) the project. */
+export function sessionCwd(tabId: string, projectPath: string): string {
+  const session = useChatStore.getState().sessions[tabId];
+  return session?.bindCwd ?? session?.workingDirectory ?? projectPath;
+}
+
 /** The composer text for a hand-off: the prompt, then the context chip's
  *  short form. The chip is remembered so the composer can rebuild it. */
 export function composeHandoff(handoff: Handoff, projectPath: string | null): string {

@@ -1,7 +1,11 @@
 // One pull request as a surface tab (`pull-request:<checkout>:<number>`):
-// the header — crumbs, the primary action and ⋯ menu, the title and branch
-// rows that fold into one line once scrolled — the Summary / Timeline / Code
-// tabs, and the floating composer.
+// the header — crumbs (with a back arrow to where it was opened from), the
+// primary action, Check out and the ⋯ menu, the title and branch rows that
+// fold into one line once scrolled — the Summary / Timeline / Code tabs, and
+// the floating composer.
+//
+// The detail paints from the last read kept on this machine
+// (`pull-request-detail-cache.ts`) while the fresh one loads.
 //
 // Everything reads through the `pr_*` commands in the tab's checkout, so the
 // tab works for any pull request `gh` can see from there. What may be done
@@ -9,12 +13,15 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
+import { useScopedHotkeys } from "@/features/keybindings/lib/use-scoped-hotkeys";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
+import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 import { Segmented } from "@/ui/segmented";
 
-import { pullRequestTabTitle } from "../lib/open-pull-request-tab";
+import { pullRequestTabTitle, readPullRequestTabData } from "../lib/open-pull-request-tab";
 import { classifyPrError } from "../lib/pr-errors";
 import {
   allowedMergeMethods as allowedMethodsOf,
@@ -32,7 +39,12 @@ import { preferredMergeMethod, rememberMergeMethod } from "../lib/pull-request-p
 import { pullRequestKeys, usePrActivity, usePrDetail } from "../lib/pull-requests-queries";
 import type { PrAction, PrMergeMethod } from "../lib/pull-requests-types";
 import { usePullRequestActions } from "../lib/use-pull-request-actions";
-import { usePullRequestAgentActions } from "../lib/use-pull-request-agent-actions";
+import {
+  usePullRequestAgentActions,
+  type CheckoutMode,
+} from "../lib/use-pull-request-agent-actions";
+import { useSessionPullRequestLink } from "../lib/use-session-pull-request-link";
+import type { TimelineOrder } from "../lib/pull-request-timeline";
 import { watchPullRequestTabDrafts } from "../lib/pull-request-tab-drafts";
 import { guideRunKey, useGuideRunStore } from "../stores/guide-run-store";
 import {
@@ -40,9 +52,12 @@ import {
   readPullRequestTabDraft,
 } from "../stores/pull-request-tab-draft-store";
 import {
+  ApproveWorkflowsButton,
+  CheckoutMenu,
   PullRequestActionsMenu,
   PullRequestChecksStatus,
   PullRequestPrimaryAction,
+  ResolveConflictsButton,
 } from "./pull-request-actions";
 import { PullRequestComposer } from "./pull-request-composer";
 import { PullRequestScopeContext, type PullRequestScope } from "./pull-request-context";
@@ -56,7 +71,7 @@ import { PullRequestDetailGhost, PullRequestUnavailableState } from "./pull-requ
 import { PullRequestGuideTab } from "./pull-request-guide-tab";
 import { PullRequestSummaryTab } from "./pull-request-summary-tab";
 import { PullRequestCodeTab } from "./pull-request-code-tab";
-import { PullRequestTimelineTab } from "./pull-request-timeline-tab";
+import { PullRequestTimelineTab, TimelineCounts } from "./pull-request-timeline-tab";
 
 type InnerTab = "summary" | "guide" | "timeline" | "code";
 
@@ -70,6 +85,11 @@ const INNER_TABS = [
 /** Scrolled this far past the fold, the header condenses; back near the top it opens. */
 const CONDENSE_SLACK_PX = 32;
 const EXPAND_AT_PX = 4;
+
+async function copyWithToast(value: string, label: string) {
+  if (await copyText(value)) toast.success(`${label} copied`);
+  else toast.error(`Could not copy the ${label.toLowerCase()}`);
+}
 
 export function PullRequestPanel({
   tabId,
@@ -85,13 +105,39 @@ export function PullRequestPanel({
   const activityQuery = usePrActivity(repoPath, number);
   const detail = detailQuery.data ?? null;
   const activity = activityQuery.data ?? null;
-  const { pendingAction, perform, commentThen } = usePullRequestActions(
+  const { pendingAction, perform, commentThen, revert } = usePullRequestActions(
     repoPath,
     number,
     detail?.headSha ?? null,
   );
   const agent = usePullRequestAgentActions({ repoPath, number, detail, activity });
+  const sessionLink = useSessionPullRequestLink(repoPath, detail);
   const scopeKey = `${repoPath}:${number}`;
+
+  // ⇧⌘C / ⇧⌘K while this tab is the active one (`pullRequestFocus`).
+  const copyLink = () => detail && void copyWithToast(detail.url, "Link");
+  const copyNumber = () => void copyWithToast(`#${number}`, "Number");
+  useScopedHotkeys({
+    tabId,
+    handlers: {
+      "pullRequest.copyLink": () => {
+        if (!detail) return false;
+        copyLink();
+      },
+      "pullRequest.copyNumber": () => copyNumber(),
+    },
+  });
+
+  // Where this tab was opened from (the pull-request list, a session's
+  // panel): the back arrow returns there while that tab is still open.
+  const openedFrom = useLayoutStore((s) => {
+    const self = s.tabs.find((t) => t.id === tabId);
+    const from = self ? readPullRequestTabData(self.data)?.openedFrom : undefined;
+    return from && s.tabs.some((t) => t.id === from) ? from : null;
+  });
+  const goBack = openedFrom
+    ? () => useLayoutStore.getState().actions.setActiveTab(openedFrom)
+    : null;
 
   // The tab strip names the pull request once its title is known.
   const setTabTitle = useLayoutStore.use.actions().setTabTitle;
@@ -100,6 +146,7 @@ export function PullRequestPanel({
   }, [detail?.title, number, tabId, setTabTitle, detail]);
 
   const [tab, setTab] = useState<InnerTab>("summary");
+  const [timelineOrder, setTimelineOrder] = useState<TimelineOrder>("newest");
   // A guide notification's Open asks for the Guide (`requestOpen`), maybe
   // before this tab has mounted: whichever comes first, the ask is taken once.
   const guideKey = guideRunKey(repoPath, number);
@@ -227,6 +274,16 @@ export function PullRequestPanel({
   const checksState = detail.checksState ?? checksStateOf(detail.checks);
   const statePresentation = resolveStatePresentation(detail);
   const conflicting = detail.state === "open" && detail.mergeability === "conflicting";
+  const showsApproveWorkflows =
+    detail.state === "open" &&
+    can("approve-workflows") &&
+    detail.checks.some((check) => check.status === "action-required");
+  const checkoutPending: CheckoutMode | null =
+    agent.pending === "checkout:worktree"
+      ? "worktree"
+      : agent.pending === "checkout:local"
+        ? "local"
+        : null;
   const autoMergeArmed = detail.state === "open" && detail.autoMergeEnabled === true;
   const armedAutoMergeLabel = detail.autoMergeMethod
     ? `Auto-merge (${MERGE_METHOD_LABELS[detail.autoMergeMethod].toLowerCase()})`
@@ -282,6 +339,7 @@ export function PullRequestPanel({
             toneClassName={statePresentation.toneClassName}
             condensed={condensed}
             repositoryUrl={scope.repositoryUrl}
+            onBack={goBack}
           />
           <div className="mr-3 flex h-7 shrink-0 items-center justify-end gap-1">
             <PullRequestPrimaryAction
@@ -293,7 +351,19 @@ export function PullRequestPanel({
               statePresentation={statePresentation}
               pendingAction={pendingAction}
               perform={perform}
+              resolveConflicts={
+                agent.resolveConflicts ? (
+                  <ResolveConflictsButton
+                    pending={agent.pending === "conflicts"}
+                    disabled={agent.pending !== null}
+                    onResolve={agent.resolveConflicts}
+                  />
+                ) : null
+              }
             />
+            {detail.state === "open" ? (
+              <CheckoutMenu pending={checkoutPending} onCheckout={agent.checkout} />
+            ) : null}
             <PullRequestActionsMenu
               scopeKey={scopeKey}
               detail={detail}
@@ -311,7 +381,11 @@ export function PullRequestPanel({
               showsDeleteBranch={canDeleteBranch(detail)}
               pendingAction={pendingAction}
               perform={perform}
+              onRevert={() => void revert()}
               agent={agent}
+              sessionLink={sessionLink}
+              onCopyLink={copyLink}
+              onCopyNumber={copyNumber}
               onWriteGuide={() => {
                 agent.guide.write();
                 setTab("guide");
@@ -393,14 +467,33 @@ export function PullRequestPanel({
               )}
             />
             {innerTab === "summary" ? (
-              <PullRequestChecksStatus
-                checks={detail.checks}
-                checksState={checksState}
-                truncated={detail.checksTruncated}
-                onFix={
-                  agent.fixFinding ? (check) => agent.fixFinding?.({ kind: "check", check }) : null
-                }
-                fixing={agent.pending !== null}
+              showsApproveWorkflows ? (
+                <ApproveWorkflowsButton
+                  scopeKey={scopeKey}
+                  pendingAction={pendingAction}
+                  perform={perform}
+                />
+              ) : (
+                <PullRequestChecksStatus
+                  checks={detail.checks}
+                  checksState={checksState}
+                  truncated={detail.checksTruncated}
+                  onFix={
+                    agent.fixFinding
+                      ? (check) => agent.fixFinding?.({ kind: "check", check })
+                      : null
+                  }
+                  fixing={agent.pending !== null}
+                />
+              )
+            ) : innerTab === "timeline" ? (
+              <TimelineCounts
+                detail={detail}
+                activity={activity}
+                pending={activityPending}
+                error={activityError}
+                order={timelineOrder}
+                onOrderChange={setTimelineOrder}
               />
             ) : null}
           </nav>
@@ -437,6 +530,7 @@ export function PullRequestPanel({
               repoPath={repoPath}
               detail={detail}
               activity={activity}
+              order={timelineOrder}
               onViewCommit={detail.capabilities.diff ? viewCommit : undefined}
             />
           ) : (
@@ -448,6 +542,7 @@ export function PullRequestPanel({
               activity={activity}
               commit={codeCommit}
               onCommitChange={setCodeCommit}
+              onAskAboutLines={agent.askAboutLines}
             />
           )}
         </div>

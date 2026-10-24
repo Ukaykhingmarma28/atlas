@@ -312,9 +312,16 @@ export interface PrCheckout {
   reused: boolean;
 }
 
+/**
+ * `inPlace`: "Check out → In this repository". The main checkout itself is
+ * switched to the branch, refused (`invalid`) while its working tree has
+ * changes or another worktree holds the branch. Otherwise the checkout
+ * already on the branch is used, or a new worktree is made.
+ */
 export function prPrepareCheckout(
   path: string,
   detail: Pick<PrDetail, "number" | "headBranch" | "headSha" | "isCrossRepository">,
+  inPlace = false,
 ): Promise<PrCheckout> {
   return gated(() =>
     invoke<PrCheckout>("pr_prepare_checkout", {
@@ -323,6 +330,7 @@ export function prPrepareCheckout(
       headBranch: detail.headBranch,
       headSha: detail.headSha,
       isCrossRepository: detail.isCrossRepository,
+      inPlace,
     }),
   );
 }

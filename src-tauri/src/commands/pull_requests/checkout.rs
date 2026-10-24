@@ -61,6 +61,10 @@ pub struct PrCheckout {
 
 /// Check out pull request `number`'s head for a session: where it already is,
 /// or in a new worktree.
+///
+/// `in_place` is the header's "Check out → In this repository": the main
+/// checkout itself is switched to the branch, as `gh pr checkout` would, but
+/// only when its working tree is clean ([`prepare_in_place`]).
 #[tauri::command]
 pub async fn pr_prepare_checkout(
     app: AppHandle,
@@ -69,9 +73,20 @@ pub async fn pr_prepare_checkout(
     head_branch: String,
     head_sha: Option<String>,
     is_cross_repository: bool,
+    in_place: Option<bool>,
 ) -> Result<PrCheckout, PrError> {
     let path = super::checkout(&path)?.to_string();
     let number = super::pull_number(number)?;
+    if in_place == Some(true) {
+        return prepare_in_place(
+            Path::new(&path),
+            number,
+            head_branch.trim(),
+            head_sha.as_deref(),
+            is_cross_repository,
+        )
+        .await;
+    }
     let root = worktrees_root(
         &app.path()
             .app_data_dir()
@@ -479,6 +494,85 @@ async fn prepare(
     })
 }
 
+/// What "In this repository" refuses with when the tree has changes: the
+/// same words the new-session-on-branch flow uses.
+pub(super) const DIRTY_TREE_MESSAGE: &str =
+    "The project has uncommitted changes, so Atlas left it alone.";
+
+/// Switch the main checkout to the pull request's head, like `gh pr checkout`
+/// run there. Already on the branch, it is used as it is. Refused when the
+/// working tree has changes (untracked files count), checked right before the
+/// switch so nothing read earlier can have gone stale, and when the branch is
+/// checked out in another worktree, which git would refuse anyway.
+async fn prepare_in_place(
+    path: &Path,
+    number: u64,
+    head_branch: &str,
+    head_sha: Option<&str>,
+    cross_repository: bool,
+) -> Result<PrCheckout, PrError> {
+    if head_branch.is_empty() {
+        return Err(PrError::invalid("The pull request names no head branch."));
+    }
+    let root = git(path, &["rev-parse", "--show-toplevel"])
+        .await
+        .map(|r| canonical(Path::new(r.trim())))
+        .map_err(|_| PrError::invalid("This folder is not a git checkout."))?;
+    let branch = local_branch_name(number, head_branch, cross_repository);
+    if git(&root, &["check-ref-format", "--branch", &branch])
+        .await
+        .is_err()
+    {
+        return Err(PrError::invalid(
+            "The pull request's branch name is not one git can check out.",
+        ));
+    }
+    let cwd = root.to_string_lossy().into_owned();
+    let current = git(&root, &["symbolic-ref", "--quiet", "--short", "HEAD"])
+        .await
+        .ok();
+    if current.as_deref() == Some(branch.as_str()) {
+        return Ok(PrCheckout {
+            branch,
+            worktree_path: None,
+            is_on_pull_request_head: head_matches(&root, head_sha).await,
+            cwd,
+            reused: true,
+        });
+    }
+    let worktrees = git(&root, &["worktree", "list", "--porcelain"])
+        .await
+        .map(|p| parse_worktrees(&p))
+        .unwrap_or_default();
+    if worktrees
+        .iter()
+        .any(|(dir, b)| b.as_deref() == Some(branch.as_str()) && canonical(dir) != root)
+    {
+        return Err(PrError::invalid(
+            "The pull request's branch is checked out in another worktree; open it there.",
+        ));
+    }
+    let status = git(
+        &root,
+        &["status", "--porcelain", "--untracked-files=normal"],
+    )
+    .await
+    .map_err(|e| PrError::failed(format!("Could not read the working tree: {e}")))?;
+    if !status.trim().is_empty() {
+        return Err(PrError::invalid(DIRTY_TREE_MESSAGE));
+    }
+    gh_checkout(&root, number, &branch)
+        .await
+        .map_err(|e| checkout_error(&e))?;
+    Ok(PrCheckout {
+        branch,
+        worktree_path: None,
+        is_on_pull_request_head: head_sha.is_none() || head_matches(&root, head_sha).await,
+        cwd,
+        reused: false,
+    })
+}
+
 // ── leftovers ───────────────────────────────────────────────────────────
 
 /// Whether a Fix worktree may be removed, from what is known about it. All of
@@ -790,6 +884,66 @@ mod tests {
             Some(canonical(&linked).to_str().unwrap())
         );
         // The main checkout stayed on its branch.
+        assert_eq!(g(&repo, &["symbolic-ref", "--short", "HEAD"]), "main");
+    }
+
+    #[tokio::test]
+    async fn in_place_refuses_a_dirty_tree_and_leaves_it_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        g(&repo, &["init", "-q", "-b", "main"]);
+        commit(&repo);
+        std::fs::write(repo.join("scratch.txt"), "x").unwrap();
+        let err = prepare_in_place(&repo, 3, "feat", None, false)
+            .await
+            .unwrap_err();
+        assert_eq!(err, PrError::invalid(DIRTY_TREE_MESSAGE));
+        assert_eq!(g(&repo, &["symbolic-ref", "--short", "HEAD"]), "main");
+        assert!(repo.join("scratch.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn in_place_on_the_branch_already_is_used_as_it_is() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        g(&repo, &["init", "-q", "-b", "feat"]);
+        commit(&repo);
+        // Changes do not matter when nothing is switched.
+        std::fs::write(repo.join("scratch.txt"), "x").unwrap();
+        let sha = g(&repo, &["rev-parse", "HEAD"]);
+        let out = prepare_in_place(&repo, 3, "feat", Some(&sha), false)
+            .await
+            .unwrap();
+        assert!(out.reused);
+        assert_eq!(out.worktree_path, None);
+        assert!(out.is_on_pull_request_head);
+    }
+
+    #[tokio::test]
+    async fn in_place_refuses_a_branch_held_by_another_worktree() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        g(&repo, &["init", "-q", "-b", "main"]);
+        commit(&repo);
+        let linked = dir.path().join("linked");
+        g(
+            &repo,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "feat",
+                linked.to_str().unwrap(),
+            ],
+        );
+        let err = prepare_in_place(&repo, 3, "feat", None, false)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, PrError::Invalid { .. }), "{err:?}");
         assert_eq!(g(&repo, &["symbolic-ref", "--short", "HEAD"]), "main");
     }
 

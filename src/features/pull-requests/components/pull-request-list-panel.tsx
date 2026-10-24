@@ -48,6 +48,7 @@ import {
   ContextMenuTrigger,
 } from "@/ui/context-menu";
 
+import { pullRequestListTabId } from "../lib/open-pull-request-list-tab";
 import { openPullRequestTab } from "../lib/open-pull-request-tab";
 import { classifyPrError } from "../lib/pr-errors";
 import {
@@ -365,7 +366,12 @@ export function PullRequestListPanel({ repoPath }: { repoPath: string }) {
 
   const open = useCallback(
     (entry: PrListEntry) =>
-      openPullRequestTab({ repoPath, number: entry.number, title: entry.title }),
+      openPullRequestTab({
+        repoPath,
+        number: entry.number,
+        title: entry.title,
+        openedFrom: pullRequestListTabId(repoPath),
+      }),
     [repoPath],
   );
 
