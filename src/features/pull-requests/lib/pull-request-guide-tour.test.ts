@@ -1,7 +1,13 @@
 import { parsePatchFiles } from "@pierre/diffs";
 import { describe, expect, it } from "vitest";
 
-import { excerptRows, fileDiffRows, letterStopNotes, rowsToPatch } from "./pull-request-guide-tour";
+import {
+  excerptRows,
+  fileDiffRows,
+  letterStopNotes,
+  pickedLines,
+  rowsToPatch,
+} from "./pull-request-guide-tour";
 
 const PATCH = `diff --git a/src/tray.ts b/src/tray.ts
 --- a/src/tray.ts
@@ -99,5 +105,29 @@ describe("letterStopNotes", () => {
         ],
       },
     ]);
+  });
+});
+
+describe("pickedLines", () => {
+  it("takes the rows of a range on the new side, prefixed as the diff shows them", () => {
+    const picked = pickedLines("src/tray.ts", rows, { start: 11, end: 12, side: "additions" });
+    expect(picked).toEqual({
+      path: "src/tray.ts",
+      side: "new",
+      start: 11,
+      end: 12,
+      code: '+const size = "xs";\n+const variant = "tray";',
+    });
+  });
+
+  it("reads a range picked on removed lines on the old side", () => {
+    const picked = pickedLines("src/tray.ts", rows, { start: 41, end: 41, side: "deletions" });
+    expect(picked.side).toBe("old");
+    expect(picked.code).toBe("-dropped();");
+  });
+
+  it("orders a range picked bottom-up", () => {
+    const picked = pickedLines("src/tray.ts", rows, { start: 12, end: 11, side: "additions" });
+    expect([picked.start, picked.end]).toEqual([11, 12]);
   });
 });

@@ -10,6 +10,7 @@
 import {
   cleanActionArgs,
   isNotificationSettingsSection,
+  isPullRequestTarget,
   type NotificationAction,
   type NotificationActionArgs,
   type NotificationTarget,
@@ -78,6 +79,7 @@ function isTarget(t: unknown): t is NotificationTarget {
   if (r.type === "settings") return isNotificationSettingsSection(r.section);
   if (r.type === "config-file") return true;
   if (r.type === "git-panel") return typeof r.projectId === "string" && !!r.projectId;
+  if (r.type === "pull-request") return isPullRequestTarget(r);
   if (typeof r.tabId !== "string" || !r.tabId) return false;
   if (r.type === "terminal") return typeof r.terminalId === "string";
   return r.type === "session";

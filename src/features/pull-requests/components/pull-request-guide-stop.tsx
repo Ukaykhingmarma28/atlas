@@ -2,8 +2,16 @@
 // title and summary, the call it asks the reader to make, its excerpts cut
 // from the pull request's diff, its lettered notes, the other files it owns,
 // and the questions it suggests asking.
+//
+// An excerpt takes comments as the Code tab does: pick a line or a range in
+// its gutter, write, and "Add to review" puts the comment in the review in
+// progress (`pull-request-review-store.ts`), shown on its line here and in
+// the Code tab, and sent with the review. "Ask agent" sends the lines and
+// the question to a session instead. The last stop's "Finish review" opens
+// the composer at the review.
 
-import type { FileDiffMetadata } from "@pierre/diffs";
+import { useState } from "react";
+import type { DiffLineAnnotation, FileDiffMetadata, SelectedLineRange } from "@pierre/diffs";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -14,6 +22,7 @@ import {
   Eye,
   File as FileIcon,
   MessageCircleQuestion,
+  MessageSquare,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -24,21 +33,27 @@ import { Kbd } from "@/ui/kbd";
 import { StyledFileDiff } from "@/features/git/components/diff-viewer/styled-code-view";
 import { getRenderablePatch, resolveFileDiffPreviousPath } from "@/features/git/lib/diff-rendering";
 
+import { positionAnchor, resolveReviewPosition, viewerSideOf } from "../lib/pull-request-diff";
 import {
   excerptRows,
   fileDiffRows,
   letterStopNotes,
   rowsToPatch,
   stopSubline,
+  pickedLines,
   type ExcerptNoteMarker,
 } from "../lib/pull-request-guide-tour";
+import type { PickedLines } from "../lib/pull-request-handoff";
+import type { PrReviewPosition } from "../lib/pull-requests-types";
+import type { PendingReviewComment } from "../stores/pull-request-review-store";
 import type {
   GuideAttentionKind,
   GuideExcerpt as GuideExcerptData,
   GuideNote,
   GuideStop as GuideStopData,
 } from "../lib/pull-request-guide-types";
-import { PullRequestMarkdown } from "./pull-request-markdown";
+import { PullRequestMarkdown, TEXTAREA_CLASS } from "./pull-request-markdown";
+import { PendingCommentCard } from "./pull-request-review-thread";
 
 const ATTENTION_LABELS: Record<GuideAttentionKind, string> = {
   tradeoff: "A tradeoff to weigh",
@@ -171,9 +186,31 @@ function GuideNotes({
 
 // ── excerpts ────────────────────────────────────────────────────────────
 
-interface ExcerptAnnotation {
-  markers: ExcerptNoteMarker["markers"];
+/** What an excerpt needs to take comments and questions. `null` when the
+ *  reader can do neither. */
+export interface ExcerptCommenting {
+  /** Line comments can go into the review in progress. */
+  canComment: boolean;
+  /** The review in progress: shown on their lines when an excerpt draws them. */
+  pending: readonly PendingReviewComment[];
+  onComment: (comment: { path: string; position: PrReviewPosition; body: string }) => void;
+  onRemove: (commentId: string) => void;
+  /** "Ask agent" with the picked lines; `null` while agent actions are off. */
+  onAskAgent: ((lines: PickedLines, question: string) => void) | null;
 }
+
+interface ExcerptAnnotation {
+  markers: { marker: string; title: string }[];
+  pending: PendingReviewComment[];
+  draft: boolean;
+}
+
+interface ExcerptDraft {
+  range: SelectedLineRange;
+  position: PrReviewPosition;
+}
+
+type ViewerSide = "additions" | "deletions";
 
 function excerptSlice(file: FileDiffMetadata | null, excerpt: GuideExcerptData) {
   if (file === null) return null;
@@ -186,7 +223,81 @@ function excerptSlice(file: FileDiffMetadata | null, excerpt: GuideExcerptData) 
   );
   const fileDiff = parsed?.kind === "files" ? parsed.files[0] : undefined;
   if (fileDiff === undefined) return null;
-  return { fileDiff, shown: shown.length, total: rows.length };
+  const drawn: Record<ViewerSide, Set<number>> = {
+    additions: new Set(shown.flatMap((row) => (row.newLine === null ? [] : [row.newLine]))),
+    deletions: new Set(shown.flatMap((row) => (row.oldLine === null ? [] : [row.oldLine]))),
+  };
+  return { fileDiff, rows: shown, shown: shown.length, total: rows.length, drawn };
+}
+
+type ExcerptSlice = NonNullable<ReturnType<typeof excerptSlice>>;
+
+/** The box a comment or a question about picked lines is written in. */
+function GuideLineDraft({
+  label,
+  canComment,
+  canAsk,
+  onComment,
+  onAsk,
+  onCancel,
+}: {
+  /** `path:line`, for the box's name. */
+  label: string;
+  canComment: boolean;
+  canAsk: boolean;
+  onComment: (body: string) => void;
+  onAsk: (question: string) => void;
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState("");
+  const body = text.trim();
+  const primary = canComment ? onComment : onAsk;
+  return (
+    <div className="px-3 py-2 font-sans" contentEditable={false}>
+      <textarea
+        // oxlint-disable-next-line jsx-a11y/no-autofocus -- The reader picked these lines to write about them.
+        autoFocus
+        rows={3}
+        value={text}
+        placeholder={canComment ? "Add a comment" : "Ask the agent about these lines"}
+        aria-label={canComment ? `Comment on ${label}` : `Ask about ${label}`}
+        className={TEXTAREA_CLASS}
+        onChange={(event) => setText(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            onCancel();
+          } else if (
+            event.key === "Enter" &&
+            (event.metaKey || event.ctrlKey) &&
+            !event.nativeEvent.isComposing &&
+            body &&
+            !event.repeat
+          ) {
+            event.preventDefault();
+            primary(body);
+          }
+        }}
+      />
+      <div className="mt-1.5 flex items-center gap-1">
+        <span className="mr-auto text-2xs text-muted-foreground">
+          {canComment ? "⌘↵ adds to your review" : "⌘↵ asks"}
+        </span>
+        <Button size="xs" variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+        {canComment && canAsk ? (
+          <Button size="xs" variant="outline" disabled={!body} onClick={() => onAsk(body)}>
+            <MessageCircleQuestion aria-hidden className="size-3" />
+            Ask agent
+          </Button>
+        ) : null}
+        <Button size="xs" disabled={!body} onClick={() => primary(body)}>
+          {canComment ? "Add to review" : "Ask agent"}
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 function GuideExcerpt({
@@ -194,62 +305,36 @@ function GuideExcerpt({
   file,
   loading,
   notes,
+  commenting,
   onOpenFile,
 }: {
   excerpt: GuideExcerptData;
   file: FileDiffMetadata | null;
   loading: boolean;
   notes: readonly ExcerptNoteMarker[];
+  commenting: ExcerptCommenting | null;
   onOpenFile: (path: string) => void;
 }) {
+  // Kept here, not in the diff, so a picked range survives the diff
+  // reloading for a new page.
+  const [draft, setDraft] = useState<ExcerptDraft | null>(null);
   const slice = excerptSlice(file, excerpt);
-  const side = excerpt.side === "new" ? "additions" : "deletions";
   return (
     <figure className="flex min-w-0 flex-col gap-1.5">
       {excerpt.caption.trim() !== "" ? (
         <figcaption className="text-xs text-muted-foreground">{excerpt.caption}</figcaption>
       ) : null}
-      {slice !== null ? (
-        <div className="min-w-0 overflow-hidden rounded-lg border border-border">
-          <StyledFileDiff<ExcerptAnnotation>
-            fileDiff={slice.fileDiff}
-            options={{
-              diffStyle: "unified",
-              lineDiffType: "none",
-              overflow: "scroll",
-              hunkSeparators: "simple",
-            }}
-            lineAnnotations={notes.map((note) => ({
-              side,
-              lineNumber: note.line,
-              metadata: { markers: note.markers },
-            }))}
-            renderAnnotation={(annotation) => (
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1 font-sans text-xs">
-                {annotation.metadata.markers.map((entry) => (
-                  <span key={entry.marker} className="inline-flex items-center gap-1.5">
-                    <NoteMarker marker={entry.marker} />
-                    <span className="text-foreground">{entry.title}</span>
-                  </span>
-                ))}
-              </div>
-            )}
-            renderHeaderMetadata={() => (
-              <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="tabular-nums">
-                  {excerpt.side === "old" ? "removed code, " : ""}showing {slice.shown} of{" "}
-                  {slice.total} diff lines
-                </span>
-                <IconButton
-                  icon={ArrowUpRight}
-                  label={`Open ${excerpt.path}`}
-                  size="xs"
-                  onClick={() => onOpenFile(excerpt.path)}
-                />
-              </span>
-            )}
-          />
-        </div>
+      {slice !== null && file !== null ? (
+        <ExcerptDiff
+          excerpt={excerpt}
+          file={file}
+          slice={slice}
+          draft={draft}
+          setDraft={setDraft}
+          notes={notes}
+          commenting={commenting}
+          onOpenFile={onOpenFile}
+        />
       ) : loading ? (
         <p className="rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">
           Loading {excerpt.path}…
@@ -269,6 +354,141 @@ function GuideExcerpt({
   );
 }
 
+/** The excerpt's diff, split out so typing in a draft does not re-slice the patch. */
+function ExcerptDiff({
+  excerpt,
+  file,
+  slice,
+  draft,
+  setDraft,
+  notes,
+  commenting,
+  onOpenFile,
+}: {
+  excerpt: GuideExcerptData;
+  file: FileDiffMetadata;
+  slice: ExcerptSlice;
+  draft: ExcerptDraft | null;
+  setDraft: (draft: ExcerptDraft | null) => void;
+  notes: readonly ExcerptNoteMarker[];
+  commenting: ExcerptCommenting | null;
+  onOpenFile: (path: string) => void;
+}) {
+  const annotations = (() => {
+    const groups = new Map<string, DiffLineAnnotation<ExcerptAnnotation>>();
+    const at = (side: ViewerSide, line: number) => {
+      const key = `${side}:${line}`;
+      let group = groups.get(key);
+      if (group === undefined) {
+        group = { side, lineNumber: line, metadata: { markers: [], pending: [], draft: false } };
+        groups.set(key, group);
+      }
+      return group.metadata;
+    };
+    const noteSide: ViewerSide = excerpt.side === "new" ? "additions" : "deletions";
+    for (const note of notes) at(noteSide, note.line).markers.push(...note.markers);
+    for (const comment of commenting?.pending ?? []) {
+      if (comment.path !== excerpt.path) continue;
+      const anchor = positionAnchor(comment.position);
+      const side = viewerSideOf(anchor.side);
+      if (!slice.drawn[side].has(anchor.line)) continue;
+      at(side, anchor.line).pending.push(comment);
+    }
+    if (draft !== null) {
+      const anchor = positionAnchor(draft.position);
+      at(viewerSideOf(anchor.side), anchor.line).draft = true;
+    }
+    return [...groups.values()];
+  })();
+
+  // A range comes down to its last line, as in the Code tab: a one-line
+  // comment GitHub takes is better than a range that loses its start. Its
+  // position is counted in the whole file's diff, which is what GitHub reads.
+  const beginComment = (range: SelectedLineRange | null) => {
+    if (range === null) return;
+    const position = resolveReviewPosition(file, range.end, range.endSide ?? range.side);
+    if (position === null) return;
+    setDraft({ range, position });
+  };
+  const interactive = commenting !== null && draft === null;
+  const onAskAgent = commenting?.onAskAgent ?? null;
+  const askAgent = (question: string) => {
+    if (draft === null || onAskAgent === null) return;
+    const lines = pickedLines(excerpt.path, slice.rows, draft.range);
+    setDraft(null);
+    onAskAgent(lines, question);
+  };
+
+  return (
+    <div className="min-w-0 overflow-hidden rounded-lg border border-border">
+      <StyledFileDiff<ExcerptAnnotation>
+        fileDiff={slice.fileDiff}
+        options={{
+          diffStyle: "unified",
+          lineDiffType: "none",
+          overflow: "scroll",
+          hunkSeparators: "simple",
+          enableGutterUtility: interactive,
+          enableLineSelection: interactive,
+          onGutterUtilityClick: beginComment,
+          onLineSelectionEnd: beginComment,
+        }}
+        selectedLines={draft?.range ?? null}
+        lineAnnotations={annotations}
+        renderAnnotation={(annotation) => (
+          <div className="font-sans">
+            {annotation.metadata.markers.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1 text-xs">
+                {annotation.metadata.markers.map((entry) => (
+                  <span key={entry.marker} className="inline-flex items-center gap-1.5">
+                    <NoteMarker marker={entry.marker} />
+                    <span className="text-foreground">{entry.title}</span>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            {annotation.metadata.pending.map((comment) => (
+              <div key={comment.id} className="py-1">
+                <PendingCommentCard
+                  comment={comment}
+                  onRemove={() => commenting?.onRemove(comment.id)}
+                />
+              </div>
+            ))}
+            {annotation.metadata.draft && draft !== null && commenting !== null ? (
+              <GuideLineDraft
+                label={`${excerpt.path}:${positionAnchor(draft.position).line}`}
+                canComment={commenting.canComment}
+                canAsk={onAskAgent !== null}
+                onCancel={() => setDraft(null)}
+                onAsk={askAgent}
+                onComment={(body) => {
+                  commenting.onComment({ path: excerpt.path, position: draft.position, body });
+                  setDraft(null);
+                }}
+              />
+            ) : null}
+          </div>
+        )}
+        renderHeaderMetadata={() => (
+          <span className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="tabular-nums">
+              {excerpt.side === "old" ? "removed code, " : ""}showing {slice.shown} of {slice.total}{" "}
+              diff lines
+            </span>
+            <IconButton
+              icon={ArrowUpRight}
+              label={`Open ${excerpt.path}`}
+              size="xs"
+              onClick={() => onOpenFile(excerpt.path)}
+            />
+          </span>
+        )}
+      />
+    </div>
+  );
+}
+
 // ── the stop ────────────────────────────────────────────────────────────
 
 export function GuideStop({
@@ -278,9 +498,11 @@ export function GuideStop({
   nextTitle,
   files,
   diffLoading,
+  commenting,
   onStep,
   onAsk,
   onFinish,
+  onDone,
   onOpenFile,
 }: {
   stop: GuideStopData;
@@ -289,9 +511,14 @@ export function GuideStop({
   nextTitle: string | null;
   files: ReadonlyMap<string, FileDiffMetadata>;
   diffLoading: boolean;
+  commenting: ExcerptCommenting | null;
   onStep: (delta: 1 | -1) => void;
   onAsk: ((question: string) => void) | null;
-  onFinish: () => void;
+  /** The last stop's "Finish review": marks it read and opens the review
+   *  composer. `null` when the reader cannot review; "Done reading" then. */
+  onFinish: (() => void) | null;
+  /** Marks the stop read. */
+  onDone: () => void;
   onOpenFile: (path: string) => void;
 }) {
   const { lettered, byExcerpt } = letterStopNotes(stop);
@@ -361,6 +588,7 @@ export function GuideStop({
               file={files.get(excerpt.path) ?? null}
               loading={diffLoading}
               notes={byExcerpt[excerptIndex] ?? []}
+              commenting={commenting}
               onOpenFile={onOpenFile}
             />
           ))}
@@ -442,8 +670,13 @@ export function GuideStop({
             <span className="min-w-0 truncate">Next: {nextTitle}</span>
             <ArrowRight aria-hidden className="size-3.5" />
           </Button>
+        ) : onFinish !== null ? (
+          <Button onClick={onFinish}>
+            <MessageSquare aria-hidden className="size-3.5" />
+            Finish review
+          </Button>
         ) : (
-          <Button variant="outline" onClick={onFinish}>
+          <Button variant="outline" onClick={onDone}>
             <Check aria-hidden className="size-3.5" />
             Done reading
           </Button>

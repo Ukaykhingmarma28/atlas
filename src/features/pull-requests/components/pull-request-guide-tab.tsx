@@ -7,6 +7,12 @@
 // tour; a banner says when it was written before the latest push, or when a
 // rewrite is running or failed. The guide is kept per head commit
 // (`guide-run-store.ts`), so it survives a restart and costs nothing to read.
+//
+// While the tour shows, the surfaces pane takes the whole centre (and gives
+// it back after, if it was the tour that took it), and the run store knows
+// this pull request's Guide is on screen (`shownKey`), so a run ending here
+// raises no notification. Excerpts take line comments into the review in
+// progress and questions for an agent (`ExcerptCommenting`).
 
 import { useEffect, useRef, useState } from "react";
 import type { FileDiffMetadata } from "@pierre/diffs";
@@ -18,6 +24,7 @@ import { agents } from "@/features/chat/lib/agents-api";
 import { useChatStore } from "@/features/chat/stores/chat-store";
 import { agentMeta } from "@/features/agents/lib/agent-meta";
 import { openReviewFile } from "@/features/git/lib/open-review-file";
+import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { getRenderablePatch, resolveFileDiffPath } from "@/features/git/lib/diff-rendering";
 
 import { stepTourPosition, stopFilePaths } from "../lib/pull-request-guide-tour";
@@ -27,8 +34,14 @@ import type { PullRequestGuide } from "../lib/pull-request-guide-types";
 import { usePrDiff } from "../lib/pull-requests-queries";
 import type { PrDiffResult } from "../lib/pull-requests-types";
 import type { PullRequestAgentActions } from "../lib/use-pull-request-agent-actions";
-import type { GuideRun } from "../stores/guide-run-store";
-import { GuideRail, GuideStop } from "./pull-request-guide-stop";
+import { guideRunKey, useGuideRunStore, type GuideRun } from "../stores/guide-run-store";
+import {
+  nextPendingCommentId,
+  reviewKeyOf,
+  usePendingReviewComments,
+  usePullRequestReviewStore,
+} from "../stores/pull-request-review-store";
+import { GuideRail, GuideStop, type ExcerptCommenting } from "./pull-request-guide-stop";
 
 const NO_FILES: ReadonlyMap<string, FileDiffMetadata> = new Map();
 
@@ -197,7 +210,9 @@ function GuideTour({
   guide,
   banner,
   active,
+  commenting,
   onAsk,
+  onFinish,
   scrollerRef,
 }: {
   scrollerRef?: (node: HTMLDivElement | null) => void;
@@ -206,7 +221,9 @@ function GuideTour({
   guide: PullRequestGuide;
   banner: React.ReactNode;
   active: boolean;
+  commenting: ExcerptCommenting | null;
   onAsk: ((index: number, question: string) => void) | null;
+  onFinish: (() => void) | null;
 }) {
   const [position, setPosition] = useState(0);
   const [seen, setSeen] = useState<ReadonlySet<number>>(() => new Set());
@@ -272,9 +289,18 @@ function GuideTour({
               nextTitle={guide.stops[at + 1]?.title ?? null}
               files={diff.files}
               diffLoading={diff.loading}
+              commenting={commenting}
               onStep={step}
               onAsk={onAsk === null ? null : (question) => onAsk(at, question)}
-              onFinish={() => setSeen((current) => new Set(current).add(at))}
+              onFinish={
+                onFinish === null
+                  ? null
+                  : () => {
+                      setSeen((current) => new Set(current).add(at));
+                      onFinish();
+                    }
+              }
+              onDone={() => setSeen((current) => new Set(current).add(at))}
               onOpenFile={openFile}
             />
           )}
@@ -289,24 +315,92 @@ function GuideTour({
   );
 }
 
+/**
+ * The surfaces pane expanded while `on`, when this tab sits in it; given back
+ * once `on` ends or the tab goes, unless the reader changed it meanwhile.
+ */
+function useExpandedWhile(tabId: string | undefined, on: boolean) {
+  const inSurfaces = useLayoutStore((s) => {
+    if (!tabId) return false;
+    const tab = s.tabs.find((t) => t.id === tabId);
+    const group = tab?.groupId ?? "main";
+    return tab !== undefined && group !== s.groupOrder[0] && s.activeByGroup[group] === tabId;
+  });
+  const expand = on && inSurfaces;
+  useEffect(() => {
+    if (!expand) return;
+    const layout = useLayoutStore.getState();
+    if (layout.surfaces !== "shown") return;
+    layout.actions.setSurfaces("expanded");
+    return () => {
+      const now = useLayoutStore.getState();
+      if (now.surfaces === "expanded") now.actions.setSurfaces("shown");
+    };
+  }, [expand]);
+}
+
+/** Tells the run store this pull request's Guide is on screen while it is. */
+function useGuideShown(runKey: string, shown: boolean) {
+  useEffect(() => {
+    if (!shown) return;
+    useGuideRunStore.getState().setShown(runKey);
+    return () => {
+      if (useGuideRunStore.getState().shownKey === runKey) {
+        useGuideRunStore.getState().setShown(null);
+      }
+    };
+  }, [runKey, shown]);
+}
+
 export function PullRequestGuideTab({
+  tabId,
   repoPath,
   number,
   agent,
   active,
+  canComment,
+  onFinishReview,
   scrollerRef,
 }: {
+  /** The surface tab it sits in: the pane it expands while the tour shows. */
+  tabId?: string;
   repoPath: string;
   number: number;
   agent: PullRequestAgentActions;
   active: boolean;
+  /** Line comments can go into the review in progress. */
+  canComment: boolean;
+  /** Opens the composer at the review; `null` when the reader cannot review. */
+  onFinishReview: (() => void) | null;
   scrollerRef?: (node: HTMLDivElement | null) => void;
 }) {
   const { guide, loading, run, running, stale, canWrite, write, forkConfirm } = agent.guide;
+  const runKey = guideRunKey(repoPath, number);
+  const onScreen = useLayoutStore((s) => {
+    if (!tabId) return true;
+    const tab = s.tabs.find((t) => t.id === tabId);
+    return tab !== undefined && s.activeByGroup[tab.groupId ?? "main"] === tabId;
+  });
+  useGuideShown(runKey, active && onScreen);
+  const tourShown = active && guide !== null;
+  useExpandedWhile(tabId, tourShown);
+
+  const reviewKey = reviewKeyOf(repoPath, number);
+  const pending = usePendingReviewComments(repoPath, number);
+  const reviewActions = usePullRequestReviewStore.use.actions();
+  // Asking is open to every reader; adding to the review needs the right to.
+  const commenting: ExcerptCommenting = {
+    canComment,
+    pending,
+    onComment: ({ path, position, body }) =>
+      reviewActions.add(reviewKey, { id: nextPendingCommentId(), path, position, body }),
+    onRemove: (id) => reviewActions.remove(reviewKey, id),
+    onAskAgent: agent.askAboutLines,
+  };
   const failure = run?.status === "failed" ? run.detail : null;
   const forkPrompt = forkConfirm ? (
     <ForkConfirm
-      agentLabel={agent.agentLabel}
+      agentLabel={agent.guide.agentLabel}
       onConfirm={forkConfirm.confirm}
       onCancel={forkConfirm.cancel}
     />
@@ -344,12 +438,12 @@ export function PullRequestGuideTab({
           {failure ??
             (run?.status === "running"
               ? `${run.agentLabel} is reading the change in a checkout of its own. ${PHASE_LABELS[run.phase]} A large change takes a few minutes; you can leave, and you will be told when it is ready.`
-              : `A guide is a tour of the change: stops through the code in reading order, with the calls only a maintainer can make. ${agent.agentLabel} writes it, reading a checkout of the pull request's head.`)}
+              : `A guide is a tour of the change: stops through the code in reading order, with the calls only a maintainer can make. ${agent.guide.agentLabel} writes it, reading a checkout of the pull request's head.`)}
         </p>
         {run?.status === "running" ? <RunPermission run={run} /> : null}
         {forkPrompt ??
           writeButton(
-            failure === null ? `Write guide with ${agent.agentLabel}` : "Try again",
+            failure === null ? `Write guide with ${agent.guide.agentLabel}` : "Try again",
             "sm",
           )}
       </div>
@@ -389,10 +483,12 @@ export function PullRequestGuideTab({
       banner={banner}
       active={active}
       scrollerRef={scrollerRef}
+      commenting={commenting}
       onAsk={(index, question) => {
         const stop = guide.stops[index];
         if (stop) agent.askAboutStop(stop, index, question);
       }}
+      onFinish={onFinishReview}
     />
   );
 }

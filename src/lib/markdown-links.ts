@@ -4,8 +4,12 @@
 //
 //   - a file chip (`markdown-render.ts`) opens the file (`open-path-link.ts`);
 //   - an http(s) link opens in the system browser, rather than navigating the
-//     WKWebView away from Atlas;
+//     WKWebView away from Atlas — except a pull request's, which opens in
+//     its tab (`open-pull-request-link.ts`);
 //   - a copy keeps a shortened link's full address (`onMarkdownCopy`).
+
+/** A pull request's address: the cheap check before loading its opener. */
+const PULL_REQUEST_URL = /^https?:\/\/[^/\s]+\/[^/\s]+\/[^/\s]+\/pull\/\d+(?:[/?#]|$)/i;
 
 /** The chip a click landed on, if it carries a target. */
 function fileChipAt(target: EventTarget | null): HTMLElement | null {
@@ -40,7 +44,20 @@ export function onMarkdownClick(e: MouseEvent): boolean {
   if (anchor instanceof HTMLAnchorElement && anchor.href && /^https?:/i.test(anchor.href)) {
     e.preventDefault();
     const href = anchor.href;
-    void import("@tauri-apps/plugin-opener").then((m) => m.openUrl(href)).catch(() => {});
+    const openExternally = () =>
+      void import("@tauri-apps/plugin-opener").then((m) => m.openUrl(href)).catch(() => {});
+    // A pull request opens in its tab (`pullRequestLinksOpenInApp`), unless
+    // it is another repository's or the reader ⌘/Ctrl-clicked for the host.
+    if (PULL_REQUEST_URL.test(href)) {
+      const external = e.metaKey || e.ctrlKey;
+      void import("@/features/pull-requests/lib/open-pull-request-link")
+        .then((m) => {
+          if (!m.openPullRequestHref(href, { external })) openExternally();
+        })
+        .catch(openExternally);
+      return true;
+    }
+    openExternally();
     return true;
   }
   return false;

@@ -18,6 +18,7 @@ export const SETTINGS_SECTIONS = [
   "memory",
   "notifications",
   "source-control",
+  "pull-requests",
   "privacy",
   "keybindings",
   "updates",

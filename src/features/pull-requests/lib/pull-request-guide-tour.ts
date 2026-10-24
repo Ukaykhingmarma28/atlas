@@ -1,8 +1,10 @@
 // The Guide tab's pure helpers: stepping through stops, what a stop shows,
-// and cutting an excerpt's rows out of a file's diff as a patch of its own.
+// cutting an excerpt's rows out of a file's diff as a patch of its own, and
+// the lines a reader picked in one, for a question about them.
 
-import type { FileDiffMetadata } from "@pierre/diffs";
+import type { FileDiffMetadata, SelectedLineRange } from "@pierre/diffs";
 
+import type { PickedLines } from "./pull-request-handoff";
 import type { GuideExcerpt, GuideNote, GuideStop } from "./pull-request-guide-types";
 
 export function stepTourPosition(current: number, delta: 1 | -1, stopCount: number): number {
@@ -176,4 +178,36 @@ export function letterStopNotes(stop: GuideStop): {
     return [...lines].map(([line, markers]) => ({ line, markers }));
   });
   return { lettered, byExcerpt };
+}
+
+/** The picked range as lines for a question: the rows it covers, on the side
+ *  it was picked on, `+`/`-`/` ` prefixed as the diff shows them. */
+export function pickedLines(
+  path: string,
+  rows: readonly DiffRow[],
+  range: Pick<SelectedLineRange, "start" | "end" | "side" | "endSide">,
+): PickedLines {
+  const side: "additions" | "deletions" =
+    (range.endSide ?? range.side) === "deletions" ? "deletions" : "additions";
+  const lineOf = (row: DiffRow) => (side === "deletions" ? row.oldLine : row.newLine);
+  const start = Math.min(range.start, range.end);
+  const end = Math.max(range.start, range.end);
+  const first = rows.findIndex((row) => {
+    const line = lineOf(row);
+    return line !== null && line >= start;
+  });
+  let last = -1;
+  rows.forEach((row, index) => {
+    const line = lineOf(row);
+    if (line !== null && line <= end) last = index;
+  });
+  const picked = first === -1 || last < first ? [] : rows.slice(first, last + 1);
+  const prefix = { context: " ", addition: "+", deletion: "-" } as const;
+  return {
+    path,
+    side: side === "deletions" ? "old" : "new",
+    start,
+    end,
+    code: picked.map((row) => `${prefix[row.kind]}${row.text.replace(/\r?\n$/, "")}`).join("\n"),
+  };
 }

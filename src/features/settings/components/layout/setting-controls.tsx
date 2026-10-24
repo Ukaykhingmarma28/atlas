@@ -179,6 +179,45 @@ export function SettingText({
   );
 }
 
+/** A multi-line text area over a string key, for prose (instructions). Saves
+ *  when it loses focus or on ⌘↵, not per keystroke; Escape reverts. */
+export function SettingTextarea({
+  setting,
+  placeholder,
+  rows = 4,
+  maxLength,
+}: {
+  setting: TextKey;
+  placeholder?: string;
+  rows?: number;
+  maxLength?: number;
+}) {
+  const scoped = useScopedSetting(setting);
+  const saved = scoped.value as string;
+  const [draft, setDraft] = useState(saved);
+  useEffect(() => setDraft(saved), [saved]);
+  const commit = () => {
+    if (draft.trim() !== saved) scoped.set(draft.trim());
+  };
+  return (
+    <textarea
+      className="block w-full min-w-0 resize-y rounded-md border border-border bg-panel-input px-2 py-1.5 text-xs leading-relaxed text-foreground placeholder:text-muted-foreground focus:border-border-strong focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+      value={draft}
+      rows={rows}
+      maxLength={maxLength}
+      placeholder={placeholder}
+      disabled={scoped.globalOnly}
+      aria-label={accessibleName(setting)}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) event.currentTarget.blur();
+        if (event.key === "Escape") setDraft(saved);
+      }}
+    />
+  );
+}
+
 /** A slider over an integer key, bounded by its registry `min`/`max`, with the
  *  value beside it. Saves once, on release; `onPreview` runs on every step of
  *  the drag, for a setting worth watching change (contrast). */

@@ -87,7 +87,15 @@ export type NotificationTarget =
   /** `config.toml` itself — opens it in the OS editor. */
   | { type: "config-file" }
   /** One project's git panel (a push / pull / fetch ran there). */
-  | { type: "git-panel"; projectId: string; projectName?: string };
+  | { type: "git-panel"; projectId: string; projectName?: string }
+  /** A pull request's tab, at its Guide when `view` says so. */
+  | {
+      type: "pull-request";
+      repoPath: string;
+      number: number;
+      title?: string;
+      view?: "guide";
+    };
 
 /**
  * A button a notification offers — data only, so events and decisions stay
@@ -128,6 +136,21 @@ export function defaultActions(target: NotificationTarget): NotificationAction[]
   return [{ id: OPEN_ACTION_ID, label: "Open" }];
 }
 
+/** A pull request target as stored or carried in a banner payload. */
+export function isPullRequestTarget(
+  r: Record<string, unknown>,
+): r is Extract<NotificationTarget, { type: "pull-request" }> & Record<string, unknown> {
+  return (
+    r.type === "pull-request" &&
+    typeof r.repoPath === "string" &&
+    !!r.repoPath &&
+    typeof r.number === "number" &&
+    Number.isSafeInteger(r.number) &&
+    r.number > 0 &&
+    (r.view === undefined || r.view === "guide")
+  );
+}
+
 /** Targets that live in a chat or terminal tab (and so carry project/org). */
 export type TabTarget = Extract<NotificationTarget, { type: "terminal" | "session" }>;
 export const isTabTarget = (t: NotificationTarget): t is TabTarget =>
@@ -156,6 +179,8 @@ export const targetGroupKey = (t: NotificationTarget): string => {
       return `settings:${t.section}`;
     case "git-panel":
       return `git:${t.projectId}`;
+    case "pull-request":
+      return `pull-request:${t.repoPath}:${t.number}`;
     case "config-file":
       return "config-file";
   }
@@ -432,6 +457,18 @@ export const NOTIFICATION_CATALOG = {
     whenLooking: "record",
     sound: null,
     toast: { variant: "error", durationMs: ATTENTION_TOAST_MS },
+    groupKey: targetGroupKey,
+  },
+  // A review guide's background run ended (`guide-notifier.ts`): written, or
+  // failed. Nothing to say while that pull request's Guide is on screen.
+  "pull-request-guide": {
+    label: "Review guide ready or failed",
+    tier: "outcome",
+    source: "app",
+    channels: ALL_CHANNELS,
+    whenLooking: "drop",
+    sound: null,
+    toast: { variant: "default", durationMs: ATTENTION_TOAST_MS },
     groupKey: targetGroupKey,
   },
 } as const satisfies Record<string, CatalogEntry>;

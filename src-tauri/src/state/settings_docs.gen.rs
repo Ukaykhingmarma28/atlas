@@ -261,6 +261,46 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
         "showTurnRail",
         "# The turn rail: a column of short ticks down the left edge of a session's\n# transcript, one per turn. Hovering a tick previews the prompt and the start\n# of the reply; clicking it jumps to that turn. Off hides the rail. (default:\n# true)",
     ),
+    (
+        "autoSettleOnMerge",
+        "# Settle a session once its linked pull request merges, when the merge came\n# after you last worked in the session. A pull request that is closed without\n# merging always settles its session. Settled sessions stay listed and\n# resumable. (default: true)",
+    ),
+    (
+        "autoSettleKeepPullRequests",
+        "# Auto-settling after days of inactivity (autoSettleAfterDays) leaves a\n# session alone while it has a linked pull request. Merging or closing it can\n# still settle the session (autoSettleOnMerge). (default: true)",
+    ),
+    (
+        "pullRequestWatchWakes",
+        "# When a session watches its pull request (the agent asked to, or you turned\n# the watch on), a failing check, a new review or comment, or a conflict with\n# the base sends the session's agent an update so it can act. Off: watches\n# still track the pull request but never prompt an agent. (default: true)",
+    ),
+    (
+        "pullRequestLinksOpenInApp",
+        "# Open a pull request link from a session, the sidebar or a transcript in\n# Atlas's pull request tab when it belongs to the project's repository. Off,\n# or a pull request of another repository: it opens in the browser. (default:\n# true)",
+    ),
+    (
+        "pullRequestMergeMethod",
+        "# The method a pull request's Merge button starts on: \"merge\", \"squash\" or\n# \"rebase\", or \"last\" for whichever you picked most recently on this device. A\n# method the repository doesn't allow falls back to one it does. (default:\n# \"last\") A project can override it in its own .atlas/config.toml.",
+    ),
+    (
+        "removeAgentCreditsOnMerge",
+        "# Remove recognized agent credit lines (an agent's Co-Authored-By trailer, a\n# \"Generated with\" footer) from the message of a merge or squash Atlas\n# performs, auto-merge included. Human co-authors are kept. Commits already on\n# the branch are not rewritten. (default: false) A project can override it in\n# its own .atlas/config.toml.",
+    ),
+    (
+        "pullRequestGuideEnabled",
+        "# Show the Guide tab on pull requests, where an agent writes a tour of the\n# change in reading order, with the calls a maintainer should make. The agent\n# reads a checkout of the pull request's head and changes nothing. (default:\n# true) A project can override it in its own .atlas/config.toml.",
+    ),
+    (
+        "pullRequestGuideAgent",
+        "# The agent that writes review guides: \"atlas-agent\" or an installed ACP\n# agent's id, such as \"claude-code\". Empty uses defaultAgent. An agent that\n# isn't installed falls back to Atlas Agent. (default: \"\") A project can\n# override it in its own .atlas/config.toml.",
+    ),
+    (
+        "pullRequestGuideModel",
+        "# The model the guide's agent runs on, as that agent names it (the id after\n# the colon in favoriteModels). The guide reads the change over many steps, so\n# a stronger model helps. Empty keeps the agent's default; a model the agent\n# doesn't offer is ignored. (default: \"\") A project can override it in its own\n# .atlas/config.toml.",
+    ),
+    (
+        "pullRequestGuideInstructions",
+        "# Your preferences for review guides, added to the guide's prompt: what to\n# show first, dwell on or skip, and how long summaries should be. The guide's\n# format and its coverage of every changed file stay the same. (default: \"\") A\n# project can override it in its own .atlas/config.toml.",
+    ),
 ];
 
 /// The keys a project's `.atlas/config.toml` may override (`project` in the
@@ -274,6 +314,12 @@ pub const PROJECT_SETTING_KEYS: &[&str] = &[
     "memoryDreams",
     "memoryRepoMirror",
     "defaultAgent",
+    "pullRequestMergeMethod",
+    "removeAgentCreditsOnMerge",
+    "pullRequestGuideEnabled",
+    "pullRequestGuideAgent",
+    "pullRequestGuideModel",
+    "pullRequestGuideInstructions",
 ];
 
 /// Of those, the booleans a project may only turn off (`project = "tighten"`):
