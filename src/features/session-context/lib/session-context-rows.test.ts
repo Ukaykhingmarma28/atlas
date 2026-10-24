@@ -106,6 +106,7 @@ describe("mergeSessionPullRequests", () => {
     source,
     linkedAt: "2026-10-01T00:00:00Z",
     snapshot: null,
+    watching: false,
   });
   const live = (n: number, state: "open" | "merged") =>
     ({ ...pr(n, state, "2026-10-05T00:00:00Z"), url: url(n), title: `PR ${n}` }) as PrListEntry;

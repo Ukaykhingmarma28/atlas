@@ -67,7 +67,7 @@ export function responseFooterActions({
 export function latestResponseRowId(rows: readonly Row[]): string | undefined {
   for (let i = rows.length - 1; i >= 0; i--) {
     const row = rows[i];
-    if (row.kind === RowKind.User) return undefined;
+    if (row.kind === RowKind.User || row.kind === RowKind.Injected) return undefined;
     if (row.kind === RowKind.Prose) return row.streaming ? undefined : row.id;
   }
   return undefined;

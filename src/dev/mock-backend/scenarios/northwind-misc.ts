@@ -529,6 +529,7 @@ function seedThreads(): ThreadRow[] {
                   commentCount: 2,
                   syncedAt: iso(s.lastMs),
                 },
+                watching: false,
               },
             ]
           : [],

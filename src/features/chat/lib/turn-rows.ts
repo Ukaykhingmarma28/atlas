@@ -39,6 +39,7 @@ import {
 import { isEmptyMessage, stableTurnKey } from "./turn-identity";
 import { splitAtlasContext } from "./atlas-context";
 import { stripNextSteps, stripNextStepsDirective } from "./next-steps";
+import { detectInjectedPrompt, type InjectedPrompt } from "./injected-prompt";
 
 // ── Row kinds ──────────────────────────────────────────────────────────────
 
@@ -53,6 +54,7 @@ export const RowKind = {
   WorkHeader: 7,
   Subagent: 8,
   Interruption: 9,
+  Injected: 10,
 } as const;
 
 /** Marker execution state — drives the leading glyph, nothing else. */
@@ -314,6 +316,16 @@ export interface TurnFooterRow extends RowBase {
   responseShowTimestamp?: boolean;
 }
 
+/** A prompt Atlas sent the agent on its own (`ChatMessage.injected`): a user
+ *  turn, but not the user's words, so not drawn as their bubble. */
+export interface InjectedRow extends RowBase {
+  kind: typeof RowKind.Injected;
+  injected: InjectedPrompt;
+  /** The prompt as the agent received it, shown when the row is opened. */
+  text: string;
+  timestamp: string;
+}
+
 /** Something outside the conversation cut into this turn (`TurnInterruption`).
  *  Its own row, after the footer, so it reads as Atlas speaking about the turn
  *  rather than as more of the reply. */
@@ -327,6 +339,7 @@ export interface InterruptionRow extends RowBase {
 
 export type Row =
   | UserRow
+  | InjectedRow
   | InterruptionRow
   | ProseRow
   | ThinkingRow
@@ -1167,19 +1180,34 @@ function projectSegment(
     maybeGapSeparator(rows, messages, i, turnId);
     const rowStart = rows.length;
 
-    rows.push({
-      kind: RowKind.User,
-      id: `u:${m.id}`,
-      turnId,
-      firstInTurn: true,
-      text,
-      contextBlocks: derived.contextBlocks,
-      expanded: opts.expanded.has(`u:${m.id}`),
-      attachments: m.attachments ?? NO_ATTACHMENTS,
-      timestamp: m.timestamp,
-      ...(m.timestampApproximate && { timestampApproximate: true as const }),
-      ...(m.trustedMentionPaths?.length && { trustedPaths: m.trustedMentionPaths }),
-    });
+    // Atlas's own prompt — live, or recognised by its wording on replay — is
+    // not the user's words, so it is not their bubble.
+    const injected = m.injected ?? detectInjectedPrompt(m.content);
+    if (injected) {
+      rows.push({
+        kind: RowKind.Injected,
+        id: `u:${m.id}`,
+        turnId,
+        firstInTurn: true,
+        injected,
+        text: m.content,
+        timestamp: m.timestamp,
+      });
+    } else {
+      rows.push({
+        kind: RowKind.User,
+        id: `u:${m.id}`,
+        turnId,
+        firstInTurn: true,
+        text,
+        contextBlocks: derived.contextBlocks,
+        expanded: opts.expanded.has(`u:${m.id}`),
+        attachments: m.attachments ?? NO_ATTACHMENTS,
+        timestamp: m.timestamp,
+        ...(m.timestampApproximate && { timestampApproximate: true as const }),
+        ...(m.trustedMentionPaths?.length && { trustedPaths: m.trustedMentionPaths }),
+      });
+    }
 
     turns.push({
       id: turnId,
@@ -1188,7 +1216,7 @@ function projectSegment(
       rowEnd: rows.length,
       messageIndex: i,
       status: "settled",
-      preview: derived.preview,
+      preview: injected ? `Pull request watch: ${injected.summary}` : derived.preview,
       timestamp: m.timestamp,
       toolCount: 0,
       fileCount: 0,

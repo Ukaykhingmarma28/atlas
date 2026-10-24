@@ -93,7 +93,7 @@ export function turnRailPreviewSource(
   let assistantText: string | null = null;
   for (let i = start + 1; i < rows.length; i++) {
     const row = rows[i];
-    if (row.kind === RowKind.User) break;
+    if (row.kind === RowKind.User || row.kind === RowKind.Injected) break;
     if (row.kind === RowKind.Prose && row.text.trim()) assistantText = row.text;
   }
   return { userText: userRow.text, assistantText };

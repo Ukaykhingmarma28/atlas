@@ -770,6 +770,21 @@ describe("linked pull requests: session row, store and commands (#15)", () => {
     });
   }
 
+  it("the watch's injected-prompt event matches SessionPromptInjected field for field", () => {
+    const watch = read("src-tauri", "src", "commands", "pull_request_watch.rs");
+    const injected = read("src", "features", "chat", "lib", "injected-prompt.ts");
+    const { attrs, body } = rustItem(watch, "struct", "SessionPromptInjected");
+    expect(attrs).toMatch(/rename_all\s*=\s*"camelCase"/);
+    const rustWire = rustStructFields(body).map(snakeToCamel);
+    expect(rustWire.length).toBeGreaterThan(1);
+    expect([...tsInterfaceProps(injected, "SessionPromptInjected")].sort()).toEqual(
+      [...rustWire].sort(),
+    );
+    // The source word Rust sends is one the frontend knows.
+    expect(watch).toMatch(/source:\s*"pull-request-watch"\.into\(\)/);
+    expect(injected).toMatch(/InjectedPromptSource = "pull-request-watch"/);
+  });
+
   it("ThreadRow carries pullRequests, the sidebar badge's and the overlay's only input", () => {
     expect(tsInterfaceProps(history, "ThreadRow")).toContain("pullRequests");
     expect(rustStructFields(rustItem(host, "struct", "ThreadRow").body)).toContain("pull_requests");
@@ -800,7 +815,7 @@ describe("linked pull requests: session row, store and commands (#15)", () => {
     const declared = [
       ...commands.matchAll(/pub (?:async )?fn (session_pull_requests_\w+)\s*\(/g),
     ].map((m) => m[1]);
-    expect(declared.length).toBe(3);
+    expect(declared.length).toBe(4);
     expect([...invoked].sort()).toEqual([...declared].sort());
   });
   for (const name of invoked) {

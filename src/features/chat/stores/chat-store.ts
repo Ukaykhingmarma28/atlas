@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { agents } from "../lib/agents-api";
+import type { InjectedPrompt } from "../lib/injected-prompt";
 import { immer } from "zustand/middleware/immer";
 import { createSelectors } from "@/lib/create-selectors";
 import type {
@@ -402,6 +403,16 @@ interface ChatActions {
       attachments?: ImageAttachment[],
       /** See `ChatMessage.trustedMentionPaths`. */
       trustedMentionPaths?: string[],
+    ) => void;
+    /** Append the prompt Atlas sent the agent of ACP session `acpSessionId`
+     *  on its own (`atlas:session-prompt-injected`) to that session's tab, if
+     *  one is open. A user-role message marked `injected`, so it draws as its
+     *  own row and never counts as the user's. */
+    addInjectedPrompt: (
+      acpSessionId: string,
+      text: string,
+      injected: InjectedPrompt,
+      at: string,
     ) => void;
     appendToolCall: (sessionId: string, toolName: string, input: Record<string, unknown>) => void;
     updateLastAssistantMessage: (sessionId: string, content: string) => void;
@@ -1107,6 +1118,23 @@ export const useChatStore = createSelectors(
               // an early scroll) — id-scoping keeps it to the actual send.
               session.justSentMessageId = msg.id;
             }
+          }),
+        addInjectedPrompt: (acpSessionId, text, injected, at) =>
+          set((s) => {
+            const tabId = findTabByAcpSession(s.sessions, acpSessionId);
+            if (!tabId) return;
+            const session = s.sessions[tabId];
+            session.messages.push({
+              id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              role: "user",
+              content: text,
+              toolCalls: [],
+              fileChanges: [],
+              plan: null,
+              timestamp: at,
+              injected,
+            });
+            session.updatedAt = new Date().toISOString();
           }),
         appendToolCall: (sessionId, toolName, input) =>
           set((s) => {

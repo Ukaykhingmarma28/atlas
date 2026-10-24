@@ -58,6 +58,7 @@ export function fixtureLink(
     source,
     linkedAt,
     snapshot: snapshotOf(entry, linkedAt),
+    watching: false,
   };
 }
 
@@ -94,6 +95,27 @@ export function sessionPullRequestHandlers(list: ThreadList): MockHandlers {
       change(threadId, (links) => {
         const next = links.filter((l) => !same(l, String(repository), Number(number)));
         return next.length === links.length ? null : next;
+      }),
+    // Watching an open, linked pull request; the fake never wakes anyone.
+    session_pull_requests_watch: ({
+      threadId,
+      repository,
+      number,
+      watching,
+    }): SessionPullRequestsChange =>
+      change(threadId, (links) => {
+        const link = links.find((l) => same(l, String(repository), Number(number)));
+        if (!link) {
+          // oxlint-disable-next-line no-throw-literal -- Rust's `Err(PrError)`, a plain object.
+          throw { kind: "invalid", message: "That pull request is not linked to this session." };
+        }
+        const on = Boolean(watching);
+        if (on && link.snapshot && link.snapshot.state !== "open") {
+          // oxlint-disable-next-line no-throw-literal -- Rust's `Err(PrError)`, a plain object.
+          throw { kind: "invalid", message: "The pull request is not open." };
+        }
+        if (link.watching === on) return null;
+        return links.map((l) => (l === link ? { ...l, watching: on } : l));
       }),
     session_pull_requests_sync: (): SessionPullRequestsSync => ({
       read: 0,

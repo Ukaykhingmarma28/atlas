@@ -80,6 +80,27 @@ export function unlinkSessionPullRequest(
 }
 
 /**
+ * Start (`watching`) or stop watching `repository#number` for the session.
+ * Rejects with `invalid` when it cannot be watched: watching is off in
+ * Settings, the session is settled, it is not linked, or it is not open.
+ */
+export function watchSessionPullRequest(
+  threadId: string,
+  repository: string,
+  number: number,
+  watching: boolean,
+): Promise<SessionPullRequestsChange> {
+  return invoke<SessionPullRequestsChange>("session_pull_requests_watch", {
+    threadId,
+    repository,
+    number,
+    watching,
+  }).catch((raw: unknown) => {
+    throw classifyPrError(raw);
+  });
+}
+
+/**
  * One sweep pass over `threadIds` (every unsettled session when `null`):
  * detect each session's branch pull requests, and read the links that are
  * due. `force` reads them whether due or not. Held back while the gh gate is

@@ -288,6 +288,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
   const status: SessionRowStatus = resolveSessionRowStatus({
     live: props.live,
     liveElsewhere: session.liveElsewhere,
+    watching: session.pullRequests.some((p) => p.watching),
   });
   const isUnread = session.unread;
   const isWoke = session.woke && session.settledAt === null;
@@ -698,7 +699,11 @@ export const SessionSearchResultRow = memo(function SessionSearchResultRow(props
 }) {
   const { session } = props;
   const isSettled = session.settledAt !== null;
-  const status = resolveSessionRowStatus({ live: null, liveElsewhere: session.liveElsewhere });
+  const status = resolveSessionRowStatus({
+    live: null,
+    liveElsewhere: session.liveElsewhere,
+    watching: session.pullRequests.some((p) => p.watching),
+  });
   return (
     <li role="presentation" className="list-none">
       <TooltipPrimitive.Root>

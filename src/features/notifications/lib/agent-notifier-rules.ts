@@ -90,7 +90,9 @@ export type AgentNotifyEvent =
       episode: number;
       /** First of its episode: create the toast; otherwise update it. */
       first: boolean;
-    };
+    }
+  // Atlas woke the agent about a watched pull request (`pull_request_watch.rs`).
+  | { type: "pull_request_watch"; summary: string; nonce: string };
 
 /** A turn_seq below the session's current one belongs to a turn already
  *  superseded by a newer send. 0 / absent (the native agent) is current. */
@@ -340,6 +342,13 @@ export function classifyAgentEvent(
         kind: "agent-retrying",
         body: describeRetry(e.attempt, e.maxAttempts, e.lastError),
         dedupeKey: retryDedupeKey(sid, e.episode),
+      };
+    case "pull_request_watch":
+      return {
+        ...base,
+        kind: "pull-request-watch",
+        body: `Pull request ${e.summary} — the agent is looking into it`,
+        dedupeKey: `${sid}:${e.nonce}:pull-request-watch`,
       };
   }
 }

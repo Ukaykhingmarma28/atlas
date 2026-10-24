@@ -67,6 +67,7 @@ import {
   TurnFooterRowView,
 } from "./transcript-rows";
 import { InterruptionRowView } from "./interruption-row";
+import { InjectedRowView } from "./injected-row";
 import { TurnRail } from "./turn-rail";
 import {
   deriveTurnRailItems,
@@ -710,7 +711,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
     // Widen the window if that turn falls outside it.
     let lastUser = -1;
     for (let i = rows.length - 1; i >= 0; i--) {
-      if (rows[i].kind === RowKind.User) {
+      if (rows[i].kind === RowKind.User || rows[i].kind === RowKind.Injected) {
         lastUser = i;
         break;
       }
@@ -1214,6 +1215,8 @@ function RowView({
           canBranch={row.responseRowId !== undefined && row.responseRowId === canBranchRowId}
         />
       );
+    case RowKind.Injected:
+      return <InjectedRowView row={row} />;
     case RowKind.Interruption:
       return (
         <InterruptionRowView
