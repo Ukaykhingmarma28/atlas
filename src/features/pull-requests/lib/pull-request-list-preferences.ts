@@ -3,10 +3,13 @@
  * local filters. A per-viewer convenience in `localStorage`, so every read
  * and write survives storage being absent or refusing; anything unreadable
  * falls back to the defaults. The search box is not kept.
+ *
+ * Also the last list itself (`readPullRequestListSnapshot`), per checkout,
+ * so reopening the tab paints rows at once while the host is asked again.
  */
 
 import type { PullRequestListSort, PullRequestLocalFilters } from "./pull-request-list-logic";
-import type { PrInvolvement, PrListState } from "./pull-requests-types";
+import type { PrInvolvement, PrListEntry, PrListState, PrProvider } from "./pull-requests-types";
 
 export interface PullRequestListPreferences {
   state: PrListState;
@@ -87,6 +90,76 @@ export function readPullRequestListPreferences(given?: Storage): PullRequestList
       : DEFAULT_PULL_REQUEST_LIST_PREFERENCES;
   } catch {
     return DEFAULT_PULL_REQUEST_LIST_PREFERENCES;
+  }
+}
+
+// ── the last list, for an instant reopen ────────────────────────────────
+
+/** Rows kept: the first page, which is what a reopen paints first. */
+export const SNAPSHOT_MAX_ENTRIES = 50;
+
+const snapshotKey = (repoPath: string) => `atlas.pullRequests.list:${repoPath}`;
+
+export interface PullRequestListSnapshot {
+  /** Which listing these rows answer (state, involvement, filters). */
+  scope: string;
+  provider: PrProvider;
+  entries: PrListEntry[];
+}
+
+const isEntry = (value: unknown): value is PrListEntry => {
+  if (typeof value !== "object" || value === null) return false;
+  const e = value as Record<string, unknown>;
+  return (
+    typeof e.number === "number" &&
+    typeof e.title === "string" &&
+    typeof e.url === "string" &&
+    typeof e.state === "string" &&
+    typeof e.updatedAt === "string" &&
+    typeof e.createdAt === "string" &&
+    typeof e.headBranch === "string" &&
+    typeof e.baseBranch === "string" &&
+    Array.isArray(e.labels)
+  );
+};
+
+/** The rows the list last showed for `repoPath` under `scope`, or `null`.
+ *  Stale by nature: the list paints them and reads again at once. */
+export function readPullRequestListSnapshot(
+  repoPath: string,
+  scope: string,
+  given?: Storage,
+): PullRequestListSnapshot | null {
+  try {
+    const raw = storage(given)?.getItem(snapshotKey(repoPath));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PullRequestListSnapshot>;
+    if (parsed.scope !== scope || typeof parsed.provider !== "object" || !parsed.provider) {
+      return null;
+    }
+    if (!Array.isArray(parsed.entries) || !parsed.entries.every(isEntry)) return null;
+    return {
+      scope,
+      provider: parsed.provider,
+      entries: parsed.entries.slice(0, SNAPSHOT_MAX_ENTRIES),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function writePullRequestListSnapshot(
+  repoPath: string,
+  snapshot: PullRequestListSnapshot,
+  given?: Storage,
+): void {
+  try {
+    storage(given)?.setItem(
+      snapshotKey(repoPath),
+      JSON.stringify({ ...snapshot, entries: snapshot.entries.slice(0, SNAPSHOT_MAX_ENTRIES) }),
+    );
+  } catch {
+    // Full or blocked: the next open reads from the host, as before.
   }
 }
 

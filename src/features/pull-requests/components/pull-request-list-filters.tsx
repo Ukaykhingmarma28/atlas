@@ -342,11 +342,15 @@ export function PullRequestFiltersMenu({
   onFilters,
   authors,
   labels,
+  typedDraft,
 }: {
   filters: PullRequestLocalFilters;
   onFilters: (filters: PullRequestLocalFilters) => void;
   authors: readonly PullRequestAuthorFacet[];
   labels: readonly PullRequestLabelFacet[];
+  /** A `draft:` typed in the search, which outranks the menu's and is shown
+   *  in its place. */
+  typedDraft?: PullRequestLocalFilters["draft"];
 }) {
   const count = activeFilterCount(filters);
   const update = (next: Partial<PullRequestLocalFilters>) => {
@@ -390,7 +394,7 @@ export function PullRequestFiltersMenu({
         <DropdownMenuSeparator />
         <RadioSubmenu
           label="Draft"
-          value={filters.draft ?? UNFILTERED}
+          value={typedDraft ?? filters.draft ?? UNFILTERED}
           options={DRAFT_OPTIONS}
           onChange={(value) => pick("draft", value)}
         />
@@ -406,6 +410,10 @@ export function PullRequestFiltersMenu({
           options={CHECKS_OPTIONS}
           onChange={(value) => pick("checks", value)}
         />
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>
+          Or type label:, -label:, author:, draft:, review: or checks:
+        </DropdownMenuLabel>
         {count > 0 ? (
           <>
             <DropdownMenuSeparator />

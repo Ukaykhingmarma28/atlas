@@ -296,6 +296,19 @@ impl GitHub {
         Ok(out)
     }
 
+    /// A by-alias read over this repository (`$owner`, `$name`), keeping
+    /// what GitHub answered beside a number it does not have.
+    pub(crate) async fn read_aliased(&self, query: &str) -> Result<Value, PrError> {
+        self.gh
+            .graphql_partial(
+                query,
+                json!({ "owner": self.ctx.owner, "name": self.ctx.name }),
+                self.allow_reserve(),
+                READ_TIMEOUT,
+            )
+            .await
+    }
+
     async fn entries_chunk(&self, numbers: &[u64]) -> Result<Vec<PrListEntry>, PrError> {
         let data = self
             .gh

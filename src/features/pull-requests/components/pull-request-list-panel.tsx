@@ -5,38 +5,85 @@
 //
 // The host does the heavy narrowing (state, involvement, search, author,
 // draft, labels); review and checks are narrowed here, over what has loaded.
-// How the list was left is remembered per viewer
-// (`pull-request-list-preferences.ts`); the search is not.
+// The search box also takes typed qualifiers (`label:`, `-label:`, `author:`,
+// `draft:`, `review:`, `checks:`; `pull-request-query.ts`), which take the
+// menu's place for the same field.
+//
+// Shift shows each row's quick actions; pressing Close and dragging down the
+// rows closes them all (`pull-request-quick-actions.tsx`). A right-click
+// offers the link. Line counts are split by kind for the rows on screen, in
+// batches. How the list was left is remembered per viewer, and so is the
+// last list itself, so a reopen paints at once
+// (`pull-request-list-preferences.ts`); the search is not. Any agent's turn
+// ending reads the list again, since a turn may have pushed or opened one.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Eye, GitPullRequest, Layers, PenLine, RefreshCw, Search, Users, X } from "lucide-react";
+import {
+  ArrowUpRight,
+  Eye,
+  GitPullRequest,
+  Layers,
+  Link,
+  PenLine,
+  RefreshCw,
+  Search,
+  Users,
+  X,
+} from "lucide-react";
+import { toast } from "sonner";
 
+import { useChatStore } from "@/features/chat/stores/chat-store";
+import { openPullRequest } from "@/features/git/lib/git-pr-api";
+import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
+import { isBusyAgentStatus } from "@/types/agent";
 import { Button } from "@/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/ui/context-menu";
 
 import { openPullRequestTab } from "../lib/open-pull-request-tab";
 import { classifyPrError } from "../lib/pr-errors";
 import {
+  applyPullRequestOverrides,
   collectPullRequestListFacets,
   groupPullRequestsByInvolvement,
   hasLocalFilters,
   matchesPullRequestFilters,
   MATCHED_ELSEWHERE_SCORE,
+  pullRequestOverrideAfterAction,
   rankPullRequestMatches,
+  resolvePullRequestStacks,
   scorePullRequestMatch,
+  settlePullRequestOverrides,
   sortPullRequestGroups,
   type PullRequestGroup,
   type PullRequestGroupKey,
+  type PullRequestListOverride,
 } from "../lib/pull-request-list-logic";
 import {
   readPullRequestListPreferences,
+  readPullRequestListSnapshot,
   writePullRequestListPreferences,
+  writePullRequestListSnapshot,
   type PullRequestListPreferences,
 } from "../lib/pull-request-list-preferences";
-import { usePrListPages, usePrProvider } from "../lib/pull-requests-queries";
-import type { PrListEntry } from "../lib/pull-requests-types";
+import {
+  applyPullRequestDraftFilterChange,
+  mergePullRequestFilters,
+  parsePullRequestQuery,
+  pullRequestServerFilters,
+} from "../lib/pull-request-query";
+import { pullRequestKeys, usePrListPages, usePrProvider } from "../lib/pull-requests-queries";
+import type { PrAction, PrListEntry, PrListQuery, PrListResult } from "../lib/pull-requests-types";
 import { useAutoNextPage } from "../lib/use-auto-next-page";
+import { usePullRequestListStats } from "../lib/use-pull-request-list-stats";
 import { PullRequestScopeContext } from "./pull-request-context";
 import {
   CompactFilterMenu,
@@ -46,6 +93,14 @@ import {
   STATE_OPTIONS,
 } from "./pull-request-list-filters";
 import { PULL_REQUEST_ROW_HEIGHT, PullRequestListRow } from "./pull-request-list-row";
+import {
+  PullRequestQuickActionsProvider,
+  useCloseBatch,
+  useCloseSweep,
+  useQuickActionRunner,
+  type QuickActionEntry,
+  type QuickActionResult,
+} from "./pull-request-quick-actions";
 import { PullRequestListGhost, PullRequestsUnavailableState } from "./pull-request-states";
 
 /** Rows the host is asked for per page. */
@@ -58,6 +113,8 @@ const PREFETCH_ROWS = 8;
 export const AUTO_PAGES_WHILE_FILTERED = 3;
 const GROUP_HEADER_HEIGHT = 28;
 const SEARCH_DEBOUNCE_MS = 300;
+/** Turn ends this close together read the list once. */
+const TURN_REFRESH_COALESCE_MS = 1500;
 
 const GROUP_ICONS: Record<PullRequestGroupKey, typeof Layers> = {
   authored: PenLine,
@@ -67,8 +124,10 @@ const GROUP_ICONS: Record<PullRequestGroupKey, typeof Layers> = {
 
 type Item =
   | { kind: "header"; group: PullRequestGroup }
-  | { kind: "row"; entry: PrListEntry }
+  | { kind: "row"; entry: PrListEntry; group: PullRequestGroupKey }
   | { kind: "more" };
+
+const NO_ACTIONS: ReadonlySet<PrAction> = new Set();
 
 function useDebounced<T>(value: T, ms: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -79,7 +138,50 @@ function useDebounced<T>(value: T, ms: number): T {
   return debounced;
 }
 
+/** The sessions mid-turn, as one string that changes only when a turn
+ *  starts or ends. */
+function useBusySessions(): string {
+  return useChatStore((s) => {
+    let sig = "";
+    for (const tabId in s.sessions) {
+      if (isBusyAgentStatus(s.sessions[tabId]!.status)) sig += `${tabId}\n`;
+    }
+    return sig;
+  });
+}
+
+/** Calls `onEnded` (coalesced) whenever any agent's turn ends. */
+function useAgentTurnEnds(onEnded: () => void): void {
+  const busy = useBusySessions();
+  const previous = useRef(busy);
+  const latest = useRef(onEnded);
+  latest.current = onEnded;
+  const timer = useRef<number | null>(null);
+  useEffect(() => {
+    const now = new Set(busy.split("\n").filter(Boolean));
+    const ended = previous.current.split("\n").some((tabId) => tabId !== "" && !now.has(tabId));
+    previous.current = busy;
+    if (!ended || timer.current !== null) return;
+    timer.current = window.setTimeout(() => {
+      timer.current = null;
+      latest.current();
+    }, TURN_REFRESH_COALESCE_MS);
+  }, [busy]);
+  useEffect(
+    () => () => {
+      if (timer.current !== null) window.clearTimeout(timer.current);
+    },
+    [],
+  );
+}
+
+/** Which listing a snapshot answers: everything asked of the host but the
+ *  search and the page. */
+const snapshotScope = (query: Omit<PrListQuery, "cursor">) =>
+  JSON.stringify({ ...query, search: null });
+
 export function PullRequestListPanel({ repoPath }: { repoPath: string }) {
+  const queryClient = useQueryClient();
   const [prefs, setPrefs] = useState<PullRequestListPreferences>(readPullRequestListPreferences);
   const update = useCallback((next: Partial<PullRequestListPreferences>) => {
     setPrefs((current) => {
@@ -89,22 +191,68 @@ export function PullRequestListPanel({ repoPath }: { repoPath: string }) {
     });
   }, []);
   const [search, setSearch] = useState("");
-  const query = useDebounced(search.trim(), SEARCH_DEBOUNCE_MS);
+  const sentSearch = useDebounced(search.trim(), SEARCH_DEBOUNCE_MS);
+  const typed = useMemo(() => parsePullRequestQuery(search), [search]);
+  const sent = useMemo(() => parsePullRequestQuery(sentSearch), [sentSearch]);
+  /** The words searched for, without the qualifiers. */
+  const query = sent.text.trim();
 
   const provider = usePrProvider(repoPath);
   const viewer = provider.data?.viewer ?? null;
-  const { filters } = prefs;
-  const list = usePrListPages(repoPath, {
-    state: prefs.state,
-    involvement: prefs.involvement,
-    search: query || null,
-    author: filters.author ?? null,
-    draft: filters.draft ?? null,
-    labels: filters.labels?.length ? filters.labels : null,
-    limit: PAGE,
+  const { filters: menuFilters } = prefs;
+  /** What the host is asked to narrow by (as last sent), and what this side
+   *  narrows by at once (as typed). */
+  const sentFilters = useMemo(
+    () => mergePullRequestFilters(menuFilters, sent.filters),
+    [menuFilters, sent.filters],
+  );
+  const filters = useMemo(
+    () => mergePullRequestFilters(menuFilters, typed.filters),
+    [menuFilters, typed.filters],
+  );
+  const listQuery = useMemo<Omit<PrListQuery, "cursor">>(
+    () => ({
+      state: prefs.state,
+      involvement: prefs.involvement,
+      search: query || null,
+      ...pullRequestServerFilters(sentFilters),
+      limit: PAGE,
+    }),
+    [prefs.state, prefs.involvement, query, sentFilters],
+  );
+
+  // The last list, painted before the host answers. Only the listing the tab
+  // opens on is seeded, and only when nothing is held for it yet; it is
+  // stale on arrival, so the host is asked at once.
+  useState(() => {
+    const key = pullRequestKeys.listPages(repoPath, listQuery);
+    if (queryClient.getQueryData(key)) return null;
+    const snapshot = readPullRequestListSnapshot(repoPath, snapshotScope(listQuery));
+    if (!snapshot) return null;
+    const page: PrListResult = {
+      provider: snapshot.provider,
+      entries: snapshot.entries,
+      nextCursor: null,
+    };
+    queryClient.setQueryData(key, { pages: [page], pageParams: [null] }, { updatedAt: 0 });
+    return null;
   });
 
-  const loaded = useMemo(() => {
+  const list = usePrListPages(repoPath, listQuery);
+
+  // Keep the first page of what the host last said, for the next open.
+  const firstPage = list.data?.pages[0];
+  const fresh = list.dataUpdatedAt > 0;
+  useEffect(() => {
+    if (!firstPage || !fresh || query) return;
+    writePullRequestListSnapshot(repoPath, {
+      scope: snapshotScope(listQuery),
+      provider: firstPage.provider,
+      entries: firstPage.entries,
+    });
+  }, [firstPage, fresh, query, repoPath, listQuery]);
+
+  const answered = useMemo(() => {
     const seen = new Set<number>();
     const rows: PrListEntry[] = [];
     for (const page of list.data?.pages ?? []) {
@@ -117,13 +265,39 @@ export function PullRequestListPanel({ repoPath }: { repoPath: string }) {
     return rows;
   }, [list.data]);
 
+  // What an action just did, shown until the host agrees.
+  const [overrides, setOverrides] = useState<ReadonlyMap<number, PullRequestListOverride>>(
+    () => new Map(),
+  );
+  const overrideToken = useRef(0);
+  useEffect(() => {
+    setOverrides((current) => settlePullRequestOverrides(current, answered, Date.now()));
+  }, [answered]);
+  const onActed = useCallback(({ entry, action }: QuickActionResult) => {
+    const override = pullRequestOverrideAfterAction(
+      entry,
+      action,
+      new Date(),
+      ++overrideToken.current,
+    );
+    if (!override) return;
+    setOverrides((current) => new Map(current).set(entry.number, override));
+  }, []);
+
+  const loaded = useMemo(
+    () => applyPullRequestOverrides(answered, overrides, prefs.state),
+    [answered, overrides, prefs.state],
+  );
+
   const facets = useMemo(
     () => collectPullRequestListFacets(loaded, prefs.state),
     [loaded, prefs.state],
   );
+  const stacks = useMemo(() => resolvePullRequestStacks(loaded), [loaded]);
 
+  const filtered = hasLocalFilters(filters);
   const groups = useMemo(() => {
-    const narrowed = hasLocalFilters(filters)
+    const narrowed = filtered
       ? loaded.filter((entry) => matchesPullRequestFilters(entry, filters, viewer))
       : loaded;
     const ordered = query ? rankPullRequestMatches(narrowed, query) : narrowed;
@@ -134,13 +308,13 @@ export function PullRequestListPanel({ repoPath }: { repoPath: string }) {
           ? [{ key: "others" as const, label: "", entries: ordered }]
           : [];
     return sortPullRequestGroups(grouped, prefs.sort, query);
-  }, [loaded, filters, viewer, query, prefs.involvement, prefs.sort]);
+  }, [loaded, filtered, filters, viewer, query, prefs.involvement, prefs.sort]);
 
   const items = useMemo<Item[]>(() => {
     const out: Item[] = [];
     for (const group of groups) {
       if (group.label) out.push({ kind: "header", group });
-      for (const entry of group.entries) out.push({ kind: "row", entry });
+      for (const entry of group.entries) out.push({ kind: "row", entry, group: group.key });
     }
     if (out.length > 0 && list.hasNextPage) out.push({ kind: "more" });
     return out;
@@ -176,6 +350,14 @@ export function PullRequestListPanel({ repoPath }: { repoPath: string }) {
   useAutoNextPage(list, !autoPagingCapped && lastIndex >= items.length - PREFETCH_ROWS);
   const loadMore = useCallback(() => void fetchNextPage(), [fetchNextPage]);
 
+  // The breakdowns for the rows on screen (not the overscan's).
+  const visibleNumbers: number[] = [];
+  for (const virtual of virtualItems) {
+    const item = items[virtual.index];
+    if (item?.kind === "row") visibleNumbers.push(item.entry.number);
+  }
+  const stats = usePullRequestListStats(repoPath, visibleNumbers, !!provider.data);
+
   // Back to the top when what is asked for changes.
   useEffect(() => {
     scrollerRef.current?.scrollTo({ top: 0 });
@@ -188,164 +370,293 @@ export function PullRequestListPanel({ repoPath }: { repoPath: string }) {
   );
 
   const refreshing = list.isRefetching && !isFetchingNextPage;
-  const refresh = () => {
-    void provider.refetch();
-    void list.refetch();
+  const { refetch: refetchProvider } = provider;
+  const { refetch: refetchList } = list;
+  const resetStats = stats.reset;
+  const refresh = useCallback(() => {
+    void refetchProvider();
+    void refetchList();
+    resetStats();
+  }, [refetchProvider, refetchList, resetStats]);
+  useAgentTurnEnds(refresh);
+
+  // ── quick actions and the close sweep ────────────────────────────────
+  const capabilityActions = provider.data?.capabilities.actions;
+  const hostActions = useMemo(
+    () => (capabilityActions ? new Set(capabilityActions) : NO_ACTIONS),
+    [capabilityActions],
+  );
+  const perform = useQuickActionRunner(repoPath, onActed);
+  const { close: closeBatch, closing } = useCloseBatch(repoPath, onActed);
+  const sweepRows = useMemo(() => {
+    const ordered: number[] = [];
+    const rows = new Map<number, PrListEntry & { group: PullRequestGroupKey }>();
+    for (const item of items) {
+      if (item.kind !== "row") continue;
+      ordered.push(item.entry.number);
+      rows.set(item.entry.number, { ...item.entry, group: item.group });
+    }
+    return { ordered, rows };
+  }, [items]);
+  const sweepState = useRef({ sweepRows, closing, hostActions });
+  sweepState.current = { sweepRows, closing, hostActions };
+  const sweep = useCloseSweep<PrListEntry & { group: PullRequestGroupKey }>({
+    scrollerRef,
+    read: () => sweepState.current.sweepRows,
+    canSweep: (origin, row) =>
+      row.group === origin.group &&
+      row.state === "open" &&
+      sweepState.current.hostActions.has("close") &&
+      !sweepState.current.closing.has(row.number),
+    onCommit: (rows) => void closeBatch(rows),
+  });
+  const { start: startSweepFor, cancel: cancelSweep } = sweep;
+  const startSweep = useCallback(
+    (entry: QuickActionEntry, event: PointerEvent) => {
+      const row = sweepState.current.sweepRows.rows.get(entry.number);
+      if (row) startSweepFor(row, event);
+    },
+    [startSweepFor],
+  );
+  // A new list under a sweep in progress ends it.
+  useEffect(cancelSweep, [cancelSweep, prefs, query, filters]);
+
+  // ── the row menu ──────────────────────────────────────────────────────
+  const [menuEntry, setMenuEntry] = useState<PrListEntry | null>(null);
+  const onContextMenu = (event: React.MouseEvent) => {
+    const node = (event.target as HTMLElement).closest<HTMLElement>("[data-pull-request-number]");
+    const number = node ? Number(node.dataset.pullRequestNumber) : null;
+    setMenuEntry(number === null ? null : (sweepRows.rows.get(number) ?? null));
   };
+  const copyLink = async (url: string) => {
+    if (await copyText(url)) toast.success("Link copied", { description: url });
+    else toast.error("Could not copy the link");
+  };
+
   const error = list.error ?? (list.data ? null : provider.error);
   const scope = useMemo(() => ({ repoPath, number: 0, repositoryUrl: null }), [repoPath]);
-  const searching = search.trim() !== query || (list.isFetching && !!query && !list.data);
+  const searching = search.trim() !== sentSearch || (list.isFetching && !!query && !list.data);
+  const typedFilterCount = Object.keys(typed.filters).length;
 
   return (
     <PullRequestScopeContext.Provider value={scope}>
-      <div className="@container/pr-list flex h-full min-h-0 min-w-0 flex-col bg-background">
-        <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
-          <GitPullRequest aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-          <h1 className="shrink-0 text-xs font-medium text-foreground">Pull requests</h1>
-          {provider.data ? (
-            <span className="min-w-0 truncate text-xs text-muted-foreground">
-              {provider.data.repository}
-            </span>
-          ) : null}
-          <span className="ml-auto" />
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label="Refresh pull requests"
-            title="Refresh pull requests"
-            disabled={refreshing}
-            onClick={refresh}
-          >
-            <RefreshCw aria-hidden className={cn("size-3.5", refreshing && "animate-spin")} />
-          </Button>
-        </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-border px-2 py-1.5">
-          <label className="flex h-control-md min-w-40 flex-1 cursor-text items-center gap-1.5 rounded border border-border bg-panel-input px-2 focus-within:border-border-strong">
-            <Search aria-hidden className="size-3 shrink-0 text-muted-foreground" />
-            <input
-              type="search"
-              value={search}
-              onChange={(event) => setSearch(event.currentTarget.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape" && search) {
-                  event.preventDefault();
-                  setSearch("");
-                }
-              }}
-              placeholder="Search pull requests"
-              aria-label="Search pull requests"
-              className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
-            />
-            {search ? (
-              <button
-                type="button"
-                aria-label="Clear search"
-                onClick={() => setSearch("")}
-                className="inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
-              >
-                <X aria-hidden className="size-3" />
-              </button>
+      <PullRequestQuickActionsProvider
+        hostActions={hostActions}
+        perform={perform}
+        startSweep={startSweep}
+        justSwept={sweep.justSwept}
+      >
+        <div className="@container/pr-list flex h-full min-h-0 min-w-0 flex-col bg-background">
+          <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
+            <GitPullRequest aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+            <h1 className="shrink-0 text-xs font-medium text-foreground">Pull requests</h1>
+            {provider.data ? (
+              <span className="min-w-0 truncate text-xs text-muted-foreground">
+                {provider.data.repository}
+              </span>
             ) : null}
-          </label>
-          <CompactFilterMenu
-            label="State"
-            value={prefs.state}
-            options={STATE_OPTIONS}
-            onChange={(state) => update({ state })}
-          />
-          <CompactFilterMenu
-            label="Involvement"
-            value={prefs.involvement}
-            options={INVOLVEMENT_OPTIONS}
-            onChange={(involvement) => update({ involvement })}
-            iconOnly
-          />
-          <CompactFilterMenu
-            label="Sort"
-            value={prefs.sort}
-            options={SORT_OPTIONS}
-            onChange={(sort) => update({ sort })}
-            iconOnly
-          />
-          <PullRequestFiltersMenu
-            filters={filters}
-            onFilters={(next) => update({ filters: next })}
-            authors={facets.authors}
-            labels={facets.labels}
-          />
-        </div>
-        <div ref={scrollerRef} className="min-h-0 flex-1 overflow-y-auto">
-          {error && loaded.length === 0 ? (
-            <PullRequestsUnavailableState
-              error={classifyPrError(error)}
-              retrying={list.isFetching || provider.isFetching}
-              onRetry={refresh}
-            />
-          ) : list.isLoading || (searching && loaded.length === 0) ? (
-            <PullRequestListGhost
-              caption={query ? `Searching for “${truncate(query)}”` : undefined}
-            />
-          ) : items.length === 0 ? (
-            <PullRequestListEmptyState
-              query={query}
-              filtered={
-                hasLocalFilters(filters) || prefs.state !== "open" || prefs.involvement !== "all"
-              }
-              loadingMore={isFetchingNextPage}
-              canLoadMore={!!hasNextPage}
-              refreshing={refreshing}
-              onClearQuery={() => setSearch("")}
-              onClearFilters={() => update({ filters: {}, state: "open", involvement: "all" })}
-              loadFailed={isFetchNextPageError}
-              onLoadMore={loadMore}
-              onRefresh={refresh}
-            />
-          ) : (
-            <div
-              role="list"
-              aria-label="Pull requests"
-              className="relative mx-1 my-1"
-              style={{ height: virtualizer.getTotalSize() }}
+            <span className="ml-auto" />
+            <span className="hidden shrink-0 text-2xs text-disabled @md/pr-list:inline">
+              Hold ⇧ for quick actions
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Refresh pull requests"
+              title="Refresh pull requests"
+              disabled={refreshing}
+              onClick={refresh}
             >
-              {virtualItems.map((virtual) => {
-                const item = items[virtual.index];
-                if (!item) return null;
-                return (
-                  <div
-                    key={virtual.key}
-                    role={item.kind === "row" ? "listitem" : undefined}
-                    className="absolute top-0 left-0 w-full"
-                    style={{
-                      height: virtual.size,
-                      transform: `translateY(${virtual.start}px)`,
-                    }}
-                  >
-                    {item.kind === "header" ? (
-                      <GroupHeader group={item.group} />
-                    ) : item.kind === "row" ? (
-                      <PullRequestListRow
-                        entry={item.entry}
-                        matchedElsewhere={
-                          !!query &&
-                          scorePullRequestMatch(item.entry, query) <= MATCHED_ELSEWHERE_SCORE
-                        }
-                        onOpen={open}
-                      />
-                    ) : (
-                      <MoreRow
-                        loading={isFetchingNextPage}
-                        failed={isFetchNextPageError}
-                        capped={autoPagingCapped}
-                        onLoad={loadMore}
-                      />
-                    )}
-                  </div>
+              <RefreshCw aria-hidden className={cn("size-3.5", refreshing && "animate-spin")} />
+            </Button>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-border px-2 py-1.5">
+            <label className="flex h-control-md min-w-40 flex-1 cursor-text items-center gap-1.5 rounded border border-border bg-panel-input px-2 focus-within:border-border-strong">
+              <Search aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+              <input
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape" && search) {
+                    event.preventDefault();
+                    setSearch("");
+                  }
+                }}
+                placeholder="Search, or label:bug author:@me draft:false…"
+                aria-label="Search pull requests"
+                title="Search titles, branches and bodies. Qualifiers: label:a,b (either), -label:x, author:@me, draft:true|false, review:approved|changes_requested|required|none, checks:passing|failing"
+                className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
+              />
+              {typedFilterCount > 0 ? (
+                <span
+                  className="shrink-0 rounded-full border border-border px-1.5 text-2xs text-muted-foreground tabular-nums"
+                  title="Qualifiers read from the search"
+                >
+                  {typedFilterCount} {typedFilterCount === 1 ? "qualifier" : "qualifiers"}
+                </span>
+              ) : null}
+              {search ? (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={() => setSearch("")}
+                  className="inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+                >
+                  <X aria-hidden className="size-3" />
+                </button>
+              ) : null}
+            </label>
+            <CompactFilterMenu
+              label="State"
+              value={prefs.state}
+              options={STATE_OPTIONS}
+              onChange={(state) => update({ state })}
+            />
+            <CompactFilterMenu
+              label="Involvement"
+              value={prefs.involvement}
+              options={INVOLVEMENT_OPTIONS}
+              onChange={(involvement) => update({ involvement })}
+              iconOnly
+            />
+            <CompactFilterMenu
+              label="Sort"
+              value={prefs.sort}
+              options={SORT_OPTIONS}
+              onChange={(sort) => update({ sort })}
+              iconOnly
+            />
+            <PullRequestFiltersMenu
+              filters={menuFilters}
+              typedDraft={typed.filters.draft}
+              onFilters={(next) => {
+                const draft = applyPullRequestDraftFilterChange(
+                  search,
+                  menuFilters.draft,
+                  next.draft,
                 );
-              })}
-            </div>
-          )}
+                if (draft.query !== search) setSearch(draft.query);
+                const merged = { ...next, draft: draft.draft };
+                if (merged.draft === undefined) delete merged.draft;
+                update({ filters: merged });
+              }}
+              authors={facets.authors}
+              labels={facets.labels}
+            />
+          </div>
+          <ContextMenu>
+            <ContextMenuTrigger
+              render={
+                <div
+                  ref={scrollerRef}
+                  onContextMenu={onContextMenu}
+                  className="min-h-0 flex-1 overflow-y-auto"
+                />
+              }
+            >
+              {error && loaded.length === 0 ? (
+                <PullRequestsUnavailableState
+                  error={classifyPrError(error)}
+                  retrying={list.isFetching || provider.isFetching}
+                  onRetry={refresh}
+                />
+              ) : list.isLoading || (searching && loaded.length === 0) ? (
+                <PullRequestListGhost
+                  caption={query ? `Searching for “${truncate(query)}”` : undefined}
+                />
+              ) : items.length === 0 ? (
+                <PullRequestListEmptyState
+                  query={query}
+                  filtered={filtered || prefs.state !== "open" || prefs.involvement !== "all"}
+                  loadingMore={isFetchingNextPage}
+                  canLoadMore={!!hasNextPage}
+                  refreshing={refreshing}
+                  onClearQuery={() => setSearch("")}
+                  onClearFilters={() => {
+                    if (typedFilterCount > 0) setSearch(typed.text);
+                    update({ filters: {}, state: "open", involvement: "all" });
+                  }}
+                  loadFailed={isFetchNextPageError}
+                  onLoadMore={loadMore}
+                  onRefresh={refresh}
+                />
+              ) : (
+                <div
+                  role="list"
+                  aria-label="Pull requests"
+                  className="relative mx-1 my-1"
+                  style={{ height: virtualizer.getTotalSize() }}
+                >
+                  {virtualItems.map((virtual) => {
+                    const item = items[virtual.index];
+                    if (!item) return null;
+                    return (
+                      <div
+                        key={virtual.key}
+                        role={item.kind === "row" ? "listitem" : undefined}
+                        className="absolute top-0 left-0 w-full"
+                        style={{
+                          height: virtual.size,
+                          transform: `translateY(${virtual.start}px)`,
+                        }}
+                      >
+                        {item.kind === "header" ? (
+                          <GroupHeader group={item.group} />
+                        ) : item.kind === "row" ? (
+                          <PullRequestListRow
+                            entry={item.entry}
+                            matchedElsewhere={
+                              !!query &&
+                              scorePullRequestMatch(item.entry, query) <= MATCHED_ELSEWHERE_SCORE
+                            }
+                            onOpen={open}
+                            stack={stacks.get(item.entry.number)}
+                            breakdown={stats.breakdowns.get(item.entry.number)}
+                            pending={closing.has(item.entry.number)}
+                            sweeping={sweep.swept.has(item.entry.number)}
+                          />
+                        ) : (
+                          <MoreRow
+                            loading={isFetchingNextPage}
+                            failed={isFetchNextPageError}
+                            capped={autoPagingCapped}
+                            onLoad={loadMore}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </ContextMenuTrigger>
+            <ContextMenuContent>
+              {menuEntry ? (
+                <>
+                  <ContextMenuItem onClick={() => open(menuEntry)}>
+                    <GitPullRequest aria-hidden />
+                    Open #{menuEntry.number}
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem onClick={() => void copyLink(menuEntry.url)}>
+                    <Link aria-hidden />
+                    Copy link
+                  </ContextMenuItem>
+                  <ContextMenuItem onClick={() => openPullRequest(menuEntry.url)}>
+                    <ArrowUpRight aria-hidden />
+                    Open on GitHub
+                  </ContextMenuItem>
+                </>
+              ) : (
+                <ContextMenuItem onClick={refresh}>
+                  <RefreshCw aria-hidden />
+                  Refresh pull requests
+                </ContextMenuItem>
+              )}
+            </ContextMenuContent>
+          </ContextMenu>
         </div>
-      </div>
+      </PullRequestQuickActionsProvider>
     </PullRequestScopeContext.Provider>
   );
 }
