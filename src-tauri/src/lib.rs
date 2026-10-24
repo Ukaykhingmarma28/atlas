@@ -667,6 +667,7 @@ pub fn run() {
             commands::pull_requests::pr_request_reviewers,
             commands::pull_requests::pr_set_labels,
             commands::pull_requests::pr_image,
+            commands::pull_requests::list_stats::pr_list_stats,
             commands::pull_requests::create::pr_create_draft,
             commands::pull_requests::create::pr_create,
             commands::pull_requests::checkout::pr_prepare_checkout,

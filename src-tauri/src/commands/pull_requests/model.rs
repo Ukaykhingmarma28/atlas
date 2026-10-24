@@ -500,6 +500,11 @@ pub struct PrListQuery {
     /// `only` or `hide` drafts.
     pub draft: Option<String>,
     pub labels: Option<Vec<String>>,
+    /// Label groups: a pull request carries at least one label of every
+    /// group (`label:a,b` typed in the search).
+    pub label_groups: Option<Vec<Vec<String>>>,
+    /// Labels a pull request must not carry (`-label:x`).
+    pub excluded_labels: Option<Vec<String>>,
     /// Only pull requests whose head is this branch (the session context
     /// overlay's "this branch's pull requests").
     pub head: Option<String>,

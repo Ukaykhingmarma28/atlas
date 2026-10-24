@@ -485,6 +485,22 @@ fn the_search_query_quotes_what_the_user_typed() {
 }
 
 #[test]
+fn the_search_query_ors_a_label_group_and_excludes_labels() {
+    let query = PrListQuery {
+        label_groups: Some(vec![
+            vec!["bug".into(), "help wanted".into()],
+            vec![" ".into()],
+        ]),
+        excluded_labels: Some(vec!["wip".into(), "".into()]),
+        ..Default::default()
+    };
+    assert_eq!(
+        search_query("cli/cli", "u", &query).unwrap(),
+        r#"is:pr is:open label:"bug","help wanted" -label:"wip" sort:updated-desc repo:cli/cli"#
+    );
+}
+
+#[test]
 fn the_search_query_narrows_to_one_head_branch_quoted() {
     let query = PrListQuery {
         state: Some(PrListState::All),

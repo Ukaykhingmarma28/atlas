@@ -27,6 +27,7 @@ mod gh;
 mod github;
 pub mod guide;
 mod images;
+pub mod list_stats;
 mod model;
 mod parse;
 mod queries;

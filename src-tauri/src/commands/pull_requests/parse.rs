@@ -1380,6 +1380,21 @@ pub(crate) fn search_query(repository: &str, viewer: &str, query: &PrListQuery) 
             parts.push(format!("label:{}", qualifier_value(label)));
         }
     }
+    for group in query.label_groups.iter().flatten() {
+        let names: Vec<String> = group
+            .iter()
+            .filter(|label| !label.trim().is_empty())
+            .map(|label| qualifier_value(label))
+            .collect();
+        if !names.is_empty() {
+            parts.push(format!("label:{}", names.join(",")));
+        }
+    }
+    for label in query.excluded_labels.iter().flatten() {
+        if !label.trim().is_empty() {
+            parts.push(format!("-label:{}", qualifier_value(label)));
+        }
+    }
     if let Some(head) = query
         .head
         .as_deref()
