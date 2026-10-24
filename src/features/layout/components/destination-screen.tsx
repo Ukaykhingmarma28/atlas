@@ -9,6 +9,7 @@ import { isDestination, type DestinationType } from "@/lib/constants";
 import { useLayoutStore, type Tab } from "../stores/layout-store";
 import { DESTINATIONS } from "../lib/destinations";
 import { DestinationActionsSlot } from "./destination-actions";
+import { eventOrigin } from "@/lib/deep-active-element";
 
 const KnowledgePanel = lazy(() =>
   import("@/features/knowledge/components/knowledge-panel").then((m) => ({
@@ -133,7 +134,7 @@ function DestinationBody({ tab, type }: { tab: Tab; type: DestinationType }) {
 /** Esc stays with a text field, and with anything layered over the page (a
  *  dialog, menu or popover closes first). */
 function escapeBelongsElsewhere(e: KeyboardEvent): boolean {
-  const target = e.target as HTMLElement | null;
+  const target = eventOrigin(e);
   if (target?.closest("input, textarea, select, [contenteditable='true'], .cm-editor")) return true;
   return !!document.querySelector(
     "[role='dialog'], [role='alertdialog'], [role='menu'], [role='listbox']",

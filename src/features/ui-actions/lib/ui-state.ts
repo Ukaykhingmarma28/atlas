@@ -7,11 +7,7 @@
 import { useAppStore } from "@/features/app/stores/app-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useChatStore, findTabByAcpSession } from "@/features/chat/stores/chat-store";
-import {
-  editorPosition,
-  getEditorView,
-  type EditorPosition,
-} from "@/features/editor/lib/editor-views";
+import { getEditorPosition, type EditorPosition } from "@/features/editor/lib/editor-views";
 import type { UiActionRequest } from "./types";
 import { sourceControlShown } from "@/features/layout/lib/source-control";
 import { teamChatShown } from "@/features/layout/lib/team-chat";
@@ -87,7 +83,7 @@ export function buildUiState(request: UiActionRequest): UiState {
   });
   const active = layout.tabs.find((t) => t.id === layout.activeTabId);
   const filePath = active?.type === "editor" ? active.data.filePath : undefined;
-  const view = active ? getEditorView(active.id) : undefined;
+  const position = active ? getEditorPosition(active.id) : undefined;
   const tabIds = new Set(layout.tabs.map((t) => t.id));
   return {
     project: project
@@ -99,10 +95,7 @@ export function buildUiState(request: UiActionRequest): UiState {
       : null,
     tabs,
     activeTabId: layout.activeTabId,
-    activeFile:
-      typeof filePath === "string"
-        ? { path: filePath, ...(view ? editorPosition(view.state) : {}) }
-        : null,
+    activeFile: typeof filePath === "string" ? { path: filePath, ...position } : null,
     panels: {
       files: { visible: singletonShown(layout, "files") },
       teamChat: { visible: teamChatShown(layout) },

@@ -41,7 +41,7 @@ import {
   openInEditor,
   usePreferredEditor,
 } from "@/features/external-editor/lib/preferred-editor";
-import { editorPosition, getEditorView } from "@/features/editor/lib/editor-views";
+import { getEditorPosition } from "@/features/editor/lib/editor-views";
 
 interface Command {
   id: string;
@@ -117,8 +117,7 @@ export function CommandPalette({
       icon: SquareArrowOutUpRight,
       category: "Project",
       action: () => {
-        const view = activeTabId ? getEditorView(activeTabId) : undefined;
-        const cursor = view ? editorPosition(view.state).cursor : undefined;
+        const cursor = activeTabId ? getEditorPosition(activeTabId)?.cursor : undefined;
         void openInEditor(
           editor.id,
           activeFile,

@@ -41,6 +41,7 @@ export const WHEN_PHRASES: Record<When, string> = {
   global: "",
   terminalFocus: "In the terminal",
   chatFocus: "In a chat",
+  editorFocus: "In a file",
   knowledgePanel: "While Knowledge is open",
   knowledgeFocus: "In Knowledge",
   pdfFocus: "In a PDF",

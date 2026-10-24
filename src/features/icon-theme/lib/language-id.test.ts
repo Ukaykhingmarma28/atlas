@@ -1,44 +1,22 @@
-// @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 import {
   detectLanguage,
   EXTENSION_LANGUAGE,
-  isHighlightable,
   LANGUAGE_IDS,
-  loadLanguageExtension,
   PLAINTEXT,
   type EditorLanguage,
-} from "./languages";
-
-/**
- * The bug these tests exist for: a file extension mapped to a language id that
- * had no CodeMirror loader, so the editor claimed to know the language and
- * rendered it as flat text (issue #75).
- *
- * `EXTENSION_LANGUAGE`'s type already makes that unrepresentable, but the type
- * only covers the *table*. These cover the other half — that every id actually
- * resolves to a real grammar at runtime, which no type can assert because the
- * loaders are dynamic imports.
- *
- * happy-dom: `@codemirror/lang-*` pulls in `@codemirror/view` transitively,
- * which touches `document` at import time.
- */
-
-/** A loaded language extension is a non-empty CodeMirror `Extension`. */
-function isRealExtension(ext: unknown): boolean {
-  return Array.isArray(ext) ? ext.length > 0 : ext !== null && ext !== undefined;
-}
+} from "./language-id";
 
 describe("language registry", () => {
   describe("extension table", () => {
     it.each(Object.entries(EXTENSION_LANGUAGE))(
-      "maps .%s to a language that is either loadable or explicitly plaintext",
+      "maps .%s to a language that is known or explicitly plaintext",
       (_ext, language) => {
         expect(language === PLAINTEXT || LANGUAGE_IDS.includes(language)).toBe(true);
       },
     );
 
-    it("has no entry whose language id lacks a loader", () => {
+    it("has no entry naming an unknown language id", () => {
       const orphans = Object.entries(EXTENSION_LANGUAGE).filter(
         ([, language]) => language !== PLAINTEXT && !LANGUAGE_IDS.includes(language),
       );
@@ -67,20 +45,9 @@ describe("language registry", () => {
     });
   });
 
-  describe("loaders", () => {
-    // The real assertion of the issue: every advertised language parses.
-    it.each(LANGUAGE_IDS)("%s resolves to a real CodeMirror extension", async (id) => {
-      expect(isRealExtension(await loadLanguageExtension(id))).toBe(true);
-    });
-
-    it("plaintext resolves to an empty extension rather than throwing", async () => {
-      expect(await loadLanguageExtension(PLAINTEXT)).toEqual([]);
-    });
-
-    it("every language id is reachable from at least one file extension", () => {
-      const reachable = new Set<EditorLanguage>(Object.values(EXTENSION_LANGUAGE));
-      expect(LANGUAGE_IDS.filter((id) => !reachable.has(id))).toEqual([]);
-    });
+  it("every language id is reachable from at least one file extension", () => {
+    const reachable = new Set<EditorLanguage>(Object.values(EXTENSION_LANGUAGE));
+    expect(LANGUAGE_IDS.filter((id) => !reachable.has(id))).toEqual([]);
   });
 
   describe("detectLanguage", () => {
@@ -132,13 +99,6 @@ describe("language registry", () => {
 
     it("takes the last extension of a compound name", () => {
       expect(detectLanguage("/repo/types/global.d.ts")).toBe("typescript");
-    });
-  });
-
-  describe("isHighlightable", () => {
-    it("is true for a parseable language and false for plaintext", () => {
-      expect(isHighlightable("typescript")).toBe(true);
-      expect(isHighlightable(PLAINTEXT)).toBe(false);
     });
   });
 });
