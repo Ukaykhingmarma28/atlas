@@ -102,7 +102,8 @@ export const ACTIONS = [
     title: "Toggle sidebar",
     category: "Project",
     when: "global",
-    defaults: ["cmd+shift+."],
+    // ⌘⌥J was the session sidebar's; the sessions live in this one now.
+    defaults: ["cmd+shift+.", "cmd+alt+j"],
   },
   {
     id: "app.settings",
