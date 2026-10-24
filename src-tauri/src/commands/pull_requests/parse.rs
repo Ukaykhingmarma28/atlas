@@ -180,15 +180,18 @@ fn to_review_decision_with_reviews(
     summarized
 }
 
+fn to_label(raw: Option<&Value>) -> Option<PrLabel> {
+    let raw = raw.filter(|v| !v.is_null())?;
+    Some(PrLabel {
+        name: text(raw, "name")?,
+        color: text(raw, "color"),
+    })
+}
+
 fn to_labels(connection: Option<&Value>) -> Vec<PrLabel> {
     nodes(connection)
         .into_iter()
-        .filter_map(|label| {
-            Some(PrLabel {
-                name: text(label, "name")?,
-                color: text(label, "color"),
-            })
-        })
+        .filter_map(|label| to_label(Some(label)))
         .collect()
 }
 
@@ -1531,6 +1534,20 @@ fn to_timeline_item(node: &Value) -> Option<PrTimelineItem> {
         "HeadRefDeletedEvent" => PrTimelineItem::HeadRefDeleted {
             id: id()?,
             actor: actor(),
+            at: at()?,
+        },
+        // A label since deleted from the repository comes back `null`; the
+        // event says nothing without it.
+        "LabeledEvent" => PrTimelineItem::Labeled {
+            id: id()?,
+            actor: actor(),
+            label: to_label(node.get("label"))?,
+            at: at()?,
+        },
+        "UnlabeledEvent" => PrTimelineItem::Unlabeled {
+            id: id()?,
+            actor: actor(),
+            label: to_label(node.get("label"))?,
             at: at()?,
         },
         _ => return None,

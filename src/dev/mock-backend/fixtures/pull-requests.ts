@@ -13,7 +13,8 @@
 //  - #401 — open with a merge conflict and a failing required check;
 //  - #377 — closed without merging;
 //  - #420 — open and long: 300 comments and 100 checks, for the Summary's
-//    paging and the checks list at scale.
+//    paging, the checks list and the Timeline at scale (labels, force-pushes,
+//    a close and reopen, a dismissed review).
 //
 // Writes are real for the life of the page: ticking a file viewed, resolving
 // a thread, reacting, commenting and merging all change the next read. Like
@@ -681,15 +682,105 @@ remarks.set(
   }),
 );
 
+// #420's reviews, among its comments: one ruling since dismissed, one that
+// only says something, and two line comments in threads.
+remarks.get(420)!.push(
+  {
+    id: "PRR_420_1",
+    kind: "review",
+    author: DEV,
+    body: "Blocking until the `PriceTag` spacing regression is explained.",
+    createdAt: iso(150.3),
+    editedAt: null,
+    url: `${URL_BASE}/420#pullrequestreview-1`,
+    path: null,
+    reviewState: "DISMISSED",
+    reactions: [],
+  },
+  {
+    id: "PRR_420_2",
+    kind: "review",
+    author: DEV,
+    body: "Second pass done. The gallery is fine now; one question on the stock badge inline.",
+    createdAt: iso(60.3),
+    editedAt: iso(59),
+    url: `${URL_BASE}/420#pullrequestreview-2`,
+    path: null,
+    reviewState: "COMMENTED",
+    reactions: [],
+  },
+);
+remarks.get(420)!.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+reactions.set("PRR_420_2", [
+  { content: "thumbs-up", count: 1, actors: ["ines-p"], viewerHasReacted: false },
+]);
+threads.set(420, [
+  {
+    id: "PRRT_420_badge",
+    path: "src/catalogue/stock-badge.tsx",
+    line: 31,
+    side: "right",
+    isResolved: false,
+    isOutdated: false,
+    comments: [
+      {
+        ...threadComment(
+          "RC_420_1",
+          DEV,
+          "Does `StockBadge` still need its own `gap`, or does the token cover it?",
+          60.25,
+        ),
+        url: `${URL_BASE}/420#discussion_RC_420_1`,
+      },
+      {
+        ...threadComment("RC_420_2", REVIEWER, "The token covers it — dropping it.", 58),
+        url: `${URL_BASE}/420#discussion_RC_420_2`,
+      },
+    ],
+    commentCount: 2,
+    nextCommentsCursor: null,
+    canResolve: true,
+  },
+  {
+    id: "PRRT_420_gallery",
+    path: "src/catalogue/product-gallery.tsx",
+    line: 112,
+    side: "right",
+    isResolved: true,
+    isOutdated: true,
+    comments: [
+      {
+        ...threadComment("RC_420_3", DEV, "This drops the 6px gutter on narrow screens.", 150.2),
+        url: `${URL_BASE}/420#discussion_RC_420_3`,
+      },
+    ],
+    commentCount: 1,
+    nextCommentsCursor: null,
+    canResolve: true,
+  },
+]);
+
+/** Commits land in pushes of four, a couple of minutes apart, spread from
+ *  the pull request's opening to its last update (or merge). */
 function commitsOf(number: number): PrCommit[] {
-  const count = find(number).detail.commitCount;
+  const detail = find(number).detail;
+  const count = detail.commitCount;
+  const start = Date.parse(detail.createdAt);
+  const end = Date.parse(detail.mergedAt ?? detail.updatedAt);
+  const pushes = Math.ceil(count / 4);
   return Array.from({ length: count }, (_, i) => ({
-    oid: (number * 1_000_003 + i).toString(16).padStart(8, "0").repeat(5),
+    // Spread across the first digits, so every short SHA differs.
+    oid: (Math.imul(number * 64 + i + 1, 2_654_435_761) >>> 0)
+      .toString(16)
+      .padStart(8, "0")
+      .repeat(5),
     messageHeadline: i === count - 1 ? "Address review feedback" : `Step ${i + 1} of the change`,
-    committedDate: iso(70 - i * 2),
+    committedDate: new Date(
+      start + ((Math.floor(i / 4) + 0.5) / pushes) * (end - start) + (i % 4) * 120_000,
+    ).toISOString(),
     additions: i === 3 ? null : 40 + i * 7,
     deletions: i === 3 ? null : 5 + i,
-    authors: [i % 4 === 3 ? VIEWER : (find(number).detail.author ?? DEV)],
+    authors: [i % 4 === 3 ? VIEWER : (detail.author ?? DEV)],
   }));
 }
 
@@ -720,43 +811,112 @@ function activity(number: number): PrActivity {
   };
 }
 
+const label = (name: string) => ({
+  name,
+  color: LABELS.find((l) => l.name === name)?.color ?? null,
+});
+
+/** State changes beyond opening, merging and closing, per pull request. */
+function lifecycleOf(number: number): PrTimelineItem[] {
+  const detail = find(number).detail;
+  const author = detail.author;
+  switch (number) {
+    case 412:
+      return [
+        { kind: "labeled", id: "LE_412_1", actor: author, label: label("checkout"), at: iso(69.9) },
+        { kind: "labeled", id: "LE_412_2", actor: author, label: label("large"), at: iso(69.9) },
+        {
+          kind: "force-pushed",
+          id: "HRFP_412",
+          actor: DEV,
+          beforeOid: "0".repeat(40),
+          afterOid: detail.headSha,
+          at: iso(5),
+        },
+      ];
+    case 420:
+      return [
+        // The bot's triage pass: labels on, one taken back off later.
+        {
+          kind: "labeled",
+          id: "LE_420_1",
+          actor: author,
+          label: label("design-system"),
+          at: iso(199.9),
+        },
+        { kind: "labeled", id: "LE_420_2", actor: author, label: label("large"), at: iso(199.9) },
+        { kind: "labeled", id: "LE_420_3", actor: BOT, label: label("catalogue"), at: iso(199.8) },
+        {
+          kind: "labeled",
+          id: "LE_420_4",
+          actor: BOT,
+          label: label("needs-tests"),
+          at: iso(199.8),
+        },
+        { kind: "converted-to-draft", id: "CTD_420", actor: author, at: iso(199.7) },
+        { kind: "ready-for-review", id: "RFR_420", actor: author, at: iso(181) },
+        {
+          kind: "unlabeled",
+          id: "UNLE_420_1",
+          actor: BOT,
+          label: label("needs-tests"),
+          at: iso(180.9),
+        },
+        {
+          kind: "review-requested",
+          id: "RRE_420_1",
+          actor: author,
+          reviewer: VIEWER,
+          at: iso(180.8),
+        },
+        { kind: "review-requested", id: "RRE_420_2", actor: author, reviewer: DEV, at: iso(180.8) },
+        // A rebase that took three tries.
+        ...[0, 1, 2].map((n): PrTimelineItem => ({
+          kind: "force-pushed",
+          id: `HRFP_420_${n}`,
+          actor: author,
+          beforeOid: (0x4200 + n).toString(16).padStart(8, "0").repeat(5),
+          afterOid: (0x4201 + n).toString(16).padStart(8, "0").repeat(5),
+          at: iso(100.4 - n * 0.1),
+        })),
+        { kind: "closed", id: "CE_420", actor: author, at: iso(90.2) },
+        { kind: "reopened", id: "RE_420", actor: author, at: iso(90.1) },
+      ];
+    default:
+      return detail.reviewers.length
+        ? [
+            {
+              kind: "review-requested",
+              id: `RRE_${number}`,
+              actor: author,
+              reviewer: detail.reviewers[0].actor,
+              at: new Date(Date.parse(detail.createdAt) + 60_000).toISOString(),
+            },
+          ]
+        : [];
+  }
+}
+
+/** The history as `pr_timeline` reads it: oldest first, comments and
+ *  reviews among the events (line comments live in their threads). */
 function timeline(number: number, cursor: string | null): PrTimelinePage {
   const detail = find(number).detail;
   const commits = commitsOf(number);
-  const items: PrTimelineItem[] = [
-    { kind: "opened", actor: detail.author, at: detail.createdAt },
-    ...commits.map((c, i): PrTimelineItem => ({
-      kind: "commit",
-      id: `PRC_${number}_${i}`,
-      oid: c.oid,
-      messageHeadline: c.messageHeadline,
-      authors: c.authors,
-      at: c.committedDate,
-    })),
-    ...(detail.reviewers.length
-      ? [
-          {
-            kind: "review-requested",
-            id: `RRE_${number}`,
-            actor: detail.author,
-            reviewer: detail.reviewers[0].actor,
-            at: iso(60),
-          } satisfies PrTimelineItem,
-        ]
-      : []),
-    ...(number === 412
-      ? [
-          {
-            kind: "force-pushed",
-            id: "HRFP_412",
-            actor: DEV,
-            beforeOid: "0".repeat(40),
-            afterOid: detail.headSha,
-            at: iso(5),
-          } satisfies PrTimelineItem,
-        ]
-      : []),
-    ...(detail.state === "merged"
+  const conversation = (remarks.get(number) ?? []).map((c): PrTimelineItem =>
+    c.kind === "review"
+      ? {
+          kind: "review",
+          id: c.id,
+          actor: c.author,
+          state: c.reviewState ?? "COMMENTED",
+          body: c.body,
+          url: c.url,
+          at: c.createdAt,
+        }
+      : { kind: "comment", id: c.id, actor: c.author, body: c.body, url: c.url, at: c.createdAt },
+  );
+  const merged: PrTimelineItem[] =
+    detail.state === "merged"
       ? [
           {
             kind: "merged",
@@ -765,30 +925,38 @@ function timeline(number: number, cursor: string | null): PrTimelinePage {
             commitOid: detail.headSha,
             baseBranch: detail.baseBranch,
             at: detail.mergedAt!,
-          } satisfies PrTimelineItem,
-          {
-            kind: "head-ref-deleted",
-            id: `HRD_${number}`,
-            actor: VIEWER,
-            at: detail.mergedAt!,
-          } satisfies PrTimelineItem,
+          },
+          // GitHub records the close a merge implies beside it.
+          { kind: "closed", id: `CE_${number}`, actor: VIEWER, at: detail.closedAt! },
+          { kind: "head-ref-deleted", id: `HRD_${number}`, actor: VIEWER, at: detail.mergedAt! },
         ]
-      : []),
-    ...(detail.state === "closed"
-      ? [
-          {
-            kind: "closed",
-            id: `CE_${number}`,
-            actor: DEV,
-            at: detail.closedAt!,
-          } satisfies PrTimelineItem,
-        ]
-      : []),
+      : [];
+  const closed: PrTimelineItem[] =
+    detail.state === "closed"
+      ? [{ kind: "closed", id: `CE_${number}`, actor: DEV, at: detail.closedAt! }]
+      : [];
+  const events: PrTimelineItem[] = [
+    ...commits.map((c, i): PrTimelineItem => ({
+      kind: "commit",
+      id: `PRC_${number}_${i}`,
+      oid: c.oid,
+      messageHeadline: c.messageHeadline,
+      authors: c.authors,
+      at: c.committedDate,
+    })),
+    ...conversation,
+    ...lifecycleOf(number),
+    ...merged,
+    ...closed,
+  ].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  const items: PrTimelineItem[] = [
+    { kind: "opened", actor: detail.author, at: detail.createdAt },
+    ...events,
   ];
-  // Pages of 20, so #412's history pages.
+  // Pages of 100, as GitHub's; #420's history runs to several.
   const start = cursor ? Number(cursor) : 0;
-  const page = items.slice(start, start + 20);
-  return { items: page, nextCursor: start + 20 < items.length ? String(start + 20) : null };
+  const page = items.slice(start, start + 100);
+  return { items: page, nextCursor: start + 100 < items.length ? String(start + 100) : null };
 }
 
 // ── files and diffs ─────────────────────────────────────────────────────────

@@ -396,7 +396,9 @@ export type PrTimelineItem =
       reviewer: PrActor | null;
       at: string;
     }
-  | { kind: "head-ref-deleted"; id: string; actor: PrActor | null; at: string };
+  | { kind: "head-ref-deleted"; id: string; actor: PrActor | null; at: string }
+  | { kind: "labeled"; id: string; actor: PrActor | null; label: PrLabel; at: string }
+  | { kind: "unlabeled"; id: string; actor: PrActor | null; label: PrLabel; at: string };
 
 export interface PrTimelinePage {
   items: PrTimelineItem[];

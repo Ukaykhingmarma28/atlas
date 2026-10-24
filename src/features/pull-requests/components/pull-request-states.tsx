@@ -176,13 +176,15 @@ export function PullRequestUnavailableState({
 export function ActivityUnavailableState({
   error,
   onRetry,
+  title = "Could not load the conversation",
 }: {
   error: PrError;
   onRetry: () => void;
+  title?: string;
 }) {
   return (
     <div className="flex flex-col items-center gap-2 py-3 text-center">
-      <p className="text-sm font-medium text-foreground">Could not load the conversation</p>
+      <p className="text-sm font-medium text-foreground">{title}</p>
       <p className="max-w-md text-xs text-muted-foreground">{prErrorMessage(error)}</p>
       <Button size="sm" variant="outline" onClick={onRetry}>
         <RefreshCw aria-hidden className="size-3.5" />

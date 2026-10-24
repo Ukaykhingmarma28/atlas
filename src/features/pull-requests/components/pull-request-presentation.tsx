@@ -143,6 +143,10 @@ export function reviewOutcomeLabel(outcome: ReviewOutcome, stale = false): strin
   return stale ? `${REVIEW_OUTCOME[outcome].label} earlier changes` : REVIEW_OUTCOME[outcome].label;
 }
 
+export function reviewOutcomeToneClassName(outcome: ReviewOutcome): string {
+  return REVIEW_OUTCOME[outcome].toneClassName;
+}
+
 export function reviewOutcomeRingClassName(outcome: ReviewOutcome, stale = false): string {
   return stale ? REVIEW_OUTCOME[outcome].staleRingClassName : REVIEW_OUTCOME[outcome].ringClassName;
 }

@@ -61,6 +61,7 @@ import type {
   PrReviewCommentDraft,
   PrReviewerRef,
   PrReviewVerdict,
+  PrTimelineItem,
   PrTimelinePage,
 } from "./pull-requests-types";
 
@@ -92,6 +93,8 @@ export const pullRequestKeys = {
     ["pull-requests", cwd, "pull", number, "activity"] as const,
   timeline: (cwd: string, number: number, cursor: string | null) =>
     ["pull-requests", cwd, "pull", number, "timeline", cursor] as const,
+  timelineHistory: (cwd: string, number: number) =>
+    ["pull-requests", cwd, "pull", number, "timeline-history"] as const,
   commits: (cwd: string, number: number, cursor: string | null) =>
     ["pull-requests", cwd, "pull", number, "commits", cursor] as const,
   diff: (cwd: string, number: number, cursor: string | null, commit: string | null) =>
@@ -176,6 +179,48 @@ export function usePrTimeline(
     queryKey: pullRequestKeys.timeline(cwd ?? "", number ?? 0, cursor),
     queryFn: () => prTimeline(cwd!, number!, cursor),
     enabled: !!cwd && !!number,
+    staleTime: STALE.activity,
+  });
+}
+
+/** The most history pages the Timeline reads: 50 pages of 100 events. A
+ *  pull request past that is cut off at its oldest 5,000, and says so. */
+export const TIMELINE_PAGE_LIMIT = 50;
+
+export interface PrTimelineHistory {
+  items: PrTimelineItem[];
+  /** More history than `TIMELINE_PAGE_LIMIT` pages hold. */
+  truncated: boolean;
+}
+
+/** Every page of the history, oldest first, followed in one read: the tab
+ *  orders and groups the whole of it, so it has to have the whole of it. */
+export async function readTimelineHistory(
+  cwd: string,
+  number: number,
+  read: typeof prTimeline = prTimeline,
+): Promise<PrTimelineHistory> {
+  const items: PrTimelineItem[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < TIMELINE_PAGE_LIMIT; page++) {
+    const next: PrTimelinePage = await read(cwd, number, cursor);
+    items.push(...next.items);
+    cursor = next.nextCursor;
+    if (cursor === null) return { items, truncated: false };
+  }
+  return { items, truncated: true };
+}
+
+export function usePrTimelineHistory(
+  cwd: string | null,
+  number: number | null,
+  enabled = true,
+): Result<PrTimelineHistory> {
+  return useQuery<PrTimelineHistory, PrError>({
+    ...COMMON,
+    queryKey: pullRequestKeys.timelineHistory(cwd ?? "", number ?? 0),
+    queryFn: () => readTimelineHistory(cwd!, number!),
+    enabled: enabled && !!cwd && !!number,
     staleTime: STALE.activity,
   });
 }
