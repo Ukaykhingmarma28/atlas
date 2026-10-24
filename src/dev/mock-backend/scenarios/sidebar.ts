@@ -16,6 +16,7 @@ import type { Scenario } from "../types";
 import { MOCK_ORG_ID, MOCK_PROJECT, appState } from "../project";
 import { adoptSession } from "../fake-agent";
 import { sessionLifecycleHandlers, withDerivedLifecycle } from "../session-lifecycle";
+import { fixtureLink, sessionPullRequestHandlers } from "../session-pull-requests";
 
 const PROJECT_NAMES = [
   "acme-app",
@@ -153,6 +154,15 @@ function generate(): ThreadRow[] {
   // Running in another process (a terminal): the list shows it working.
   at(4).liveElsewhere = true;
   at(14).liveElsewhere = true;
+  // Linked pull requests: three on the top row (opened from it, found on
+  // its branch, linked by hand), one merged and one draft further down.
+  at(0).pullRequests = [
+    fixtureLink(412, "created", iso(now - 3 * HOUR)),
+    fixtureLink(405, "detected", iso(now - 2 * HOUR)),
+    fixtureLink(398, "manual", iso(now - HOUR)),
+  ];
+  at(3).pullRequests = [fixtureLink(398, "detected", iso(now - DAY))];
+  at(5).pullRequests = [fixtureLink(401, "agent", iso(now - 4 * HOUR))];
   // A long title, to see truncation.
   at(7).title =
     "Investigate why the nightly ingest backfill double-counts refunds when a partial capture is retried across midnight UTC";
@@ -239,6 +249,13 @@ export const sidebar: Scenario = {
       return null;
     },
     ...sessionLifecycleHandlers({
+      get: () => threads,
+      set: (rows) => {
+        threads = rows;
+      },
+      changed: threadsChanged,
+    }),
+    ...sessionPullRequestHandlers({
       get: () => threads,
       set: (rows) => {
         threads = rows;

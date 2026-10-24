@@ -74,6 +74,7 @@ import type { MockHandlers, MockResponses, TypedHandlers } from "../types";
 import type { AgentKey, MemoryContent } from "./northwind-content-types";
 import { adoptSession } from "../fake-agent";
 import { sessionLifecycleHandlers } from "../session-lifecycle";
+import { sessionPullRequestHandlers } from "../session-pull-requests";
 import { RESTING_LIFECYCLE } from "@/features/chat/lib/session-lifecycle";
 import { NORTHWIND_FILES } from "../fixtures/northwind-repo";
 import { applyAgentConfig } from "../fixtures/skills";
@@ -1723,6 +1724,13 @@ export const northwindMiscRawCommands: MockHandlers = {
     return null;
   },
   ...sessionLifecycleHandlers({
+    get: () => threads,
+    set: (rows) => {
+      threads = rows;
+    },
+    changed: threadsChanged,
+  }),
+  ...sessionPullRequestHandlers({
     get: () => threads,
     set: (rows) => {
       threads = rows;

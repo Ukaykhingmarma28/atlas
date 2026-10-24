@@ -7,7 +7,11 @@
 //  - `pull-request-merged` — number 398; `pull-request-draft` — number 405;
 //    `pull-request-conflict` — number 401, conflicting with a failing check;
 //  - `pull-request-not-installed`, `-signed-out`, `-rate-limited`, `-offline`
-//    — every read fails the way `gh` would, for the unavailable states.
+//    — every read fails the way `gh` would, for the unavailable states;
+//  - `pull-request-list` — the repository's list tab over about 150 pull
+//    requests across Authored, Review requested and Others, every state, paged;
+//    the sidebar's top session has three linked (created, detected, manual);
+//    `pull-request-list-signed-out` is the list with `gh` signed out.
 //
 // Writes are real for the page's life (see `fixtures/pull-requests.ts`). The
 // agent actions work too: Fix and Explain open a session with the task in its
@@ -15,7 +19,11 @@
 
 import type { PrError } from "@/features/pull-requests/lib/pull-requests-types";
 import type { Scenario } from "../types";
-import { answerGuidePrompt, failPullRequestReads } from "../fixtures/pull-requests";
+import {
+  answerGuidePrompt,
+  crowdPullRequestList,
+  failPullRequestReads,
+} from "../fixtures/pull-requests";
 import { setPromptHandler } from "../fake-agent";
 import { MOCK_PROJECT } from "../project";
 
@@ -95,7 +103,42 @@ export const pullRequestOffline = pullRequestScenario(
   { kind: "network" },
 );
 
+function pullRequestListScenario(
+  name: string,
+  description: string,
+  failure: PrError | null = null,
+): Scenario {
+  return {
+    name,
+    description,
+    init: () => {
+      crowdPullRequestList(true);
+      failPullRequestReads(failure);
+    },
+    setup: async () => {
+      const { openPullRequestListTab } =
+        await import("@/features/pull-requests/lib/open-pull-request-list-tab");
+      openPullRequestListTab({ repoPath: MOCK_PROJECT.path, name: MOCK_PROJECT.name });
+    },
+    actions: {
+      recover: () => failPullRequestReads(null),
+    },
+  };
+}
+
+export const pullRequestList = pullRequestListScenario(
+  "pull-request-list",
+  "The repository's pull request list: ~150 across every group and state, paged and virtualized.",
+);
+export const pullRequestListSignedOut = pullRequestListScenario(
+  "pull-request-list-signed-out",
+  "The pull request list with gh signed out.",
+  { kind: "notAuthenticated" },
+);
+
 export const pullRequestScenarios: Scenario[] = [
+  pullRequestList,
+  pullRequestListSignedOut,
   pullRequest,
   pullRequestReview,
   pullRequestMerged,
