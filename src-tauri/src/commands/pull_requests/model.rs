@@ -500,6 +500,9 @@ pub struct PrListQuery {
     /// `only` or `hide` drafts.
     pub draft: Option<String>,
     pub labels: Option<Vec<String>>,
+    /// Only pull requests whose head is this branch (the session context
+    /// overlay's "this branch's pull requests").
+    pub head: Option<String>,
     pub cursor: Option<String>,
     /// Rows per page, 1–100.
     pub limit: Option<u32>,

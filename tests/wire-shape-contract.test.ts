@@ -297,6 +297,10 @@ describe("thread history ↔ agent_host wire shapes (#7)", () => {
     expect(tsInterfaceProps(ts, "ThreadRow")).toContain("model");
   });
 
+  it("ThreadRow carries forkedFromSessionId, the only input to Lineage's parent and branches", () => {
+    expect(tsInterfaceProps(ts, "ThreadRow")).toContain("forkedFromSessionId");
+  });
+
   it("the threads_* history commands are returned as those structs", () => {
     expect(commands).toMatch(/fn threads_history\([\s\S]*?\) -> Result<Vec<[\w:]*ThreadRow>/);
     expect(commands).toMatch(

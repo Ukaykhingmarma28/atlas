@@ -37,6 +37,10 @@ import type { ProjectSettingsInfo } from "@/features/settings/lib/project-settin
 import type { ModelStatus, SelectResult } from "@/features/settings/lib/models-api";
 import type { UpdateStatus } from "@/features/updater/lib/updater-api";
 import type { NativeModelsRefresh } from "@/types/agents";
+import type {
+  ProjectScript,
+  SessionEnvironment,
+} from "@/features/session-context/lib/session-context-api";
 import type { MockHandlers } from "../types";
 import { abs, MOCK_PROJECT, OTHER_PROJECTS } from "../project";
 import { adoptSession } from "../fake-agent";
@@ -89,6 +93,7 @@ const THREADS: ThreadRow[] = [
       },
     ],
     model: "Claude Sonnet 4.5",
+    forkedFromSessionId: null,
     // One of the fake repo's own branches (`fixtures/git.ts`).
     branch: "feature/auth-v2",
   },
@@ -106,6 +111,7 @@ const THREADS: ThreadRow[] = [
     liveElsewhere: false,
     attachedProjects: [],
     model: null,
+    forkedFromSessionId: null,
     branch: "main",
   },
   {
@@ -122,6 +128,7 @@ const THREADS: ThreadRow[] = [
     liveElsewhere: false,
     attachedProjects: [],
     model: null,
+    forkedFromSessionId: null,
     branch: "main",
   },
   {
@@ -140,6 +147,7 @@ const THREADS: ThreadRow[] = [
     liveElsewhere: false,
     attachedProjects: [],
     model: null,
+    forkedFromSessionId: null,
     branch: "main",
   },
   {
@@ -158,6 +166,7 @@ const THREADS: ThreadRow[] = [
     liveElsewhere: false,
     attachedProjects: [],
     model: null,
+    forkedFromSessionId: null,
     // Detached HEAD when it ran, so Atlas never learned a branch.
     branch: null,
   },
@@ -174,6 +183,7 @@ const THREADS: ThreadRow[] = [
     liveElsewhere: false,
     attachedProjects: [],
     model: null,
+    forkedFromSessionId: null,
     // A branch nobody would size a column for. The card trims it rather than
     // pushing the agent's mark off its own edge — the only row here that
     // exercises that, and the reason it is this long.
@@ -195,6 +205,7 @@ const THREADS: ThreadRow[] = [
     liveElsewhere: false,
     attachedProjects: [],
     model: null,
+    forkedFromSessionId: null,
     branch: "feature/auth-v2",
   },
   {
@@ -213,6 +224,7 @@ const THREADS: ThreadRow[] = [
     liveElsewhere: false,
     attachedProjects: [],
     model: null,
+    forkedFromSessionId: null,
     branch: null,
   },
   {
@@ -230,6 +242,7 @@ const THREADS: ThreadRow[] = [
     liveElsewhere: false,
     attachedProjects: [],
     model: null,
+    forkedFromSessionId: null,
     branch: "main",
   },
   {
@@ -248,6 +261,7 @@ const THREADS: ThreadRow[] = [
     liveElsewhere: false,
     attachedProjects: [],
     model: null,
+    forkedFromSessionId: null,
     branch: "fix/checkpoint-blobs",
   },
   {
@@ -265,6 +279,7 @@ const THREADS: ThreadRow[] = [
     liveElsewhere: false,
     attachedProjects: [],
     model: null,
+    forkedFromSessionId: null,
     branch: "main",
   },
 ];
@@ -471,9 +486,48 @@ function simulateDownload(model: ModelStatus): void {
   }
 }
 
+// ── project scripts ───────────────────────────────────────────────────────
+
+/** Each project's `[[scripts]]`, as `.atlas/config.toml` would hold them. The
+ *  fake project starts with two, so the scripts row shows its split. */
+const projectScripts = new Map<string, ProjectScript[]>([
+  [
+    MOCK_PROJECT.path,
+    [
+      { id: "dev", name: "Dev server", command: "bun run dev", icon: "play" },
+      { id: "test", name: "Test", command: "bun run test", icon: "test" },
+    ],
+  ],
+]);
+
 // ── handlers ──────────────────────────────────────────────────────────────
 
 export const miscHandlers: MockHandlers = {
+  // ── session context (`commands/session_context.rs`, `project_scripts.rs`) ──
+  session_environment: (): SessionEnvironment => ({ name: "m4-pro", kind: "local" }),
+  project_scripts_list: ({ projectPath }): ProjectScript[] =>
+    projectScripts.get(String(projectPath)) ?? [],
+  // As in Rust: trimmed, a blank id derived from the name, ids made unique.
+  project_scripts_save: ({ projectPath, scripts }): ProjectScript[] => {
+    const seen = new Set<string>();
+    const saved = (scripts as ProjectScript[]).map((script) => {
+      const base =
+        script.id.trim() ||
+        script.name
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "") ||
+        "script";
+      let id = base;
+      for (let n = 2; seen.has(id); n++) id = `${base}-${n}`;
+      seen.add(id);
+      return { ...script, id, name: script.name.trim(), command: script.command.trim() };
+    });
+    projectScripts.set(String(projectPath), saved);
+    return saved;
+  },
+
   // ── chat history ────────────────────────────────────────────────────────
   // As in Rust: every row (the composer's live-elsewhere feed relies on that).
   threads_history: (): ThreadRow[] => threads,

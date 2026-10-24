@@ -5,6 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const invoke = vi.hoisted(() => vi.fn(async (_cmd: string, _args?: unknown) => null as unknown));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (c: string, a?: unknown) => invoke(c, a) }));
@@ -37,12 +38,17 @@ const dot = () => document.querySelector("[data-capture-dot]");
 beforeEach(() => {
   resetProjectFactsCache();
   useProjectStore.setState({ activeProjectId: null } as never);
-  useSessionContextStore.setState({ openFor: null, view: "main" });
+  useSessionContextStore.setState({ openFor: null, dockable: {}, dockOpen: {}, view: "main" });
 });
 afterEach(() => cleanup());
 
-async function mount() {
-  render(<SessionContextButton projectPath={PATH} />);
+async function mount(tabId: string | null = null) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <SessionContextButton tabId={tabId} projectPath={PATH} />
+    </QueryClientProvider>,
+  );
   // Let the binding and health reads land.
   await act(async () => {
     await new Promise((r) => setTimeout(r, 0));
@@ -78,5 +84,20 @@ describe("SessionContextButton", () => {
     expect(useSessionContextStore.getState().openFor).not.toBeNull();
     expect(await screen.findByText("Capture")).toBeTruthy();
     expect(screen.getByText("Recording · Local")).toBeTruthy();
+  });
+
+  it("is a toggle for the docked card where the chat panel can dock it", async () => {
+    answer(false);
+    useSessionContextStore.setState({ dockable: { "tab-1": true } });
+    await mount("tab-1");
+    const button = screen.getByRole("button", { name: /session context/i });
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    await act(async () => fireEvent.click(button));
+    expect(useSessionContextStore.getState().dockOpen["tab-1"]).toBe(true);
+    // The card is the panel's, not a popover: nothing opened here.
+    expect(useSessionContextStore.getState().openFor).toBeNull();
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => fireEvent.click(button));
+    expect(useSessionContextStore.getState().dockOpen["tab-1"]).toBe(false);
   });
 });

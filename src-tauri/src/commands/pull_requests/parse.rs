@@ -1370,6 +1370,14 @@ pub(crate) fn search_query(repository: &str, viewer: &str, query: &PrListQuery) 
             parts.push(format!("label:{}", qualifier_value(label)));
         }
     }
+    if let Some(head) = query
+        .head
+        .as_deref()
+        .map(str::trim)
+        .filter(|h| !h.is_empty())
+    {
+        parts.push(format!("head:{}", qualifier_value(head)));
+    }
     parts.push("sort:updated-desc".into());
     parts.push(format!("repo:{owner}/{name}"));
     Some(parts.join(" "))

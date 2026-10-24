@@ -1,63 +1,70 @@
-// Where the session runs — the Workspace group.
+// Where the session runs, how to open it, and the project's scripts — the
+// Workspace group.
 //
-// An Atlas session always runs on this machine, in the project folder, so the
-// first row states that rather than offering a choice of machine or run mode.
-// The second row's split opens the project in the editor the user chose in
-// Settings ▸ Preferred editor; with "Automatic" it stays the file manager, the
-// same rule as for files outside the project. Its menu lists every installed
-// editor whatever the setting, then the file manager, a terminal and the
-// clipboard.
+// First row: the environment. A machine glyph and a folder glyph, then the
+// machine's name (`m4-pro`); the folder's tooltip is the project path. Every
+// Atlas session runs on this machine, so it states that rather than offering
+// a choice of machine or run mode.
+//
+// Second row: "Open in <editor>" as a split. The main action opens the
+// project in the preferred editor (Settings ▸ Preferred editor; "Automatic"
+// is the first one detected), the ▾ lists every other detected editor, then
+// the file manager, a terminal and the clipboard. With no editor detected
+// the main action is the file manager.
+//
+// Third: the project's scripts (`ProjectScriptsControl`).
 
-import {
-  Copy,
-  Folder,
-  FolderOpen,
-  Laptop,
-  SquareArrowOutUpRight,
-  SquareTerminal,
-} from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Copy, Folder, FolderOpen, Laptop, SquareTerminal } from "lucide-react";
 
-import { useProjectStore } from "@/features/projects/stores/project-store";
-import { useSettingsStore } from "@/features/settings/stores/settings-store";
+import { EditorIcon } from "@/features/external-editor/components/editor-icons";
 import { OpenInEditorDropdownItems } from "@/features/external-editor/components/open-in-editor-menu";
+import { SYSTEM_EDITOR_ID } from "@/features/external-editor/lib/external-editor-api";
 import {
-  editorForOutsideFiles,
   openInEditor,
   openInLabel,
   usePreferredEditor,
 } from "@/features/external-editor/lib/preferred-editor";
+import { useProjectStore } from "@/features/projects/stores/project-store";
 import { isMac, isWindows } from "@/lib/platform";
 import { DropdownMenuItem } from "@/ui/dropdown-menu";
+import { Hint } from "@/ui/tooltip";
 
+import { sessionEnvironment } from "../lib/session-context-api";
 import { copyProjectPath, openProjectInTerminal, revealProject } from "../lib/workspace-actions";
-import {
-  ContextRow,
-  ContextSection,
-  ContextSplitRow,
-  RowIcon,
-  RowLabel,
-  RowMeta,
-} from "./context-rows";
+import { ContextRow, ContextSection, ContextSplitRow, RowIcon, RowLabel } from "./context-rows";
+import { ProjectScriptsControl } from "./project-scripts-control";
 
 const FILE_MANAGER = isMac ? "Finder" : isWindows ? "Explorer" : "file manager";
+
+function useSessionEnvironment() {
+  return useQuery({
+    queryKey: ["session-context", "environment"],
+    queryFn: sessionEnvironment,
+    staleTime: Number.POSITIVE_INFINITY,
+  }).data;
+}
 
 export function WorkspaceSection({ projectPath }: { projectPath: string }) {
   const name = useProjectStore((s) => s.projects.find((p) => p.path === projectPath)?.name ?? null);
   const folder = name ?? projectPath.split(/[\\/]/).pop() ?? projectPath;
-  const { editors } = usePreferredEditor();
-  const setting = useSettingsStore((s) => s.settings.preferredEditor);
-  // Only an editor the user named takes the row.
-  const editor = editorForOutsideFiles(setting, editors);
+  const environment = useSessionEnvironment();
+  const { preferred } = usePreferredEditor();
+  // The system default is the file manager's wording for a folder.
+  const editor = preferred && preferred.id !== SYSTEM_EDITOR_ID ? preferred : null;
 
   return (
     <ContextSection title="Workspace" showHeading={false} separated={false}>
-      <ContextRow title={projectPath}>
+      <ContextRow title={`${environment?.name || "This device"} · ${projectPath}`}>
         <span className="flex shrink-0 items-center gap-1">
           <RowIcon icon={Laptop} />
-          <RowIcon icon={Folder} />
+          <Hint label={projectPath}>
+            <span className="inline-flex" tabIndex={0} aria-label={`Project folder ${projectPath}`}>
+              <RowIcon icon={Folder} />
+            </span>
+          </Hint>
         </span>
-        <RowLabel>{folder}</RowLabel>
-        <RowMeta>This device</RowMeta>
+        <RowLabel>{environment?.name || folder}</RowLabel>
       </ContextRow>
       <ContextSplitRow
         onClick={() =>
@@ -82,9 +89,10 @@ export function WorkspaceSection({ projectPath }: { projectPath: string }) {
           </>
         }
       >
-        <RowIcon icon={editor ? SquareArrowOutUpRight : FolderOpen} />
+        {editor ? <EditorIcon id={editor.id} /> : <RowIcon icon={FolderOpen} />}
         <RowLabel>{editor ? openInLabel(editor) : `Open in ${FILE_MANAGER}`}</RowLabel>
       </ContextSplitRow>
+      <ProjectScriptsControl projectPath={projectPath} />
     </ContextSection>
   );
 }

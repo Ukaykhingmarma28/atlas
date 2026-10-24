@@ -2005,6 +2005,13 @@ impl AgentHost {
             .fork_thread(&session_id)
             .await
             .map_err(|e| HostError::classified(e.to_string()))?;
+        // Lineage: the branch remembers where it came from, so the session
+        // context overlay can show the parent and the forks.
+        if let Some(history) = self.history() {
+            history
+                .store()
+                .record_session_fork(&acp::SessionId::new(forked.as_str()), &session_id);
+        }
         Ok(Some(forked))
     }
 
@@ -2500,6 +2507,17 @@ impl AgentHost {
             modified,
             activity: self.atlas_activity(),
             now: Utc::now(),
+            forks: self
+                .history()
+                .map(|history| {
+                    history
+                        .store()
+                        .session_forks()
+                        .into_iter()
+                        .map(|(child, parent)| (child.to_string(), parent.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default(),
         }
     }
 
@@ -3638,6 +3656,11 @@ pub struct ThreadRow {
     /// order they were attached. Everything a surface needs to show them, to
     /// match a project filter on them, or to split changes by them.
     pub attached_projects: Vec<AttachedProjectWire>,
+    /// The session this one was branched from ("Branch from here"), as the
+    /// parent's agent session id. `None` for a session that was not forked
+    /// in Atlas. The session context overlay's Lineage reads it both ways:
+    /// this row's parent, and the rows that name this one.
+    pub forked_from_session_id: Option<String>,
 }
 
 /// One project attached to a session, as every surface reads it.
@@ -3782,6 +3805,9 @@ struct LiveContext<'a> {
     modified: &'a HashMap<String, DateTime<Utc>>,
     activity: HashMap<String, AtlasActivity>,
     now: DateTime<Utc>,
+    /// Branched sessions, child -> parent session id (`session_forks`), for
+    /// [`ThreadRow::forked_from_session_id`].
+    forks: HashMap<String, String>,
 }
 
 /// What Atlas's own turns have been doing in one session.
@@ -3926,6 +3952,9 @@ fn thread_row(thread: &ThreadMetadata, live: &LiveContext<'_>) -> ThreadRow {
             live.now,
         )
     });
+    let forked_from_session_id = session_id
+        .as_deref()
+        .and_then(|id| live.forks.get(id).cloned());
     ThreadRow {
         thread_id: thread.thread_id.to_key_string(),
         session_id,
@@ -3953,6 +3982,7 @@ fn thread_row(thread: &ThreadMetadata, live: &LiveContext<'_>) -> ThreadRow {
             .iter()
             .map(AttachedProjectWire::from)
             .collect(),
+        forked_from_session_id,
     }
 }
 
@@ -5640,6 +5670,7 @@ mod tests {
             modified: &EMPTY,
             activity: HashMap::new(),
             now: Utc::now(),
+            forks: HashMap::new(),
         }
     }
 

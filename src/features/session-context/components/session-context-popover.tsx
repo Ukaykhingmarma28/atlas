@@ -1,13 +1,16 @@
 // The session context overlay's body.
 //
-// Reading order: Workspace (where it runs, how to open it), Version control
+// Reading order: Workspace (where it runs, how to open it), then the
+// session's attached projects once that section lands (`ThreadRow.
+// attachedProjects`; its place is marked in `MainView`), Version control
 // (branch, PR, the git action, changes), a Session group (agent and model,
 // usage, capture — a session's context with nowhere better to live), then
-// Lineage (the agents it delegated to).
+// Lineage (the session it branched from, its branches, the agents it
+// delegated to).
 //
-// Not done yet: docking the card inline beside the chat when there is room,
-// and dropping rows by measured density. This is always the popover form. Rows
-// the backend cannot answer yet are left out rather than stubbed.
+// The same body fills both forms of the card: the popover the header button
+// opens, and the docked panel beside a wide chat (`session-context-dock.tsx`).
+// Rows the backend cannot answer are left out rather than stubbed.
 
 import { ChevronLeft } from "lucide-react";
 
@@ -65,9 +68,11 @@ function MainView({ tabId, projectPath, capture }: SessionContextBodyProps) {
   return (
     <div className="flex flex-col">
       {projectPath && <WorkspaceSection projectPath={projectPath} />}
+      {/* The attached projects section goes here, between where the session
+          runs and its version control. */}
       {projectPath && <VersionControlSection tabId={tabId} projectPath={projectPath} />}
       <SessionSection tabId={tabId} capture={capture} projectPath={projectPath} />
-      {isChat && tabId && <LineageSection tabId={tabId} />}
+      {isChat && tabId && <LineageSection tabId={tabId} projectPath={projectPath} />}
     </div>
   );
 }

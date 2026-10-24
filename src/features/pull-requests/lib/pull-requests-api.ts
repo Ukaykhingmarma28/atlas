@@ -13,6 +13,9 @@ import type {
   PrActionInput,
   PrActivity,
   PrCommitsPage,
+  PrCreateDraft,
+  PrCreated,
+  PrCreateInput,
   PrDetail,
   PrDiffFileContents,
   PrDiffResult,
@@ -209,6 +212,20 @@ export function prSetLabels(
   applied: boolean,
 ): Promise<void> {
   return gated(() => invoke<void>("pr_set_labels", { path, number, labels, applied }));
+}
+
+/** A title and body to open a pull request for the current branch with.
+ *  Not gated: it reads the local repository only, never GitHub. */
+export function prCreateDraft(path: string): Promise<PrCreateDraft> {
+  return invoke<PrCreateDraft>("pr_create_draft", { path }).catch((raw: unknown) => {
+    throw classifyPrError(raw);
+  });
+}
+
+/** Open a pull request for the current branch (`gh pr create`). The branch
+ *  must already be on the remote. */
+export function prCreate(path: string, input: PrCreateInput): Promise<PrCreated> {
+  return gated(() => invoke<PrCreated>("pr_create", { path, input }));
 }
 
 // ── images ──────────────────────────────────────────────────────────────

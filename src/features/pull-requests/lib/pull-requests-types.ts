@@ -247,6 +247,8 @@ export interface PrListQuery {
   /** `"only"` drafts, `"hide"` drafts, or anything else for both. */
   draft?: string | null;
   labels?: string[] | null;
+  /** Only pull requests whose head is this branch. */
+  head?: string | null;
   cursor?: string | null;
   /** Rows per page, at most 100. */
   limit?: number | null;
@@ -496,4 +498,33 @@ export interface PrActionInput {
   action: PrAction;
   mergeMethod?: PrMergeMethod | null;
   updateMethod?: PrUpdateMethod | null;
+}
+
+// ── opening one (`commands/pull_requests/create.rs`) ────────────────────
+
+/** What the Create PR dialog confirmed. */
+export interface PrCreateInput {
+  title: string;
+  body: string;
+  /** The branch to merge into; `null` lets the host use its default. */
+  base: string | null;
+  draft: boolean;
+}
+
+/** The pull request `gh pr create` opened. */
+export interface PrCreated {
+  number: number;
+  url: string;
+}
+
+/** A starting title and body for the current branch, as `--fill` would write. */
+export interface PrCreateDraft {
+  /** The current branch; `null` on a detached HEAD. */
+  headBranch: string | null;
+  /** The remote's default branch, when the remote names one. */
+  baseBranch: string | null;
+  title: string;
+  body: string;
+  /** Commits on the branch that the base does not have. */
+  commitCount: number;
 }

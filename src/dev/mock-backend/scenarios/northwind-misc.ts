@@ -505,6 +505,7 @@ function seedThreads(): ThreadRow[] {
       liveElsewhere: false,
       attachedProjects: [],
       model: "Claude Sonnet 4.5",
+      forkedFromSessionId: null,
     }));
 }
 

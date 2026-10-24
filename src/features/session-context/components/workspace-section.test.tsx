@@ -1,10 +1,12 @@
 // @vitest-environment happy-dom
 //
-// The project row opens an editor only when the user chose one; with
-// "Automatic" it stays the file manager. Its menu lists every installed
-// editor either way, closed off by a separator.
+// The project row opens the preferred editor — the user's choice, or with
+// "Automatic" the first one detected — and the file manager only when no
+// editor is installed. Its menu lists every installed editor either way,
+// closed off by a separator.
 
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.hoisted(() => vi.fn(async (_cmd: string, _args?: unknown) => null as unknown));
@@ -48,12 +50,32 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 async function mount() {
-  render(<WorkspaceSection projectPath="/work/acme" />);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <WorkspaceSection projectPath="/work/acme" />
+    </QueryClientProvider>,
+  );
   await settle();
 }
 
 describe("WorkspaceSection", () => {
-  it("stays the file manager with Automatic", async () => {
+  it("opens the first detected editor with Automatic", async () => {
+    await mount();
+    fireEvent.click(screen.getByText("Open in Cursor"));
+    await settle();
+    expect(invoke).toHaveBeenCalledWith("external_editor_open", {
+      editor: "cursor",
+      path: "/work/acme",
+      line: null,
+      column: null,
+    });
+  });
+
+  it("falls back to the file manager when no editor is detected", async () => {
+    invoke.mockImplementation(async (cmd: string) =>
+      cmd === "external_editors_detect" ? [] : null,
+    );
     await mount();
     fireEvent.click(screen.getByText(/^Open in (Finder|Explorer|file manager)$/));
     await settle();

@@ -1,11 +1,20 @@
-// The overlay's trigger — the main pane header's "≡" button, which opens the
-// session context card below-end.
+// The overlay's trigger — the main pane header's "≡" button.
+//
+// Two forms, by what the tab's chat panel reports (`dockable`): where the
+// panel has room it docks the card inline beside the transcript, and this is
+// a toggle for it (`aria-pressed`); anywhere else it opens the card as a
+// popover below-end.
 //
 // While capture is recording the button carries a STEADY green dot, never a
 // pulse: capture is on for hours, and a light that moves pulls the eye every
 // time it does (the same call `CaptureDot` makes for the titlebar). A fault
 // keeps its own colour — a stopped recorder painted green would be a lie.
+//
+// It also mounts the two dialogs the overlay opens (a project script's
+// editor, Create PR). There is one trigger, in the main column, and the
+// dialogs have to outlive the popover, which closes as focus moves into them.
 
+import type { ReactNode } from "react";
 import { Popover } from "@base-ui/react/popover";
 import { List } from "lucide-react";
 
@@ -16,8 +25,10 @@ import { cn } from "@/lib/utils";
 import { HintItem } from "@/ui/hint-group";
 import { IconButton } from "@/ui/icon-button";
 
-import { useCaptureState } from "../lib/use-capture-state";
+import { useCaptureState, type CaptureState } from "../lib/use-capture-state";
 import { NO_TAB_KEY, useSessionContextStore } from "../stores/session-context-store";
+import { CreatePrDialogHost } from "./create-pr-dialog";
+import { ProjectScriptDialogHost } from "./project-script-dialog";
 import { SessionContextBody } from "./session-context-popover";
 
 export interface SessionContextButtonProps {
@@ -41,9 +52,7 @@ export function SessionContextButton({
   const path = projectPath ?? (tabId ? projectPathForTab(tabId) : null) ?? activePath;
 
   const key = tabId ?? NO_TAB_KEY;
-  const open = useSessionContextStore((s) => s.openFor === key);
-  const view = useSessionContextStore.use.view();
-  const { setOpen } = useSessionContextStore.use.actions();
+  const dockable = useSessionContextStore((s) => !!s.dockable[key]);
   const capture = useCaptureState(path);
 
   const label = capture.recording
@@ -51,23 +60,83 @@ export function SessionContextButton({
     : "Session context";
 
   return (
-    <Popover.Root open={open} onOpenChange={(next) => setOpen(key, next)}>
-      <span className={cn("relative inline-flex", className)}>
+    <>
+      {dockable ? (
+        <DockToggle dockKey={key} label={label} capture={capture} className={className} />
+      ) : (
+        <PopoverTrigger
+          popoverKey={key}
+          tabId={tabId}
+          path={path}
+          label={label}
+          capture={capture}
+          className={className}
+        />
+      )}
+      <ProjectScriptDialogHost />
+      <CreatePrDialogHost />
+    </>
+  );
+}
+
+/** The docked form: the button shows or hides the card in the chat panel. */
+function DockToggle({
+  dockKey,
+  label,
+  capture,
+  className,
+}: {
+  dockKey: string;
+  label: string;
+  capture: CaptureState;
+  className?: string;
+}) {
+  const open = useSessionContextStore((s) => !!s.dockOpen[dockKey]);
+  const { toggle } = useSessionContextStore.use.actions();
+  return (
+    <TriggerFrame capture={capture} className={className}>
+      <HintItem label={label}>
+        <IconButton
+          icon={List}
+          label={label}
+          size="sm"
+          iconSize="md"
+          aria-pressed={open}
+          onClick={() => toggle(dockKey)}
+        />
+      </HintItem>
+    </TriggerFrame>
+  );
+}
+
+/** The popover form, for a panel without room to dock the card. */
+function PopoverTrigger({
+  popoverKey,
+  tabId,
+  path,
+  label,
+  capture,
+  className,
+}: {
+  popoverKey: string;
+  tabId: string | null;
+  path: string | null;
+  label: string;
+  capture: CaptureState;
+  className?: string;
+}) {
+  const open = useSessionContextStore((s) => s.openFor === popoverKey);
+  const view = useSessionContextStore.use.view();
+  const { setOpen } = useSessionContextStore.use.actions();
+  return (
+    <Popover.Root open={open} onOpenChange={(next) => setOpen(popoverKey, next)}>
+      <TriggerFrame capture={capture} className={className}>
         <HintItem label={label}>
           <Popover.Trigger
             render={<IconButton icon={List} label={label} size="sm" iconSize="md" />}
           />
         </HintItem>
-        {capture.recording && (
-          <span
-            data-capture-dot
-            className="pointer-events-none absolute -top-0.5 -right-0.5"
-            aria-hidden
-          >
-            <CaptureDot tone={capture.tone === "idle" ? "success" : capture.tone} />
-          </span>
-        )}
-      </span>
+      </TriggerFrame>
       <Popover.Portal>
         <Popover.Positioner className="z-popover" side="bottom" align="end" sideOffset={6}>
           <Popover.Popup
@@ -86,5 +155,31 @@ export function SessionContextButton({
         </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
+  );
+}
+
+/** The button's box, with the capture dot over its corner. */
+function TriggerFrame({
+  capture,
+  className,
+  children,
+}: {
+  capture: CaptureState;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <span className={cn("relative inline-flex", className)}>
+      {children}
+      {capture.recording && (
+        <span
+          data-capture-dot
+          className="pointer-events-none absolute -top-0.5 -right-0.5"
+          aria-hidden
+        >
+          <CaptureDot tone={capture.tone === "idle" ? "success" : capture.tone} />
+        </span>
+      )}
+    </span>
   );
 }

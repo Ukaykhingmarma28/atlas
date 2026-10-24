@@ -3,7 +3,6 @@
 //   ContextSection   (a titled group, divider above)
 //   ContextRow       (one full-width action)
 //   ContextSplitRow  (an action, a divider, a ▾ menu)
-//   ContextSelectRow (the whole row opens a menu)
 //
 // The classes are module constants built from Atlas's tokens (`element-hover`,
 // `secondary-foreground`, the type scale), so no theme has to restate a
@@ -161,42 +160,14 @@ export function ContextSplitRow({
   );
 }
 
-/** A row that is itself a menu (the branch picker). */
-export function ContextSelectRow({
-  menuLabel,
-  menu,
-  children,
-}: {
-  menuLabel: string;
-  menu: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <MenuButton kind="row" aria-label={menuLabel}>
-            {children}
-            <span className="flex h-4 w-8 shrink-0 items-center justify-center border-s border-border text-muted-foreground">
-              <ChevronDown size={14} aria-hidden />
-            </span>
-          </MenuButton>
-        }
-      />
-      <DropdownMenuContent align="end" className="max-h-72 min-w-56 overflow-y-auto">
-        {menu}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
 /**
- * The button a row's menu trigger renders. Its look lives here, not on the
+ * The button a row's menu or picker trigger renders (`kind="row"` is a whole
+ * row that opens one, like the branch picker). Its look lives here, not on the
  * `DropdownMenuTrigger` call site: the trigger is a `src/ui` primitive and does
  * not take a restyle, so it renders this instead. Base UI hands it the
  * trigger's props (handlers, aria, ref) through `render`.
  */
-function MenuButton({
+export function MenuButton({
   kind,
   className,
   children,
