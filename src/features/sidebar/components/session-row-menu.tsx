@@ -13,6 +13,7 @@ import { useState, type ReactNode, type RefObject } from "react";
 import {
   Copy,
   GitPullRequest,
+  List,
   Unlink,
   Folder,
   FolderTree,
@@ -46,6 +47,7 @@ import {
 import { snoozePresets } from "@/features/chat/lib/session-snooze";
 import { OpenInEditorContextItems } from "@/features/external-editor/components/open-in-editor-menu";
 import { openLinkPullRequestDialog } from "@/features/pull-requests/components/link-pull-request-dialog";
+import { openSessionPullRequestsTab } from "@/features/pull-requests/lib/open-session-pull-requests-tab";
 import { linkKey, orderLinks } from "@/features/pull-requests/lib/session-pull-request-links";
 import { unlinkSessionPullRequest } from "@/features/pull-requests/lib/session-pull-requests-api";
 import { prErrorMessage, classifyPrError } from "@/features/pull-requests/lib/pr-errors";
@@ -173,12 +175,28 @@ function SessionMenuItems({
         </span>
       </ContextMenuItem>
       <ContextMenuSeparator />
+      {session.pullRequests.length > 0 ? (
+        <ContextMenuItem
+          onClick={() =>
+            openSessionPullRequestsTab({
+              threadId: session.threadId,
+              cwd: session.cwd,
+              title: session.title,
+            })
+          }
+        >
+          <List />
+          Show pull requests
+          <span className="ml-auto tabular-nums">{session.pullRequests.length}</span>
+        </ContextMenuItem>
+      ) : null}
       <ContextMenuItem
         onClick={() =>
           openLinkPullRequestDialog({
             threadId: session.threadId,
             repoPath: session.cwd,
             linked: session.pullRequests.map(linkKey),
+            checkouts: session.attachedProjects.map((project) => project.path),
           })
         }
       >

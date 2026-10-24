@@ -7,6 +7,10 @@
 // a tab; any other, or one whose checkout cannot be read, opens on the host.
 // So does every link while `pullRequestLinksOpenInApp` is off, and a link the
 // reader asked to open on the host (a modifier-click).
+//
+// A caller with more than one checkout to offer (the session's own, the
+// projects attached to it, every open project) passes them all, and the
+// first that is the link's repository takes it.
 
 import { openPullRequest } from "@/features/git/lib/git-pr-api";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
@@ -59,26 +63,74 @@ export function pullRequestLinksOpenInApp(): boolean {
   return useSettingsStore.getState().settings.pullRequestLinksOpenInApp;
 }
 
+/** How long a checkout's repository is trusted before it is read again. */
+const PROVIDER_TTL_MS = 5 * 60_000;
+const providers = new Map<string, { at: number; read: Promise<PrProvider | null> }>();
+
+/** `path`'s repository, read once per few minutes; `null` when it has none
+ *  (not a repository, no remote, `gh` held back). */
+function providerOf(path: string): Promise<PrProvider | null> {
+  const held = providers.get(path);
+  if (held && Date.now() - held.at < PROVIDER_TTL_MS) return held.read;
+  const read = prProvider(path).catch(() => null);
+  providers.set(path, { at: Date.now(), read });
+  return read;
+}
+
+/** Test seam: forget the checkouts read so far. */
+export function resetCheckoutCacheForTests(): void {
+  providers.clear();
+}
+
 /**
- * Open `link`: as a tab in `cwd`'s checkout when it is that checkout's pull
- * request and the setting allows, else on the host. `external` (a
- * modifier-click) and a `null` checkout always open on the host.
+ * The first of `checkouts` whose repository is `link`'s, or `null`. Read in
+ * order, one at a time, so the session's own checkout answers before every
+ * other project is asked. Each path is read once however often it repeats.
+ */
+export async function findCheckoutFor(
+  link: Pick<OpenableLink, "repository" | "url">,
+  checkouts: readonly string[],
+): Promise<string | null> {
+  return (await findCheckout(link, checkouts))?.path ?? null;
+}
+
+/** `findCheckoutFor`, with the checkout's provider (what the host lets
+ *  Atlas do there). */
+export async function findCheckout(
+  link: Pick<OpenableLink, "repository" | "url">,
+  checkouts: readonly string[],
+): Promise<{ path: string; provider: PrProvider } | null> {
+  for (const path of new Set(checkouts)) {
+    const provider = await providerOf(path);
+    if (provider && linkBelongsToCheckout(link, provider)) return { path, provider };
+  }
+  return null;
+}
+
+/**
+ * Open `link`: as a tab in the first checkout that is its repository's (the
+ * session's own first, then any other project), when the setting allows,
+ * else on the host. `external` (a modifier-click) and no checkout at all
+ * always open on the host. `openedFrom` is the tab asking, for the back
+ * arrow.
  */
 export async function openLinkedPullRequest(
-  cwd: string | null,
+  cwd: string | readonly string[] | null,
   link: OpenableLink,
-  opts: { external?: boolean } = {},
+  opts: { external?: boolean; openedFrom?: string } = {},
 ): Promise<void> {
-  if (opts.external || cwd === null || !pullRequestLinksOpenInApp()) {
+  const checkouts = cwd === null ? [] : typeof cwd === "string" ? [cwd] : cwd;
+  if (opts.external || checkouts.length === 0 || !pullRequestLinksOpenInApp()) {
     openPullRequest(link.url);
     return;
   }
-  const provider = await prProvider(cwd).catch(() => null);
-  if (provider && linkBelongsToCheckout(link, provider)) {
+  const repoPath = await findCheckoutFor(link, checkouts);
+  if (repoPath) {
     openPullRequestTab({
-      repoPath: cwd,
+      repoPath,
       number: link.number,
       title: link.title ?? `#${link.number}`,
+      ...(opts.openedFrom ? { openedFrom: opts.openedFrom } : {}),
     });
   } else {
     openPullRequest(link.url);

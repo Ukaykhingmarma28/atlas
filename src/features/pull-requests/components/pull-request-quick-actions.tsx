@@ -25,7 +25,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { GitMerge, GitPullRequestArrow, GitPullRequestClosed, LoaderCircle } from "lucide-react";
 import { toast } from "sonner";
 
@@ -117,6 +117,52 @@ function useShiftHeld(): boolean {
 /** One quick action against `repoPath`, toasting either way. A merge reads
  *  the pull request first, for the methods this repository allows and the
  *  head it would merge, so it never merges a head nobody has seen loaded. */
+async function runQuickAction(
+  client: QueryClient,
+  repoPath: string,
+  entry: QuickActionEntry,
+  action: PullRequestQuickAction,
+  onActed: ((result: QuickActionResult) => void) | undefined,
+): Promise<boolean> {
+  try {
+    if (action === "merge") {
+      const detail = await client.fetchQuery({
+        queryKey: pullRequestKeys.detail(repoPath, entry.number),
+        queryFn: () => prDetail(repoPath, entry.number),
+        staleTime: 0,
+      });
+      if (!detail.viewerPermissions.actions.includes("merge")) {
+        throw { kind: "failed", message: "This pull request cannot be merged right now." };
+      }
+      const allowed = allowedMergeMethods(detail);
+      if (allowed.length === 0) {
+        throw { kind: "failed", message: "No merge method is allowed in this repository." };
+      }
+      await prAction(repoPath, entry.number, {
+        action,
+        mergeMethod: resolveMergeMethod(allowed, null, lastMergeMethod()),
+        expectedHeadOid: detail.headSha,
+        removeAgentCredits: removeAgentCreditsOnMerge(repoPath),
+      });
+    } else {
+      await prAction(repoPath, entry.number, { action });
+    }
+    toast.success(`${ACTIONS[action].done}`, {
+      description: `#${entry.number} ${entry.title}`,
+    });
+    onActed?.({ entry, action });
+    return true;
+  } catch (raw) {
+    toast.error(ACTION_FAILURE_LABELS[action], {
+      description: readableFailure(classifyPrError(raw), ACTIONS[action].hint),
+    });
+    return false;
+  } finally {
+    void client.invalidateQueries({ queryKey: pullRequestKeys.pull(repoPath, entry.number) });
+    void client.invalidateQueries({ queryKey: ["pull-requests", repoPath, "list"] });
+  }
+}
+
 export function useQuickActionRunner(
   repoPath: string,
   onActed?: (result: QuickActionResult) => void,
@@ -125,46 +171,22 @@ export function useQuickActionRunner(
   const acted = useRef(onActed);
   acted.current = onActed;
   return useCallback(
-    async (entry: QuickActionEntry, action: PullRequestQuickAction): Promise<boolean> => {
-      try {
-        if (action === "merge") {
-          const detail = await client.fetchQuery({
-            queryKey: pullRequestKeys.detail(repoPath, entry.number),
-            queryFn: () => prDetail(repoPath, entry.number),
-            staleTime: 0,
-          });
-          if (!detail.viewerPermissions.actions.includes("merge")) {
-            throw { kind: "failed", message: "This pull request cannot be merged right now." };
-          }
-          const allowed = allowedMergeMethods(detail);
-          if (allowed.length === 0) {
-            throw { kind: "failed", message: "No merge method is allowed in this repository." };
-          }
-          await prAction(repoPath, entry.number, {
-            action,
-            mergeMethod: resolveMergeMethod(allowed, null, lastMergeMethod()),
-            expectedHeadOid: detail.headSha,
-            removeAgentCredits: removeAgentCreditsOnMerge(repoPath),
-          });
-        } else {
-          await prAction(repoPath, entry.number, { action });
-        }
-        toast.success(`${ACTIONS[action].done}`, {
-          description: `#${entry.number} ${entry.title}`,
-        });
-        acted.current?.({ entry, action });
-        return true;
-      } catch (raw) {
-        toast.error(ACTION_FAILURE_LABELS[action], {
-          description: readableFailure(classifyPrError(raw), ACTIONS[action].hint),
-        });
-        return false;
-      } finally {
-        void client.invalidateQueries({ queryKey: pullRequestKeys.pull(repoPath, entry.number) });
-        void client.invalidateQueries({ queryKey: ["pull-requests", repoPath, "list"] });
-      }
-    },
+    (entry: QuickActionEntry, action: PullRequestQuickAction): Promise<boolean> =>
+      runQuickAction(client, repoPath, entry, action, acted.current),
     [client, repoPath],
+  );
+}
+
+/** The runner for a list whose rows live in different checkouts (a
+ *  session's linked pull requests): the checkout comes with each call. */
+export function useQuickActionRunnerAnywhere(onActed?: (result: QuickActionResult) => void) {
+  const client = useQueryClient();
+  const acted = useRef(onActed);
+  acted.current = onActed;
+  return useCallback(
+    (repoPath: string, entry: QuickActionEntry, action: PullRequestQuickAction): Promise<boolean> =>
+      runQuickAction(client, repoPath, entry, action, acted.current),
+    [client],
   );
 }
 

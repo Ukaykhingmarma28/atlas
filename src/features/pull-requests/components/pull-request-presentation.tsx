@@ -4,6 +4,9 @@
 
 import { Children, isValidElement, type CSSProperties, type ReactNode } from "react";
 import {
+  UserCheck,
+  UserRound,
+  UserX,
   CircleCheck,
   CircleDashed,
   CircleDot,
@@ -28,6 +31,7 @@ import type {
   PrCheckStatus,
   PrChecksState,
   PrLabel,
+  PrReviewDecision,
   PrState,
 } from "../lib/pull-requests-types";
 import { usePullRequestScope } from "./pull-request-context";
@@ -101,6 +105,21 @@ export const CHECKS_STATE_PRESENTATION: Record<
 };
 
 // ── reviews ─────────────────────────────────────────────────────────────
+
+/** A pull request's review decision as a row signal: approved, changes
+ *  requested, or a review still required. */
+export const REVIEW_DECISION_PRESENTATION: Record<
+  PrReviewDecision,
+  { Icon: LucideIcon; toneClassName: string; label: string }
+> = {
+  approved: { Icon: UserCheck, toneClassName: "text-success", label: "Approved" },
+  "changes-requested": { Icon: UserX, toneClassName: "text-error", label: "Changes requested" },
+  "review-required": {
+    Icon: UserRound,
+    toneClassName: "text-muted-foreground",
+    label: "Review required",
+  },
+};
 
 const REVIEW_OUTCOME: Record<
   ReviewOutcome,

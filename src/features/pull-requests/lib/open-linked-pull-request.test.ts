@@ -15,9 +15,11 @@ vi.mock("@/features/git/lib/git-pr-api", () => ({ openPullRequest: openExternal 
 
 import { resetGhGateForTests } from "./pr-errors";
 import {
+  findCheckoutFor,
   linkBelongsToCheckout,
   openLinkedPullRequest,
   parsePullRequestUrl,
+  resetCheckoutCacheForTests,
 } from "./open-linked-pull-request";
 
 const provider = { host: "github.com", repository: "acme/shop" };
@@ -33,6 +35,49 @@ afterEach(() => {
   openExternal.mockReset();
   settings.pullRequestLinksOpenInApp = true;
   resetGhGateForTests();
+  resetCheckoutCacheForTests();
+});
+
+describe("findCheckoutFor", () => {
+  const byPath: Record<string, unknown> = {
+    "/shop": { host: "github.com", repository: "acme/shop" },
+    "/docs": { host: "github.com", repository: "acme/docs" },
+  };
+
+  it("takes the first checkout of the link's repository, reading each once", async () => {
+    invoke.mockImplementation((_cmd: string, args: { path: string }) =>
+      byPath[args.path] ? Promise.resolve(byPath[args.path]) : Promise.reject({ kind: "failed" }),
+    );
+    expect(await findCheckoutFor(link("acme/docs"), ["/shop", "/none", "/docs", "/shop"])).toBe(
+      "/docs",
+    );
+    expect(invoke).toHaveBeenCalledTimes(3);
+    // Read again within the window: answered from what was read.
+    expect(await findCheckoutFor(link("acme/shop"), ["/shop"])).toBe("/shop");
+    expect(invoke).toHaveBeenCalledTimes(3);
+  });
+
+  it("is null when no checkout is the link's repository", async () => {
+    invoke.mockImplementation((_cmd: string, args: { path: string }) =>
+      Promise.resolve(byPath[args.path]),
+    );
+    expect(await findCheckoutFor(link("other/repo"), ["/shop", "/docs"])).toBeNull();
+  });
+
+  it("opens in another project's checkout, with the tab it came from", async () => {
+    invoke.mockImplementation((_cmd: string, args: { path: string }) =>
+      Promise.resolve(byPath[args.path]),
+    );
+    await openLinkedPullRequest(["/shop", "/docs"], link("acme/docs"), {
+      openedFrom: "session-pull-requests:t1",
+    });
+    expect(openTab).toHaveBeenCalledWith({
+      repoPath: "/docs",
+      number: 12,
+      title: "#12",
+      openedFrom: "session-pull-requests:t1",
+    });
+  });
 });
 
 describe("openLinkedPullRequest", () => {

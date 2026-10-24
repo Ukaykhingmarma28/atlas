@@ -14,6 +14,7 @@ export const TAB_TYPES = [
   "session-changes",
   "pull-request",
   "pull-requests",
+  "session-pull-requests",
   "source-control",
   "log",
   "media",
@@ -118,6 +119,10 @@ export const TAB_PLACEMENT = {
   // A repository's pull requests: scanned while a session works, to pick the
   // next one to open beside it, and its rows and filter bar fit a column.
   "pull-requests": { kind: "surface", minWidth: 360 },
+  // One session's linked pull requests: glanced at while that session works
+  // (is the stack green, did review land), and a list of rows is a column's
+  // natural shape.
+  "session-pull-requests": { kind: "surface", minWidth: 320 },
   "source-control": { kind: "surface", minWidth: 300 },
   "team-chat": { kind: "surface", minWidth: 320 },
   "comms-draft": { kind: "surface", minWidth: 320 },
