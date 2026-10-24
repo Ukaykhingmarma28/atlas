@@ -57,6 +57,8 @@ import {
 } from "../lib/session-row-status";
 import {
   CircleDashedCheck,
+  ProjectBadgeStack,
+  AttachedMark,
   ProjectBadge,
   RelativeTime,
   SessionAgentIcon,
@@ -333,6 +335,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
     title: session.title,
     statusLabel: topStatus ? TOP_STATUS[topStatus].label : null,
     projectName: session.projectName,
+    attachedNames: session.attachedNames,
   });
 
   const rowSurfaceClassName = cn(
@@ -432,12 +435,16 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
             {isRenaming ? null : <span className="sr-only">{session.title}</span>}
             <span
               className={cn(
-                "flex shrink-0 items-center transition-opacity",
+                "flex shrink-0 items-center gap-1 transition-opacity",
                 (!props.isActive || settled || snoozed) &&
                   "opacity-40 grayscale group-focus-within/sidebar-row:opacity-100 group-focus-within/sidebar-row:grayscale-0 group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
               )}
             >
-              <ProjectBadge name={session.projectName} />
+              <ProjectBadgeStack
+                name={session.projectName}
+                attached={session.attachedProjects}
+                attachedNames={session.attachedNames}
+              />
             </span>
             <RowTitle
               session={session}
@@ -455,6 +462,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                       : "text-secondary-foreground/70",
               )}
             />
+            {session.viaAttached && <AttachedMark />}
             <span className="relative ml-auto flex h-6 min-w-8 shrink-0 items-center justify-end">
               {snoozed ? (
                 <span className="inline-flex items-center justify-end gap-1 text-xs tabular-nums text-info transition-opacity group-hover/sidebar-row:opacity-0">
@@ -538,7 +546,11 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
           {isRenaming ? null : <span className="sr-only">{session.title}</span>}
           <div className="relative h-19.5 px-2.5 py-2">
             <div className="flex h-5 min-w-0 items-center gap-1.5">
-              <ProjectBadge name={session.projectName} />
+              <ProjectBadgeStack
+                name={session.projectName}
+                attached={session.attachedProjects}
+                attachedNames={session.attachedNames}
+              />
               {/* Left of the status slot, the pin would slide when hover swaps
                   the label for the wider row controls. */}
               {pinIndicator}
@@ -549,6 +561,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                 )}
               >
                 {session.projectName}
+                {session.viaAttached && <AttachedMark />}
               </span>
               {props.isDragging ? (
                 dragDestination

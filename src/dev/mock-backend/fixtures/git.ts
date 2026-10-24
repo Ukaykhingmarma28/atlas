@@ -1349,8 +1349,16 @@ export const gitHandlers: TypedHandlers<GitResponses> = {
       .join(""),
   // The review diff. The branch has no commits of its own on top of
   // `origin/main`, so the range holds the same change set.
-  git_diff_preview: (): DiffPreview =>
-    diffPreviewOf(CHANGES.map(previewChange), { baseRef: "origin/main", mergeBase: HEAD().sha }),
+  // Only the fake repository has changes. Another folder (a project attached
+  // to a session) answers as a folder outside git does, rather than echoing
+  // this repository's changes as its own.
+  git_diff_preview: ({ path }): DiffPreview =>
+    path && String(path) !== MOCK_PROJECT.path
+      ? { sources: [] }
+      : diffPreviewOf(CHANGES.map(previewChange), {
+          baseRef: "origin/main",
+          mergeBase: HEAD().sha,
+        }),
   git_diff_file_contents: ({ filePath }): DiffFileContents => {
     const change = changeFor(String(filePath));
     if (change?.binary) return { oldText: "", newText: "", truncated: false, binary: true };

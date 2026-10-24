@@ -66,6 +66,9 @@ import {
 } from "@/features/chat/lib/mentions";
 import { SKILLS_CHANGED_EVENT } from "@/features/skills/lib/skills-events";
 import { useRecentFilesStore, type RecentFile } from "@/features/chat/stores/recent-files-store";
+import { useChatStore } from "@/features/chat/stores/chat-store";
+import { useAttachedProjects } from "@/features/chat/hooks/use-session-roots";
+import type { AttachedProject } from "@/features/chat/lib/history-api";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 import { ensureFileIndex } from "@/features/file-picker/lib/file-picker-api";
 import { activeProjectId } from "@/features/projects/lib/active-project";
@@ -155,6 +158,11 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
     ref,
   ) {
     const recentFiles = useRecentFilesStore.use.items();
+    // The session this picker types into, for the projects attached to it.
+    const sessionId = useChatStore((s) =>
+      tabId ? (s.sessions[tabId]?.acpSessionId ?? null) : null,
+    );
+    const attached = useAttachedProjects(sessionId);
     // Project mentions are scoped to the active org (see `searchProjects`).
     // Subscribe so switching orgs re-runs the search and the list reflects the
     // new org's projects even while the picker stays mounted.
@@ -344,6 +352,20 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
         }
         return out;
       }
+      // The projects attached to this session lead, with their access, so
+      // mentioning one again is a keystroke. They answer the unscoped view
+      // and the project scopes; the same folder is not listed twice below.
+      const attachedRows = scope === null || scope === "workspace" || scope === "repo";
+      const pinned = attachedRows ? attachedMentions(attached, query) : [];
+      const pinnedPaths = new Set(pinned.map((p) => p.mention.absPath));
+      const notPinned = (m: MentionData) =>
+        !((m.kind === "workspace" || m.kind === "repo") && pinnedPaths.has(m.absPath));
+      if (pinned.length > 0) {
+        out.push({ type: "header", label: "Attached to this session" });
+        for (const p of pinned) {
+          out.push({ type: "mention", mention: p.mention, recentLabel: p.label });
+        }
+      }
       if (scope) {
         // Group results under per-kind sub-headers. Homogeneous scopes collapse
         // to a single header (unchanged); the "component" scope (pack-delivered
@@ -361,17 +383,20 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
           return { key: m.kind, label: categoryForKind(m.kind).label };
         };
         let lastKey: string | null = null;
+        let scoped = 0;
         for (const m of results) {
+          if (!notPinned(m)) continue;
           const g = groupOf(m);
           if (g.key !== lastKey) {
             out.push({ type: "header", label: g.label });
             lastKey = g.key;
           }
           out.push({ type: "mention", mention: m });
+          scoped++;
         }
         // Keep the scope header visible even with zero results (empty-state copy
         // renders below it).
-        if (out.length === 0) {
+        if (scoped === 0 && pinned.length === 0) {
           out.push({ type: "header", label: categoryForKind(scope).label });
         }
         return out;
@@ -411,6 +436,7 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
       for (const m of results) {
         // In the overview, a file already shown under Recents is noise twice.
         if (emptyQuery && m.kind === "file" && recentIds.has(m.id)) continue;
+        if (!notPinned(m)) continue;
         const label = categoryForKind(m.kind).label;
         const bucket = buckets.get(label);
         if (bucket) bucket.push(m);
@@ -435,7 +461,7 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
         }
       }
       return out;
-    }, [scope, query, results, recentFiles, projectPath, tabId]);
+    }, [scope, query, results, recentFiles, projectPath, tabId, attached]);
 
     // Compute the navigable rows (skip headers). `active` is an index into
     // *navigable* rows, not the full list; the renderer maps it back.
@@ -832,6 +858,29 @@ const PickerRow = memo(function PickerRow({
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** The session's attached projects that match `query`, as project mentions,
+ *  each with its access as the row's second label. */
+function attachedMentions(
+  attached: readonly AttachedProject[],
+  query: string,
+): { mention: Extract<MentionData, { kind: "workspace" }>; label: string }[] {
+  const q = query.trim().toLowerCase();
+  return attached
+    .filter(
+      (p) => !q || p.displayName.toLowerCase().includes(q) || p.path.toLowerCase().includes(q),
+    )
+    .map((p) => ({
+      mention: {
+        kind: "workspace" as const,
+        id: p.path,
+        displayName: p.displayName,
+        absPath: p.path,
+        orgName: null,
+      },
+      label: p.access === "read_write" ? "Read & write" : "Read only",
+    }));
+}
 
 function recentToMention(r: RecentFile): MentionData {
   return {

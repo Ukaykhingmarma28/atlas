@@ -9,7 +9,7 @@
 // (`atlas-thread-metadata`) — `unread` and `woke` arrive already decided, and
 // nothing here re-derives them. This module only sorts and filters.
 
-import type { ThreadProject, ThreadRow } from "@/features/chat/lib/history-api";
+import type { AttachedProject, ThreadProject, ThreadRow } from "@/features/chat/lib/history-api";
 import { sortByPinOrder } from "@/features/chat/lib/pin-order";
 import { sidebarAgentOf, type SidebarAgent } from "@/features/chat/lib/sidebar-agents";
 
@@ -23,8 +23,9 @@ export interface SidebarProject {
 
 export type SidebarSection = "pinned" | "active" | "snoozed" | "settled";
 
-/** One session, as a sidebar row reads it. Every field is a primitive, so a
- *  memoised row compares cheaply. */
+/** One session, as a sidebar row reads it. Every field is a primitive, or an
+ *  array the history read keeps while it is unchanged, so a memoised row
+ *  compares cheaply. */
 export interface SidebarSession {
   threadId: string;
   /** The agent's session id; what a live tab is matched by. */
@@ -52,6 +53,15 @@ export interface SidebarSession {
   unread: boolean;
   woke: boolean;
   liveElsewhere: boolean;
+  /** The projects attached to the session, as the row carries them. The
+   *  row's own array (one shared empty one when none), so a memoised row
+   *  compares it by identity. */
+  attachedProjects: readonly AttachedProject[];
+  /** Their names, joined — the row's "+N" title. Empty when none. */
+  attachedNames: string;
+  /** Listed because the scoped project is attached to it, not because it
+   *  runs there: the row says "attached". */
+  viaAttached: boolean;
 }
 
 export interface SidebarPartition {
@@ -90,12 +100,44 @@ export function matchProject(
   return best;
 }
 
+const NO_ATTACHED: readonly AttachedProject[] = [];
+
+/** `", "`-joined names, computed once per distinct array: the history read
+ *  keeps an unchanged row's array, so a re-partition reuses the string. */
+const namesCache = new WeakMap<readonly AttachedProject[], string>();
+function attachedNamesOf(projects: readonly AttachedProject[]): string {
+  if (projects.length === 0) return "";
+  let names = namesCache.get(projects);
+  if (names === undefined) {
+    names = projects.map((p) => p.displayName).join(", ");
+    namesCache.set(projects, names);
+  }
+  return names;
+}
+
+/** The scoped project is attached to `thread`: one of its attached paths is
+ *  the project's folder or inside it. */
+function attachesProject(thread: ThreadRow, project: SidebarProject): boolean {
+  const projects = thread.attachedProjects;
+  if (!projects || projects.length === 0) return false;
+  const root = normalizePath(project.path);
+  return projects.some((p) => {
+    const path = normalizePath(p.path);
+    return path === root || path.startsWith(`${root}/`);
+  });
+}
+
 function toSession(
   thread: ThreadRow,
   project: SidebarProject,
   snoozedUntil: string | null,
+  viaAttached = false,
 ): SidebarSession {
+  const attached = thread.attachedProjects?.length ? thread.attachedProjects : NO_ATTACHED;
   return {
+    attachedProjects: attached,
+    attachedNames: attachedNamesOf(attached),
+    viaAttached,
     threadId: thread.threadId,
     sessionId: thread.sessionId ?? "",
     title: thread.title,
@@ -152,14 +194,27 @@ export function partitionSidebarSessions(input: {
   const active: SidebarSession[] = [];
   const snoozed: SidebarSession[] = [];
   const settled: SidebarSession[] = [];
+  // Scoped to a project, a session elsewhere that has it attached is listed
+  // too, marked. Only rows with attachments are looked at, so the scan is
+  // over a handful of short arrays, not the history.
+  const scoped =
+    scopeProjectId !== null ? (projects.find((p) => p.id === scopeProjectId) ?? null) : null;
   for (const group of groups) {
     const project = matchProject(group.paths, projects);
     if (!project) continue;
-    if (scopeProjectId !== null && project.id !== scopeProjectId) continue;
+    const inScope = scopeProjectId === null || project.id === scopeProjectId;
+    if (!inScope && !scoped) continue;
     for (const thread of group.threads) {
       if (!thread.sessionId) continue;
+      const viaAttached = !inScope && attachesProject(thread, scoped!);
+      if (!inScope && !viaAttached) continue;
       const isSnoozed = thread.snoozedUntil !== null && Date.parse(thread.snoozedUntil) > now;
-      const session = toSession(thread, project, isSnoozed ? thread.snoozedUntil : null);
+      const session = toSession(
+        thread,
+        project,
+        isSnoozed ? thread.snoozedUntil : null,
+        viaAttached,
+      );
       if (isSnoozed) snoozed.push(session);
       else if (thread.settledAt !== null) settled.push(session);
       else if (thread.pinnedAt !== null) pinned.push(session);
@@ -208,7 +263,8 @@ export function searchSidebarSessions(
       titleMatches.push(session);
       continue;
     }
-    const haystack = `${title} ${session.projectName} ${session.branch ?? ""}`.toLowerCase();
+    const haystack =
+      `${title} ${session.projectName} ${session.branch ?? ""} ${session.attachedNames}`.toLowerCase();
     if (words.every((word) => haystack.includes(word))) otherMatches.push(session);
   }
   return [...titleMatches, ...otherMatches];

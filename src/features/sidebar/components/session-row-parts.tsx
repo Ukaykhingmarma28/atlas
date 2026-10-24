@@ -7,7 +7,7 @@
 // on screen, one shared minute ticker for every age — and never through the
 // row.
 
-import { useSyncExternalStore } from "react";
+import { useSyncExternalStore, type ReactNode } from "react";
 import {
   AgentMonogram,
   ClaudeIcon,
@@ -47,6 +47,69 @@ export function ProjectBadge({ name, className }: { name: string; className?: st
       )}
     >
       {projectMonogram(name)}
+    </span>
+  );
+}
+
+/** How many attached projects get a badge of their own before "…" stands in
+ *  for the rest. */
+const MAX_ATTACHED_BADGES = 2;
+
+/** One badge laid over the one before it. The badge fill is a translucent
+ *  tint, so an opaque base goes under it: without one the initials beneath
+ *  show through and the two read as a smudge. */
+function StackedBadge({ children }: { children: ReactNode }) {
+  return (
+    <span className="-ms-1.5 shrink-0 rounded-sm bg-background ring-1 ring-border">{children}</span>
+  );
+}
+
+/** The session's project badge, with the projects attached to it stacked
+ *  after it: their initials, overlapping, two at most and "…" past that.
+ *  Their names are the stack's title; the hover card lists them with their
+ *  access. */
+export function ProjectBadgeStack({
+  name,
+  attached,
+  attachedNames,
+}: {
+  name: string;
+  attached: readonly { displayName: string }[];
+  attachedNames: string;
+}) {
+  if (attached.length === 0) return <ProjectBadge name={name} />;
+  const shown = attached.slice(0, MAX_ATTACHED_BADGES);
+  return (
+    <span title={`${name}, with ${attachedNames} attached`} className="flex shrink-0 items-center">
+      <ProjectBadge name={name} />
+      {shown.map((project, i) => (
+        <StackedBadge key={`${i}-${project.displayName}`}>
+          <ProjectBadge name={project.displayName} className="text-muted-foreground" />
+        </StackedBadge>
+      ))}
+      {attached.length > MAX_ATTACHED_BADGES && (
+        <StackedBadge>
+          <span
+            aria-hidden
+            className="grid size-4 place-items-center rounded-sm bg-element-selected text-3xs font-semibold leading-none text-muted-foreground"
+          >
+            …
+          </span>
+        </StackedBadge>
+      )}
+    </span>
+  );
+}
+
+/** A row listed under a project filter because that project is attached to
+ *  it, not because the session runs there. */
+export function AttachedMark() {
+  return (
+    <span
+      title="The filtered project is attached to this session"
+      className="ms-1.5 shrink-0 text-2xs font-normal text-muted-foreground"
+    >
+      attached
     </span>
   );
 }

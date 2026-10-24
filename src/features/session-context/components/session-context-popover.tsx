@@ -1,8 +1,7 @@
 // The session context overlay's body.
 //
-// Reading order: Workspace (where it runs, how to open it), then the
-// session's attached projects once that section lands (`ThreadRow.
-// attachedProjects`; its place is marked in `MainView`), Version control
+// Reading order: Workspace (where it runs, how to open it), then Projects
+// (the main project and the ones attached to the session), Version control
 // (branch, PR, the git action, changes), a Session group (agent and model,
 // usage, capture — a session's context with nowhere better to live), then
 // Lineage (the session it branched from, its branches, the agents it
@@ -22,6 +21,7 @@ import { useChatStore } from "@/features/chat/stores/chat-store";
 import type { CaptureState } from "../lib/use-capture-state";
 import { useSessionContextStore } from "../stores/session-context-store";
 import { LineageSection } from "./lineage-section";
+import { ProjectsSection } from "./projects-section";
 import { SessionSection } from "./session-section";
 import { VersionControlSection } from "./version-control-section";
 import { WorkspaceSection } from "./workspace-section";
@@ -68,8 +68,11 @@ function MainView({ tabId, projectPath, capture }: SessionContextBodyProps) {
   return (
     <div className="flex flex-col">
       {projectPath && <WorkspaceSection projectPath={projectPath} />}
-      {/* The attached projects section goes here, between where the session
-          runs and its version control. */}
+      {/* Between where the session runs and its version control: the
+          folders it works in. */}
+      {projectPath && isChat && tabId && (
+        <ProjectsSection tabId={tabId} projectPath={projectPath} />
+      )}
       {projectPath && <VersionControlSection tabId={tabId} projectPath={projectPath} />}
       <SessionSection tabId={tabId} capture={capture} projectPath={projectPath} />
       {isChat && tabId && <LineageSection tabId={tabId} projectPath={projectPath} />}
