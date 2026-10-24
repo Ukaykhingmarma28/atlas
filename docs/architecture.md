@@ -234,7 +234,7 @@ An agent asks for a folder with `request_project_access` on the code tool server
 
 ### `commands/agents.rs`
 
-The IPC verbs. Running a session (`agents_spawn`, `agents_new_session`, `agents_send`, `agents_cancel`, `agents_kill`), the capability-gated knobs (`agents_set_mode`, `agents_set_model`, `agents_set_effort`, `agents_set_config_option`), permissions and elicitation (`agents_respond_permission`, `agents_respond_elicitation`), auth (`agents_authenticate`, `agents_list_auth_methods`, `agents_run_auth_method`, `agents_logout`), and the history surface (`threads_history`, `threads_resume`, `threads_delete`, settle/pin/snooze/read state (`threads_settle`, `threads_unsettle`, `threads_pin`, `threads_unpin`, `threads_reorder_pin`, `threads_snooze`, `threads_wake`, `threads_mark_viewed`, `threads_mark_unread`), `threads_projects`, `threads_import`, `threads_import_candidates`).
+The IPC verbs. Running a session (`agents_spawn`, `agents_new_session`, `agents_send`, `agents_cancel`, `agents_kill`), the capability-gated knobs (`agents_set_mode`, `agents_set_model`, `agents_set_effort`, `agents_set_config_option`), permissions and elicitation (`agents_respond_permission`, `agents_respond_elicitation`), auth (`agents_authenticate`, `agents_list_auth_methods`, `agents_run_auth_method`, `agents_logout`), and the history surface (`threads_history`, `threads_resume`, `threads_delete`, settle/pin/snooze/read state (`threads_settle`, `threads_unsettle`, `threads_pin`, `threads_unpin`, `threads_reorder_pin`, `threads_snooze`, `threads_wake`, `threads_unsnooze`, `threads_mark_viewed`, `threads_mark_unread`), `threads_projects`, `threads_import`, `threads_import_candidates`).
 
 Deltas return over the single `atlas:agents` channel, payload-typed by `kind`.
 

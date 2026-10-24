@@ -152,6 +152,10 @@ export function sessionLifecycleHandlers(list: ThreadList): MockHandlers {
           ? null
           : { ...row, snoozedUntil: null, snoozedAt: null, lastSnoozeWakeAt: now() },
       ),
+    threads_unsnooze: ({ threadId }): boolean =>
+      update(threadId, (row) =>
+        row.snoozedUntil === null ? null : { ...row, snoozedUntil: null, snoozedAt: null },
+      ),
     threads_rename: ({ threadId, title }): null => {
       update(threadId, (row) => {
         const next = String(title ?? "").trim();

@@ -331,6 +331,7 @@ describe("thread history ↔ agent_host wire shapes (#7)", () => {
         "threads_reorder_pin",
         "threads_snooze",
         "threads_wake",
+        "threads_unsnooze",
         "threads_rename",
         "threads_mark_viewed",
         "threads_mark_unread",

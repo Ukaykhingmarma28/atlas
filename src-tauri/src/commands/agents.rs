@@ -701,6 +701,42 @@ fn notice_auto_settled_once(app: &AppHandle, count: usize) {
 /// listener re-reads the store, which is the correct response to any change.
 pub const THREADS_CHANGED_EVENT: &str = "atlas:threads-changed";
 
+/// The longest a store change waits to be announced, and so the most often
+/// `atlas:threads-changed` goes out for store changes.
+const THREADS_CHANGED_COALESCE: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// Call `emit` once per burst of `changes`: the first change opens a
+/// `window`, every change arriving before it closes is folded in, and `emit`
+/// runs once at its end (trailing edge). So a burst is announced at most
+/// `window` late, and never more than once per `window`. A lagged receiver
+/// is several changes collapsed into one — what a listener that re-reads
+/// the store wants anyway. Returns when the sender is gone.
+pub(crate) async fn coalesce_changes<T: Clone>(
+    mut changes: tokio::sync::broadcast::Receiver<T>,
+    window: std::time::Duration,
+    mut emit: impl FnMut(),
+) {
+    use tokio::sync::broadcast::error::RecvError;
+    loop {
+        match changes.recv().await {
+            Ok(_) | Err(RecvError::Lagged(_)) => {}
+            Err(RecvError::Closed) => return,
+        }
+        tokio::time::sleep(window).await;
+        let closed = loop {
+            match changes.try_recv() {
+                Ok(_) | Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => {}
+                Err(tokio::sync::broadcast::error::TryRecvError::Empty) => break false,
+                Err(tokio::sync::broadcast::error::TryRecvError::Closed) => break true,
+            }
+        };
+        emit();
+        if closed {
+            return;
+        }
+    }
+}
+
 /// A connection asked the user something outside any session.
 ///
 /// The session-scoped counterpart rides `atlas:agents` as an
@@ -1248,24 +1284,21 @@ pub fn install_manager(app: &AppHandle) {
     // through the store, so its changes arrive here like any other. Liveness
     // ("running in a terminal") is not stored; the watcher emits the same event
     // itself when the live set changes.
+    //
+    // The store notifies many times a turn, and every listener re-reads the
+    // whole sidebar, so the forwarder coalesces: the first change opens a
+    // window of `THREADS_CHANGED_COALESCE`, everything arriving inside it is
+    // folded in, and one event goes out at its end (`coalesce_changes`).
     if let Some(history) = host.history() {
         let app = app.clone();
-        let mut changes = history.store().subscribe();
-        tauri::async_runtime::spawn(async move {
-            loop {
-                match changes.recv().await {
-                    Ok(_) => {
-                        let _ = app.emit(THREADS_CHANGED_EVENT, ());
-                    }
-                    // Lagged means several changes collapsed into one, which is
-                    // exactly what a listener that re-reads the store wants.
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                        let _ = app.emit(THREADS_CHANGED_EVENT, ());
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
-                }
-            }
-        });
+        let changes = history.store().subscribe();
+        tauri::async_runtime::spawn(coalesce_changes(
+            changes,
+            THREADS_CHANGED_COALESCE,
+            move || {
+                let _ = app.emit(THREADS_CHANGED_EVENT, ());
+            },
+        ));
     }
 
     // Snoozes wake on one timer, set for the soonest of them and re-read on
@@ -1799,23 +1832,37 @@ pub async fn threads_delete(
 }
 
 /// Every project the user has threads in — the sidebar's only source (#21).
-#[tauri::command]
-pub fn threads_projects(
+///
+/// Async, with the build under `spawn_blocking`: the sidebar asks for every
+/// row (unscoped) on each `atlas:threads-changed`, and building and
+/// serialising a thousand-odd rows must not run on the main thread or hold
+/// an async worker the IPC channel shares.
+#[tauri::command(async)]
+pub async fn threads_projects(
     cwd: Option<String>,
     host: State<'_, Arc<AgentHost>>,
     watcher: State<'_, Arc<super::session_watcher::SessionWatcher>>,
 ) -> Result<Vec<super::agent_host::ThreadProjectWire>, CmdError> {
-    host.thread_projects(cwd.as_deref(), &watcher.last_modified())
+    let host = host.inner().clone();
+    let modified = watcher.last_modified();
+    tauri::async_runtime::spawn_blocking(move || host.thread_projects(cwd.as_deref(), &modified))
+        .await
+        .map_err(|e| CmdError::new(e.to_string(), ErrorClass::Fatal))?
         .map_err(CmdError::from)
 }
 
-/// Every thread, newest-started first — the history view.
-#[tauri::command]
-pub fn threads_history(
+/// Every thread, newest-started first — the history view. Off the main
+/// thread for the same reason as [`threads_projects`].
+#[tauri::command(async)]
+pub async fn threads_history(
     host: State<'_, Arc<AgentHost>>,
     watcher: State<'_, Arc<super::session_watcher::SessionWatcher>>,
 ) -> Result<Vec<super::agent_host::ThreadRow>, CmdError> {
-    host.thread_history(&watcher.last_modified())
+    let host = host.inner().clone();
+    let modified = watcher.last_modified();
+    tauri::async_runtime::spawn_blocking(move || host.thread_history(&modified))
+        .await
+        .map_err(|e| CmdError::new(e.to_string(), ErrorClass::Fatal))?
         .map_err(CmdError::from)
 }
 
@@ -1916,6 +1963,17 @@ pub fn threads_rename(
 #[tauri::command(async)]
 pub fn threads_wake(thread_id: String, host: State<'_, Arc<AgentHost>>) -> Result<bool, CmdError> {
     host.wake_thread(parse_thread_id(&thread_id)?)
+        .map_err(CmdError::from)
+}
+
+/// Undo a snooze the user just set: like a wake, but it leaves no "woke"
+/// mark. Answers whether it was snoozed.
+#[tauri::command(async)]
+pub fn threads_unsnooze(
+    thread_id: String,
+    host: State<'_, Arc<AgentHost>>,
+) -> Result<bool, CmdError> {
+    host.unsnooze_thread(parse_thread_id(&thread_id)?)
         .map_err(CmdError::from)
 }
 
@@ -2991,5 +3049,52 @@ mod project_dir_tests {
         );
         assert_eq!(canonical_project_dir(""), "");
         assert_eq!(canonical_project_dir("   "), "");
+    }
+}
+
+#[cfg(test)]
+mod coalesce_tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use super::coalesce_changes;
+
+    /// A burst of store changes — many a turn — is one sidebar refresh, sent
+    /// once the burst's window closes; a later change is its own refresh; and
+    /// the forwarder ends with the store.
+    #[tokio::test]
+    async fn a_burst_of_changes_is_one_event_on_the_trailing_edge() {
+        let (tx, rx) = tokio::sync::broadcast::channel::<()>(16);
+        let emitted = Arc::new(AtomicUsize::new(0));
+        let count = emitted.clone();
+        let window = Duration::from_millis(100);
+        let task = tokio::spawn(coalesce_changes(rx, window, move || {
+            count.fetch_add(1, Ordering::SeqCst);
+        }));
+
+        // More changes than the channel holds: the lag folds in too.
+        for _ in 0..50 {
+            tx.send(()).unwrap();
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert_eq!(
+            emitted.load(Ordering::SeqCst),
+            0,
+            "not before the window closes"
+        );
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        assert_eq!(emitted.load(Ordering::SeqCst), 1, "one event for the burst");
+
+        tx.send(()).unwrap();
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        assert_eq!(emitted.load(Ordering::SeqCst), 2);
+
+        drop(tx);
+        tokio::time::timeout(Duration::from_secs(2), task)
+            .await
+            .expect("the forwarder ends with its store")
+            .unwrap();
+        assert_eq!(emitted.load(Ordering::SeqCst), 2, "no event for the close");
     }
 }
