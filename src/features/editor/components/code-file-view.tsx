@@ -26,14 +26,20 @@ import { clampFileLine, resolveCenteredFileLineScrollTop } from "../lib/file-lin
 import type { FileDecorations } from "../lib/file-decorations";
 import { fileCacheKey } from "../lib/file-preview-mode";
 import { revealSelection, type RevealTarget } from "../lib/reveal";
+import {
+  loadFirstScreenGrammar,
+  missingFirstScreenGrammar,
+} from "@/features/git/lib/first-screen-highlight";
 
 /**
  * A file's text in `@pierre/diffs`: the `File` component in its virtualizer,
  * edited in place through the editor `EditProvider` attaches.
  *
- * Highlighting is the shared worker pool's, never this thread's: the file
- * renders plain first and fills in tokens as the workers return them, and only
- * the rows near the viewport exist. The editor highlights an active edit
+ * Highlighting is the shared worker pool's: the file renders plain first and
+ * fills in tokens as the workers return them, and only the rows near the
+ * viewport exist. A long file's first screen is the exception, coloured on this
+ * thread so it isn't plain while the workers work (`useFirstScreenRepaint`,
+ * `first-screen-highlight.ts`). The editor highlights an active edit
  * session on the main thread, so the file becomes editable once the workers'
  * highlight has painted (`useEditableAfterHighlight`).
  *
@@ -281,6 +287,41 @@ function useEditableAfterHighlight(file: FileContents) {
   return { ready, onPostRender };
 }
 
+/**
+ * A long file's first screen is coloured on the main thread
+ * (`first-screen-highlight.ts`), which needs the file's grammar loaded there.
+ * When it isn't yet, the file renders plain at once and loads it. Once it
+ * lands, if the workers' highlight hasn't, the rows on screen are drawn again,
+ * coloured: `onThemeChange` drops the render cache and renders, which asks the
+ * pool for the window afresh. Short files, and grammars already loaded, skip
+ * all of this.
+ */
+function useFirstScreenRepaint(file: FileContents) {
+  const workerPool = useWorkerPool();
+  const instanceRef = useRef<FileInstance<undefined, undefined> | null>(null);
+  const [missing] = useState(() => ({ file, lang: missingFirstScreenGrammar(file) }));
+  const lang = missing.file === file ? missing.lang : null;
+
+  useEffect(() => {
+    if (lang === null) return;
+    let live = true;
+    const repaint = () => {
+      const instance = instanceRef.current;
+      if (!live || !instance || instance.file?.cacheKey !== file.cacheKey) return;
+      if (workerPool?.getFileResultCache(file) !== undefined) return;
+      instance.onThemeChange();
+    };
+    loadFirstScreenGrammar(lang, DIFF_THEME_NAME, PREFERRED_HIGHLIGHTER).then(repaint, () => {});
+    return () => {
+      live = false;
+    };
+  }, [file, lang, workerPool]);
+
+  return (instance: FileInstance<undefined, undefined>, phase: PostRenderPhase) => {
+    instanceRef.current = phase === "unmount" ? null : instance;
+  };
+}
+
 /** The `<style>` the decorations are written into, in one viewer's root. */
 const DECORATION_STYLE_ATTR = "data-atlas-file-decorations";
 
@@ -346,6 +387,7 @@ function EditableFileSurface({
     setExternal({ version, poolFailed, file: fileContents(name, contents, poolFailed) });
   }
   const file = external.file;
+  const onFirstScreenPostRender = useFirstScreenRepaint(file);
   const { ready, onPostRender: onEditablePostRender } = useEditableAfterHighlight(file);
   const editable = ready && !readOnly;
 
@@ -473,6 +515,7 @@ function EditableFileSurface({
     }
     onFilePostRender(fileContainer, instance, phase);
     onEditablePostRender(instance.file, phase);
+    onFirstScreenPostRender(instance, phase);
   };
 
   return (

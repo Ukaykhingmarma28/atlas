@@ -1,3 +1,4 @@
+import type { FileContents, ThemedFileResult } from "@pierre/diffs";
 import { WorkerPoolContext, useWorkerPool } from "@pierre/diffs/react";
 import { WorkerPoolManager } from "@pierre/diffs/worker";
 import DiffsWorker from "@pierre/diffs/worker/worker.js?worker";
@@ -11,11 +12,14 @@ import {
   type ReactNode,
 } from "react";
 import { DIFF_THEME_NAME, ensureDiffTheme } from "../../lib/diff-theme";
+import { colourFirstScreen } from "../../lib/first-screen-highlight";
 
 /**
- * The Shiki workers every diff viewer tokenizes in. The main thread never
- * tokenizes: a viewer renders nothing until its pool is up, rather than fall
- * back to highlighting in the UI's own frame budget.
+ * The Shiki workers every diff viewer tokenizes in. A viewer renders nothing
+ * until its pool is up, rather than fall back to highlighting in the UI's own
+ * frame budget. The one main-thread exception is bounded: the first few hundred
+ * lines of a long file, so its first screen isn't plain while the workers
+ * tokenize the rest (`FirstScreenWorkerPool`).
  *
  * One pool for the window, shared by every mounted viewer and kept for a while
  * after the last one goes, so closing and reopening the diff does not pay for
@@ -42,13 +46,37 @@ interface SharedPool {
   idleTimer: ReturnType<typeof setTimeout> | undefined;
 }
 
+/** The pool, with a long file's first screen coloured here instead of plain
+ *  while the workers tokenize the rest (`first-screen-highlight.ts`). */
+class FirstScreenWorkerPool extends WorkerPoolManager {
+  override getPlainFileAST(
+    file: FileContents,
+    startingLine: number,
+    totalLines: number,
+    lines?: string[],
+  ): ThemedFileResult | undefined {
+    const plain = super.getPlainFileAST(file, startingLine, totalLines, lines);
+    if (!plain) return plain;
+    return (
+      colourFirstScreen(
+        file,
+        plain,
+        startingLine,
+        totalLines,
+        lines,
+        this.getFileRenderOptions(),
+      ) ?? plain
+    );
+  }
+}
+
 let shared: SharedPool | undefined;
 
 function acquire(): SharedPool {
   if (!shared) {
     ensureDiffTheme();
     shared = {
-      pool: new WorkerPoolManager(
+      pool: new FirstScreenWorkerPool(
         {
           workerFactory: () => new DiffsWorker(),
           poolSize: poolSize(),
