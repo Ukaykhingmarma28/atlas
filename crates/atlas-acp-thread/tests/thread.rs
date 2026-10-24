@@ -1149,7 +1149,7 @@ fn an_attached_root_widens_reads_and_writes_at_its_access_and_never_joins_the_ow
     // Server made read-only: still readable, no longer writable, even though
     // the session was opened with it as a working directory.
     thread.set_attached_roots(SessionRoots {
-        read_only: vec![docs.clone(), server.clone()],
+        read_only: vec![docs, server.clone()],
         read_write: Vec::new(),
     });
     assert_eq!(thread.writable_roots(), vec![app.clone()]);

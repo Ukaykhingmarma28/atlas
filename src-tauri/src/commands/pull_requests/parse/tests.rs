@@ -711,13 +711,51 @@ fn a_merged_at_wins_over_a_stale_state() {
 fn the_repository_context_names_its_host() {
     let ctx = to_repo_context(&json!({
         "viewer": { "login": "uzayer" },
-        "repository": { "nameWithOwner": "cli/cli", "url": "https://github.com/cli/cli" },
+        "repository": {
+            "nameWithOwner": "cli/cli",
+            "url": "https://github.com/cli/cli",
+            "defaultBranchRef": { "name": "trunk" },
+        },
     }))
     .unwrap();
     assert_eq!(ctx.repository(), "cli/cli");
     assert_eq!(ctx.host, "github.com");
     assert_eq!(ctx.viewer.as_deref(), Some("uzayer"));
+    assert_eq!(ctx.default_branch.as_deref(), Some("trunk"));
     assert_eq!(to_repo_context(&json!({ "repository": null })), None);
+}
+
+#[test]
+fn a_listing_row_says_where_its_head_lives() {
+    let row = |extra: serde_json::Value| {
+        let mut node = json!({
+            "number": 3,
+            "title": "t",
+            "url": "https://github.com/acme/shop/pull/3",
+            "headRefName": "main",
+        });
+        node.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        let data = json!({ "search": { "nodes": [node] } });
+        to_list_page(&data, None).0.remove(0)
+    };
+    let fork = row(json!({
+        "isCrossRepository": true,
+        "headRepository": { "nameWithOwner": "stranger/shop" },
+    }));
+    assert!(fork.is_cross_repository);
+    assert_eq!(fork.head_repository.as_deref(), Some("stranger/shop"));
+    let gone = row(json!({ "isCrossRepository": true, "headRepository": null }));
+    assert_eq!(gone.head_repository, None);
+    let own = row(json!({
+        "isCrossRepository": false,
+        "headRepository": { "nameWithOwner": "acme/shop" },
+    }));
+    assert!(!own.is_cross_repository);
+    let wire = serde_json::to_value(&own).unwrap();
+    assert_eq!(wire["headRepository"], "acme/shop");
+    assert_eq!(wire["isCrossRepository"], false);
 }
 
 // ── pickers ─────────────────────────────────────────────────────────────

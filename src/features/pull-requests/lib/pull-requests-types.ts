@@ -274,6 +274,10 @@ export interface PrListEntry {
   checksState: PrChecksState | null;
   /** Conversation comments; line comments inside review threads are not counted. */
   commentCount: number;
+  /** `owner/name` the head branch lives in; `null` once a fork is deleted. */
+  headRepository?: string | null;
+  /** The head branch lives in another repository than the base. */
+  isCrossRepository?: boolean;
 }
 
 export interface PrListResult {
@@ -533,6 +537,9 @@ export interface PrActionInput {
   action: PrAction;
   mergeMethod?: PrMergeMethod | null;
   updateMethod?: PrUpdateMethod | null;
+  /** For a merge or auto-merge: the head commit the reader saw. A head that
+   *  has moved on since is refused rather than merged unseen. */
+  expectedHeadOid?: string | null;
 }
 
 // ── opening one (`commands/pull_requests/create.rs`) ────────────────────

@@ -961,6 +961,7 @@ pub fn install_manager(app: &AppHandle) {
         host.clone(),
         app.clone(),
     ));
+    super::session_pull_requests::sweep_leftover_checkouts_later(host.clone(), data_dir.clone());
 
     // Shared memory: every write is announced to the webview (the Shared tab
     // re-pulls on it), session start/end are recorded in the scope's sessions

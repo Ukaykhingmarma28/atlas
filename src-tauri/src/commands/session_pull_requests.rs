@@ -15,11 +15,15 @@
 //! every minute while the window is visible, when it regains focus, and when
 //! a turn ends. A pass does two things for each unsettled session it is given:
 //!
-//! - **detects**: the pull requests whose head is the session's branch, read
-//!   once per checkout and branch and trusted for [`DETECT_TTL_MS`], are
-//!   linked as `detected` — open ones, and closed or merged ones that moved
-//!   after the session began, so a reused branch name does not drag in last
-//!   year's work;
+//! - **detects**: the pull requests whose head is the session's branch in
+//!   the checkout's own repository ([`is_detected_on_branch`]), read once per
+//!   checkout and branch and trusted for [`DETECT_TTL_MS`], are linked as
+//!   `detected` — open ones, and closed or merged ones that moved after the
+//!   session began, so a reused branch name does not drag in last year's
+//!   work. GitHub's `head:` qualifier matches the branch name in any
+//!   repository, forks included, so a fork's `main` would otherwise link to
+//!   every session on `main`; and the repository's default branch is never
+//!   detected on at all, since nothing is opened *from* it;
 //! - **syncs**: each visible link whose snapshot is due ([`is_due`]) is read
 //!   again, all of a checkout's due links in one request.
 //!
@@ -30,13 +34,21 @@
 //! one never again. A pass the user asked for (`force`) reads its sessions'
 //! links regardless.
 //!
-//! GitHub's rate limit stops the pass and holds every later one until its
-//! reset ([`PAUSED_UNTIL`]); the pass rejects with `rateLimited`, which the
-//! frontend's gh gate (`pr-errors.ts`) honours too. A missing or signed-out
-//! `gh` rejects the same way. Nothing here logs a repository, title, branch
+//! A link whose pull request is no longer there (deleted, or the repository
+//! went private) is backed off ([`MISSING`], [`missing_backoff_ms`]) instead
+//! of being asked for every pass.
+//!
+//! The sweep reads as a background reader ([`SWEEP_POLICY`]): it stops when a
+//! quota is down to the tenth `gh` keeps for what the user does, and waits
+//! for the reset without telling anyone — the user's own reads still have
+//! that room. GitHub's rate limit itself stops the pass and holds every later
+//! one until its reset ([`PAUSED_UNTIL`]); the pass rejects with
+//! `rateLimited`, which the frontend's gh gate (`pr-errors.ts`) honours too.
+//! A missing or signed-out `gh` rejects the same way. Nothing here logs a repository, title, branch
 //! or URL.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Weak};
 
 use agent_client_protocol::schema::v1 as acp;
@@ -52,13 +64,22 @@ use tauri::State;
 
 use super::agent_host::AgentHost;
 use super::pull_requests::{
-    GitHub, PrChecksState, PrError, PrListEntry, PrListQuery, PrListState, PrReviewDecision,
-    PrState,
+    quota_paused_until, GitHub, PrChecksState, PrError, PrListEntry, PrListQuery, PrListState,
+    PrReviewDecision, PrState, ReadPolicy,
 };
 
 /// How long a branch's pull requests are trusted before the branch is asked
-/// again — the same minute the pull-request reads cache an answer for.
-pub const DETECT_TTL_MS: i64 = 60_000;
+/// again. Longer than the minute between passes, so most passes reuse the
+/// last answer: a pull request opened from Atlas is linked as `created` at
+/// once, and one opened elsewhere turns up within this.
+pub const DETECT_TTL_MS: i64 = 5 * 60_000;
+/// How the sweep reads: nobody is waiting on it, so it leaves the quota's
+/// reserve to the user.
+pub(crate) const SWEEP_POLICY: ReadPolicy = ReadPolicy::Background;
+/// A linked pull request that did not come back is asked again after this,
+/// doubling per miss up to [`MISSING_BACKOFF_MAX_MS`].
+const MISSING_BACKOFF_MS: i64 = 15 * 60_000;
+const MISSING_BACKOFF_MAX_MS: i64 = 24 * 60 * 60_000;
 /// An open pull request nobody has updated for this long is read on the
 /// quiet cadence instead of every pass.
 pub const QUIET_AFTER_MS: i64 = 30 * 60_000;
@@ -77,13 +98,41 @@ const DETECT_LIMIT: u32 = 20;
 /// cache costs anyway.
 static LAST_SYNCED: LazyLock<Mutex<HashMap<String, i64>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+/// When a branch's pull requests were read, and what they were.
+type DetectedRows = (i64, Vec<PrListEntry>);
 /// A branch's pull requests (`checkout\0branch`), and when they were read.
-static DETECTED: LazyLock<Mutex<HashMap<String, (i64, Vec<PrListEntry>)>>> =
+static DETECTED: LazyLock<Mutex<HashMap<String, DetectedRows>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
-/// Until when GitHub said to stop asking (epoch ms).
-static PAUSED_UNTIL: LazyLock<Mutex<i64>> = LazyLock::new(|| Mutex::new(0));
+/// Linked pull requests (`checkout\0repository#number`) that did not come
+/// back: how many passes in a row, and when to ask again.
+static MISSING: LazyLock<Mutex<HashMap<String, (u32, i64)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+/// Until when GitHub said to stop asking (epoch ms), and whether that is only
+/// the sweep holding back at the quota's reserve rather than GitHub refusing.
+static PAUSED_UNTIL: LazyLock<Mutex<(i64, bool)>> = LazyLock::new(|| Mutex::new((0, false)));
 /// One pass at a time: a focus and a timer landing together run one pass.
-static SWEEP: LazyLock<tokio::sync::Mutex<()>> = LazyLock::new(|| tokio::sync::Mutex::new(()));
+/// A flag rather than an async mutex: the pass is never waited for, only
+/// skipped, and no lock guard is held across the pass's awaits.
+static SWEEPING: AtomicBool = AtomicBool::new(false);
+
+/// The running pass's claim on [`SWEEPING`], released when the pass ends,
+/// however it ends.
+struct SweepPass;
+
+impl SweepPass {
+    fn claim() -> Option<Self> {
+        SWEEPING
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .ok()
+            .map(|_| SweepPass)
+    }
+}
+
+impl Drop for SweepPass {
+    fn drop(&mut self) {
+        SWEEPING.store(false, Ordering::Release);
+    }
+}
 
 // ── wire ────────────────────────────────────────────────────────────────
 
@@ -253,7 +302,7 @@ fn parse_thread_id(raw: &str) -> Result<ThreadId, PrError> {
 
 fn store_of(host: &AgentHost) -> Result<&ThreadMetadataStore, PrError> {
     host.history()
-        .map(|history| history.store())
+        .map(atlas_thread_metadata::ThreadRecorder::store)
         .ok_or_else(|| PrError::failed("Session history is unavailable."))
 }
 
@@ -279,6 +328,9 @@ pub async fn link_by_number(
     }
     let github = GitHub::open(repo_path.trim()).await?;
     let repository = github.provider().repository;
+    MISSING
+        .lock()
+        .remove(&sync_key(repo_path, &repository, number as u32));
     let entry = github
         .entries(&[number])
         .await?
@@ -350,6 +402,40 @@ pub fn repository_of_url(url: &str) -> Option<String> {
     let owner = parts.next().filter(|p| !p.is_empty())?;
     let name = parts.next().filter(|p| !p.is_empty())?;
     (parts.next() == Some("pull")).then(|| format!("{owner}/{name}"))
+}
+
+// ── leftover checkouts ──────────────────────────────────────────────────
+
+/// How long after launch the leftover sweep waits, so it never competes with
+/// startup for the disk.
+const LEFTOVER_SWEEP_DELAY: std::time::Duration = std::time::Duration::from_secs(90);
+
+/// Once per launch, after [`LEFTOVER_SWEEP_DELAY`]: remove the pull-request
+/// Fix worktrees no unsettled session works in and that hold nothing to lose
+/// (`checkout::sweep_leftovers`), and the guide runs' folders a quit or crash
+/// left behind. Skipped when session history is unavailable, since then
+/// every worktree would look unused.
+pub fn sweep_leftover_checkouts_later(host: Arc<AgentHost>, app_data: std::path::PathBuf) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(LEFTOVER_SWEEP_DELAY).await;
+        let Some(history) = host.history() else {
+            return;
+        };
+        let live: Vec<std::path::PathBuf> = history
+            .store()
+            .threads()
+            .iter()
+            .filter(|t| !t.is_settled())
+            .flat_map(|t| t.folder_paths().paths().to_vec())
+            .collect();
+        super::pull_requests::checkout::sweep_leftovers(
+            &app_data,
+            &live,
+            std::time::SystemTime::now(),
+        )
+        .await;
+        super::pull_requests::guide::remove_stale_run_dirs(&app_data, now_ms());
+    });
 }
 
 // ── the agent links one ─────────────────────────────────────────────────
@@ -522,14 +608,71 @@ pub fn belongs_to_session(entry: &PrListEntry, created_at: Option<DateTime<Utc>>
     updated.with_timezone(&Utc) >= created
 }
 
+/// Whether a pull request found by the branch search is the session's: its
+/// head is `branch` in the checkout's own `repository`. A fork's branch of the
+/// same name is not, and neither is one whose head repository is gone.
+pub fn is_detected_on_branch(entry: &PrListEntry, branch: &str, repository: &str) -> bool {
+    entry.head_branch == branch
+        && !entry.is_cross_repository
+        && entry
+            .head_repository
+            .as_deref()
+            .is_some_and(|r| r.eq_ignore_ascii_case(repository))
+}
+
+/// Whether a session's branch is looked up at all: never the repository's
+/// default branch, which every pull request merges into and none comes from.
+pub fn detects_on(branch: &str, default_branch: Option<&str>) -> bool {
+    !branch.is_empty() && default_branch != Some(branch)
+}
+
+/// How long a link that did not come back `misses` passes in a row waits.
+pub fn missing_backoff_ms(misses: u32) -> i64 {
+    let doublings = misses.saturating_sub(1).min(16);
+    (MISSING_BACKOFF_MS.saturating_mul(1_i64 << doublings)).min(MISSING_BACKOFF_MAX_MS)
+}
+
+/// Whether a link that went missing is still waiting out its backoff.
+fn is_backed_off(key: &str, now: i64) -> bool {
+    MISSING
+        .lock()
+        .get(key)
+        .is_some_and(|&(_, until)| until > now)
+}
+
+/// Note a pass's due links that did not come back, and forget the ones that did.
+fn note_missing(keys_missing: &[String], keys_found: &[String], now: i64) {
+    let mut missing = MISSING.lock();
+    for key in keys_found {
+        missing.remove(key);
+    }
+    for key in keys_missing {
+        let misses = missing.get(key).map_or(1, |&(n, _)| n.saturating_add(1));
+        missing.insert(key.clone(), (misses, now + missing_backoff_ms(misses)));
+    }
+}
+
 fn hold_for_rate_limit(retry_at: Option<i64>, now: i64) -> PrError {
     let until = retry_at
         .filter(|at| *at > now)
         .unwrap_or(now + RATE_LIMIT_FALLBACK_MS);
     let mut paused = PAUSED_UNTIL.lock();
-    *paused = (*paused).max(until);
+    *paused = (paused.0.max(until), false);
     PrError::RateLimited {
-        retry_at: Some(*paused),
+        retry_at: Some(paused.0),
+    }
+}
+
+/// The sweep stopped at the quota's reserve, which GitHub did not ask for:
+/// later passes wait for the reset quietly, and nothing tells the frontend's
+/// gh gate, which would hold the user's own reads back too.
+fn hold_for_reserve(retry_at: Option<i64>, now: i64) {
+    let until = retry_at
+        .filter(|at| *at > now)
+        .unwrap_or(now + RATE_LIMIT_FALLBACK_MS);
+    let mut paused = PAUSED_UNTIL.lock();
+    if paused.0 <= now || paused.1 {
+        *paused = (until, true);
     }
 }
 
@@ -557,13 +700,19 @@ async fn sweep(
     force: bool,
     now: i64,
 ) -> Result<SessionPullRequestsSync, PrError> {
-    let paused = *PAUSED_UNTIL.lock();
+    let (paused, reserve_only) = *PAUSED_UNTIL.lock();
     if paused > now {
+        if reserve_only {
+            return Ok(SessionPullRequestsSync {
+                skipped: true,
+                ..Default::default()
+            });
+        }
         return Err(PrError::RateLimited {
             retry_at: Some(paused),
         });
     }
-    let Ok(_pass) = SWEEP.try_lock() else {
+    let Some(_pass) = SweepPass::claim() else {
         return Ok(SessionPullRequestsSync {
             skipped: true,
             ..Default::default()
@@ -591,6 +740,11 @@ async fn sweep(
     for (checkout, threads) in by_checkout {
         match sweep_checkout(store, &checkout, &threads, force, now, &mut report).await {
             Ok(touched) => changed.extend(touched),
+            // Held back at the reserve: GitHub has not refused anything.
+            Err(PrError::RateLimited { retry_at }) if quota_paused_until(now).is_none() => {
+                hold_for_reserve(retry_at, now);
+                break;
+            }
             Err(PrError::RateLimited { retry_at }) => {
                 return Err(hold_for_rate_limit(retry_at, now));
             }
@@ -621,15 +775,20 @@ async fn sweep_checkout(
     if !wants_detection && !has_links {
         return Ok(HashSet::new());
     }
-    let github = GitHub::open(checkout).await?;
+    let github = GitHub::open_with(checkout, SWEEP_POLICY).await?;
     let repository = github.provider().repository;
+    let default_branch = github.default_branch().map(str::to_string);
     let synced_at = Utc::now();
     let mut touched = HashSet::new();
     // Read this pass, by number: detection's rows count as reads.
     let mut fresh: HashMap<u32, PrListEntry> = HashMap::new();
 
     // Detect, once per branch.
-    let mut branches: Vec<&str> = threads.iter().filter_map(|t| t.branch.as_deref()).collect();
+    let mut branches: Vec<&str> = threads
+        .iter()
+        .filter_map(|t| t.branch.as_deref())
+        .filter(|b| detects_on(b, default_branch.as_deref()))
+        .collect();
     branches.sort_unstable();
     branches.dedup();
     for branch in branches {
@@ -664,7 +823,10 @@ async fn sweep_checkout(
         {
             let found: Vec<PullRequestLink> = rows
                 .iter()
-                .filter(|e| e.head_branch == branch && belongs_to_session(e, thread.created_at))
+                .filter(|e| {
+                    is_detected_on_branch(e, branch, &repository)
+                        && belongs_to_session(e, thread.created_at)
+                })
                 .map(|e| {
                     PullRequestLink::new(
                         &repository,
@@ -696,9 +858,12 @@ async fn sweep_checkout(
                 if fresh.contains_key(&link.number) {
                     continue;
                 }
-                let held = last
-                    .get(&sync_key(checkout, &repository, link.number))
-                    .copied();
+                let key = sync_key(checkout, &repository, link.number);
+                // Gone the last time it was asked: not every pass, forced or not.
+                if is_backed_off(&key, now) {
+                    continue;
+                }
+                let held = last.get(&key).copied();
                 if force || is_due(link, held, now) {
                     due.push(u64::from(link.number));
                 }
@@ -714,7 +879,16 @@ async fn sweep_checkout(
             fresh.insert(entry.number as u32, entry);
         }
         // A number that did not come back (deleted, or no longer visible)
-        // waits its cadence like any other, rather than being asked every pass.
+        // is backed off rather than asked every pass — an open link is due
+        // every pass, so its cadence alone would not slow it.
+        let (found, gone): (Vec<u64>, Vec<u64>) =
+            due.iter().partition(|n| fresh.contains_key(&(**n as u32)));
+        let key = |n: &u64| sync_key(checkout, &repository, *n as u32);
+        note_missing(
+            &gone.iter().map(key).collect::<Vec<_>>(),
+            &found.iter().map(key).collect::<Vec<_>>(),
+            now,
+        );
         let mut last = LAST_SYNCED.lock();
         for number in &due {
             last.insert(sync_key(checkout, &repository, *number as u32), now);
@@ -762,7 +936,89 @@ mod tests {
             review_decision: Some(PrReviewDecision::Approved),
             checks_state: Some(PrChecksState::Failing),
             comment_count: 3,
+            head_repository: Some("acme/shop".into()),
+            is_cross_repository: false,
         }
+    }
+
+    #[test]
+    fn only_the_checkout_s_own_branch_is_detected_never_a_fork_s() {
+        let own = entry(PrState::Open, "2026-10-20T00:00:00Z");
+        assert!(is_detected_on_branch(&own, "feature", "acme/shop"));
+        assert!(is_detected_on_branch(&own, "feature", "ACME/Shop"));
+        // Another branch name.
+        assert!(!is_detected_on_branch(&own, "main", "acme/shop"));
+        // A fork's branch of the same name: what `head:` also matches.
+        let fork = PrListEntry {
+            head_repository: Some("stranger/shop".into()),
+            is_cross_repository: true,
+            ..own.clone()
+        };
+        assert!(!is_detected_on_branch(&fork, "feature", "acme/shop"));
+        // A deleted fork names no head repository.
+        let gone = PrListEntry {
+            head_repository: None,
+            is_cross_repository: true,
+            ..own.clone()
+        };
+        assert!(!is_detected_on_branch(&gone, "feature", "acme/shop"));
+        // Cross-repository however the name reads.
+        let odd = PrListEntry {
+            is_cross_repository: true,
+            ..own
+        };
+        assert!(!is_detected_on_branch(&odd, "feature", "acme/shop"));
+    }
+
+    #[test]
+    fn the_default_branch_is_never_detected_on() {
+        assert!(!detects_on("main", Some("main")));
+        assert!(detects_on("feature", Some("main")));
+        assert!(detects_on("main", Some("trunk")));
+        assert!(detects_on("feature", None));
+        assert!(!detects_on("", None));
+    }
+
+    #[test]
+    fn detection_is_trusted_longer_than_a_pass() {
+        // The frontend runs a pass every minute.
+        const { assert!(DETECT_TTL_MS > 60_000) };
+    }
+
+    #[test]
+    fn the_sweep_reads_in_the_background_and_leaves_the_reserve() {
+        assert_eq!(SWEEP_POLICY, ReadPolicy::Background);
+        assert!(!SWEEP_POLICY.allows_reserve());
+    }
+
+    #[test]
+    fn one_pass_runs_at_a_time_and_the_claim_ends_with_it() {
+        let first = SweepPass::claim().expect("no pass is running");
+        assert!(SweepPass::claim().is_none());
+        drop(first);
+        assert!(SweepPass::claim().is_some());
+    }
+
+    #[test]
+    fn a_missing_pull_request_backs_off_longer_each_miss() {
+        assert_eq!(missing_backoff_ms(1), 15 * MIN);
+        assert_eq!(missing_backoff_ms(2), 30 * MIN);
+        assert_eq!(missing_backoff_ms(3), 60 * MIN);
+        assert_eq!(missing_backoff_ms(40), 24 * 60 * MIN);
+
+        let key = "test-checkout\0acme/shop#404".to_string();
+        let back = "test-checkout\0acme/shop#405".to_string();
+        note_missing(std::slice::from_ref(&key), &[], 0);
+        assert!(is_backed_off(&key, 0));
+        assert!(is_backed_off(&key, 15 * MIN - 1));
+        assert!(!is_backed_off(&key, 15 * MIN));
+        note_missing(std::slice::from_ref(&key), &[], 15 * MIN);
+        assert!(is_backed_off(&key, 15 * MIN + 29 * MIN));
+        // One that comes back is forgotten.
+        note_missing(std::slice::from_ref(&back), &[], 0);
+        note_missing(&[], &[key.clone(), back.clone()], 1);
+        assert!(!is_backed_off(&key, 2));
+        assert!(!is_backed_off(&back, 2));
     }
 
     fn link_with(state: Option<(&str, &str)>) -> PullRequestLink {

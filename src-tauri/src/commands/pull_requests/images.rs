@@ -6,6 +6,12 @@
 //! own image hosts are fetched: `gh api` follows any absolute URL, and
 //! anything else in a comment would otherwise turn Atlas into a fetcher for
 //! whoever wrote it (and send the credential along).
+//!
+//! Fetches wait in a pool of their own (`gh::IMAGE_PERMITS`), so a thread
+//! full of avatars never queues ahead of the reads the user is waiting on.
+//! The cache is keyed by the account that fetched an image as well as its
+//! address: a private attachment one account could read is never handed to
+//! another.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::LazyLock;
@@ -23,21 +29,25 @@ const MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 /// What the cache holds in all before it forgets the oldest.
 const CACHE_BYTES: usize = 48 * 1024 * 1024;
 
-/// Whether `raw` names an image on one of GitHub's image hosts. HTTPS, the
-/// exact host, no credentials and no port; on github.com itself only the
-/// attachment path, which is where an uploaded image lives.
-pub(crate) fn is_allowed_image_url(raw: &str) -> bool {
-    let Ok(url) = url::Url::parse(raw) else {
-        return false;
-    };
+/// The URL `raw` names, when it is an image on one of GitHub's image hosts.
+/// HTTPS, the exact host, no credentials and no port; on github.com itself
+/// only the attachment path, which is where an uploaded image lives. A URL
+/// with a brace in it is refused: `gh api` fills in `{owner}`, `{repo}` and
+/// `{branch}` wherever they appear in what it is given.
+pub(crate) fn allowed_image_url(raw: &str) -> Option<url::Url> {
+    if raw.contains(['{', '}']) {
+        return None;
+    }
+    let url = url::Url::parse(raw).ok()?;
     if url.scheme() != "https"
         || !url.username().is_empty()
         || url.password().is_some()
         || url.port().is_some()
+        || url.as_str().contains(['{', '}'])
     {
-        return false;
+        return None;
     }
-    match url.host_str() {
+    let allowed = match url.host_str() {
         Some("github.com") => url.path().starts_with("/user-attachments/assets/"),
         Some(
             "user-images.githubusercontent.com"
@@ -46,7 +56,21 @@ pub(crate) fn is_allowed_image_url(raw: &str) -> bool {
             | "avatars.githubusercontent.com",
         ) => true,
         _ => false,
-    }
+    };
+    allowed.then_some(url)
+}
+
+/// Whether `raw` names an image the proxy fetches ([`allowed_image_url`]).
+#[cfg(test)]
+pub(crate) fn is_allowed_image_url(raw: &str) -> bool {
+    allowed_image_url(raw).is_some()
+}
+
+/// The cache key: who fetched it, and what. The account is `viewer@host`
+/// when the checkout's is remembered, else the checkout itself, which picks
+/// the account.
+fn cache_key(account: &str, url: &str) -> String {
+    format!("{account}\0{url}")
 }
 
 #[derive(Default)]
@@ -95,13 +119,16 @@ fn image_content_type(raw: Option<&str>) -> Option<String> {
 /// Fetch one image, from the cache when it is there. `cwd` picks the `gh`
 /// host and account, as every other read does.
 pub(crate) async fn fetch(cwd: &str, url: &str) -> Result<PrImage, PrError> {
-    if !is_allowed_image_url(url) {
+    let Some(url) = allowed_image_url(url) else {
         return Err(PrError::invalid("Only GitHub's own images are shown."));
-    }
-    if let Some(image) = CACHE.lock().get(url) {
+    };
+    let account = super::github::remembered_scope(cwd).unwrap_or_else(|| cwd.to_string());
+    let key = cache_key(&account, url.as_str());
+    if let Some(image) = CACHE.lock().get(&key) {
         return Ok(image);
     }
-    let response = Gh::new(cwd).fetch_url(url, IMAGE_TIMEOUT).await?;
+    // The parsed URL, as checked — never the raw text.
+    let response = Gh::new(cwd).fetch_url(url.as_str(), IMAGE_TIMEOUT).await?;
     let content_type = image_content_type(response.header("content-type"))
         .ok_or_else(|| PrError::invalid("That link is not an image."))?;
     if response.body.len() > MAX_IMAGE_BYTES {
@@ -111,7 +138,7 @@ pub(crate) async fn fetch(cwd: &str, url: &str) -> Result<PrImage, PrError> {
         content_type,
         data: base64::engine::general_purpose::STANDARD.encode(&response.body),
     };
-    CACHE.lock().put(url.to_string(), image.clone());
+    CACHE.lock().put(key, image.clone());
     Ok(image)
 }
 
@@ -139,11 +166,37 @@ mod tests {
             "https://evil.test/?https://camo.githubusercontent.com/",
             "https://me@camo.githubusercontent.com/a",
             "https://camo.githubusercontent.com:8443/a",
+            // `gh api` would fill these in.
+            "https://avatars.githubusercontent.com/u/1?v={owner}",
+            "https://camo.githubusercontent.com/{repo}/x",
+            "https://github.com/user-attachments/assets/%7Bbranch%7D/{branch}",
             "file:///etc/passwd",
             "not a url",
         ] {
             assert!(!is_allowed_image_url(refused), "{refused}");
         }
+    }
+
+    #[test]
+    fn the_url_fetched_is_the_one_checked() {
+        let url = allowed_image_url("https://avatars.githubusercontent.com/u/1?v=4").unwrap();
+        assert_eq!(
+            url.as_str(),
+            "https://avatars.githubusercontent.com/u/1?v=4"
+        );
+    }
+
+    #[test]
+    fn one_account_s_image_is_not_another_s() {
+        let url = "https://private-user-images.githubusercontent.com/1/2.png";
+        assert_ne!(
+            cache_key("me@github.com", url),
+            cache_key("work@github.com", url)
+        );
+        assert_ne!(
+            cache_key("me@github.com", url),
+            cache_key("me@ghe.example.com", url)
+        );
     }
 
     #[test]

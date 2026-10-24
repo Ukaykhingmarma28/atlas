@@ -35,7 +35,8 @@ pub use model::*;
 
 /// The driver, for the session links' sweep (`session_pull_requests`), which
 /// reads pull requests by number and by branch outside any one command.
-pub(crate) use github::GitHub;
+pub(crate) use gh::quota_paused_until;
+pub(crate) use github::{GitHub, ReadPolicy};
 
 fn checkout(path: &str) -> Result<&str, PrError> {
     let path = path.trim();

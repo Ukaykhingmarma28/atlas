@@ -58,6 +58,57 @@ pub(crate) fn forget_repo_context(cwd: &str) {
     REPO_CONTEXTS.lock().remove(cwd);
 }
 
+/// The account a checkout reads as (`viewer@host`), when it is remembered.
+/// Never asks: a caller that only wants to key a cache by it should not pay
+/// a request for that.
+pub(crate) fn remembered_scope(cwd: &str) -> Option<String> {
+    REPO_CONTEXTS.lock().get(cwd).map(|(ctx, _)| scope_of(ctx))
+}
+
+fn scope_of(ctx: &RepoContext) -> String {
+    format!("{}@{}", ctx.viewer.as_deref().unwrap_or("-"), ctx.host)
+}
+
+/// Whose reads these are, which decides whether they may spend the last
+/// tenth of a quota ([`gh`](super::gh)'s reserve).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReadPolicy {
+    /// The user is waiting on it: it may spend the reserve.
+    Interactive,
+    /// Nobody asked (the session links' sweep): it stops at the reserve, so
+    /// what the user does next still has room.
+    Background,
+}
+
+impl ReadPolicy {
+    pub fn allows_reserve(self) -> bool {
+        self == ReadPolicy::Interactive
+    }
+}
+
+/// The GitHub error a merge gets when the head moved past the commit it was
+/// told to expect.
+pub(crate) fn is_head_changed_refusal(error: &PrError) -> bool {
+    let says = |m: &str| {
+        let m = m.to_ascii_lowercase();
+        m.contains("head branch was modified")
+            || m.contains("expected head")
+            || m.contains("expectedheadoid")
+            || m.contains("head sha")
+    };
+    match error {
+        PrError::GraphqlErrors { errors } => errors
+            .iter()
+            .filter_map(|e| e.get("message").and_then(Value::as_str))
+            .any(says),
+        PrError::Failed { message } => says(message),
+        _ => false,
+    }
+}
+
+const HEAD_CHANGED: &str =
+    "The pull request's head changed since you loaded it. Review the new commits, then merge again.";
+
 /// `encodeURIComponent`, for one segment of a request path.
 pub(crate) fn encode_component(segment: &str) -> String {
     let mut out = String::with_capacity(segment.len());
@@ -98,11 +149,22 @@ fn not_found_or<T>(value: Option<T>) -> Result<T, PrError> {
 pub(crate) struct GitHub {
     gh: Gh,
     ctx: RepoContext,
+    policy: ReadPolicy,
 }
 
 impl GitHub {
+    /// A driver for something the user asked for.
     pub async fn open(cwd: &str) -> Result<Self, PrError> {
-        let gh = Gh::new(cwd);
+        Self::open_with(cwd, ReadPolicy::Interactive).await
+    }
+
+    /// A driver whose every read follows `policy`, the repository lookup
+    /// included.
+    pub async fn open_with(cwd: &str, policy: ReadPolicy) -> Result<Self, PrError> {
+        Self::open_on(Gh::new(cwd), cwd, policy).await
+    }
+
+    async fn open_on(gh: Gh, cwd: &str, policy: ReadPolicy) -> Result<Self, PrError> {
         let now = now_ms();
         let held = REPO_CONTEXTS
             .lock()
@@ -113,7 +175,7 @@ impl GitHub {
             Some(ctx) => ctx,
             None => {
                 let data = gh
-                    .graphql_with_repo_placeholders(q::REPOSITORY_CONTEXT)
+                    .graphql_with_repo_placeholders(q::REPOSITORY_CONTEXT, policy.allows_reserve())
                     .await?;
                 let ctx = parse::to_repo_context(&data).ok_or(PrError::Unsupported {
                     message: "This checkout's remote is not a GitHub repository.".into(),
@@ -124,7 +186,12 @@ impl GitHub {
                 ctx
             }
         };
-        Ok(Self { gh, ctx })
+        Ok(Self { gh, ctx, policy })
+    }
+
+    /// The repository's default branch, when GitHub named one.
+    pub fn default_branch(&self) -> Option<&str> {
+        self.ctx.default_branch.as_deref()
     }
 
     pub fn provider(&self) -> PrProvider {
@@ -158,15 +225,17 @@ impl GitHub {
     /// The key a conditional read's cache entry is filed under: the account
     /// it was read as.
     fn scope(&self) -> String {
-        format!(
-            "{}@{}",
-            self.ctx.viewer.as_deref().unwrap_or("-"),
-            self.ctx.host
-        )
+        scope_of(&self.ctx)
+    }
+
+    fn allow_reserve(&self) -> bool {
+        self.policy.allows_reserve()
     }
 
     async fn read(&self, query: &str, vars: Value) -> Result<Value, PrError> {
-        self.gh.graphql(query, vars, true, READ_TIMEOUT).await
+        self.gh
+            .graphql(query, vars, self.allow_reserve(), READ_TIMEOUT)
+            .await
     }
 
     async fn write(&self, query: &str, vars: Value) -> Result<Value, PrError> {
@@ -201,10 +270,11 @@ impl GitHub {
         })
     }
 
-    /// Pull requests by number, as listing rows, in one request per hundred.
+    /// Pull requests by number, as listing rows, in one request per fifty.
     /// A number the repository does not have is left out of the answer
-    /// rather than failing it: GitHub fails the whole document for one
-    /// missing pull request, so such a batch is read again one by one.
+    /// rather than failing it: GitHub answers it `null` beside a `NOT_FOUND`
+    /// error and keeps the rest, which is read as it stands. Only a batch
+    /// that came back with no data at all is read again one by one.
     pub async fn entries(&self, numbers: &[u64]) -> Result<Vec<PrListEntry>, PrError> {
         let mut out = Vec::with_capacity(numbers.len());
         for chunk in numbers.chunks(ENTRIES_PER_REQUEST) {
@@ -228,9 +298,12 @@ impl GitHub {
 
     async fn entries_chunk(&self, numbers: &[u64]) -> Result<Vec<PrListEntry>, PrError> {
         let data = self
-            .read(
+            .gh
+            .graphql_partial(
                 &q::pull_requests_by_number(numbers),
                 json!({ "owner": self.ctx.owner, "name": self.ctx.name }),
+                self.allow_reserve(),
+                READ_TIMEOUT,
             )
             .await?;
         Ok(parse::to_entries_by_alias(
@@ -527,7 +600,7 @@ impl GitHub {
                 &self.repo_path(&format!("pulls/{number}")),
                 Some("application/vnd.github.diff"),
                 Some(&self.scope()),
-                true,
+                self.allow_reserve(),
                 DIFF_TIMEOUT,
             )
             .await;
@@ -563,7 +636,13 @@ impl GitHub {
         };
         let body = self
             .gh
-            .rest_get(&path, None, Some(&self.scope()), true, DIFF_TIMEOUT)
+            .rest_get(
+                &path,
+                None,
+                Some(&self.scope()),
+                self.allow_reserve(),
+                DIFF_TIMEOUT,
+            )
             .await?;
         let value: Value = serde_json::from_slice(&body)
             .map_err(|_| PrError::failed("GitHub's list of changed files could not be read."))?;
@@ -607,7 +686,13 @@ impl GitHub {
         };
         let body = self
             .gh
-            .rest_get(&refs_path, None, Some(&self.scope()), true, DIFF_TIMEOUT)
+            .rest_get(
+                &refs_path,
+                None,
+                Some(&self.scope()),
+                self.allow_reserve(),
+                DIFF_TIMEOUT,
+            )
             .await?;
         let value: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
         let (base, head) = parse::to_revisions(&value, commit.is_some());
@@ -650,7 +735,7 @@ impl GitHub {
                 )),
                 Some("application/vnd.github.raw+json"),
                 None,
-                true,
+                self.allow_reserve(),
                 DIFF_TIMEOUT,
             )
             .await?;
@@ -1015,6 +1100,17 @@ impl GitHub {
         )?;
         let id = not_found_or(parse::trimmed(state.get("id")))?;
         let head = parse::trimmed(state.get("headRefOid"));
+        let expected = input
+            .expected_head_oid
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_ascii_lowercase);
+        if let Some(expected) = &expected {
+            if !parse::is_commit_sha(expected) {
+                return Err(PrError::invalid("That is not a commit SHA."));
+            }
+        }
         if input.action == PrAction::UpdateBranch {
             let behind = state
                 .get("baseRef")
@@ -1047,18 +1143,22 @@ impl GitHub {
         let auto = queued
             || (input.action == PrAction::EnableAutoMerge
                 && !parse::is_immediately_mergeable(merge_state.as_deref()));
-        let merge = json!({
-            "pullRequestId": id,
-            "mergeMethod": parse::graphql_merge_method(input.merge_method.unwrap_or(PrMergeMethod::Merge)),
-        });
+        let merge = merge_input(
+            &id,
+            input.merge_method.unwrap_or(PrMergeMethod::Merge),
+            expected.as_deref(),
+            head.as_deref(),
+        )?;
         let mutation = if auto {
             q::ENABLE_AUTO_MERGE
         } else {
             q::MERGE_PULL_REQUEST
         };
-        self.write(mutation, json!({ "input": merge }))
-            .await
-            .map(drop)
+        match self.write(mutation, json!({ "input": merge })).await {
+            Ok(_) => Ok(()),
+            Err(error) if is_head_changed_refusal(&error) => Err(PrError::failed(HEAD_CHANGED)),
+            Err(error) => Err(error),
+        }
     }
 
     /// Deletes a closed pull request's source branch, only while it is
@@ -1141,9 +1241,125 @@ impl GitHub {
     }
 }
 
+/// A merge's (or auto-merge's) input. GitHub merges only the head it is told
+/// to expect: the one the reader saw when they asked, else the one just read.
+/// A head that has already moved past what the reader saw is refused here,
+/// before anything is sent.
+fn merge_input(
+    id: &str,
+    method: PrMergeMethod,
+    expected: Option<&str>,
+    current: Option<&str>,
+) -> Result<Value, PrError> {
+    if let (Some(expected), Some(current)) = (expected, current) {
+        if !current.to_ascii_lowercase().starts_with(expected) {
+            return Err(PrError::failed(HEAD_CHANGED));
+        }
+    }
+    let mut merge = json!({
+        "pullRequestId": id,
+        "mergeMethod": parse::graphql_merge_method(method),
+    });
+    // The full SHA GitHub reported, which a short one the reader saw prefixes.
+    let pin = current.or(expected);
+    if let (Some(pin), Some(map)) = (pin, merge.as_object_mut()) {
+        map.insert("expectedHeadOid".into(), json!(pin));
+    }
+    Ok(merge)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::pull_requests::gh;
+
+    #[test]
+    fn a_merge_pins_the_head_the_reader_saw() {
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        let input = merge_input("PR_1", PrMergeMethod::Squash, Some(sha), Some(sha)).unwrap();
+        assert_eq!(input["expectedHeadOid"], sha);
+        assert_eq!(input["pullRequestId"], "PR_1");
+        // A head that moved since is refused before anything is sent.
+        let moved = "fedcba9876543210fedcba9876543210fedcba98";
+        assert_eq!(
+            merge_input("PR_1", PrMergeMethod::Merge, Some(sha), Some(moved)),
+            Err(PrError::failed(HEAD_CHANGED))
+        );
+        // No expectation: the head just read is the one merged.
+        let input = merge_input("PR_1", PrMergeMethod::Merge, None, Some(moved)).unwrap();
+        assert_eq!(input["expectedHeadOid"], moved);
+        let input = merge_input("PR_1", PrMergeMethod::Merge, None, None).unwrap();
+        assert!(input.get("expectedHeadOid").is_none());
+    }
+
+    #[test]
+    fn github_s_head_changed_refusal_is_recognised() {
+        let refusal = PrError::GraphqlErrors {
+            errors: vec![json!({
+                "type": "UNPROCESSABLE",
+                "message": "Head branch was modified. Review and try the merge again."
+            })],
+        };
+        assert!(is_head_changed_refusal(&refusal));
+        assert!(!is_head_changed_refusal(&PrError::GraphqlErrors {
+            errors: vec![json!({ "message": "Pull request is not mergeable" })],
+        }));
+        assert!(!is_head_changed_refusal(&PrError::NotFound));
+    }
+
+    fn remember(cwd: &str) {
+        REPO_CONTEXTS.lock().insert(
+            cwd.to_string(),
+            (
+                RepoContext {
+                    owner: "acme".into(),
+                    name: "shop".into(),
+                    host: "github.com".into(),
+                    viewer: Some("me".into()),
+                    default_branch: Some("main".into()),
+                },
+                now_ms(),
+            ),
+        );
+    }
+
+    /// The sweep's reads stop at the reserve; the user's go through. With a
+    /// `gh` that does not exist, a read that is let through fails as
+    /// not-installed, and one held back fails as rate-limited before any
+    /// process starts.
+    #[tokio::test]
+    // A current-thread test runtime: the guard never crosses threads.
+    #[allow(clippy::await_holding_lock)]
+    async fn background_reads_stop_at_the_reserve_and_interactive_ones_do_not() {
+        // A real directory: a missing one fails before the binary is looked for.
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().to_str().unwrap();
+        remember(cwd);
+        let missing = "/atlas-test/no-such-gh";
+        let background =
+            GitHub::open_on(Gh::with_program(cwd, missing), cwd, ReadPolicy::Background)
+                .await
+                .unwrap();
+        let interactive =
+            GitHub::open_on(Gh::with_program(cwd, missing), cwd, ReadPolicy::Interactive)
+                .await
+                .unwrap();
+        assert!(!background.allow_reserve());
+        assert!(interactive.allow_reserve());
+        assert_eq!(background.default_branch(), Some("main"));
+
+        let _serial = gh::LIMITS_SERIAL.lock();
+        gh::reset_limits_for_tests();
+        gh::set_quota_for_tests(gh::Resource::Graphql, 5000.0, 100.0);
+        let bg = background.entries(&[1]).await;
+        let fg = interactive.entries(&[1]).await;
+        assert!(matches!(bg, Err(PrError::RateLimited { .. })), "{bg:?}");
+        // Held back, not refused: nothing paused the quota for the user.
+        assert_eq!(gh::quota_paused_until(now_ms()), None);
+        assert_eq!(fg, Err(PrError::NotInstalled));
+        gh::reset_limits_for_tests();
+        forget_repo_context(cwd);
+    }
 
     #[test]
     fn path_segments_are_encoded_like_encode_uri_component() {
