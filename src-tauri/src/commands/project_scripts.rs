@@ -121,7 +121,9 @@ fn approve_in(
     approve: &[(String, String)],
     keep: Option<&HashSet<String>>,
 ) -> Result<Approvals, String> {
-    let _guard = APPROVALS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = APPROVALS_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut approvals = read_approvals(path);
     let ids = approvals.entry(project.to_string()).or_default();
     if let Some(keep) = keep {
