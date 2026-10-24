@@ -3,6 +3,13 @@ import type { LucideIcon } from "lucide-react";
 import { IconButton } from "@/ui/icon-button";
 import { Hint } from "@/ui/tooltip";
 
+/**
+ * The file tab's second row, under its tab: the tree's toolbar on the left
+ * and the file's breadcrumbs and actions on the right. Both halves take this
+ * one height and rule so the row reads as one band.
+ */
+export const FILE_SURFACE_SUBHEADER_CLASS = "h-control-lg shrink-0 border-b border-border";
+
 /** The file view header's one-icon actions: a tooltip, and `pressed` for a toggle. */
 export function FileSurfaceAction(props: {
   readonly label: string;

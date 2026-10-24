@@ -64,6 +64,7 @@ import { searchProjectFiles } from "@/features/file-picker/lib/file-picker-api";
 import { useProjectStore } from "@/features/projects/stores/project-store";
 import { absoluteOf, ProjectFileOps, relativeTo } from "../lib/project-file-ops";
 import { INDENT_PER_LEVEL, ROW_HEIGHT } from "../lib/tree-constants";
+import { FILE_SURFACE_SUBHEADER_CLASS } from "@/features/editor/components/file-surface-chrome";
 import { ROOT_DROP, useFileTreeDragDrop } from "../hooks/use-file-tree-drag-drop";
 import { useExternalFileDrop } from "../hooks/use-external-file-drop";
 import { ProjectTreeRow, RenameInput } from "./project-tree-row";
@@ -165,6 +166,15 @@ export interface ProjectFileTreeProps {
   onFileOpened?: (path: string) => void;
   /** Offer a button that hides the tree. */
   onHide?: () => void;
+  /**
+   * A folder to reveal and select, root-relative (`""` is the root, which
+   * scrolls back to the top). A file's breadcrumbs ask for it when the
+   * reader walks up from the file; a new `nonce` asks again.
+   */
+  revealFolder?: { path: string; nonce: number } | null;
+  /** The header is one half of the file tab's second row: it carries the
+   *  rule under that row, so the row reads as one band with the file's. */
+  subheader?: boolean;
 }
 
 export function ProjectFileTree({
@@ -175,6 +185,8 @@ export function ProjectFileTree({
   revealNonce = 0,
   onFileOpened,
   onHide,
+  revealFolder = null,
+  subheader = false,
 }: ProjectFileTreeProps) {
   const showHidden = useSettingsStore((s) => s.settings.showHiddenFiles);
   const model = useMemo(
@@ -398,6 +410,33 @@ export function ProjectFileTree({
     // `activeAbs` moves with `activeRel`; `clearSearch` is stable.
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [model, activeRel, revealNonce]);
+
+  // A folder the breadcrumbs walked up to: open the way to it, select it and
+  // bring it to the middle. The root has no row; it scrolls to the top.
+  const folderPath = revealFolder?.path ?? null;
+  const folderNonce = revealFolder?.nonce ?? 0;
+  useEffect(() => {
+    if (folderPath === null) return;
+    clearSearch();
+    if (folderPath === "") {
+      setSelection(NO_SELECTION);
+      setFocused(null);
+      scrollRef.current?.scrollTo({ top: 0 });
+      return;
+    }
+    let cancelled = false;
+    void model.reveal(folderPath).then((index) => {
+      if (cancelled || index < 0) return;
+      setSelection({ paths: new Set([folderPath]), anchor: folderPath });
+      setFocused(folderPath);
+      setScrollTarget({ path: folderPath, center: true });
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Per request: `clearSearch` is stable.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [model, folderPath, folderNonce]);
 
   // ── Decorations ─────────────────────────────────────────────────────────
   const changes = useWorkingTreeChanges(root);
@@ -878,7 +917,13 @@ export function ProjectFileTree({
   // One quiet row: refresh, the search field filling the width, then the
   // tree's own buttons.
   const header = (
-    <div className="flex h-control-lg shrink-0 items-center gap-1 px-2">
+    <div
+      className={cn(
+        "flex shrink-0 items-center gap-1 px-2",
+        subheader ? FILE_SURFACE_SUBHEADER_CLASS : "h-control-lg",
+      )}
+      data-surface-subheader={subheader || undefined}
+    >
       {leading}
       <Hint label="Refresh">
         <IconButton size="sm" icon={RefreshCw} label="Refresh files" onClick={refresh} />
