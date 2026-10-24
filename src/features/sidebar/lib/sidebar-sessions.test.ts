@@ -225,3 +225,67 @@ describe("attached projects", () => {
     expect(searchSidebarSessions(active, "docs").map((s) => s.threadId)).toContain("a");
   });
 });
+
+describe("Windows paths", () => {
+  const WIN: SidebarProject[] = [
+    { id: "w-app", name: "app", path: "C:\\work\\app" },
+    { id: "w-docs", name: "docs", path: "C:\\work\\docs\\" },
+  ];
+
+  it("matches a project whichever separators and case its paths use", () => {
+    expect(matchProject(["C:\\work\\app\\src"], WIN)?.id).toBe("w-app");
+    expect(matchProject(["c:/Work/App"], WIN)?.id).toBe("w-app");
+    expect(matchProject(["C:\\work\\application"], WIN)).toBeNull();
+  });
+
+  it("scoped to a project, finds sessions it is attached to by a backslashed path", () => {
+    const attached = {
+      path: "C:\\work\\docs\\guide",
+      displayName: "docs",
+      access: "read_only" as const,
+      attachedAt: iso(-30),
+      source: "mention" as const,
+    };
+    const { active } = partitionSidebarSessions({
+      groups: [
+        group(
+          ["C:\\work\\app"],
+          [row("a", { attachedProjects: [attached], folderPaths: ["C:\\work\\app"] })],
+        ),
+      ],
+      projects: WIN,
+      scopeProjectId: "w-docs",
+      now: NOW,
+    });
+    expect(active.map((s) => [s.threadId, s.viaAttached])).toEqual([["a", true]]);
+  });
+});
+
+describe("session identity across refetches", () => {
+  it("hands back the same session for a row React Query kept, and a new one for a changed row", () => {
+    const kept = row("a");
+    const before = row("b");
+    const first = partition([group(["/work/app"], [kept, before])]);
+    // A refetch: structural sharing keeps `kept` and replaces the changed row.
+    const after = { ...before, unread: true };
+    const second = partition([group(["/work/app"], [kept, after])]);
+
+    const find = (p: typeof first, id: string) => p.active.find((s) => s.threadId === id)!;
+    expect(find(second, "a")).toBe(find(first, "a"));
+    expect(find(second, "b")).not.toBe(find(first, "b"));
+    expect(find(second, "b").unread).toBe(true);
+  });
+
+  it("rebuilds a kept row's session when what it was built from besides the row changes", () => {
+    const kept = row("a", { snoozedUntil: iso(30) });
+    const asleep = partition([group(["/work/app"], [kept])]).snoozed[0]!;
+    const awake = partitionSidebarSessions({
+      groups: [group(["/work/app"], [kept])],
+      projects: PROJECTS,
+      scopeProjectId: null,
+      now: NOW + 60 * 60_000,
+    }).active[0]!;
+    expect(awake).not.toBe(asleep);
+    expect(awake.snoozedUntil).toBeNull();
+  });
+});

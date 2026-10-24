@@ -1050,6 +1050,7 @@ export const northwindGitCommands: Partial<TypedHandlers<MockResponses>> = {
   // into the default fixture's repository.
   git_publish_branch: quietly("git_publish_branch"),
   git_checkout: quietly("git_checkout"),
+  git_switch_if_clean: quietly("git_switch_if_clean"),
   git_create_branch: quietly("git_create_branch"),
   git_rename_branch: quietly("git_rename_branch"),
   git_branch_delete: quietly("git_branch_delete"),

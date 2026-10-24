@@ -16,6 +16,7 @@ import type {
   ThreadRow,
 } from "@/features/chat/lib/history-api";
 import { sortByPinOrder } from "@/features/chat/lib/pin-order";
+import { isUnderRoot } from "@/features/chat/lib/session-roots";
 import { sidebarAgentOf, type SidebarAgent } from "@/features/chat/lib/sidebar-agents";
 import { pullRequestSearchTerms } from "@/features/pull-requests/lib/session-pull-request-links";
 
@@ -87,7 +88,7 @@ export function normalizePath(path: string): string {
 }
 
 /** The organisation project a history group belongs to: the one whose folder
- *  holds one of the group's paths. The longest match wins, so a project nested
+ *  holds one of the group's paths (`isUnderRoot`, so `\\` and `/` agree). The longest match wins, so a project nested
  *  in another claims its own sessions. */
 export function matchProject(
   paths: readonly string[],
@@ -95,11 +96,10 @@ export function matchProject(
 ): SidebarProject | null {
   let best: SidebarProject | null = null;
   let bestLength = -1;
-  for (const raw of paths) {
-    const path = normalizePath(raw);
+  for (const path of paths) {
     for (const project of projects) {
       const root = normalizePath(project.path);
-      if (path !== root && !path.startsWith(`${root}/`)) continue;
+      if (!isUnderRoot(path, root)) continue;
       if (root.length > bestLength) {
         best = project;
         bestLength = root.length;
@@ -125,24 +125,51 @@ function attachedNamesOf(projects: readonly AttachedProject[]): string {
 }
 
 /** The scoped project is attached to `thread`: one of its attached paths is
- *  the project's folder or inside it. */
+ *  the project's folder or inside it, whichever separators either uses
+ *  (`isUnderRoot`; a Windows path compares case-insensitively). */
 function attachesProject(thread: ThreadRow, project: SidebarProject): boolean {
   const projects = thread.attachedProjects;
   if (!projects || projects.length === 0) return false;
-  const root = normalizePath(project.path);
-  return projects.some((p) => {
-    const path = normalizePath(p.path);
-    return path === root || path.startsWith(`${root}/`);
-  });
+  return projects.some((p) => isUnderRoot(p.path, project.path));
 }
 
 const NO_PULL_REQUESTS: readonly PullRequestLink[] = [];
+
+/** The session last built from each row, with what else it was built from.
+ *  React Query's structural sharing keeps an unchanged row's object across a
+ *  refetch, so a row that did not change maps back to the very session it
+ *  produced last time — and a memoised `SessionRow` skips the render. Without
+ *  this every `atlas:threads-changed` re-rendered every mounted row. Keyed
+ *  weakly: a row the history drops takes its session with it. */
+const sessionCache = new WeakMap<ThreadRow, SidebarSession>();
 
 function toSession(
   thread: ThreadRow,
   project: SidebarProject,
   snoozedUntil: string | null,
   viaAttached = false,
+): SidebarSession {
+  const cached = sessionCache.get(thread);
+  if (
+    cached !== undefined &&
+    cached.projectId === project.id &&
+    cached.projectName === project.name &&
+    cached.projectPath === project.path &&
+    cached.snoozedUntil === snoozedUntil &&
+    cached.viaAttached === viaAttached
+  ) {
+    return cached;
+  }
+  const session = buildSession(thread, project, snoozedUntil, viaAttached);
+  sessionCache.set(thread, session);
+  return session;
+}
+
+function buildSession(
+  thread: ThreadRow,
+  project: SidebarProject,
+  snoozedUntil: string | null,
+  viaAttached: boolean,
 ): SidebarSession {
   const attached = thread.attachedProjects?.length ? thread.attachedProjects : NO_ATTACHED;
   const pullRequests = thread.pullRequests?.length ? thread.pullRequests : NO_PULL_REQUESTS;

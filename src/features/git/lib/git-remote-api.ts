@@ -31,6 +31,14 @@ export async function checkoutBranch(path: string, branch: string): Promise<void
   await invoke("git_checkout", { path, branch });
 }
 
+/** Switch `path` to `branch` only if its working tree is clean, untracked
+ *  files included: Rust checks and switches in one go, so nothing can dirty
+ *  the tree in between. Rejects with a `GitErrorPayload` — code
+ *  `uncommitted-changes` for a dirty tree, which is left alone. */
+export async function switchBranchIfClean(path: string, branch: string): Promise<void> {
+  await invoke("git_switch_if_clean", { path, branch });
+}
+
 /** Fetch `path`'s remotes now. A success resets the auto-fetch backoff and
  *  emits `atlas:git-autofetch`, which resolves an auto-fetch warning. Rejects
  *  with the `GitErrorPayload` on failure. */

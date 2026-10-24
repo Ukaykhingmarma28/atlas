@@ -23,7 +23,7 @@ const LIST_QUERY: &str = "SELECT thread_id, session_id, agent_id, title, title_o
      main_worktree_paths, main_worktree_paths_order, remote_connection, \
      branch, settled_at, unsettled_at, pinned_at, pin_order, snoozed_until, snoozed_at, \
      last_snooze_wake_at, last_viewed_at, last_turn_completed_at, model, \
-     attached_projects, pull_requests \
+     attached_projects, pull_requests, unpinned_at \
      FROM threads \
      ORDER BY updated_at DESC";
 
@@ -34,9 +34,9 @@ const UPSERT: &str = "INSERT INTO threads(thread_id, session_id, agent_id, title
          folder_paths_order, main_worktree_paths, main_worktree_paths_order, \
          remote_connection, branch, settled_at, unsettled_at, pinned_at, pin_order, \
          snoozed_until, snoozed_at, last_snooze_wake_at, last_viewed_at, \
-         last_turn_completed_at, model, attached_projects, pull_requests) \
+         last_turn_completed_at, model, attached_projects, pull_requests, unpinned_at) \
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
-         ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26) \
+         ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27) \
      ON CONFLICT(thread_id) DO UPDATE SET \
          session_id = excluded.session_id, \
          agent_id = excluded.agent_id, \
@@ -62,7 +62,8 @@ const UPSERT: &str = "INSERT INTO threads(thread_id, session_id, agent_id, title
          last_turn_completed_at = excluded.last_turn_completed_at, \
          model = excluded.model, \
          attached_projects = excluded.attached_projects, \
-         pull_requests = excluded.pull_requests";
+         pull_requests = excluded.pull_requests, \
+         unpinned_at = excluded.unpinned_at";
 
 /// The durable half of the store.
 pub(crate) struct Db {
@@ -142,6 +143,7 @@ impl Db {
                 row.model.as_deref(),
                 crate::projects::encode(&row.attached_projects),
                 crate::pull_requests::encode(&row.pull_requests),
+                rfc3339(row.unpinned_at),
             ],
         )?;
         Ok(())
@@ -377,6 +379,7 @@ fn decode(row: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMetadata> {
         pin_order: pin_order
             .filter(|key| !key.is_empty())
             .map(|key| Arc::from(key.as_str())),
+        unpinned_at: time(26)?,
         snoozed_until: time(18)?,
         snoozed_at: time(19)?,
         last_snooze_wake_at: time(20)?,

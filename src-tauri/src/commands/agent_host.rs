@@ -2641,6 +2641,12 @@ impl AgentHost {
         Ok(self.history_or_err()?.store().wake(thread_id))
     }
 
+    /// Undo a snooze the user just set, leaving no "woke" mark. Answers
+    /// whether it was snoozed.
+    pub fn unsnooze_thread(&self, thread_id: ThreadId) -> Result<bool> {
+        Ok(self.history_or_err()?.store().unsnooze(thread_id))
+    }
+
     /// The user opened or focused the session the tab `session_id` runs.
     /// Answers whether a row was marked (a draft has none).
     pub fn mark_session_viewed(&self, session_id: &str) -> Result<bool> {

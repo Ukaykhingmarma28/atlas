@@ -109,6 +109,12 @@
 //! stays. An older build at this epoch names its columns in every upsert and
 //! so leaves the column alone.
 //!
+//! `threads_unpinned_at` adds `unpinned_at`, nullable: when the session was
+//! last unpinned, which restarts its idle clock for the sweep. `NULL` is
+//! "never unpinned", what every existing row is, so no row is rewritten and
+//! the epoch stays. An older build at this epoch names its columns in every
+//! upsert and so leaves the column alone.
+//!
 //! Every migration first leaves a copy behind (`Db::open`, via
 //! [`needs_migration`]), so no build is ever the only holder of a history.
 
@@ -186,6 +192,10 @@ const MIGRATIONS: &[Migration] = &[
     Migration {
         name: "threads_pull_requests",
         apply: add_pull_requests_column,
+    },
+    Migration {
+        name: "threads_unpinned_at",
+        apply: add_unpinned_at_column,
     },
 ];
 
@@ -362,6 +372,15 @@ fn add_lifecycle_columns(conn: &Connection) -> Result<()> {
 fn add_pull_requests_column(conn: &Connection) -> Result<()> {
     if !has_column(conn, "threads", "pull_requests")? {
         conn.execute_batch("ALTER TABLE threads ADD COLUMN pull_requests TEXT;")?;
+    }
+    Ok(())
+}
+
+/// `unpinned_at`, added only when absent — the same guard as
+/// [`add_branch_column`]. Existing rows read `NULL`: never unpinned.
+fn add_unpinned_at_column(conn: &Connection) -> Result<()> {
+    if !has_column(conn, "threads", "unpinned_at")? {
+        conn.execute_batch("ALTER TABLE threads ADD COLUMN unpinned_at TEXT;")?;
     }
     Ok(())
 }

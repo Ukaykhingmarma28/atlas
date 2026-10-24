@@ -1108,6 +1108,7 @@ export interface GitResponses {
   git_fetch: Unread;
   git_publish_branch: Unread;
   git_checkout: Unread;
+  git_switch_if_clean: Unread;
   git_create_branch: Unread;
   git_rename_branch: Unread;
   git_branch_delete: Unread;
@@ -1670,6 +1671,17 @@ export const gitHandlers: TypedHandlers<GitResponses> = {
     }),
 
   // ── branches ────────────────────────────────────────────────────────────
+  // Rust checks the tree and switches in one go; any change refuses it.
+  git_switch_if_clean: (args): null => {
+    if (CHANGES.length > 0) {
+      throw fail(
+        "uncommitted-changes",
+        "You have uncommitted changes in the way. Commit or stash them first.",
+      );
+    }
+    gitHandlers.git_checkout(args);
+    return null;
+  },
   git_checkout: ({ branch }): null => {
     const name = String(branch);
     if (name === currentBranch().name) return null; // git: "Already on 'main'"

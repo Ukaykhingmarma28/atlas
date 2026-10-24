@@ -271,6 +271,12 @@ export function wakeSession(threadId: string): Promise<boolean> {
   return invoke<boolean>("threads_wake", { threadId });
 }
 
+/** Undo a snooze the user just set. Unlike {@link wakeSession} it leaves no
+ *  "woke" mark. Resolves whether it was snoozed. */
+export function unsnoozeSession(threadId: string): Promise<boolean> {
+  return invoke<boolean>("threads_unsnooze", { threadId });
+}
+
 /** Rename a session. An empty title clears the rename, and the agent's own
  *  title shows again. */
 export function renameThread(threadId: string, title: string): Promise<void> {

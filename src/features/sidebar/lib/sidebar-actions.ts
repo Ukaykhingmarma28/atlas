@@ -12,10 +12,12 @@ import { copyText } from "@/lib/clipboard";
 import { useSessionLifecycleStore } from "@/features/chat/stores/session-lifecycle-store";
 import { useChatStore } from "@/features/chat/stores/chat-store";
 import { useGitStore } from "@/features/git/stores/git-store";
-import { checkoutBranch, checkoutState } from "@/features/git/lib/git-remote-api";
+import { checkoutState, switchBranchIfClean } from "@/features/git/lib/git-remote-api";
+import { isGitError } from "@/features/git/lib/git-errors";
 import { busySessions } from "@/features/projects/lib/stop-agents-confirm";
 import { useAppStore } from "@/features/app/stores/app-store";
-import { deleteThread, markSessionViewed } from "@/features/chat/lib/history-api";
+import { deleteThread, markSessionViewed, threadProjects } from "@/features/chat/lib/history-api";
+import { isUnderRoot } from "@/features/chat/lib/session-roots";
 import { confirmDeleteChat } from "@/features/chat/lib/confirm-delete-chat";
 import { openNewAgentChat } from "@/features/chat/lib/open-agent-session";
 import { openThread, tabShowingSession } from "@/features/chat/lib/open-thread";
@@ -97,7 +99,9 @@ export async function snoozeSession(
   if (wasOpen) advanceFrom(session, list);
   toast("Session snoozed", {
     duration: UNDO_MS,
-    action: { label: "Undo", onClick: () => void lifecycle().wake(session.threadId) },
+    // Not `wake`: a wake marks the session "Woke", and an undone snooze
+    // never slept.
+    action: { label: "Undo", onClick: () => void lifecycle().unsnooze(session.threadId) },
   });
 }
 
@@ -193,8 +197,10 @@ export async function activateProject(path: string): Promise<void> {
  * already on the branch; nothing is switched. One in the project's checkout
  * switches the checkout only when nothing would be disturbed: never with
  * uncommitted changes in the working tree, and never under an agent that is
- * working there. Otherwise it stops and says why, offering to start on the
- * branch the checkout is on instead.
+ * working there — in an Atlas tab or in a terminal. Otherwise it stops and
+ * says why, offering to start on the branch the checkout is on instead. The
+ * clean-tree check and the switch are one Rust command, so the tree cannot
+ * go dirty between them.
  */
 export async function newSessionOnBranch(session: SidebarSession): Promise<void> {
   await activateProject(session.projectPath);
@@ -215,26 +221,53 @@ export async function newSessionOnBranch(session: SidebarSession): Promise<void>
     start();
     return;
   }
-  const blocker = checkout.dirty
-    ? "it has uncommitted changes"
-    : busySessions(session.projectPath).length > 0
-      ? "an agent is working in it"
-      : null;
-  if (blocker) {
+  const leaveAlone = (blocker: string) =>
     toast.error(`Didn't switch to ${branch}`, {
       description: `The project is on ${checkout.branch} and ${blocker}, so Atlas left it alone.`,
       action: { label: `Start on ${checkout.branch}`, onClick: () => void start() },
     });
+  if (checkout.dirty) {
+    leaveAlone("it has uncommitted changes");
+    return;
+  }
+  if (
+    busySessions(session.projectPath).length > 0 ||
+    (await agentWorkingElsewhere(session.projectPath))
+  ) {
+    leaveAlone("an agent is working in it");
     return;
   }
   try {
-    await checkoutBranch(session.projectPath, branch);
+    await switchBranchIfClean(session.projectPath, branch);
   } catch (err) {
-    toast.error(`Couldn't switch to ${branch}`, { description: String(err) });
+    if (isGitError(err) && err.code === "uncommitted-changes") {
+      leaveAlone("it has uncommitted changes");
+    } else {
+      const description = isGitError(err) ? err.message : String(err);
+      toast.error(`Couldn't switch to ${branch}`, { description });
+    }
     return;
   }
   void useGitStore.getState().actions.refreshStatusNow(session.projectPath);
   start();
+}
+
+/** Whether a session running outside Atlas (a terminal agent) works in the
+ *  checkout at `projectPath`, where a branch switch would move the tree
+ *  under it. Read fresh rather than from the list on screen, which a scope
+ *  or a search may have narrowed. A failed read counts as "yes": refusing a
+ *  switch is the safe way to be wrong. */
+export async function agentWorkingElsewhere(projectPath: string): Promise<boolean> {
+  try {
+    const groups = await threadProjects(projectPath);
+    return groups.some((group) =>
+      group.threads.some(
+        (thread) => thread.liveElsewhere && isUnderRoot(thread.folderPaths[0] ?? "", projectPath),
+      ),
+    );
+  } catch {
+    return true;
+  }
 }
 
 /** The project's own settings: the Settings screen, scoped to its folder. */

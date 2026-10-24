@@ -252,3 +252,65 @@ fn idle_sessions_lists_only_what_the_sweep_could_settle() {
         "with the folders it ran in"
     );
 }
+
+/// Snoozed while two days idle, woken a week later: nine days idle by the
+/// clock, but the snooze held it out of the sweep. The wake gives it a full
+/// window again, and its Woke mark survives the next sweep.
+#[test]
+fn a_session_woken_from_a_snooze_gets_a_full_idle_window() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(&dir);
+    let mut snoozed = thread(Duration::days(9));
+    let wake_at = Utc::now() - Duration::seconds(5);
+    snoozed.snoozed_at = Some(Utc::now() - Duration::days(7));
+    snoozed.snoozed_until = Some(wake_at);
+    let id = snoozed.thread_id;
+    store.save_all(vec![snoozed]);
+
+    assert_eq!(store.wake_due(Utc::now()), 1);
+    assert!(store.thread(id).unwrap().is_woke());
+
+    let cutoff = Utc::now() - Duration::days(3);
+    assert_eq!(store.auto_settle_idle(cutoff, &HashSet::new()), 0);
+    assert!(store.idle_sessions(cutoff).is_empty());
+    let row = store.thread(id).unwrap();
+    assert!(
+        !row.is_settled() && row.is_woke(),
+        "still active, still woke"
+    );
+
+    // A full window after the wake, it settles like any idle session.
+    assert_eq!(
+        store.auto_settle_idle(wake_at + Duration::seconds(1), &HashSet::new()),
+        1
+    );
+}
+
+/// Unpinning a session idle for a week does not hand it to the next sweep.
+#[test]
+fn an_unpinned_session_gets_a_full_idle_window() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(&dir);
+    let mut pinned = thread(Duration::days(7));
+    pinned.pinned_at = Some(Utc::now() - Duration::days(7));
+    let id = pinned.thread_id;
+    store.save_all(vec![pinned]);
+
+    assert!(store.unpin(id));
+    let row = store.thread(id).unwrap();
+    assert!(row.unpinned_at.is_some() && !row.is_pinned());
+
+    let cutoff = Utc::now() - Duration::days(3);
+    assert_eq!(store.auto_settle_idle(cutoff, &HashSet::new()), 0);
+    assert!(!store.thread(id).unwrap().is_settled());
+
+    // The release time is durable: a reopen still holds it off.
+    drop(store);
+    let store = open(&dir);
+    assert_eq!(store.thread(id).unwrap().unpinned_at, row.unpinned_at);
+    assert_eq!(store.auto_settle_idle(cutoff, &HashSet::new()), 0);
+    assert_eq!(
+        store.auto_settle_idle(Utc::now() + Duration::seconds(1), &HashSet::new()),
+        1
+    );
+}

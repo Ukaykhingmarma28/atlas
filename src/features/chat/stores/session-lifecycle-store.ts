@@ -26,6 +26,7 @@ import {
   snoozeSession,
   unpinSession,
   unsettleThread,
+  unsnoozeSession,
   wakeSession,
 } from "../lib/history-api";
 
@@ -46,6 +47,8 @@ interface SessionLifecycleState {
      *  session waits on the user. */
     snooze: (threadId: string, until: string) => Promise<boolean>;
     wake: (threadId: string) => Promise<boolean>;
+    /** Undo a snooze just set: clears it without the "woke" mark a wake leaves. */
+    unsnooze: (threadId: string) => Promise<boolean>;
     settle: (threadId: string) => Promise<boolean>;
     unsettle: (threadId: string) => Promise<boolean>;
     markUnread: (threadId: string) => Promise<boolean>;
@@ -103,6 +106,7 @@ export const useSessionLifecycleStore = createSelectors(
           snooze: (threadId, until) =>
             run(threadId, "snooze", () => snoozeSession(threadId, until)),
           wake: (threadId) => run(threadId, "wake", () => wakeSession(threadId)),
+          unsnooze: (threadId) => run(threadId, "undo the snooze", () => unsnoozeSession(threadId)),
           settle: (threadId) => run(threadId, "settle", () => settleThread(threadId)),
           unsettle: (threadId) => run(threadId, "un-settle", () => unsettleThread(threadId)),
           markUnread: (threadId) => run(threadId, "mark unread", () => markSessionUnread(threadId)),

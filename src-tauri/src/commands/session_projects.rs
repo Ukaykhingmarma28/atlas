@@ -134,20 +134,61 @@ pub struct ValidProjectPath {
 /// agent everything the user owns); system folders and everything under
 /// them; and, under the home folder, `Library` and the dot-folders (`.ssh`,
 /// `.aws`, `.config` …), which hold keys and settings rather than projects.
+/// On Windows the same, in its terms: every drive root, the system and
+/// program folders, `C:\Users`, and `AppData` under home ([`PathRules`]).
 /// A leading `~` is the home folder.
 pub fn validate_project_path(raw: &str) -> Result<ValidProjectPath, String> {
     validate_project_path_in(raw, dirs::home_dir().as_deref())
 }
 
-/// Top-level folders that are the system's, refused along with everything
-/// under them.
-const SYSTEM_TREES: &[&str] = &[
+/// How a platform spells paths, for [`PathRules`]. Both are parsed by hand,
+/// over strings, so the Windows rules run (and are tested) on every
+/// platform: `std::path::Path` only knows the platform it was built for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PathStyle {
+    /// `/`-separated, compared as spelled.
+    Posix,
+    /// `\` or `/`-separated, case-insensitive, led by a drive or a UNC
+    /// share, and possibly in the verbatim `\\?\` form `canonicalize`
+    /// returns.
+    Windows,
+}
+
+/// Why a canonical folder may not be attached.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Refusal {
+    /// The home folder, or a folder above it (a filesystem or drive root).
+    HomeOrAbove,
+    /// A settings tree under home: a dot-folder, `Library`, `AppData`.
+    Settings,
+    /// A system folder, a drive root, or a folder of everyone's homes.
+    System,
+}
+
+/// The attach rules for one platform. Plain data, so [`PathRules::refusal`]
+/// is a pure function of the path's components.
+pub(crate) struct PathRules {
+    style: PathStyle,
+    /// Refused along with everything under them. Normalised components.
+    trees: Vec<Vec<String>>,
+    /// Refused themselves, though a project may live under them.
+    containers: Vec<Vec<String>>,
+    /// The folder directly under home that holds settings rather than
+    /// projects (`Library`, `AppData`), normalised. Dot-folders under home
+    /// are refused on every platform.
+    settings_folder: &'static str,
+}
+
+/// Top-level folders that are the system's on macOS and Linux, refused
+/// along with everything under them.
+const POSIX_SYSTEM_TREES: &[&str] = &[
     "/System", "/Library", "/usr", "/bin", "/sbin", "/etc", "/var", "/private", "/dev", "/proc",
     "/sys", "/boot", "/root", "/cores", "/run", "/snap",
 ];
 
-/// Folders refused themselves, though a project may live under them.
-const CONTAINER_ROOTS: &[&str] = &[
+/// Folders refused themselves on macOS and Linux, though a project may live
+/// under them.
+const POSIX_CONTAINER_ROOTS: &[&str] = &[
     "/",
     "/Users",
     "/home",
@@ -160,6 +201,123 @@ const CONTAINER_ROOTS: &[&str] = &[
     "/srv",
 ];
 
+impl PathRules {
+    pub(crate) fn posix() -> Self {
+        let parse = |path: &&str| components(path, PathStyle::Posix);
+        Self {
+            style: PathStyle::Posix,
+            trees: POSIX_SYSTEM_TREES.iter().map(parse).collect(),
+            containers: POSIX_CONTAINER_ROOTS.iter().map(parse).collect(),
+            settings_folder: "Library",
+        }
+    }
+
+    /// Windows' rules, its system folders read through `env` (the variables
+    /// Windows sets for them) and falling back to the stock locations. Every
+    /// drive root is refused by [`PathRules::refusal`] itself, whatever the
+    /// environment says.
+    // Built only on Windows outside the tests, which run it everywhere.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub(crate) fn windows(env: impl Fn(&str) -> Option<String>) -> Self {
+        let var = |key: &str, default: String| {
+            env(key)
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or(default)
+        };
+        let drive = var("SystemDrive", "C:".to_owned());
+        let trees = [
+            var("SystemRoot", format!(r"{drive}\Windows")),
+            var("ProgramFiles", format!(r"{drive}\Program Files")),
+            var("ProgramFiles(x86)", format!(r"{drive}\Program Files (x86)")),
+            var("ProgramData", format!(r"{drive}\ProgramData")),
+        ];
+        Self {
+            style: PathStyle::Windows,
+            trees: trees
+                .iter()
+                .map(|path| components(path, PathStyle::Windows))
+                .collect(),
+            containers: vec![components(&format!(r"{drive}\Users"), PathStyle::Windows)],
+            settings_folder: "appdata",
+        }
+    }
+
+    /// The rules for the platform Atlas is running on.
+    pub(crate) fn native() -> Self {
+        #[cfg(windows)]
+        {
+            Self::windows(|key| std::env::var(key).ok())
+        }
+        #[cfg(not(windows))]
+        {
+            Self::posix()
+        }
+    }
+
+    /// Why the canonical `path` may not be attached, given the canonical
+    /// `home`; `None` when it may.
+    pub(crate) fn refusal(&self, path: &str, home: Option<&str>) -> Option<Refusal> {
+        let path = components(path, self.style);
+        if let Some(home) = home.map(|home| components(home, self.style)) {
+            if home.starts_with(&path) {
+                return Some(Refusal::HomeOrAbove);
+            }
+            // Inside the home folder only its settings trees are refused;
+            // the system lists are for everything else (a home that itself
+            // lives under `/private` or `/var` must not refuse every project
+            // in it).
+            if let Some(rest) = path.strip_prefix(home.as_slice()) {
+                let first = rest.first().map(String::as_str).unwrap_or_default();
+                return (first.starts_with('.') || first == self.settings_folder)
+                    .then_some(Refusal::Settings);
+            }
+        }
+        // A drive root (`C:\`) or a UNC share (`\\server\share`) is a single
+        // component on Windows. The POSIX root is no components, and listed.
+        let drive_root = self.style == PathStyle::Windows && path.len() <= 1;
+        (drive_root
+            || self.containers.contains(&path)
+            || self.trees.iter().any(|tree| path.starts_with(tree)))
+        .then_some(Refusal::System)
+    }
+}
+
+/// A path's components, normalised for comparison under `style`. On
+/// Windows the verbatim prefix is stripped (`\\?\C:\x` reads as `C:\x`,
+/// `\\?\UNC\server\share` as `\\server\share`), either slash separates, the
+/// drive or the UNC server-and-share is one component, and everything is
+/// case-folded.
+fn components(path: &str, style: PathStyle) -> Vec<String> {
+    let keep = |c: &&str| !c.is_empty() && *c != ".";
+    match style {
+        PathStyle::Posix => path.split('/').filter(keep).map(str::to_owned).collect(),
+        PathStyle::Windows => {
+            let path = path.replace('/', r"\");
+            let (unc, rest) = if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
+                (true, rest)
+            } else if let Some(rest) = path
+                .strip_prefix(r"\\?\")
+                .or_else(|| path.strip_prefix(r"\\.\"))
+            {
+                (false, rest)
+            } else if let Some(rest) = path.strip_prefix(r"\\") {
+                (true, rest)
+            } else {
+                (false, path.as_str())
+            };
+            let mut parts = rest.split('\\').filter(keep).map(str::to_lowercase);
+            let mut out = Vec::new();
+            if unc {
+                let server = parts.next().unwrap_or_default();
+                let share = parts.next().unwrap_or_default();
+                out.push(format!(r"\\{server}\{share}"));
+            }
+            out.extend(parts);
+            out
+        }
+    }
+}
+
 pub(crate) fn validate_project_path_in(
     raw: &str,
     home: Option<&Path>,
@@ -169,8 +327,10 @@ pub(crate) fn validate_project_path_in(
         return Err("No folder given.".into());
     }
     let expanded = match (raw.strip_prefix('~'), home) {
-        (Some(rest), Some(home)) if rest.is_empty() || rest.starts_with('/') => {
-            home.join(rest.trim_start_matches('/'))
+        (Some(rest), Some(home))
+            if rest.is_empty() || rest.starts_with(['/', std::path::MAIN_SEPARATOR]) =>
+        {
+            home.join(rest.trim_start_matches(['/', std::path::MAIN_SEPARATOR]))
         }
         _ => PathBuf::from(raw),
     };
@@ -184,39 +344,22 @@ pub(crate) fn validate_project_path_in(
     }
     let shown = display_path(&path);
     let home = home.map(|h| std::fs::canonicalize(h).unwrap_or_else(|_| h.to_path_buf()));
-    if let Some(home) = &home {
-        if home.starts_with(&path) {
+    let home = home.as_deref().map(Path::to_string_lossy);
+    match PathRules::native().refusal(&path.to_string_lossy(), home.as_deref()) {
+        Some(Refusal::HomeOrAbove) => {
             return Err(format!(
                 "{shown} is your home folder or above it; attach a project inside it instead."
             ));
         }
-    }
-    // Inside the home folder only its settings trees are refused; the
-    // system-tree list is for everything else (a home that itself lives under
-    // `/private` or `/var` must not refuse every project in it).
-    match home
-        .as_deref()
-        .and_then(|home| path.strip_prefix(home).ok())
-    {
-        Some(rest) => {
-            let first = rest
-                .components()
-                .next()
-                .map(|c| c.as_os_str().to_string_lossy().into_owned())
-                .unwrap_or_default();
-            if first.starts_with('.') || first == "Library" {
-                return Err(format!(
-                    "{shown} holds settings or keys, not a project, and cannot be attached."
-                ));
-            }
+        Some(Refusal::Settings) => {
+            return Err(format!(
+                "{shown} holds settings or keys, not a project, and cannot be attached."
+            ));
         }
-        None => {
-            if CONTAINER_ROOTS.iter().any(|root| path == Path::new(root))
-                || SYSTEM_TREES.iter().any(|tree| path.starts_with(tree))
-            {
-                return Err(format!("{shown} is a system folder, not a project."));
-            }
+        Some(Refusal::System) => {
+            return Err(format!("{shown} is a system folder, not a project."));
         }
+        None => {}
     }
     let display_name = path
         .file_name()
@@ -388,6 +531,100 @@ mod tests {
         }
         assert!(validate_project_path_in("~/.ssh", Some(&home)).is_err());
         assert!(validate_project_path_in("~/Library/Keychains", Some(&home)).is_err());
+    }
+
+    /// The Windows rules, run on every platform: `canonicalize` hands them
+    /// the verbatim form, in whatever case the user typed.
+    #[test]
+    fn windows_paths_are_judged_by_windows_rules() {
+        let rules = PathRules::windows(|_| None);
+        let home = Some(r"\\?\C:\Users\me");
+        let cases: &[(&str, Option<Refusal>)] = &[
+            // Drive roots and UNC shares.
+            (r"\\?\C:\", Some(Refusal::HomeOrAbove)),
+            (r"\\?\D:\", Some(Refusal::System)),
+            (r"D:", Some(Refusal::System)),
+            (r"\\?\UNC\server\share", Some(Refusal::System)),
+            (r"\\server\share\", Some(Refusal::System)),
+            // System and program folders, and what is under them.
+            (r"\\?\C:\Windows", Some(Refusal::System)),
+            (r"\\?\c:\WINDOWS\System32", Some(Refusal::System)),
+            (r"\\?\C:\Program Files", Some(Refusal::System)),
+            (r"\\?\C:\Program Files (x86)\Vendor", Some(Refusal::System)),
+            (r"\\?\C:\ProgramData\keys", Some(Refusal::System)),
+            (r"C:/ProgramData", Some(Refusal::System)),
+            // Home, above it, and its settings trees.
+            (r"\\?\C:\Users", Some(Refusal::HomeOrAbove)),
+            (r"\\?\C:\Users\me", Some(Refusal::HomeOrAbove)),
+            (r"\\?\c:\users\ME", Some(Refusal::HomeOrAbove)),
+            (r"\\?\C:\Users\me\AppData\Roaming", Some(Refusal::Settings)),
+            (r"\\?\C:\Users\me\appdata", Some(Refusal::Settings)),
+            (r"\\?\C:\Users\me\.ssh", Some(Refusal::Settings)),
+            // Projects.
+            (r"\\?\C:\Users\me\work\server", None),
+            (r"\\?\D:\src\atlas", None),
+            (r"\\?\UNC\server\share\repo", None),
+            (r"C:\Users\me\Documents\AppData", None),
+        ];
+        for (path, expected) in cases {
+            assert_eq!(rules.refusal(path, home), *expected, "{path}");
+        }
+        // Another user's home is under the `Users` container, not refused by it.
+        assert_eq!(rules.refusal(r"C:\Users\them\repo", home), None);
+        // With no home known, the containers and trees still hold.
+        assert_eq!(rules.refusal(r"\\?\C:\Users", None), Some(Refusal::System));
+        assert_eq!(rules.refusal(r"\\?\C:\", None), Some(Refusal::System));
+    }
+
+    #[test]
+    fn windows_system_folders_follow_the_environment() {
+        let rules = PathRules::windows(|key| match key {
+            "SystemRoot" => Some(r"E:\WinNT".to_owned()),
+            "ProgramFiles" => Some(r"E:\Apps".to_owned()),
+            _ => None,
+        });
+        assert_eq!(
+            rules.refusal(r"\\?\E:\WinNT\Temp", None),
+            Some(Refusal::System)
+        );
+        assert_eq!(rules.refusal(r"\\?\E:\Apps", None), Some(Refusal::System));
+        assert_eq!(
+            rules.refusal(r"\\?\C:\ProgramData", None),
+            Some(Refusal::System)
+        );
+        assert_eq!(
+            rules.refusal(r"\\?\C:\Windows\x", None),
+            None,
+            "not this machine's"
+        );
+    }
+
+    /// The POSIX rules as a table, independent of what exists on disk.
+    #[test]
+    fn posix_paths_are_judged_by_posix_rules() {
+        let rules = PathRules::posix();
+        let home = Some("/Users/me");
+        let cases: &[(&str, Option<Refusal>)] = &[
+            ("/", Some(Refusal::HomeOrAbove)),
+            ("/Users", Some(Refusal::HomeOrAbove)),
+            ("/Users/me", Some(Refusal::HomeOrAbove)),
+            ("/Users/me/Library/Keychains", Some(Refusal::Settings)),
+            ("/Users/me/.aws", Some(Refusal::Settings)),
+            ("/usr/local", Some(Refusal::System)),
+            ("/private/etc", Some(Refusal::System)),
+            ("/Volumes", Some(Refusal::System)),
+            ("/Volumes/disk/repo", None),
+            ("/Users/me/work/server", None),
+            ("/opt/src", None),
+        ];
+        for (path, expected) in cases {
+            assert_eq!(rules.refusal(path, home), *expected, "{path}");
+        }
+        // A home under `/private` keeps its own projects.
+        assert_eq!(
+            rules.refusal("/private/var/home/me/work", Some("/private/var/home/me")),
+            None
+        );
     }
 
     #[test]

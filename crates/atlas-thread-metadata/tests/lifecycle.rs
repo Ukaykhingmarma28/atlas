@@ -180,6 +180,22 @@ fn a_send_unsnoozes_and_unsettles_without_a_woke_mark() {
     assert!(!row(&store, settled).is_settled());
 }
 
+/// The Undo on "Session snoozed": the snooze is gone and nothing marks the
+/// session as having woken — it never slept.
+#[test]
+fn undoing_a_snooze_leaves_no_woke_mark() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(&dir);
+    let id = saved(&store);
+    assert!(store.snooze(id, soon()));
+
+    assert!(store.unsnooze(id));
+    let after = row(&store, id);
+    assert!(!after.is_snoozed() && after.snoozed_at.is_none());
+    assert!(after.last_snooze_wake_at.is_none() && !after.is_woke());
+    assert!(!store.unsnooze(id), "nothing left to undo");
+}
+
 #[test]
 fn a_hand_wake_ends_the_snooze_and_reads_as_woke_until_viewed() {
     let dir = tempfile::tempdir().unwrap();
