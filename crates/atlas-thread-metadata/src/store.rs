@@ -142,6 +142,8 @@ enum DbOperation {
     SaveAlias(acp::SessionId, acp::SessionId),
     /// The alias's owner was deleted.
     DeleteAlias(acp::SessionId),
+    /// A session was branched from another: (child, parent).
+    SaveFork(acp::SessionId, acp::SessionId),
 }
 
 /// What a queued write is *about*, so a burst about the same thing collapses.
@@ -151,6 +153,7 @@ enum OpKey {
     Backfill(AgentId),
     DeletedSession(acp::SessionId),
     Alias(acp::SessionId),
+    Fork(acp::SessionId),
 }
 
 impl DbOperation {
@@ -166,6 +169,7 @@ impl DbOperation {
             DbOperation::SaveAlias(alias, _) | DbOperation::DeleteAlias(alias) => {
                 OpKey::Alias(alias.clone())
             }
+            DbOperation::SaveFork(child, _) => OpKey::Fork(child.clone()),
         }
     }
 }
@@ -183,6 +187,8 @@ struct Cache {
     deleted: HashSet<acp::SessionId>,
     /// Confirmed transcript aliases, alias → owner (schema V5).
     aliases: HashMap<acp::SessionId, acp::SessionId>,
+    /// Branched sessions, child → parent (`session_forks`).
+    forks: HashMap<acp::SessionId, acp::SessionId>,
 }
 
 /// Lets a caller wait for the queue to reach the disk, and reports what failed
@@ -234,6 +240,11 @@ impl ThreadMetadataStore {
             .into_iter()
             .map(|(alias, owner)| (acp::SessionId::new(alias), acp::SessionId::new(owner)))
             .collect();
+        cache.forks = db
+            .session_forks()?
+            .into_iter()
+            .map(|(child, parent)| (acp::SessionId::new(child), acp::SessionId::new(parent)))
+            .collect();
 
         let (ops_tx, ops_rx) = mpsc::channel::<DbOperation>();
         let (events, _) = broadcast::channel(EVENT_CAPACITY);
@@ -278,6 +289,9 @@ impl ThreadMetadataStore {
                                 db.save_session_alias(&alias.0, &owner.0)
                             }
                             DbOperation::DeleteAlias(alias) => db.delete_session_alias(&alias.0),
+                            DbOperation::SaveFork(child, parent) => {
+                                db.save_session_fork(&child.0, &parent.0)
+                            }
                         };
                         if let Err(e) = outcome {
                             tracing::warn!(error = %e, "thread-metadata write failed");
@@ -410,6 +424,33 @@ impl ThreadMetadataStore {
         cache.aliases.insert(alias.clone(), owner.clone());
         self.enqueue(DbOperation::SaveAlias(alias.clone(), owner.clone()));
         true
+    }
+
+    /// Record that `child` was branched from `parent` ("Branch from here").
+    /// Answers whether it was recorded: a session is never its own parent,
+    /// and re-recording the same pair is a no-op. The child need not have a
+    /// row yet — a fork is recorded the moment the agent names the child.
+    pub fn record_session_fork(&self, child: &acp::SessionId, parent: &acp::SessionId) -> bool {
+        {
+            let mut cache = write(&self.inner.cache);
+            if child == parent || cache.forks.get(child) == Some(parent) {
+                return false;
+            }
+            cache.forks.insert(child.clone(), parent.clone());
+        }
+        self.enqueue(DbOperation::SaveFork(child.clone(), parent.clone()));
+        let _ = self.inner.events.send(ThreadStoreEvent::Changed);
+        true
+    }
+
+    /// The session `child` was branched from, if it was.
+    pub fn session_fork_parent(&self, child: &acp::SessionId) -> Option<acp::SessionId> {
+        read(&self.inner.cache).forks.get(child).cloned()
+    }
+
+    /// Every recorded fork, child → parent.
+    pub fn session_forks(&self) -> HashMap<acp::SessionId, acp::SessionId> {
+        read(&self.inner.cache).forks.clone()
     }
 
     /// Whether the user deleted this session's row (and Atlas has not written

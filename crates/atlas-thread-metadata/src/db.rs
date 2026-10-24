@@ -243,6 +243,30 @@ impl Db {
         Ok(())
     }
 
+    /// Recorded forks, `(child, parent)` session ids.
+    pub(crate) fn session_forks(&self) -> Result<Vec<(String, String)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT child_session_id, parent_session_id FROM session_forks")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
+    pub(crate) fn save_session_fork(&self, child: &str, parent: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO session_forks(child_session_id, parent_session_id, at) VALUES (?1, ?2, ?3) \
+             ON CONFLICT(child_session_id) DO UPDATE SET parent_session_id = excluded.parent_session_id",
+            rusqlite::params![child, parent, chrono::Utc::now().to_rfc3339()],
+        )?;
+        Ok(())
+    }
+
     pub(crate) fn delete(&self, thread_id: ThreadId) -> Result<()> {
         self.conn.execute(
             "DELETE FROM threads WHERE thread_id = ?1",

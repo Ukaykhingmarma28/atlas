@@ -9,13 +9,15 @@
 //!   GraphQL documents that ask for them;
 //! - [`gh`] — the transport: one bounded `gh api -i` process per request,
 //!   with rate-limit, conditional-read and concurrency policy;
-//! - [`images`] — the image proxy for bodies and comments.
+//! - [`images`] — the image proxy for bodies and comments;
+//! - [`create`] — opening a pull request with `gh pr create`.
 //!
 //! Every command answers `Result<T, PrError>`; [`PrError`] serializes as
 //! `{ kind, message?, retryAt? }` so the frontend can tell "install gh" from
 //! "sign in" from "wait until" from "try again". Nothing here logs a
 //! repository, title, branch or URL.
 
+pub mod create;
 mod gh;
 mod github;
 mod images;

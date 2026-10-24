@@ -98,6 +98,10 @@
 //! rewritten. An older build at this epoch names its columns in every upsert
 //! and so leaves the column alone; a session it writes keeps its attachments.
 //!
+//! `session_forks` records lineage: which session a branched session ("Branch
+//! from here") was forked from, as a child → parent pair of agent session
+//! ids. A plain table; older builds never read it.
+//!
 //! Every migration first leaves a copy behind (`Db::open`, via
 //! [`needs_migration`]), so no build is ever the only holder of a history.
 
@@ -167,6 +171,10 @@ const MIGRATIONS: &[Migration] = &[
     Migration {
         name: "threads_attached_projects",
         apply: add_attached_projects_column,
+    },
+    Migration {
+        name: "session_forks",
+        apply: |conn| Ok(conn.execute_batch(SESSION_FORKS)?),
     },
 ];
 
@@ -446,6 +454,21 @@ CREATE TABLE IF NOT EXISTS session_aliases(
     alias_id         TEXT PRIMARY KEY,
     owner_session_id TEXT NOT NULL,
     at               TEXT NOT NULL
+) STRICT;
+";
+
+/// Which session each branched session came from, child → parent.
+///
+/// Keyed by agent session ids, like `session_aliases`, and for the same
+/// reason: a fork is recorded the moment the agent answers with the child's
+/// id, before Atlas has written a row for it, and the child's row is found
+/// through its session id once it has one. A plain table, so it rides the
+/// ledger as an additive migration.
+const SESSION_FORKS: &str = "
+CREATE TABLE IF NOT EXISTS session_forks(
+    child_session_id  TEXT PRIMARY KEY,
+    parent_session_id TEXT NOT NULL,
+    at                TEXT NOT NULL
 ) STRICT;
 ";
 

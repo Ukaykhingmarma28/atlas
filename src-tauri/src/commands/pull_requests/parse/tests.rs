@@ -358,6 +358,19 @@ fn the_search_query_quotes_what_the_user_typed() {
 }
 
 #[test]
+fn the_search_query_narrows_to_one_head_branch_quoted() {
+    let query = PrListQuery {
+        state: Some(PrListState::All),
+        head: Some(" uzayer/overlay \"x".into()),
+        ..Default::default()
+    };
+    assert_eq!(
+        search_query("cli/cli", "u", &query).unwrap(),
+        r#"is:pr head:"uzayer/overlay x" sort:updated-desc repo:cli/cli"#
+    );
+}
+
+#[test]
 fn unusual_patch_paths_are_quoted_the_way_the_patch_format_does() {
     assert_eq!(quote_git_patch_path("a/src/main.rs"), "a/src/main.rs");
     assert_eq!(quote_git_patch_path("a/tab\there"), "\"a/tab\\there\"");
