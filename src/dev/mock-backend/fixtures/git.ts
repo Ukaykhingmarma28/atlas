@@ -1318,7 +1318,13 @@ export const gitHandlers: TypedHandlers<GitResponses> = {
   git_graph_signature: (): string => `${HEAD().sha}:${BRANCHES.length}:${stashes.length}:${epoch}`,
   git_graph_build: (): BuiltGraph => graph(),
 
-  git_diff_line_status: ({ file }): DiffLineStatus => lineStatusOf(diffFor(String(file))),
+  // A file the fixture doesn't track as dirty reads as `diffFor`'s "first line
+  // added", stated directly: diffing it would cost the mock's quadratic line
+  // diff on every open, two seconds on the 10,000-line fixture.
+  git_diff_line_status: ({ file }): DiffLineStatus =>
+    changeFor(String(file))
+      ? lineStatusOf(diffFor(String(file)))
+      : { added: [1], changed: [], deletedBefore: [] },
   git_diff_file: ({ file }): string => {
     const change = changeFor(String(file));
     if (!change || change.binary) return "";

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useMemo, memo, lazy, Suspense, Fragment } from "react";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { cn } from "@/lib/utils";
+import { deepActiveElement } from "@/lib/deep-active-element";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 import { requestCloseTab } from "@/features/chat/lib/close-tab";
 import {
@@ -1263,7 +1264,7 @@ function SurfaceLauncher({
   useEffect(() => {
     if (!focused) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || isTypingTarget(document.activeElement)) return;
+      if (e.defaultPrevented || isTypingTarget(deepActiveElement())) return;
       // A dialog or menu owns the keyboard while it is up, and so does the
       // Settings screen, which covers the workspace without being a dialog.
       if (document.querySelector("[role='dialog'], [role='menu']")) return;

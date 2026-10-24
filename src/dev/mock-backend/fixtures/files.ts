@@ -2,7 +2,7 @@
 //
 // The editor, the SVG tab, the media tab and the diff view all read bytes
 // through `invoke()`, so a handful of files with genuine source in them is the
-// difference between CodeMirror mounting on an empty document and CodeMirror
+// difference between the file view mounting on an empty document and it
 // mounting on something a syntax theme can actually be judged against. Each
 // language the editor highlights differently gets one file: TypeScript, TSX,
 // Rust, JSON, Markdown, CSS — plus an SVG, a PNG, and an extensionless dotfile
@@ -647,6 +647,66 @@ const EXPLORE_IPYNB = JSON.stringify(
   1,
 );
 
+/** A generated module of 10,000 lines: the file the code view's open time and
+ *  scrolling are measured against. Varied enough to keep the highlighter busy. */
+const LARGE_TS = (() => {
+  const lines: string[] = ["// Generated catalogue. Do not edit by hand.", ""];
+  for (let i = 0; lines.length < 9_996; i++) {
+    const id = String(i).padStart(4, "0");
+    lines.push(
+      `/** Entry ${id}: priced in cents, with a stock count and tags. */`,
+      `export const item${id} = { id: "sku-${id}", price: ${(i * 37) % 9_999}, stock: ${(i * 13) % 250}, tags: ["t${i % 7}", "t${i % 11}"] } as const;`,
+      `export function total${id}(qty: number): number {`,
+      `  return qty > 0 ? item${id}.price * qty : 0; // ${i % 3 === 0 ? "bulk" : "single"}`,
+      "}",
+      "",
+    );
+  }
+  lines.length = 9_999;
+  lines.push("export const CATALOGUE_SIZE = 1_666;");
+  return `${lines.join("\n")}\n`;
+})();
+
+const ORDERS_CSV = `order_id,customer,region,items,total_usd,placed_at,status
+A-1001,"Okafor, Ada",EMEA,3,129.50,2026-09-01T09:12:00Z,shipped
+A-1002,Lin Wei,APAC,1,19.99,2026-09-01T10:40:00Z,delivered
+A-1003,"Müller ""Max"" Hans",EMEA,7,412.00,2026-09-02T08:05:00Z,processing
+A-1004,Sofia Reyes,AMER,2,64.10,2026-09-02T14:22:00Z,shipped
+A-1005,Priya Natarajan,APAC,4,233.75,2026-09-03T07:58:00Z,cancelled
+A-1006,Tom Becker,AMER,1,9.00,2026-09-03T16:31:00Z,delivered
+A-1007,Yuki Tanaka,APAC,12,980.40,2026-09-04T03:12:00Z,processing
+A-1008,Amara Diallo,EMEA,5,175.25,2026-09-04T11:47:00Z,shipped
+`;
+
+const METRICS_TSV = `week\tsignups\tactivated\tchurned\tnotes
+2026-W33\t412\t301\t12\tbaseline
+2026-W34\t455\t338\t15\tpricing page test
+2026-W35\t498\t372\t9\t
+2026-W36\t530\t401\t21\toutage on Tuesday
+2026-W37\t611\t467\t14\tlaunch week
+`;
+
+const LANDING_HTML = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Acme: ship faster</title>
+    <style>
+      body { font: 16px/1.5 system-ui, sans-serif; margin: 0; padding: 48px; }
+      .hero { max-width: 640px; }
+      .cta { display: inline-block; padding: 8px 16px; border-radius: 8px; border: 1px solid currentColor; }
+    </style>
+  </head>
+  <body>
+    <main class="hero">
+      <h1>Ship faster with Acme</h1>
+      <p>Everything your team needs to plan, build and release, in one place.</p>
+      <a class="cta" href="#pricing">See pricing</a>
+    </main>
+  </body>
+</html>
+`;
+
 /** Working-tree content, keyed by path relative to the project root. */
 const SEED: Record<string, MockFile> = {
   "src/lib/api.ts": { text: API_TS, mtimeMs: T0 },
@@ -675,6 +735,10 @@ const SEED: Record<string, MockFile> = {
     mtimeMs: T0 - 5_400_000,
   },
   "notebooks/explore.ipynb": { text: EXPLORE_IPYNB, mtimeMs: T0 - 2_700_000 },
+  "src/generated/catalog.ts": { text: LARGE_TS, mtimeMs: T0 - 3_000_000 },
+  "data/orders.csv": { text: ORDERS_CSV, mtimeMs: T0 - 4_000_000 },
+  "data/metrics.tsv": { text: METRICS_TSV, mtimeMs: T0 - 4_100_000 },
+  "public/landing.html": { text: LANDING_HTML, mtimeMs: T0 - 4_200_000 },
   // Seeded so `fs_add_to_gitignore` lands on its dedupe branch — the one every
   // project open hits — instead of always creating the file. Delete it in the
   // explorer to reach the create branch.

@@ -207,6 +207,6 @@ recognise are preserved verbatim and listed under "Unknown commands".
 
 ## Not rebindable
 
-The code editor's CodeMirror keymap, the note editor's formatting shortcuts,
+The file view's editing keys (undo, find's next and previous), the note editor's formatting shortcuts,
 the terminal's readline keys and copy/paste, the native macOS menu bar, arrow
 keys inside palettes and lists, and Escape-to-close.

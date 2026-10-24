@@ -41,8 +41,8 @@ export default defineConfig(() => ({
         "node_modules/decode-named-character-reference/index.js",
       ),
     },
-    // Dedupe CodeMirror + Lezer. The lang packages (lang-json, lang-rust, …)
-    // are lazy-imported as separate chunks and each transitively imports
+    // Dedupe CodeMirror + Lezer (the team-chat draft editor). lang-markdown and
+    // the grammars it nests (html, css, javascript) each transitively import
     // @codemirror/{state,view,language} and @lezer/{common,highlight,lr};
     // without dedup Rollup can ship two copies, and facets/extensions from
     // one copy are invisible to an EditorView built from the other.
@@ -57,7 +57,6 @@ export default defineConfig(() => ({
       "@codemirror/view",
       "@codemirror/language",
       "@codemirror/commands",
-      "@codemirror/search",
       "@codemirror/autocomplete",
       "@lezer/common",
       "@lezer/highlight",
@@ -83,7 +82,6 @@ export default defineConfig(() => ({
       "@codemirror/language",
       "@codemirror/commands",
       "@codemirror/autocomplete",
-      "@codemirror/search",
       "@lezer/common",
       "@lezer/highlight",
       "@lezer/lr",
@@ -215,11 +213,10 @@ export default defineConfig(() => ({
                   id.includes("/node_modules/scheduler/")),
             },
             // `@codemirror/lang-*` is deliberately absent from every group, so
-            // each grammar keeps its own chunk. They are dynamically imported
-            // per-language in editor/lib/languages.ts; capturing them here
-            // collapses all 13 lazy boundaries into one chunk, so opening a
-            // JSON file would load every grammar. `@lezer/{common,highlight,lr}`
-            // are core runtime, not grammars, and stay with the editor chunk.
+            // the grammars ride with the team-chat draft editor that imports
+            // them rather than with the core runtime every CodeMirror consumer
+            // loads. `@lezer/{common,highlight,lr}` are core runtime, not
+            // grammars, and stay in this chunk.
             {
               name: "vendor-codemirror",
               priority: 80,
