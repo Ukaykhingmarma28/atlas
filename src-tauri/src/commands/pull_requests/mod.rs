@@ -33,7 +33,9 @@ mod queries;
 
 pub use model::*;
 
-use github::GitHub;
+/// The driver, for the session links' sweep (`session_pull_requests`), which
+/// reads pull requests by number and by branch outside any one command.
+pub(crate) use github::GitHub;
 
 fn checkout(path: &str) -> Result<&str, PrError> {
     let path = path.trim();

@@ -272,6 +272,8 @@ export interface PrListEntry {
   labels: PrLabel[];
   reviewDecision: PrReviewDecision | null;
   checksState: PrChecksState | null;
+  /** Conversation comments; line comments inside review threads are not counted. */
+  commentCount: number;
 }
 
 export interface PrListResult {

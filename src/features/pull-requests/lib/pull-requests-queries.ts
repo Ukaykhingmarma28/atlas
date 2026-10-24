@@ -86,6 +86,10 @@ export const pullRequestKeys = {
   all: (cwd: string) => ["pull-requests", cwd] as const,
   provider: (cwd: string) => ["pull-requests", cwd, "provider"] as const,
   list: (cwd: string, query: PrListQuery) => ["pull-requests", cwd, "list", query] as const,
+  /** Every page of one listing read so far — under `list`, so a write that
+   *  refreshes the listings refreshes it too. */
+  listPages: (cwd: string, query: PrListQuery) =>
+    ["pull-requests", cwd, "list", "pages", query] as const,
   pull: (cwd: string, number: number) => ["pull-requests", cwd, "pull", number] as const,
   detail: (cwd: string, number: number) =>
     ["pull-requests", cwd, "pull", number, "detail"] as const,
@@ -140,6 +144,25 @@ export function usePrList(cwd: string | null, query: PrListQuery = {}): Result<P
     ...COMMON,
     queryKey: pullRequestKeys.list(cwd ?? "", query),
     queryFn: () => prList(cwd!, query),
+    enabled: !!cwd,
+    staleTime: STALE.list,
+  });
+}
+
+/** A listing a page at a time, for the pull-request list surface. */
+export function usePrListPages(cwd: string | null, query: Omit<PrListQuery, "cursor">) {
+  return useInfiniteQuery<
+    PrListResult,
+    PrError,
+    InfiniteData<PrListResult, string | null>,
+    readonly unknown[],
+    string | null
+  >({
+    ...COMMON,
+    queryKey: pullRequestKeys.listPages(cwd ?? "", query),
+    queryFn: ({ pageParam }) => prList(cwd!, { ...query, cursor: pageParam }),
+    initialPageParam: null,
+    getNextPageParam: (last) => last.nextCursor,
     enabled: !!cwd,
     staleTime: STALE.list,
   });

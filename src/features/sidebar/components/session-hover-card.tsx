@@ -101,9 +101,7 @@ function SessionHoverCardBody({
             <div className="min-w-0 truncate text-secondary-foreground">{session.branch}</div>
           </div>
         ) : null}
-        {session.branch ? (
-          <SessionPullRequestLines cwd={session.cwd} branch={session.branch} />
-        ) : null}
+        <SessionPullRequestLines cwd={session.cwd} pullRequests={session.pullRequests} />
         {sharing ? (
           <div className="flex min-w-0 items-center gap-2">
             <Users aria-hidden className="size-3 shrink-0" />

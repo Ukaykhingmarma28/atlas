@@ -85,6 +85,7 @@ pub mod session_chat;
 pub mod session_chat_sessions;
 pub mod session_context;
 pub mod session_projects;
+pub mod session_pull_requests;
 pub mod session_watcher;
 pub mod shared_memory;
 pub mod shell_profile;

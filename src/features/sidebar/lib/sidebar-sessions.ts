@@ -9,9 +9,15 @@
 // (`atlas-thread-metadata`) — `unread` and `woke` arrive already decided, and
 // nothing here re-derives them. This module only sorts and filters.
 
-import type { AttachedProject, ThreadProject, ThreadRow } from "@/features/chat/lib/history-api";
+import type {
+  AttachedProject,
+  PullRequestLink,
+  ThreadProject,
+  ThreadRow,
+} from "@/features/chat/lib/history-api";
 import { sortByPinOrder } from "@/features/chat/lib/pin-order";
 import { sidebarAgentOf, type SidebarAgent } from "@/features/chat/lib/sidebar-agents";
+import { pullRequestSearchTerms } from "@/features/pull-requests/lib/session-pull-request-links";
 
 /** A project the sidebar can scope to: one of the active organisation's. */
 export interface SidebarProject {
@@ -62,6 +68,9 @@ export interface SidebarSession {
   /** Listed because the scoped project is attached to it, not because it
    *  runs there: the row says "attached". */
   viaAttached: boolean;
+  /** The pull requests linked to the session, as the row carries them (one
+   *  shared empty array when none, as for `attachedProjects`). */
+  pullRequests: readonly PullRequestLink[];
 }
 
 export interface SidebarPartition {
@@ -127,6 +136,8 @@ function attachesProject(thread: ThreadRow, project: SidebarProject): boolean {
   });
 }
 
+const NO_PULL_REQUESTS: readonly PullRequestLink[] = [];
+
 function toSession(
   thread: ThreadRow,
   project: SidebarProject,
@@ -134,7 +145,9 @@ function toSession(
   viaAttached = false,
 ): SidebarSession {
   const attached = thread.attachedProjects?.length ? thread.attachedProjects : NO_ATTACHED;
+  const pullRequests = thread.pullRequests?.length ? thread.pullRequests : NO_PULL_REQUESTS;
   return {
+    pullRequests,
     attachedProjects: attached,
     attachedNames: attachedNamesOf(attached),
     viaAttached,
@@ -246,7 +259,8 @@ export function nextSnoozeWake(groups: readonly ThreadProject[], now: number): n
   return soonest;
 }
 
-/** Sessions whose title, project or branch holds every word of `query`,
+/** Sessions whose title, project, branch or linked pull requests hold
+ *  every word of `query`,
  *  case-insensitively. Title matches first, the rest after; each keeps the
  *  order it came in. Empty for an empty query. */
 export function searchSidebarSessions(
@@ -263,8 +277,15 @@ export function searchSidebarSessions(
       titleMatches.push(session);
       continue;
     }
-    const haystack =
-      `${title} ${session.projectName} ${session.branch ?? ""} ${session.attachedNames}`.toLowerCase();
+    const haystack = [
+      title,
+      session.projectName,
+      session.branch ?? "",
+      session.attachedNames,
+      ...pullRequestSearchTerms(session.pullRequests),
+    ]
+      .join(" ")
+      .toLowerCase();
     if (words.every((word) => haystack.includes(word))) otherMatches.push(session);
   }
   return [...titleMatches, ...otherMatches];

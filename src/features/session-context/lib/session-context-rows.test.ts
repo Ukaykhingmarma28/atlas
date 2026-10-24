@@ -8,7 +8,7 @@ import type { PrListEntry } from "@/features/pull-requests/lib/pull-requests-typ
 
 import { branchOptions } from "../components/branch-picker";
 import { lineageEdges } from "./session-lineage";
-import { orderSessionPullRequests } from "./session-pull-requests";
+import { mergeSessionPullRequests, orderSessionPullRequests } from "./session-pull-requests";
 
 describe("branchOptions", () => {
   const branches = [
@@ -94,5 +94,31 @@ describe("orderSessionPullRequests", () => {
       ]).current?.number,
     ).toBe(2);
     expect(orderSessionPullRequests([])).toEqual({ current: null, rest: [] });
+  });
+});
+
+describe("mergeSessionPullRequests", () => {
+  const url = (n: number) => `https://github.com/acme/shop/pull/${n}`;
+  const link = (n: number, source: "manual" | "created" | "detected") => ({
+    repository: "acme/shop",
+    number: n,
+    url: url(n),
+    source,
+    linkedAt: "2026-10-01T00:00:00Z",
+    snapshot: null,
+  });
+  const live = (n: number, state: "open" | "merged") =>
+    ({ ...pr(n, state, "2026-10-05T00:00:00Z"), url: url(n), title: `PR ${n}` }) as PrListEntry;
+
+  it("lists every link once, the branch read's state winning, then unlinked branch pull requests", () => {
+    const merged = mergeSessionPullRequests(
+      [link(1, "manual"), link(2, "created")],
+      [live(2, "merged"), live(3, "open")],
+    );
+    expect(merged.map((m) => [m.number, m.state, m.source])).toEqual([
+      [1, "open", "manual"],
+      [2, "merged", "created"],
+      [3, "open", null],
+    ]);
   });
 });

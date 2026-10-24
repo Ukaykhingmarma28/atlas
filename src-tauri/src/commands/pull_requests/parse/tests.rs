@@ -325,6 +325,29 @@ fn a_search_page_reads_its_rows_and_cursor() {
 }
 
 #[test]
+fn a_by_number_answer_reads_each_alias_in_order_and_skips_the_missing() {
+    let search = fixture("search");
+    let nodes = search
+        .pointer("/search/nodes")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap();
+    let mut second = nodes[1].clone();
+    second["comments"] = serde_json::json!({ "totalCount": 4 });
+    let data = serde_json::json!({
+        "repository": { "p0": second, "p1": null, "p2": nodes[0] }
+    });
+    let rows = to_entries_by_alias(&data, 3, Some("uzayer"));
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].number, nodes[1]["number"].as_u64().unwrap());
+    assert_eq!(rows[0].comment_count, 4);
+    assert_eq!(rows[1].number, 14804);
+    // A row whose answer did not count its comments reads as none.
+    assert_eq!(rows[1].comment_count, 0);
+    assert!(to_entries_by_alias(&serde_json::json!({}), 2, None).is_empty());
+}
+
+#[test]
 fn viewed_state_reads_every_file() {
     let (files, next) = to_files_viewed_page(&fixture("files-viewed"));
     assert_eq!(files.len(), 15);

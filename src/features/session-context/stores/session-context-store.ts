@@ -51,6 +51,8 @@ export interface CreatePrRequest {
   projectPath: string;
   draft: boolean;
   prefill: PrCreateDraft;
+  /** The session it is opened from, which the pull request is linked to. */
+  sessionId: string | null;
 }
 
 interface SessionContextState {

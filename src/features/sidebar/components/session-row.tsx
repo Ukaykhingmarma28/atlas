@@ -669,9 +669,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
               ) : (
                 <span className="flex-1" />
               )}
-              {session.branch ? (
-                <SessionPullRequestBadge cwd={session.cwd} branch={session.branch} enabled />
-              ) : null}
+              <SessionPullRequestBadge cwd={session.cwd} pullRequests={session.pullRequests} />
               <span
                 aria-hidden
                 className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1 opacity-60"

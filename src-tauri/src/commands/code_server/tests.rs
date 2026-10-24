@@ -333,6 +333,79 @@ async fn without_a_broker_an_access_request_is_refused() {
     client.cancel().await.ok();
 }
 
+/// Records what `link_pull_request` asked for.
+struct RecordingLinks(std::sync::Mutex<Vec<(String, Option<String>, u64)>>);
+
+impl crate::commands::session_pull_requests::PullRequestLinkBroker for RecordingLinks {
+    fn link(
+        &self,
+        _session_id: String,
+        cwd: String,
+        repository: Option<String>,
+        number: u64,
+    ) -> futures::future::BoxFuture<'static, Result<String, String>> {
+        self.0.lock().unwrap().push((cwd, repository, number));
+        Box::pin(async move { Ok(format!("Linked #{number}")) })
+    }
+}
+
+/// `link_pull_request` reaches the host's broker with the session's
+/// directory and the pull request a URL or a number names. A URL that names
+/// no pull request, or no target at all, never reaches it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_link_request_reaches_the_broker_with_the_pull_request_it_names() {
+    let dir = project(&[("a.txt", "x\n")]);
+    let links = Arc::new(RecordingLinks(std::sync::Mutex::new(Vec::new())));
+    let host =
+        running_host_with(CodeTools::new(enabled(true)).with_pull_requests(links.clone())).await;
+    let client = client_in(&host, dir.path()).await;
+
+    let (err, text) = call(
+        &client,
+        "link_pull_request",
+        json!({ "url": "https://github.com/acme/shop/issues/42" }),
+    )
+    .await;
+    assert!(err, "an issue is not a pull request: {text}");
+    let (err, text) = call(
+        &client,
+        "link_pull_request",
+        json!({ "url": "https://github.com/acme/shop/pull/42" }),
+    )
+    .await;
+    assert!(!err, "{text}");
+    assert_eq!(text, "Linked #42");
+    let (err, _) = call(&client, "link_pull_request", json!({ "number": 7 })).await;
+    assert!(!err);
+    let (err, text) = call(&client, "link_pull_request", json!({})).await;
+    assert!(err, "{text}");
+
+    let asked = links.0.lock().unwrap().clone();
+    assert_eq!(
+        asked,
+        vec![
+            (
+                dir.path().to_string_lossy().into_owned(),
+                Some("acme/shop".to_string()),
+                42
+            ),
+            (dir.path().to_string_lossy().into_owned(), None, 7),
+        ]
+    );
+    client.cancel().await.ok();
+}
+
+/// Without a broker the tool says so.
+#[tokio::test(flavor = "multi_thread")]
+async fn without_a_broker_a_link_request_is_refused() {
+    let dir = project(&[("a.txt", "x\n")]);
+    let host = running_host(enabled(true)).await;
+    let client = client_in(&host, dir.path()).await;
+    let (err, text) = call(&client, "link_pull_request", json!({ "number": 1 })).await;
+    assert!(err && text.contains("not available"), "{text}");
+    client.cancel().await.ok();
+}
+
 // ── Cancellation ─────────────────────────────────────────────────────────────
 
 /// A worker that spins until its token is cancelled, then reports in.

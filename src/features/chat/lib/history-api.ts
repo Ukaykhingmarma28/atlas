@@ -99,6 +99,44 @@ export interface ThreadRow {
    * parent, and the rows that name this one as theirs.
    */
   forkedFromSessionId: string | null;
+  /**
+   * The pull requests linked to the session — opened from it, found on its
+   * branch, linked by the user or the agent — in the order they were linked,
+   * each with the host's last reported state. Unlinked ones are left out.
+   * Kept current by the sync sweep (`session_pull_requests_sync`).
+   */
+  pullRequests: PullRequestLink[];
+}
+
+/** How a pull request came to be linked to a session. */
+export type PullRequestLinkSource = "manual" | "created" | "detected" | "agent";
+
+/** A pull request linked to a session — Rust's `PullRequestLinkWire`. */
+export interface PullRequestLink {
+  /** `owner/name`. With `number`, the link's identity. */
+  repository: string;
+  number: number;
+  url: string;
+  source: PullRequestLinkSource;
+  /** RFC 3339. */
+  linkedAt: string;
+  /** `null` until the host has been read. */
+  snapshot: PullRequestLinkSnapshot | null;
+}
+
+/** The host's last reported state for a linked pull request. */
+export interface PullRequestLinkSnapshot {
+  state: "open" | "closed" | "merged";
+  title: string;
+  headBranch: string;
+  baseBranch: string;
+  isDraft: boolean;
+  updatedAt: string | null;
+  checksState: "passing" | "failing" | "pending" | null;
+  reviewDecision: "approved" | "changes-requested" | "review-required" | null;
+  commentCount: number | null;
+  /** RFC 3339: when Atlas read it. */
+  syncedAt: string;
 }
 
 /** What a session may do in an attached project. Read-only unless granted. */

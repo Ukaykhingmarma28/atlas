@@ -19,7 +19,8 @@
 //!
 //! A row is **metadata only** — ids, agent, titles, timestamps, worktree paths,
 //! the session's lifecycle (settled, pinned, snoozed, last viewed), and the
-//! projects attached to it besides its own folder ([`AttachedProject`]). No message, no chunk, no tool call, no token. Replaying a
+//! projects attached to it besides its own folder ([`AttachedProject`]), and
+//! the pull requests linked to it ([`PullRequestLink`]). No message, no chunk, no tool call, no token. Replaying a
 //! conversation is the agent's job, through `session/load`. This is the single
 //! invariant the whole design rests on; anything that would put transcript
 //! content in this crate is a design error, not a feature.
@@ -58,6 +59,7 @@ mod import;
 mod model;
 mod paths;
 mod projects;
+mod pull_requests;
 mod recorder;
 mod schema;
 mod store;
@@ -67,6 +69,9 @@ pub use import::{collect_all_sessions, importable_threads};
 pub use model::{ThreadId, ThreadMetadata, DEFAULT_THREAD_TITLE};
 pub use paths::{LengthMismatch, PathList, SerializedPathList, WorktreePaths};
 pub use projects::{AttachSource, AttachedProject, ProjectAccess};
+pub use pull_requests::{
+    visible as visible_pull_requests, PullRequestLink, PullRequestLinkSource, PullRequestSnapshot,
+};
 pub use recorder::{
     affects_thread_metadata, lifecycle_signal, LifecycleSignal, ThreadRecorder, ThreadSnapshot,
 };

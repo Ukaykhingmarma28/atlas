@@ -102,6 +102,13 @@
 //! from here") was forked from, as a child → parent pair of agent session
 //! ids. A plain table; older builds never read it.
 //!
+//! `threads_pull_requests` adds `pull_requests`, nullable: the pull requests
+//! linked to a session, as one JSON array (repository, number, URL, how it
+//! was linked, and the host's last reported state). `NULL` is "none linked",
+//! which is what every existing row is, so no row is rewritten and the epoch
+//! stays. An older build at this epoch names its columns in every upsert and
+//! so leaves the column alone.
+//!
 //! Every migration first leaves a copy behind (`Db::open`, via
 //! [`needs_migration`]), so no build is ever the only holder of a history.
 
@@ -175,6 +182,10 @@ const MIGRATIONS: &[Migration] = &[
     Migration {
         name: "session_forks",
         apply: |conn| Ok(conn.execute_batch(SESSION_FORKS)?),
+    },
+    Migration {
+        name: "threads_pull_requests",
+        apply: add_pull_requests_column,
     },
 ];
 
@@ -342,6 +353,16 @@ fn add_lifecycle_columns(conn: &Connection) -> Result<()> {
         }
     }
     conn.execute_batch(ARCHIVED_TO_SETTLED)?;
+    Ok(())
+}
+
+/// `pull_requests`, added only when absent — the same guard as
+/// [`add_branch_column`]. A shape change only: every existing row reads
+/// `NULL`, nothing linked, and none is rewritten.
+fn add_pull_requests_column(conn: &Connection) -> Result<()> {
+    if !has_column(conn, "threads", "pull_requests")? {
+        conn.execute_batch("ALTER TABLE threads ADD COLUMN pull_requests TEXT;")?;
+    }
     Ok(())
 }
 
@@ -874,6 +895,43 @@ mod tests {
             .threads()
             .iter()
             .all(|t| t.attached_projects.is_empty()));
+    }
+
+    /// A database from before linked pull requests gains the column with
+    /// every row `NULL` at the same epoch, and no row is rewritten. The store
+    /// decodes them as empty lists.
+    #[test]
+    fn a_database_before_pull_request_links_gains_a_null_column_at_the_same_epoch() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("threads.db");
+        seed_v1(&path);
+        {
+            let conn = Connection::open(&path).unwrap();
+            migrate(&conn).unwrap();
+            conn.execute_batch(
+                "ALTER TABLE threads DROP COLUMN pull_requests;
+                 DELETE FROM schema_migrations WHERE name = 'threads_pull_requests';",
+            )
+            .unwrap();
+        }
+        {
+            let conn = Connection::open(&path).unwrap();
+            assert!(needs_migration(&conn).unwrap());
+            migrate(&conn).unwrap();
+            assert_eq!(version_of(&conn), SCHEMA_EPOCH);
+            assert_eq!(ledger(&conn), known_names());
+            let (rows, linked): (i64, i64) = conn
+                .query_row(
+                    "SELECT COUNT(*), COUNT(pull_requests) FROM threads",
+                    [],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!((rows, linked), (3, 0));
+            add_pull_requests_column(&conn).unwrap();
+        }
+        let store = ThreadMetadataStore::open(&path).unwrap();
+        assert!(store.threads().iter().all(|t| t.pull_requests.is_empty()));
     }
 
     /// Archive is retired: the lifecycle migration settles every archived row

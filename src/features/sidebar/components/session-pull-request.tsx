@@ -1,121 +1,117 @@
-// A session's pull request, as the sidebar shows it: the badge on a row and
-// the line in the hover card.
+// A session's linked pull requests, as the sidebar shows them: the badge on a
+// row and the lines in the hover card.
 //
-// Kept in this one file on purpose. Today the only source is the repository's
-// shared `gh` lookup by branch (`useBranchPullRequest`), which knows one pull
-// request per branch; a richer per-session pull-request layer is coming, and
-// it should replace this file's data source without touching the row. Both
-// exports render nothing until there is data: no `gh`, no GitHub remote or no
-// pull request for the branch all look the same — absent.
+// The data is the session row's own `pullRequests` (opened from the session,
+// found on its branch, linked by the user or by the agent), kept current by
+// the sidebar's sweep. Nothing here reads the host. Both exports render
+// nothing for a session with none.
 
 import type { MouseEvent } from "react";
-import { GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { useBranchPullRequest, type BranchPullRequest } from "@/features/git/lib/git-pr-api";
+
+import type { PullRequestLink } from "@/features/chat/lib/history-api";
 import { openPullRequestTab } from "@/features/pull-requests/lib/open-pull-request-tab";
+import {
+  CHECKS_STATE_PRESENTATION,
+  STATE_PRESENTATION,
+} from "@/features/pull-requests/components/pull-request-presentation";
+import {
+  LINK_SOURCE_LABEL,
+  linkState,
+  orderLinks,
+  pullRequestBadge,
+} from "@/features/pull-requests/lib/session-pull-request-links";
+import { cn } from "@/lib/utils";
 
-const PR_STATE: Record<
-  BranchPullRequest["state"],
-  { icon: typeof GitPullRequest; className: string; label: string }
-> = {
-  open: { icon: GitPullRequest, className: "text-success", label: "Open" },
-  merged: { icon: GitMerge, className: "text-info", label: "Merged" },
-  closed: { icon: GitPullRequestClosed, className: "text-error", label: "Closed" },
-};
+const CHECKS_LABEL = {
+  passing: "Checks passing",
+  failing: "Checks failing",
+  pending: "Checks running",
+} as const;
 
-interface Presentation {
-  Icon: typeof GitPullRequest;
-  toneClassName: string;
-  /** "Open pull request #12: Add discounts" */
-  label: string;
+/** "Open pull request #12: Add discounts" */
+function linkLabel(link: PullRequestLink): string {
+  const state = STATE_PRESENTATION[linkState(link)];
+  const title = link.snapshot?.title;
+  return `${state.label} pull request #${link.number}${title ? `: ${title}` : ""}`;
 }
 
-function present(pr: BranchPullRequest): Presentation {
-  const state = pr.isDraft && pr.state === "open" ? null : PR_STATE[pr.state];
-  return {
-    Icon: state?.icon ?? GitPullRequestDraft,
-    toneClassName: state?.className ?? "text-muted-foreground",
-    label: `${state?.label ?? "Draft"} pull request #${pr.number}: ${pr.title}`,
-  };
+function open(cwd: string, link: PullRequestLink): void {
+  openPullRequestTab({
+    repoPath: cwd,
+    number: link.number,
+    title: link.snapshot?.title ?? `#${link.number}`,
+  });
 }
 
-/** The session's pull requests. One per branch for now; a list so the badge
- *  can show "+N" the day a session links several. */
-export function useSessionPullRequests(
-  cwd: string,
-  branch: string | null,
-  enabled: boolean,
-): BranchPullRequest[] {
-  const pr = useBranchPullRequest(cwd, branch, enabled);
-  return pr ? [pr] : [];
-}
-
-/** The row's badge: the pull request's number in its state's colour, or "+N"
- *  when the session has several. Opens the (first) pull request. */
+/** The row's badge: the current pull request's state glyph and number, then
+ *  "+N" for the others. Opens the current one. */
 export function SessionPullRequestBadge({
   cwd,
-  branch,
-  enabled,
+  pullRequests,
 }: {
   cwd: string;
-  branch: string | null;
-  /** Off until the row has been on screen, so a long list asks `gh` only for
-   *  what was seen. */
-  enabled: boolean;
+  pullRequests: readonly PullRequestLink[];
 }) {
-  const prs = useSessionPullRequests(cwd, branch, enabled);
-  const first = prs[0];
-  if (!first) return null;
-  const presentation = present(first);
-  const text = prs.length > 1 ? `+${prs.length}` : first.number;
+  const badge = pullRequestBadge(pullRequests);
+  if (!badge) return null;
+  const state = STATE_PRESENTATION[linkState(badge.link)];
   const label =
-    prs.length > 1 ? `${presentation.label}, and ${prs.length - 1} more` : presentation.label;
+    badge.others > 0 ? `${linkLabel(badge.link)}, and ${badge.others} more` : linkLabel(badge.link);
   return (
     <button
       type="button"
       aria-label={`${label} — open`}
+      title={label}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event: MouseEvent) => {
         event.preventDefault();
         event.stopPropagation();
-        openPullRequestTab({ repoPath: cwd, number: first.number, title: first.title });
+        open(cwd, badge.link);
       }}
-      className={cn(
-        "inline-flex shrink-0 cursor-pointer items-center gap-0.5 rounded-sm text-xs tabular-nums hover:underline",
-        presentation.toneClassName,
-      )}
+      className="inline-flex shrink-0 cursor-pointer items-center gap-0.5 rounded-sm text-xs tabular-nums hover:underline"
     >
-      <presentation.Icon aria-hidden className="size-3 shrink-0" />
-      <span>{text}</span>
+      <state.Icon aria-hidden className={cn("size-3 shrink-0", state.toneClassName)} />
+      <span className={state.toneClassName}>#{badge.link.number}</span>
+      {badge.others > 0 && <span className="text-muted-foreground">+{badge.others}</span>}
     </button>
   );
 }
 
-/** The hover card's pull-request lines; each opens its pull request's tab. */
-export function SessionPullRequestLines({ cwd, branch }: { cwd: string; branch: string | null }) {
-  const prs = useSessionPullRequests(cwd, branch, true);
-  if (prs.length === 0) return null;
+/** The hover card's lines: every linked pull request with its state and
+ *  checks, the current one first. Each opens its pull request's tab. */
+export function SessionPullRequestLines({
+  cwd,
+  pullRequests,
+}: {
+  cwd: string;
+  pullRequests: readonly PullRequestLink[];
+}) {
+  if (pullRequests.length === 0) return null;
   return (
     <>
-      {prs.map((pr) => {
-        const presentation = present(pr);
+      {orderLinks(pullRequests).map((link) => {
+        const state = STATE_PRESENTATION[linkState(link)];
+        const checksState = link.snapshot?.state === "open" ? link.snapshot.checksState : null;
+        const checks = checksState ? CHECKS_STATE_PRESENTATION[checksState] : null;
         return (
           <button
-            key={pr.number}
+            key={`${link.repository}#${link.number}`}
             type="button"
-            aria-label={`${presentation.label} — open`}
-            onClick={() =>
-              openPullRequestTab({ repoPath: cwd, number: pr.number, title: pr.title })
-            }
+            aria-label={`${linkLabel(link)} — open`}
+            title={`${link.url}\n${LINK_SOURCE_LABEL[link.source]}`}
+            onClick={() => open(cwd, link)}
             className="flex min-w-0 cursor-pointer items-center gap-2 rounded-sm text-left hover:text-foreground"
           >
-            <presentation.Icon
-              aria-hidden
-              className={cn("size-3 shrink-0", presentation.toneClassName)}
-            />
-            <span className="min-w-0 truncate text-secondary-foreground hover:text-foreground">
-              #{pr.number} {pr.title}
+            <state.Icon aria-hidden className={cn("size-3 shrink-0", state.toneClassName)} />
+            <span className="min-w-0 flex-1 truncate text-secondary-foreground hover:text-foreground">
+              #{link.number} {link.snapshot?.title ?? link.repository}
             </span>
+            {checks && checksState && (
+              <checks.Icon
+                aria-label={CHECKS_LABEL[checksState]}
+                className={cn("size-3 shrink-0", checks.toneClassName)}
+              />
+            )}
           </button>
         );
       })}

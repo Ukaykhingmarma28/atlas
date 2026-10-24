@@ -54,6 +54,13 @@ import { fileURLToPath } from "node:url";
  *    project or repo mention carries into `compose_prompt`. A renamed access
  *    word would read every project as unattached — the agent told nothing
  *    about what it may edit, and the chip's toggle never shown.
+ * #15 pins linked pull requests: the session row's `pullRequests` entries and
+ *    their snapshot against `session_pull_requests.rs`, the source words
+ *    against the store's enum (less the tombstone, which never leaves Rust),
+ *    the snapshot fields the store keeps, every `session_pull_requests_*`
+ *    command's argument names, and `pr_create`'s `sessionId`, which is what
+ *    records a `created` link. A renamed field would read every session as
+ *    having no pull request, and nothing else would notice.
  *
  * Unlike `tests/state-payload-contract.test.ts` (which is specifically the
  * `save_app_state` / `bootstrap_app_state` payload and generalises over many
@@ -734,5 +741,79 @@ describe("attached projects: session row, commands and mentions (#14)", () => {
     expect(rustVariantFields(body, "Repo")).toContain("access");
     expect(tsInterfaceProps(mentions, "MentionProject")).toContain("access");
     expect(tsInterfaceProps(mentions, "MentionRepo")).toContain("access");
+  });
+});
+
+describe("linked pull requests: session row, store and commands (#15)", () => {
+  const host = read("src-tauri", "src", "commands", "agent_host.rs");
+  const commands = read("src-tauri", "src", "commands", "session_pull_requests.rs");
+  const create = read("src-tauri", "src", "commands", "pull_requests", "create.rs");
+  const store = read("crates", "atlas-thread-metadata", "src", "pull_requests.rs");
+  const history = read("src", "features", "chat", "lib", "history-api.ts");
+  const api = read("src", "features", "pull-requests", "lib", "session-pull-requests-api.ts");
+  const prApi = read("src", "features", "pull-requests", "lib", "pull-requests-api.ts");
+
+  const PAIRS: Array<[rust: string, ts: string, source: string]> = [
+    ["PullRequestLinkWire", "PullRequestLink", history],
+    ["PullRequestSnapshotWire", "PullRequestLinkSnapshot", history],
+    ["SessionPullRequestsChange", "SessionPullRequestsChange", api],
+    ["SessionPullRequestsSync", "SessionPullRequestsSync", api],
+  ];
+  for (const [rustName, tsName, source] of PAIRS) {
+    it(`${tsName} matches Rust ${rustName} field for field`, () => {
+      const { attrs, body } = rustItem(commands, "struct", rustName);
+      expect(attrs).toMatch(/rename_all\s*=\s*"camelCase"/);
+      const rustWire = rustStructFields(body).map(snakeToCamel);
+      expect(rustWire.length).toBeGreaterThan(1);
+      expect([...tsInterfaceProps(source, tsName)].sort()).toEqual([...rustWire].sort());
+    });
+  }
+
+  it("ThreadRow carries pullRequests, the sidebar badge's and the overlay's only input", () => {
+    expect(tsInterfaceProps(history, "ThreadRow")).toContain("pullRequests");
+    expect(rustStructFields(rustItem(host, "struct", "ThreadRow").body)).toContain("pull_requests");
+  });
+
+  it("the snapshot the wire carries is the snapshot the store keeps", () => {
+    const kept = rustStructFields(rustItem(store, "struct", "PullRequestSnapshot").body);
+    const wire = rustStructFields(rustItem(commands, "struct", "PullRequestSnapshotWire").body);
+    expect([...wire].sort()).toEqual([...kept].sort());
+  });
+
+  it("the source words are the store's variants, less the tombstone", () => {
+    const { attrs, body } = rustItem(store, "enum", "PullRequestLinkSource");
+    expect(attrs).toMatch(/rename_all\s*=\s*"snake_case"/);
+    const rustWire = rustEnumVariants(body)
+      .map(pascalToSnake)
+      .filter((w) => w !== "dismissed");
+    expect(rustWire.length).toBeGreaterThan(1);
+    expect([...tsUnionLiterals(history, "PullRequestLinkSource")].sort()).toEqual(
+      [...rustWire].sort(),
+    );
+  });
+
+  const invoked = [...api.matchAll(/invoke(?:<[^(]*>)?\(\s*"(session_pull_requests_\w+)"/g)].map(
+    (m) => m[1],
+  );
+  it("covers every session_pull_requests_* command", () => {
+    const declared = [
+      ...commands.matchAll(/pub (?:async )?fn (session_pull_requests_\w+)\s*\(/g),
+    ].map((m) => m[1]);
+    expect(declared.length).toBe(3);
+    expect([...invoked].sort()).toEqual([...declared].sort());
+  });
+  for (const name of invoked) {
+    it(`${name}'s argument keys match its Rust parameters`, () => {
+      expect([...tsInvokeArgKeys(api, name)].sort()).toEqual(
+        [...rustCommandArgKeys(commands, name)].sort(),
+      );
+    });
+  }
+
+  it("pr_create is invoked with its sessionId, which records the created link", () => {
+    expect(rustCommandArgKeys(create, "pr_create")).toContain("sessionId");
+    expect([...tsInvokeArgKeys(prApi, "pr_create")].sort()).toEqual(
+      [...rustCommandArgKeys(create, "pr_create")].sort(),
+    );
   });
 });

@@ -71,6 +71,12 @@ const PullRequestPanel = lazy(() =>
     default: m.PullRequestPanel,
   })),
 );
+// A repository's pull requests (`pull-requests:<checkout>`); its own chunk.
+const PullRequestListPanel = lazy(() =>
+  import("@/features/pull-requests/components/pull-request-list-panel").then((m) => ({
+    default: m.PullRequestListPanel,
+  })),
+);
 // The review diff (`diff`, `session-changes`). Its own chunk, which is the only
 // thing that imports the diff viewer, Shiki and their workers.
 const ReviewPanel = lazy(() =>
@@ -130,9 +136,11 @@ import {
   Minimize2,
   MessagesSquare,
   FolderTree,
+  GitPullRequest,
   GitPullRequestArrow,
 } from "lucide-react";
 import { readPullRequestTabData } from "@/features/pull-requests/lib/open-pull-request-tab";
+import { readPullRequestListTabData } from "@/features/pull-requests/lib/open-pull-request-list-tab";
 import { PROJECTLESS_TYPES, surfaceMinWidth, type TabType } from "@/lib/constants";
 import { teamChatShown, toggleTeamChat } from "../lib/team-chat";
 import { SessionContextButton } from "@/features/session-context/components/session-context-button";
@@ -156,6 +164,7 @@ const tabIcons: Record<TabType, FallbackIcon> = {
   diff: GitCompare,
   commit: GitCommitHorizontal,
   "pull-request": GitPullRequestArrow,
+  "pull-requests": GitPullRequest,
   "session-changes": FileDiff,
   "source-control": GitBranch,
   log: ScrollText,
@@ -1069,6 +1078,14 @@ function TabContent({ tab, projectId = null }: { tab: Tab; projectId?: string | 
       const pr = readPullRequestTabData(tab.data);
       return pr ? (
         <PullRequestPanel tabId={tab.id} repoPath={pr.repoPath} number={pr.number} />
+      ) : (
+        <PlaceholderContent tab={tab} />
+      );
+    }
+    case "pull-requests": {
+      const list = readPullRequestListTabData(tab.data);
+      return list ? (
+        <PullRequestListPanel repoPath={list.repoPath} />
       ) : (
         <PlaceholderContent tab={tab} />
       );

@@ -74,6 +74,7 @@ import type { MockHandlers, MockResponses, TypedHandlers } from "../types";
 import type { AgentKey, MemoryContent } from "./northwind-content-types";
 import { adoptSession } from "../fake-agent";
 import { sessionLifecycleHandlers } from "../session-lifecycle";
+import { sessionPullRequestHandlers } from "../session-pull-requests";
 import { RESTING_LIFECYCLE } from "@/features/chat/lib/session-lifecycle";
 import { NORTHWIND_FILES } from "../fixtures/northwind-repo";
 import { applyAgentConfig } from "../fixtures/skills";
@@ -505,6 +506,32 @@ function seedThreads(): ThreadRow[] {
       liveElsewhere: false,
       attachedProjects: [],
       model: "Claude Sonnet 4.5",
+      // The run on `server-discounts` went up as pull request 353, found on its branch.
+      // Merged, because the branch is: its commit is already on `main`.
+      pullRequests:
+        s.content.branch === "server-discounts"
+          ? [
+              {
+                repository: "northwind/northwind-shop",
+                number: 353,
+                url: "https://github.com/northwind/northwind-shop/pull/353",
+                source: "detected" as const,
+                linkedAt: iso(s.lastMs),
+                snapshot: {
+                  state: "merged" as const,
+                  title: "Validate discount codes on the server",
+                  headBranch: "server-discounts",
+                  baseBranch: "main",
+                  isDraft: false,
+                  updatedAt: iso(s.lastMs),
+                  checksState: "passing" as const,
+                  reviewDecision: "approved" as const,
+                  commentCount: 2,
+                  syncedAt: iso(s.lastMs),
+                },
+              },
+            ]
+          : [],
       forkedFromSessionId: null,
     }));
 }
@@ -1697,6 +1724,13 @@ export const northwindMiscRawCommands: MockHandlers = {
     return null;
   },
   ...sessionLifecycleHandlers({
+    get: () => threads,
+    set: (rows) => {
+      threads = rows;
+    },
+    changed: threadsChanged,
+  }),
+  ...sessionPullRequestHandlers({
     get: () => threads,
     set: (rows) => {
       threads = rows;

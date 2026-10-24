@@ -138,6 +138,7 @@ import { useAuthStore } from "@/features/auth/stores/auth-store";
 import { createWakeRefresher } from "@/features/auth/lib/refresh-on-wake";
 import { useMembersStore } from "@/features/organisations/stores/members-store";
 import { ConnectDialog } from "@/features/auth/components/connect-dialog";
+import { LinkPullRequestDialogHost } from "@/features/pull-requests/components/link-pull-request-dialog";
 import { clampScale, SCALE_STEP, DEFAULT_SCALE } from "@/features/settings/lib/ui-scale";
 import { listenModelDone } from "@/features/settings/lib/models-api";
 import { useModelsStore } from "@/features/settings/stores/models-store";
@@ -1442,6 +1443,7 @@ export function App() {
       <LoadingOrganisationOverlay />
       <StopAgentsDialog />
       <ConfirmDialog />
+      <LinkPullRequestDialogHost />
       <RemoveAgentDialog />
       <BrowserOverlayWatcher />
       <ThemeEditorHost />

@@ -210,6 +210,7 @@ function pull(
       labels: full.labels,
       reviewDecision: full.reviewDecision,
       checksState: full.checksState,
+      commentCount: full.number % 7,
     },
   };
 }
@@ -494,9 +495,110 @@ const PULLS: FakePull[] = [
 ];
 
 function find(number: unknown): FakePull {
-  const found = PULLS.find((p) => p.detail.number === Number(number));
+  const found = allPulls().find((p) => p.detail.number === Number(number));
   return found ?? fail({ kind: "notFound" });
 }
+
+// ── a crowded repository, for the list ─────────────────────────────────────
+
+/** Extra pull requests a busy repository has, on for `?scenario=pull-request-list`.
+ *  Generated from a seed, so screenshots compare. */
+let crowd: FakePull[] = [];
+
+const CROWD_TITLES = [
+  "Orders: paginate the admin table",
+  "Checkout: round totals half-even",
+  "API: retry 5xx with jitter",
+  "Search: index product synonyms",
+  "Cart: keep the coupon after login",
+  "Infra: pin the Node image",
+  "Docs: document the webhook signatures",
+  "Billing: ledger entries for refunds",
+  "Auth: rotate session keys weekly",
+  "Mobile: fix the safe-area inset",
+  "Email: render receipts in dark mode",
+  "Perf: memoise the price formatter",
+];
+const CROWD_LABELS = [
+  { name: "bug", color: "d73a4a" },
+  { name: "enhancement", color: "a2eeef" },
+  { name: "checkout", color: "0e8a16" },
+  { name: "dependencies", color: "0366d6" },
+  { name: "needs-tests", color: "d93f0b" },
+];
+
+function seeded(seed: number): () => number {
+  let state = seed;
+  return () => {
+    state = (state * 1_103_515_245 + 12_345) % 2_147_483_648;
+    return state / 2_147_483_648;
+  };
+}
+
+function generateCrowd(count: number): FakePull[] {
+  const rand = seeded(469);
+  const pick = <T>(items: readonly T[]): T => items[Math.floor(rand() * items.length)]!;
+  const people = [VIEWER, DEV, REVIEWER, BOT, actor("sam-o", "Sam Okafor", 1005)];
+  return Array.from({ length: count }, (_, i) => {
+    const number = 300 - i;
+    const roll = rand();
+    const state = roll < 0.55 ? "open" : roll < 0.85 ? "merged" : "closed";
+    const author = pick(people);
+    const open = state === "open";
+    const checks = open ? pick(["passing", "failing", "pending", null] as const) : "passing";
+    const updated = 2 + i * 5 + Math.floor(rand() * 4);
+    const requested = open && author !== VIEWER && rand() < 0.25;
+    const base = find(405).detail;
+    return pull({
+      ...base,
+      number,
+      title: `${pick(CROWD_TITLES)}${i >= CROWD_TITLES.length ? ` (${Math.floor(i / CROWD_TITLES.length) + 1})` : ""}`,
+      body: "",
+      author,
+      state,
+      isDraft: open && rand() < 0.15,
+      mergeability: open && rand() < 0.1 ? "conflicting" : "mergeable",
+      mergeStateStatus: "CLEAN",
+      reviewDecision: open
+        ? pick(["approved", "changes-requested", "review-required", null] as const)
+        : "approved",
+      additions: Math.floor(rand() * 900) + 1,
+      deletions: Math.floor(rand() * 300),
+      headBranch: `${author.login.split("-")[0]}/change-${number}`,
+      createdAt: iso(updated + 24 + Math.floor(rand() * 200)),
+      updatedAt: iso(updated),
+      mergedAt: state === "merged" ? iso(updated) : null,
+      closedAt: state === "open" ? null : iso(updated),
+      reviewers: requested ? [{ actor: VIEWER, kind: "user", state: "requested" }] : [],
+      labels:
+        rand() < 0.6
+          ? [pick(CROWD_LABELS), ...(rand() < 0.3 ? [pick(CROWD_LABELS)] : [])].filter(
+              (l, j, all) => all.findIndex((m) => m.name === l.name) === j,
+            )
+          : [],
+      checks: [],
+      checksState: checks,
+      viewerPermissions: permissions(open, author === VIEWER),
+    });
+  });
+}
+
+/** Give the repository a crowd of pull requests across every group and
+ *  state, or take it away. */
+export function crowdPullRequestList(on: boolean): void {
+  crowd = on ? generateCrowd(140) : [];
+}
+
+function allPulls(): FakePull[] {
+  return [...PULLS, ...crowd];
+}
+
+/** One pull request's list row, for the session-link fakes. */
+export function pullRequestEntry(number: number): PrListEntry | null {
+  return allPulls().find((p) => p.detail.number === number)?.entry ?? null;
+}
+
+export const PULL_REQUEST_REPOSITORY = REPOSITORY;
 
 // ── conversation ────────────────────────────────────────────────────────────
 
@@ -1642,25 +1744,50 @@ function listMatches(entry: PrListEntry, args: MockArgs): boolean {
     search?: string;
     involvement?: string;
     head?: string | null;
+    author?: string | null;
+    draft?: string | null;
+    labels?: string[] | null;
   };
+  if (query.author && entry.author?.login.toLowerCase() !== query.author.toLowerCase()) {
+    return false;
+  }
+  if (query.draft === "only" && !entry.isDraft) return false;
+  if (query.draft === "hide" && entry.isDraft) return false;
+  const labels = entry.labels.map((l) => l.name.toLowerCase());
+  if (query.labels?.some((l) => !labels.includes(l.toLowerCase()))) return false;
   const state = query.state ?? "open";
   if (state !== "all" && entry.state !== state) return false;
   if (query.head && entry.headBranch !== query.head) return false;
   if (query.involvement === "authored" && entry.author?.login !== VIEWER.login) return false;
   if (query.involvement === "reviewing" && !entry.viewerReviewRequested) return false;
   const text = query.search?.trim().toLowerCase();
-  return !text || entry.title.toLowerCase().includes(text);
+  return (
+    !text ||
+    entry.title.toLowerCase().includes(text) ||
+    entry.headBranch.toLowerCase().includes(text) ||
+    `#${entry.number}` === text ||
+    String(entry.number) === text
+  );
 }
 
 export const pullRequestsHandlers: TypedHandlers<PullRequestsResponses> = {
   pr_provider: () => PROVIDER,
-  pr_list: (args) => ({
-    provider: PROVIDER,
-    entries: PULLS.map((p) => p.entry)
+  // Pages of `limit` (all at once without one), as `gh` pages them.
+  pr_list: (args) => {
+    guard();
+    const all = allPulls()
+      .map((p) => p.entry)
       .filter((e) => listMatches(e, args))
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-    nextCursor: null,
-  }),
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const query = (args.query ?? {}) as { cursor?: string | null; limit?: number | null };
+    const start = query.cursor ? Number(query.cursor) : 0;
+    const limit = query.limit ?? all.length;
+    return {
+      provider: PROVIDER,
+      entries: all.slice(start, start + limit),
+      nextCursor: start + limit < all.length ? String(start + limit) : null,
+    };
+  },
   pr_detail: ({ number }) => {
     guard();
     return find(number).detail;

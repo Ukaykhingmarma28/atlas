@@ -48,12 +48,12 @@ function CreatePrDialog({ request }: { request: CreatePrRequest }) {
     if (!title.trim() || busy) return;
     setBusy(true);
     try {
-      await submitCreatePr(client, projectPath, {
-        title: title.trim(),
-        body,
-        base: prefill.baseBranch,
-        draft,
-      });
+      await submitCreatePr(
+        client,
+        projectPath,
+        { title: title.trim(), body, base: prefill.baseBranch, draft },
+        request.sessionId,
+      );
       close();
     } catch (raw) {
       toast.error("Could not open the pull request", {

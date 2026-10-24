@@ -25,6 +25,7 @@ import {
   Gauge,
   Code,
   GitBranch,
+  GitPullRequest,
   ArrowLeftToLine,
   ArrowRightToLine,
   Brain,
@@ -38,6 +39,7 @@ import type { TabType } from "@/lib/constants";
 import { revealSourceControl, toggleSourceControl } from "@/features/layout/lib/source-control";
 import { revealFiles, toggleFiles } from "@/features/layout/lib/files-surface";
 import { toggleTeamChat } from "@/features/layout/lib/team-chat";
+import { openPullRequestListTab } from "@/features/pull-requests/lib/open-pull-request-list-tab";
 import {
   editorName,
   openInEditor,
@@ -330,6 +332,17 @@ export function CommandPalette({
         category: "View",
         action: () => revealSourceControl("git-graph"),
       },
+      ...(projectPath
+        ? [
+            {
+              id: "view-pull-requests",
+              label: "Show Pull Requests",
+              icon: GitPullRequest,
+              category: "View",
+              action: () => openPullRequestListTab({ repoPath: projectPath }),
+            },
+          ]
+        : []),
 
       // ── App ──
       {
@@ -349,7 +362,7 @@ export function CommandPalette({
         action: () => window.dispatchEvent(new CustomEvent("atlas:open-capture")),
       },
     ],
-    [addTab, toggleZenMode, addGroup, focusAdjacentGroup, closeGroup],
+    [addTab, toggleZenMode, addGroup, focusAdjacentGroup, closeGroup, projectPath],
   );
   const commands = [...baseCommands.slice(0, 1), ...editorCommands, ...baseCommands.slice(1)];
 

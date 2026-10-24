@@ -236,9 +236,14 @@ export function prCreateDraft(path: string): Promise<PrCreateDraft> {
 }
 
 /** Open a pull request for the current branch (`gh pr create`). The branch
- *  must already be on the remote. */
-export function prCreate(path: string, input: PrCreateInput): Promise<PrCreated> {
-  return gated(() => invoke<PrCreated>("pr_create", { path, input }));
+ *  must already be on the remote. `sessionId`, the live session it is opened
+ *  from, gets it linked as `created`. */
+export function prCreate(
+  path: string,
+  input: PrCreateInput,
+  sessionId: string | null = null,
+): Promise<PrCreated> {
+  return gated(() => invoke<PrCreated>("pr_create", { path, input, sessionId }));
 }
 
 // ── images ──────────────────────────────────────────────────────────────

@@ -193,3 +193,74 @@ export function ActivityUnavailableState({
     </div>
   );
 }
+
+/** The list's placeholder while its first page is in flight. */
+export function PullRequestListGhost({ rows = 6, caption }: { rows?: number; caption?: string }) {
+  return (
+    <div role="status" aria-label={caption ?? "Loading pull requests"} className="space-y-1 p-2">
+      {caption ? <p className="px-1 pb-1 text-xs text-muted-foreground">{caption}</p> : null}
+      <div className="animate-pulse space-y-1">
+        {Array.from({ length: rows }, (_, index) => (
+          <div key={index} className="flex items-start gap-2 rounded px-2 py-2">
+            <GhostBar className="mt-0.5 size-3.5 rounded-full" />
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <GhostBar className={COMMENT_WIDTHS[index % COMMENT_WIDTHS.length]} />
+              <GhostBar className="w-1/3" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** A repository's list could not be read: what to fix, and a retry. */
+export function PullRequestsUnavailableState({
+  error,
+  retrying,
+  onRetry,
+}: {
+  error: PrError;
+  retrying: boolean;
+  onRetry: () => void;
+}) {
+  const wait = useSecondsUntil(error.kind === "rateLimited" ? error.retryAt : null);
+  const noRepository = error.kind === "notFound" || error.kind === "unsupported";
+  const title = noRepository
+    ? "No GitHub repository here"
+    : (TITLES[error.kind] ?? "Could not load the pull requests");
+  const description = noRepository
+    ? "This project's remote is not a GitHub repository this account can see."
+    : prErrorMessage(error);
+  return (
+    <div className="flex h-full min-h-0 flex-col items-center justify-center gap-3 overflow-y-auto px-6 py-10 text-center">
+      <GitPullRequestArrow aria-hidden className="size-6 text-muted-foreground" />
+      <div className="space-y-1">
+        <p className="text-sm font-medium text-foreground">{title}</p>
+        <p className="max-w-sm text-xs text-muted-foreground">{description}</p>
+        {error.kind === "notAuthenticated" ? (
+          <p className="pt-1 text-xs text-muted-foreground">
+            Run <code className="rounded bg-card px-1 py-px font-mono">gh auth login</code> in a
+            terminal, then retry.
+          </p>
+        ) : null}
+        {error.kind === "notInstalled" ? (
+          <p className="pt-1 text-xs text-muted-foreground">
+            Install it from{" "}
+            <code className="rounded bg-card px-1 py-px font-mono">cli.github.com</code>, sign in,
+            then retry.
+          </p>
+        ) : null}
+        {wait !== null && wait > 0 ? (
+          <p className="pt-1 text-xs text-muted-foreground tabular-nums">
+            Resets in {Math.floor(wait / 60)}:{String(wait % 60).padStart(2, "0")}
+          </p>
+        ) : null}
+      </div>
+      <Button size="sm" variant="outline" disabled={retrying} onClick={onRetry}>
+        <RefreshCw aria-hidden className={cn("size-3.5", retrying && "animate-spin")} />
+        {retrying ? "Retrying…" : "Retry"}
+      </Button>
+    </div>
+  );
+}

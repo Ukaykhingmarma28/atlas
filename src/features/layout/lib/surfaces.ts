@@ -3,6 +3,7 @@ import {
   Code,
   FolderTree,
   GitBranch,
+  GitPullRequest,
   Globe,
   MessagesSquare,
   ScrollText,
@@ -11,6 +12,10 @@ import {
 import { AtlasIcon } from "@/components/atlas-icon";
 import type { TabType } from "@/lib/constants";
 import { useLayoutStore } from "../stores/layout-store";
+import {
+  currentRepoPath,
+  openPullRequestListTab,
+} from "@/features/pull-requests/lib/open-pull-request-list-tab";
 
 /**
  * What a split column can open: the `+` menu and the "Open a surface" launcher
@@ -40,6 +45,7 @@ export const SURFACES: readonly Surface[] = [
   { type: "editor", label: "New file", icon: Code, key: "N" },
   { type: "files", label: "Files", icon: FolderTree, key: "F" },
   { type: "source-control", label: "Source control", icon: GitBranch, key: "G" },
+  { type: "pull-requests", label: "Pull requests", icon: GitPullRequest, key: "P" },
   { type: "team-chat", label: "Team chat", icon: MessagesSquare, key: "C" },
   { type: "log", label: "Log", icon: ScrollText, key: "L" },
 ];
@@ -64,6 +70,12 @@ export function openSurface(surface: Surface, groupId: string): void {
       },
       groupId,
     );
+    return;
+  }
+  if (surface.type === "pull-requests") {
+    // One list per checkout: the open project's.
+    const repoPath = currentRepoPath();
+    if (repoPath) openPullRequestListTab({ repoPath, groupId });
     return;
   }
   addTab(

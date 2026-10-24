@@ -12,6 +12,8 @@
 import { useState, type ReactNode, type RefObject } from "react";
 import {
   Copy,
+  GitPullRequest,
+  Unlink,
   Folder,
   FolderTree,
   GitBranch,
@@ -43,6 +45,11 @@ import {
 } from "@/ui/context-menu";
 import { snoozePresets } from "@/features/chat/lib/session-snooze";
 import { OpenInEditorContextItems } from "@/features/external-editor/components/open-in-editor-menu";
+import { openLinkPullRequestDialog } from "@/features/pull-requests/components/link-pull-request-dialog";
+import { linkKey, orderLinks } from "@/features/pull-requests/lib/session-pull-request-links";
+import { unlinkSessionPullRequest } from "@/features/pull-requests/lib/session-pull-requests-api";
+import { prErrorMessage, classifyPrError } from "@/features/pull-requests/lib/pr-errors";
+import { toast } from "sonner";
 import type { SidebarSession } from "../lib/sidebar-sessions";
 import { requestCustomSnooze } from "./custom-snooze-dialog";
 
@@ -165,6 +172,49 @@ function SessionMenuItems({
           {scopedToProject ? "Show all projects" : `Filter by ${session.projectName}`}
         </span>
       </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem
+        onClick={() =>
+          openLinkPullRequestDialog({
+            threadId: session.threadId,
+            repoPath: session.cwd,
+            linked: session.pullRequests.map(linkKey),
+          })
+        }
+      >
+        <GitPullRequest />
+        Link a pull request…
+      </ContextMenuItem>
+      {session.pullRequests.length > 0 ? (
+        <ContextMenuSub>
+          <ContextMenuSubTrigger>
+            <Unlink />
+            Unlink pull request
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent>
+            {orderLinks(session.pullRequests).map((link) => (
+              <ContextMenuItem
+                key={linkKey(link)}
+                onClick={() =>
+                  void unlinkSessionPullRequest(
+                    session.threadId,
+                    link.repository,
+                    link.number,
+                  ).catch((raw: unknown) =>
+                    toast.error("Could not unlink the pull request", {
+                      description: prErrorMessage(classifyPrError(raw)),
+                    }),
+                  )
+                }
+              >
+                <span className="min-w-0 truncate">
+                  #{link.number} {link.snapshot?.title ?? link.repository}
+                </span>
+              </ContextMenuItem>
+            ))}
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+      ) : null}
       <ContextMenuSeparator />
       <ContextMenuSub>
         <ContextMenuSubTrigger>

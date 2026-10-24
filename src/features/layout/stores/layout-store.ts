@@ -603,6 +603,8 @@ export const useLayoutStore = createSelectors(
                 tab.type === "session-changes" ||
                 // One per PULL REQUEST (id is `pull-request:{repoPath}:{number}`).
                 tab.type === "pull-request" ||
+                // One per REPOSITORY (id is `pull-requests:{repoPath}`).
+                tab.type === "pull-requests" ||
                 tab.type === "chat" ||
                 tab.type === "media" ||
                 tab.type === "svg" ||

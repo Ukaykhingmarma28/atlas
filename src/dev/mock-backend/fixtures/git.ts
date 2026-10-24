@@ -22,7 +22,6 @@
 
 import { emit } from "@tauri-apps/api/event";
 import type { BlameLine } from "@/features/git/lib/git-blame-api";
-import type { RepoPullRequests } from "@/features/git/lib/git-pr-api";
 import type { RepoAvatars } from "@/features/git/lib/git-avatars-api";
 import type { DiffLineStatus } from "@/features/git/lib/git-diff-api";
 import type {
@@ -1093,7 +1092,6 @@ export interface GitResponses {
   git_diff_file_patch: DiffFilePatch;
   diff_texts_patch: DiffFilePatch;
   git_blame_file: BlameLine[];
-  git_repo_pull_requests: RepoPullRequests;
   git_repo_avatars: RepoAvatars;
   git_stage: Unread;
   git_unstage: Unread;
@@ -1382,7 +1380,6 @@ export const gitHandlers: TypedHandlers<GitResponses> = {
   }),
   git_blame_file: ({ file }): BlameLine[] => blame(String(file)),
   // The default repository has no GitHub remote, so `gh` has nothing to say.
-  git_repo_pull_requests: (): RepoPullRequests => ({ kind: "failed", reason: "unsupported" }),
   git_repo_avatars: (): RepoAvatars => ({ kind: "failed" }),
 
   // ── index ───────────────────────────────────────────────────────────────

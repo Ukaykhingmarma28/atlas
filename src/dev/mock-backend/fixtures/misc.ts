@@ -45,6 +45,7 @@ import type { MockHandlers } from "../types";
 import { abs, MOCK_PROJECT, OTHER_PROJECTS } from "../project";
 import { adoptSession } from "../fake-agent";
 import { sessionLifecycleHandlers, withDerivedLifecycle } from "../session-lifecycle";
+import { fixtureLink, sessionPullRequestHandlers } from "../session-pull-requests";
 import { RESTING_LIFECYCLE } from "@/features/chat/lib/session-lifecycle";
 
 const nothing = () => null;
@@ -93,6 +94,13 @@ const THREADS: ThreadRow[] = [
       },
     ],
     model: "Claude Sonnet 4.5",
+    pullRequests: [
+      // Opened from the session, found on its branch, and linked by hand: the
+      // badge's "+2" and the hover card's three lines.
+      fixtureLink(412, "created", ago(50 * 60_000)),
+      fixtureLink(405, "detected", ago(40 * 60_000)),
+      fixtureLink(398, "manual", ago(30 * 60_000)),
+    ],
     forkedFromSessionId: null,
     // One of the fake repo's own branches (`fixtures/git.ts`).
     branch: "feature/auth-v2",
@@ -111,6 +119,7 @@ const THREADS: ThreadRow[] = [
     liveElsewhere: false,
     attachedProjects: [],
     model: null,
+    pullRequests: [],
     forkedFromSessionId: null,
     branch: "main",
   },
@@ -128,6 +137,7 @@ const THREADS: ThreadRow[] = [
     liveElsewhere: false,
     attachedProjects: [],
     model: null,
+    pullRequests: [],
     forkedFromSessionId: null,
     branch: "main",
   },
@@ -147,6 +157,7 @@ const THREADS: ThreadRow[] = [
     liveElsewhere: false,
     attachedProjects: [],
     model: null,
+    pullRequests: [],
     forkedFromSessionId: null,
     branch: "main",
   },
@@ -166,6 +177,7 @@ const THREADS: ThreadRow[] = [
     liveElsewhere: false,
     attachedProjects: [],
     model: null,
+    pullRequests: [],
     forkedFromSessionId: null,
     // Detached HEAD when it ran, so Atlas never learned a branch.
     branch: null,
@@ -183,6 +195,7 @@ const THREADS: ThreadRow[] = [
     liveElsewhere: false,
     attachedProjects: [],
     model: null,
+    pullRequests: [],
     forkedFromSessionId: null,
     // A branch nobody would size a column for. The card trims it rather than
     // pushing the agent's mark off its own edge — the only row here that
@@ -205,6 +218,7 @@ const THREADS: ThreadRow[] = [
     liveElsewhere: false,
     attachedProjects: [],
     model: null,
+    pullRequests: [],
     forkedFromSessionId: null,
     branch: "feature/auth-v2",
   },
@@ -224,6 +238,7 @@ const THREADS: ThreadRow[] = [
     liveElsewhere: false,
     attachedProjects: [],
     model: null,
+    pullRequests: [],
     forkedFromSessionId: null,
     branch: null,
   },
@@ -242,6 +257,7 @@ const THREADS: ThreadRow[] = [
     liveElsewhere: false,
     attachedProjects: [],
     model: null,
+    pullRequests: [],
     forkedFromSessionId: null,
     branch: "main",
   },
@@ -261,6 +277,7 @@ const THREADS: ThreadRow[] = [
     liveElsewhere: false,
     attachedProjects: [],
     model: null,
+    pullRequests: [],
     forkedFromSessionId: null,
     branch: "fix/checkpoint-blobs",
   },
@@ -279,6 +296,7 @@ const THREADS: ThreadRow[] = [
     liveElsewhere: false,
     attachedProjects: [],
     model: null,
+    pullRequests: [],
     forkedFromSessionId: null,
     branch: "main",
   },
@@ -604,6 +622,13 @@ export const miscHandlers: MockHandlers = {
   // As in Rust: settling sinks the row to the Settled shelf, it stays listed;
   // pin, snooze and viewed/unread follow the store's rules.
   ...sessionLifecycleHandlers({
+    get: () => threads,
+    set: (rows) => {
+      threads = rows;
+    },
+    changed: threadsChanged,
+  }),
+  ...sessionPullRequestHandlers({
     get: () => threads,
     set: (rows) => {
       threads = rows;
