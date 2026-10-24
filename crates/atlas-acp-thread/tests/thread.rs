@@ -1113,3 +1113,50 @@ fn the_machinery_predicate_is_narrow_enough_to_keep_real_titles() {
         assert!(!is_host_machinery_title(title), "should be kept: {title}");
     }
 }
+
+// ------------------------------------------------------- attached projects
+
+/// A session opened with a read-write attached project carries it in its
+/// working directories (that is how it reaches the agent). Making it
+/// read-only, or detaching it, must take it out of the writable set the
+/// `fs/*` handlers use — and history must never count it as the session's
+/// own folder.
+#[test]
+fn an_attached_root_widens_reads_and_writes_at_its_access_and_never_joins_the_own_folders() {
+    use std::path::PathBuf;
+    let (tx, _rx) = event_channel();
+    let app = PathBuf::from("/work/app");
+    let server = PathBuf::from("/work/server");
+    let docs = PathBuf::from("/work/docs");
+    let mut thread = AcpThread::new(
+        acp::SessionId::new("test-session"),
+        StubAgentConnection::new(),
+        vec![app.clone(), server.clone()],
+        None,
+        tx,
+    );
+    thread.set_attached_roots(SessionRoots {
+        read_only: vec![docs.clone()],
+        read_write: vec![server.clone()],
+    });
+    assert_eq!(thread.own_work_dirs(), vec![app.clone()]);
+    assert_eq!(thread.writable_roots(), vec![app.clone(), server.clone()]);
+    assert_eq!(
+        thread.readable_roots(),
+        vec![app.clone(), server.clone(), docs.clone()]
+    );
+
+    // Server made read-only: still readable, no longer writable, even though
+    // the session was opened with it as a working directory.
+    thread.set_attached_roots(SessionRoots {
+        read_only: vec![docs.clone(), server.clone()],
+        read_write: Vec::new(),
+    });
+    assert_eq!(thread.writable_roots(), vec![app.clone()]);
+    assert!(thread.readable_roots().contains(&server));
+
+    // Everything detached: back to the session's own folder alone.
+    thread.set_attached_roots(SessionRoots::default());
+    assert_eq!(thread.readable_roots(), vec![app.clone()]);
+    assert_eq!(thread.writable_roots(), vec![app]);
+}

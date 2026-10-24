@@ -22,7 +22,8 @@ const LIST_QUERY: &str = "SELECT thread_id, session_id, agent_id, title, title_o
      updated_at, created_at, interacted_at, folder_paths, folder_paths_order, \
      main_worktree_paths, main_worktree_paths_order, remote_connection, \
      branch, settled_at, unsettled_at, pinned_at, pin_order, snoozed_until, snoozed_at, \
-     last_snooze_wake_at, last_viewed_at, last_turn_completed_at, model \
+     last_snooze_wake_at, last_viewed_at, last_turn_completed_at, model, \
+     attached_projects \
      FROM threads \
      ORDER BY updated_at DESC";
 
@@ -33,9 +34,9 @@ const UPSERT: &str = "INSERT INTO threads(thread_id, session_id, agent_id, title
          folder_paths_order, main_worktree_paths, main_worktree_paths_order, \
          remote_connection, branch, settled_at, unsettled_at, pinned_at, pin_order, \
          snoozed_until, snoozed_at, last_snooze_wake_at, last_viewed_at, \
-         last_turn_completed_at, model) \
+         last_turn_completed_at, model, attached_projects) \
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
-         ?18, ?19, ?20, ?21, ?22, ?23, ?24) \
+         ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25) \
      ON CONFLICT(thread_id) DO UPDATE SET \
          session_id = excluded.session_id, \
          agent_id = excluded.agent_id, \
@@ -59,7 +60,8 @@ const UPSERT: &str = "INSERT INTO threads(thread_id, session_id, agent_id, title
          last_snooze_wake_at = excluded.last_snooze_wake_at, \
          last_viewed_at = excluded.last_viewed_at, \
          last_turn_completed_at = excluded.last_turn_completed_at, \
-         model = excluded.model";
+         model = excluded.model, \
+         attached_projects = excluded.attached_projects";
 
 /// The durable half of the store.
 pub(crate) struct Db {
@@ -137,6 +139,7 @@ impl Db {
                 rfc3339(row.last_viewed_at),
                 rfc3339(row.last_turn_completed_at),
                 row.model.as_deref(),
+                crate::projects::encode(&row.attached_projects),
             ],
         )?;
         Ok(())
@@ -356,6 +359,7 @@ fn decode(row: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMetadata> {
         model: model
             .filter(|m| !m.trim().is_empty())
             .map(|m| Arc::from(m.as_str())),
+        attached_projects: crate::projects::decode(row.get(24)?),
     })
 }
 

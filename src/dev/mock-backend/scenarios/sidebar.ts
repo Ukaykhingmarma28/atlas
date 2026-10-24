@@ -110,6 +110,7 @@ function generate(): ThreadRow[] {
       projectName: project.name,
       folderPaths: [project.path],
       liveElsewhere: false,
+      attachedProjects: [],
       branch,
       // Not drawn from the PRNG, so adding it moved no other fixture value.
       model: MODELS[i % MODELS.length] ?? null,

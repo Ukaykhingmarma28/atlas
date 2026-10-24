@@ -503,6 +503,7 @@ function seedThreads(): ThreadRow[] {
       branch: s.content.branch,
       // The demo's own sessions: no other process is writing any of them.
       liveElsewhere: false,
+      attachedProjects: [],
       model: "Claude Sonnet 4.5",
     }));
 }

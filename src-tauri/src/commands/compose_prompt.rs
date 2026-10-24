@@ -81,6 +81,11 @@ pub enum MentionSpec {
         display_name: String,
         abs_path: String,
         has_readme: bool,
+        /// The access the session holds on this folder when it is attached
+        /// to it (`read_only` / `read_write`); absent for a mention that is
+        /// not attached, which keeps the old wording.
+        #[serde(default)]
+        access: Option<String>,
     },
     /// Another project in the app, referenced with `@workspace:<name>`.
     /// Hands the agent that project's absolute path so it can inspect a sibling
@@ -95,6 +100,9 @@ pub enum MentionSpec {
         abs_path: String,
         #[serde(default)]
         org_name: Option<String>,
+        /// As on `Repo`: the attached project's access level, if attached.
+        #[serde(default)]
+        access: Option<String>,
     },
     Paper {
         id: String,
@@ -434,6 +442,24 @@ pub async fn compose_prompt(
     })
 }
 
+/// An attached project's mention also says what the session may do there, so
+/// the agent does not try an edit the sandbox will refuse (or ask for access
+/// it already holds). `None` (not attached) keeps the old wording.
+fn access_note(access: Option<&str>) -> &'static str {
+    match access {
+        Some("read_write") => {
+            "\n\nThis project is attached to the session with **read and write** access: \
+             you may edit files in it."
+        }
+        Some("read_only") => {
+            "\n\nThis project is attached to the session **read-only**: read it, but do not \
+             edit files in it. If the request needs changes there, ask for write access with \
+             the `request_project_access` tool, or tell the user."
+        }
+        _ => "",
+    }
+}
+
 /// Synchronous body renderer for a single mention. Runs on the
 /// blocking pool. Returns `None` for mentions that don't contribute
 /// a body block (only branches today — the short form alone is the
@@ -452,6 +478,7 @@ fn render_block(m: &MentionSpec) -> Option<String> {
             abs_path,
             display_name,
             org_name,
+            access,
             ..
         } => {
             let org = org_name
@@ -463,14 +490,16 @@ fn render_block(m: &MentionSpec) -> Option<String> {
                  absolute path:\n`{abs_path}`\n\n\
                  Use your filesystem tools to inspect it — list its tree, read the relevant \
                  source, and apply what you find to this request. It is a SEPARATE project from \
-                 the current working directory; reference it by this absolute path.",
+                 the current working directory; reference it by this absolute path.{note}",
                 sf = m.short_form(),
+                note = access_note(access.as_deref()),
             ))
         }
         MentionSpec::Repo {
             abs_path,
             display_name,
             has_readme,
+            access,
             ..
         } => {
             // Lead with an explicit directive so the agent actually EXPLORES the
@@ -482,8 +511,9 @@ fn render_block(m: &MentionSpec) -> Option<String> {
                  **Explore this codebase** using your filesystem tools — list its directory \
                  tree, open the key source files, and trace how the pieces fit together to \
                  understand what it does and how it works. Do NOT rely on the README alone; \
-                 read the actual source. Apply this understanding to the rest of this request.",
+                 read the actual source. Apply this understanding to the rest of this request.{note}",
                 sf = m.short_form(),
+                note = access_note(access.as_deref()),
             );
             let readme = if *has_readme {
                 match read_repo_readme_body(abs_path, display_name) {
@@ -1192,6 +1222,29 @@ mod cite_tests {
         let b = cite(Some("again"), None);
         assert_eq!(a.dedupe_key(), b.dedupe_key());
         assert_eq!(a.short_form(), "@cite:k3x9q2");
+    }
+
+    /// An attached project's block says what the session may do there; an
+    /// unattached mention (no `access` on the wire) reads as it always did.
+    #[test]
+    fn a_project_block_states_its_attached_access() {
+        let project = |access: Option<&str>| {
+            serde_json::from_value::<MentionSpec>(serde_json::json!({
+                "kind": "workspace",
+                "id": "p1",
+                "displayName": "server",
+                "absPath": "/work/server",
+                "access": access,
+            }))
+            .unwrap()
+        };
+        let plain = render_block(&project(None)).unwrap();
+        assert!(!plain.contains("attached"), "{plain}");
+        let ro = render_block(&project(Some("read_only"))).unwrap();
+        assert!(ro.contains("**read-only**"), "{ro}");
+        assert!(ro.contains("request_project_access"), "{ro}");
+        let rw = render_block(&project(Some("read_write"))).unwrap();
+        assert!(rw.contains("**read and write**"), "{rw}");
     }
 }
 

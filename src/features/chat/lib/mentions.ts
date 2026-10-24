@@ -31,6 +31,7 @@ import {
   type MentionRecordedSession,
   type OrgMentionKind,
 } from "./org-mentions";
+import type { ProjectAccess } from "./history-api";
 
 export type {
   MentionComment,
@@ -161,6 +162,9 @@ export interface MentionRepo {
   displayName: string; // repo folder name
   absPath: string;
   hasReadme: boolean;
+  /** Set only on the way to `compose_prompt`, once the send has attached the
+   *  repo to the session (`attach-mentioned-projects.ts`). Never stored. */
+  access?: ProjectAccess;
 }
 
 export interface MentionProject {
@@ -170,6 +174,8 @@ export interface MentionProject {
   absPath: string; // the project path, expanded into the prompt at send
   /** Owning org name, shown as the secondary label to disambiguate. */
   orgName: string | null;
+  /** As on {@link MentionRepo}: the attached access, set only at send. */
+  access?: ProjectAccess;
 }
 
 export interface MentionBranch {

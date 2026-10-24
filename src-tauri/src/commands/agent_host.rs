@@ -50,8 +50,9 @@ use atlas_agent_wire::{
 };
 use atlas_native_agent::ATLAS_AGENT_ID;
 use atlas_thread_metadata::{
-    affects_thread_metadata, collect_all_sessions, importable_threads, MarkUnread, PathList,
-    ThreadId, ThreadMetadata, ThreadMetadataStore, ThreadRecorder, ThreadSnapshot,
+    affects_thread_metadata, collect_all_sessions, importable_threads, AttachSource,
+    AttachedProject, MarkUnread, PathList, ProjectAccess, ThreadId, ThreadMetadata,
+    ThreadMetadataStore, ThreadRecorder, ThreadSnapshot,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -468,7 +469,14 @@ pub struct AgentHost {
     lifecycle: Mutex<Option<Arc<dyn SessionLifecycle>>>,
     /// What each session is offered in its MCP server list.
     session_mcp: Arc<SessionMcpSlot>,
+    /// Project access requests on screen, by (session, folder): each one's
+    /// answer, once there is one. A second request for the same folder
+    /// waits on the card already up instead of raising another.
+    access_requests: Mutex<HashMap<(String, PathBuf), AccessAnswer>>,
 }
+
+/// Where an access request's answer arrives.
+type AccessAnswer = tokio::sync::watch::Receiver<Option<AccessRequestOutcome>>;
 
 /// Which branch probe is the newest for each session (see
 /// [`AgentHost::refresh_branch`]).
@@ -621,6 +629,7 @@ impl AgentHost {
             },
             lifecycle: Mutex::new(None),
             session_mcp,
+            access_requests: Mutex::new(HashMap::new()),
         });
         // Weak, and installed after the host exists: the observer needs the
         // host to name the agent a session belongs to, and a strong reference
@@ -1277,12 +1286,29 @@ impl AgentHost {
             return Ok(key);
         }
         let acp_id = acp::SessionId::new(session_id.as_str());
+        // The row's attached projects, when it has a row: the same roots a
+        // resume from the sidebar opens with.
+        let row = self
+            .history()
+            .and_then(|history| history.store().thread_for_session(&acp_id));
+        let attached = row
+            .as_ref()
+            .map(|row| row.attached_projects.clone())
+            .unwrap_or_default();
+        let mut work_dirs = vec![cwd.clone()];
+        if let Some(row) = row.as_ref() {
+            work_dirs.extend(Self::attached_work_dirs(row));
+        }
         let thread = self
             .manager
-            .load_session(record.agent.clone(), acp_id, vec![cwd.clone()], None)
+            .load_session(record.agent.clone(), acp_id, work_dirs, None)
             .await
             .map_err(HostError::from)?;
+        lock_thread(&thread).set_attached_roots(session_roots(&attached));
         self.bind(agent_id, &record, cwd, thread);
+        if !attached.is_empty() {
+            self.apply_session_roots(&session_id, &attached).await;
+        }
         Ok(key)
     }
 
@@ -2247,8 +2273,14 @@ impl AgentHost {
 
         let agent = self.spawn(thread.agent_id.as_str()).await?;
         let record = self.record_for(agent.agent_id)?;
-        let work_dirs = thread.folder_paths().paths().to_vec();
+        let mut work_dirs = thread.folder_paths().paths().to_vec();
         let cwd = work_dirs.first().cloned().unwrap_or_default();
+        // The session's read-write attached projects open with it as further
+        // working directories: an ACP agent's `additionalDirectories`, the
+        // engine's writable roots. Read-only ones reach Atlas's own grants
+        // below and the agent through the prompt, never as a directory it
+        // may edit.
+        work_dirs.extend(Self::attached_work_dirs(&thread));
 
         let (opened, resumed_without_history) = match thread.session_id.clone() {
             // A draft: there is no stored conversation to reopen, so this is a
@@ -2290,7 +2322,14 @@ impl AgentHost {
             }
         };
 
+        // Before `bind`, whose history write reads the thread's own folders:
+        // the attached projects must already be known as attached.
+        lock_thread(&opened).set_attached_roots(session_roots(&thread.attached_projects));
         let init = self.bind(agent.agent_id, &record, cwd, opened);
+        if !thread.attached_projects.is_empty() {
+            self.apply_session_roots(&init.key.session_id, &thread.attached_projects)
+                .await;
+        }
         Ok(ResumedThread {
             key: init.key,
             resumed_without_history,
@@ -2603,6 +2642,328 @@ impl AgentHost {
                 ErrorClass::Fatal,
             )),
         }
+    }
+
+    // ---- attached projects -----------------------------------------------
+
+    /// The history row a live session writes to. A draft is found through
+    /// its binding: its session id is never persisted.
+    fn row_for_session(&self, session_id: &str) -> Result<ThreadId> {
+        self.history_or_err()?
+            .thread_for(&acp::SessionId::new(session_id))
+            .ok_or_else(|| HostError::new("This session has no history row.", ErrorClass::Fatal))
+    }
+
+    /// The projects attached to the session the tab `session_id` runs.
+    pub fn session_projects(&self, session_id: &str) -> Result<Vec<AttachedProject>> {
+        let thread_id = self.row_for_session(session_id)?;
+        Ok(self.history_or_err()?.store().attached_projects(thread_id))
+    }
+
+    /// Attach `project` to the session, then hand the session its new roots.
+    /// Already attached is not an error: nothing changes, and the change
+    /// reports `changed: false`.
+    pub async fn attach_session_project(
+        &self,
+        session_id: &str,
+        project: AttachedProject,
+    ) -> Result<SessionProjectsChange> {
+        let thread_id = self.row_for_session(session_id)?;
+        let changed = self
+            .history_or_err()?
+            .store()
+            .attach_project(thread_id, project);
+        self.projects_changed(session_id, thread_id, changed).await
+    }
+
+    /// Detach the project at `path` from the session.
+    pub async fn detach_session_project(
+        &self,
+        session_id: &str,
+        path: &Path,
+    ) -> Result<SessionProjectsChange> {
+        let thread_id = self.row_for_session(session_id)?;
+        let changed = self
+            .history_or_err()?
+            .store()
+            .detach_project(thread_id, path);
+        self.projects_changed(session_id, thread_id, changed).await
+    }
+
+    /// Change what the agent may do in the project at `path`.
+    pub async fn set_session_project_access(
+        &self,
+        session_id: &str,
+        path: &Path,
+        access: ProjectAccess,
+    ) -> Result<SessionProjectsChange> {
+        let thread_id = self.row_for_session(session_id)?;
+        let changed = self
+            .history_or_err()?
+            .store()
+            .set_project_access(thread_id, path, access);
+        self.projects_changed(session_id, thread_id, changed).await
+    }
+
+    async fn projects_changed(
+        &self,
+        session_id: &str,
+        thread_id: ThreadId,
+        changed: bool,
+    ) -> Result<SessionProjectsChange> {
+        let projects = self.history_or_err()?.store().attached_projects(thread_id);
+        let applied_live = if changed {
+            self.apply_session_roots(session_id, &projects).await
+        } else {
+            self.live_roots_supported(session_id)
+        };
+        Ok(SessionProjectsChange {
+            projects: projects.iter().map(AttachedProjectWire::from).collect(),
+            changed,
+            applied_live,
+        })
+    }
+
+    /// Whether the session's agent can change an open session's roots — the
+    /// capability the UI reads to say "from the next turn" or "when this
+    /// session is resumed". `false` for a session that is not open.
+    pub fn live_roots_supported(&self, session_id: &str) -> bool {
+        self.thread(session_id)
+            .map(|handle| {
+                lock_thread(&handle)
+                    .connection()
+                    .supports_live_session_roots()
+            })
+            .unwrap_or(false)
+    }
+
+    /// Hand an open session the roots its attached projects call for.
+    ///
+    /// Two halves. Atlas's own grants first, on the thread: the client-side
+    /// `fs/*` handlers read and write through them, for every agent. Then the
+    /// agent's sandbox, where the connection can change it on a live session
+    /// (the native engine can; ACP has no request for it). Answers whether
+    /// the agent's half landed. Bounded (ADR-0008): a wedged engine leaves
+    /// the attachment recorded and reported as not applied, rather than
+    /// parking the command.
+    async fn apply_session_roots(&self, session_id: &str, projects: &[AttachedProject]) -> bool {
+        let Ok(handle) = self.thread(session_id) else {
+            return false;
+        };
+        let roots = session_roots(projects);
+        let connection = {
+            let mut thread = lock_thread(&handle);
+            thread.set_attached_roots(roots.clone());
+            thread.connection().clone()
+        };
+        if !connection.supports_live_session_roots() {
+            return false;
+        }
+        let update = connection.update_session_roots(&acp::SessionId::new(session_id), roots);
+        match tokio::time::timeout(ROOTS_UPDATE_TIMEOUT, update).await {
+            Ok(Ok(())) => true,
+            Ok(Err(e)) => {
+                tracing::warn!(session_id, "attached project roots not applied: {e}");
+                false
+            }
+            Err(_) => {
+                tracing::warn!(session_id, "attached project roots timed out");
+                false
+            }
+        }
+    }
+
+    /// The read-write attached projects of a row, as extra working
+    /// directories to open its session with — how they reach an ACP agent's
+    /// `additionalDirectories` and the native engine's writable roots at
+    /// start. Read-only ones are not among them: an agent's additional
+    /// directory is one it may edit.
+    fn attached_work_dirs(row: &ThreadMetadata) -> Vec<PathBuf> {
+        row.attached_projects
+            .iter()
+            .filter(|p| p.access.is_writable() && !row.references_folder_path(&p.path))
+            .map(|p| p.path.clone())
+            .collect()
+    }
+
+    /// Ask the user, in the session, to let its agent use `path`.
+    ///
+    /// The request appears where every permission request does, as the
+    /// approval card. `wait` bounds how long the caller is kept: past it the
+    /// answer is [`AccessRequestOutcome::Pending`] and the card stays up —
+    /// an approval that comes later still attaches the project, for the
+    /// agent's next look. A second request for the same path while one is
+    /// up waits on the same card rather than raising another.
+    pub async fn request_project_access(
+        self: &Arc<Self>,
+        session_id: &str,
+        request: ProjectAccessRequest,
+        wait: std::time::Duration,
+    ) -> Result<AccessRequestOutcome> {
+        let thread_id = self.row_for_session(session_id)?;
+        if let Some(existing) = self
+            .history_or_err()?
+            .store()
+            .attached_projects(thread_id)
+            .into_iter()
+            .find(|p| p.path == request.path)
+        {
+            if existing.access == ProjectAccess::ReadWrite || existing.access == request.access {
+                return Ok(AccessRequestOutcome::AlreadyGranted(existing.access));
+            }
+        }
+
+        let key = (session_id.to_string(), request.path.clone());
+        let mut rx = {
+            let mut pending = lock(&self.access_requests);
+            pending.retain(|_, rx| rx.borrow().is_none());
+            match pending.get(&key) {
+                Some(rx) => rx.clone(),
+                None => {
+                    let rx = self.raise_access_card(session_id, thread_id, request)?;
+                    pending.insert(key, rx.clone());
+                    rx
+                }
+            }
+        };
+        let decided = tokio::time::timeout(wait, rx.wait_for(Option::is_some)).await;
+        match decided {
+            Ok(Ok(value)) => Ok(value.clone().unwrap_or(AccessRequestOutcome::Denied)),
+            // The card went away without an answer (the session closed).
+            Ok(Err(_)) => Ok(AccessRequestOutcome::Denied),
+            Err(_) => Ok(AccessRequestOutcome::Pending),
+        }
+    }
+
+    /// Put the access request on the session's thread as an approval card,
+    /// and start the task that acts on the answer.
+    fn raise_access_card(
+        self: &Arc<Self>,
+        session_id: &str,
+        thread_id: ThreadId,
+        request: ProjectAccessRequest,
+    ) -> Result<AccessAnswer> {
+        let handle = self.thread(session_id)?;
+        let tool_call_id = acp::ToolCallId::new(format!("atlas-project-access-{}", Uuid::new_v4()));
+        let mut fields = acp::ToolCallUpdateFields::default();
+        fields.kind = Some(if request.access.is_writable() {
+            acp::ToolKind::Edit
+        } else {
+            acp::ToolKind::Read
+        });
+        fields.title = Some(access_card_title(&request));
+        fields.content = Some(vec![acp::ToolCallContent::Content(acp::Content::new(
+            acp::ContentBlock::Text(acp::TextContent::new(access_card_body(&request))),
+        ))]);
+        fields.locations = Some(vec![acp::ToolCallLocation::new(request.path.clone())]);
+        let mut options = Vec::new();
+        if request.access.is_writable() {
+            options.push(acp::PermissionOption::new(
+                ACCESS_OPTION_WRITE,
+                "Allow read and write",
+                acp::PermissionOptionKind::AllowOnce,
+            ));
+        }
+        options.push(acp::PermissionOption::new(
+            ACCESS_OPTION_READ,
+            "Allow read-only",
+            acp::PermissionOptionKind::AllowOnce,
+        ));
+        options.push(acp::PermissionOption::new(
+            ACCESS_OPTION_DENY,
+            "Deny",
+            acp::PermissionOptionKind::RejectOnce,
+        ));
+        let waiter = lock_thread(&handle)
+            .request_tool_call_authorization(
+                acp::ToolCallUpdate::new(tool_call_id.clone(), fields),
+                atlas_acp_thread::PermissionOptions::Flat(options),
+                atlas_acp_thread::AuthorizationKind::PermissionGrant,
+            )
+            .map_err(|e| HostError::new(e.to_string(), ErrorClass::Fatal))?;
+
+        let (tx, rx) = tokio::sync::watch::channel(None);
+        let host = Arc::downgrade(self);
+        let session_id = session_id.to_string();
+        tokio::spawn(async move {
+            let outcome = waiter.await;
+            let granted = match &outcome {
+                atlas_acp_thread::RequestPermissionOutcome::Selected(sel)
+                    if matches!(
+                        sel.option_kind,
+                        acp::PermissionOptionKind::AllowOnce
+                            | acp::PermissionOptionKind::AllowAlways
+                    ) =>
+                {
+                    Some(if sel.option_id.0.as_ref() == ACCESS_OPTION_WRITE {
+                        ProjectAccess::ReadWrite
+                    } else {
+                        ProjectAccess::ReadOnly
+                    })
+                }
+                // A rejection, a cancel (Esc), or the turn moving on without
+                // an answer: none of them is the user granting anything.
+                _ => None,
+            };
+            let result = match (granted, host.upgrade()) {
+                (Some(access), Some(host)) => {
+                    match host
+                        .grant_project_access(&session_id, thread_id, &request, access)
+                        .await
+                    {
+                        Ok(applied_live) => AccessRequestOutcome::Granted {
+                            access,
+                            applied_live,
+                        },
+                        Err(e) => {
+                            tracing::warn!(session_id, "access granted but not recorded: {e}");
+                            AccessRequestOutcome::Denied
+                        }
+                    }
+                }
+                _ => AccessRequestOutcome::Denied,
+            };
+            // Shown on the card's tool call, for the transcript.
+            if let Some(host) = host.upgrade() {
+                if let Ok(handle) = host.thread(&session_id) {
+                    let mut fields = acp::ToolCallUpdateFields::default();
+                    fields.status = Some(match result {
+                        AccessRequestOutcome::Granted { .. } => acp::ToolCallStatus::Completed,
+                        _ => acp::ToolCallStatus::Failed,
+                    });
+                    let _ = lock_thread(&handle)
+                        .update_tool_call(acp::ToolCallUpdate::new(tool_call_id, fields));
+                }
+            }
+            let _ = tx.send(Some(result));
+        });
+        Ok(rx)
+    }
+
+    /// The user approved: attach the project at the granted access (or raise
+    /// an attached one to it), and widen the session's roots.
+    async fn grant_project_access(
+        &self,
+        session_id: &str,
+        thread_id: ThreadId,
+        request: &ProjectAccessRequest,
+        access: ProjectAccess,
+    ) -> Result<bool> {
+        let store = self.history_or_err()?.store().clone();
+        let attached = store.attach_project(
+            thread_id,
+            AttachedProject::new(
+                request.path.clone(),
+                request.display_name.clone(),
+                access,
+                AttachSource::AgentRequest,
+            ),
+        );
+        if !attached {
+            store.set_project_access(thread_id, &request.path, access);
+        }
+        let projects = store.attached_projects(thread_id);
+        Ok(self.apply_session_roots(session_id, &projects).await)
     }
 
     /// Whether Atlas has work in flight in this session: a turn it sent that
@@ -3155,7 +3516,10 @@ fn snapshot_of(thread: &AcpThreadHandle) -> ThreadSnapshot {
             .title()
             .cloned()
             .or_else(|| thread.fallback_title(atlas_agent_transcript::strip_injected_context)),
-        work_dirs: thread.work_dirs().to_vec(),
+        // Its own folders only: an attached project the session was opened
+        // with as a working directory is not the session's project, and
+        // recording it would move the row to another group.
+        work_dirs: thread.own_work_dirs(),
     }
 }
 
@@ -3270,6 +3634,147 @@ pub struct ThreadRow {
     /// Another process (typically `claude` in a terminal) wrote this session
     /// within the liveness window and Atlas is not hosting it (Rule 7).
     pub live_elsewhere: bool,
+    /// The projects attached to the session besides its own folder, in the
+    /// order they were attached. Everything a surface needs to show them, to
+    /// match a project filter on them, or to split changes by them.
+    pub attached_projects: Vec<AttachedProjectWire>,
+}
+
+/// One project attached to a session, as every surface reads it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachedProjectWire {
+    /// The folder, absolute. Its identity within the session.
+    pub path: String,
+    pub display_name: String,
+    /// `read_only` or `read_write`.
+    pub access: String,
+    /// RFC 3339.
+    pub attached_at: String,
+    /// `mention`, `agent_request` or `clone`.
+    pub source: String,
+}
+
+impl From<&AttachedProject> for AttachedProjectWire {
+    fn from(project: &AttachedProject) -> Self {
+        Self {
+            path: project.path.to_string_lossy().into_owned(),
+            display_name: project.display_name.to_string(),
+            access: project.access.as_str().to_string(),
+            attached_at: project.attached_at.to_rfc3339(),
+            source: project.source.as_str().to_string(),
+        }
+    }
+}
+
+/// What an attach, detach or access change did.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionProjectsChange {
+    /// The session's attached projects after the change.
+    pub projects: Vec<AttachedProjectWire>,
+    /// Whether anything changed. Attaching a path that is already attached,
+    /// or setting the access it already has, changes nothing.
+    pub changed: bool,
+    /// Whether the agent's sandbox takes the change from the session's next
+    /// turn. `false` when the agent cannot change an open session's roots
+    /// (ACP has no request for it) or the session is not open: the change is
+    /// recorded, and reaches the agent when the session is next opened.
+    /// Atlas's own file grants apply at once either way.
+    pub applied_live: bool,
+}
+
+/// An agent's request to use a folder, already validated
+/// (`session_projects::validate_requested_path`).
+#[derive(Debug, Clone)]
+pub struct ProjectAccessRequest {
+    /// Canonical, absolute, an existing directory.
+    pub path: PathBuf,
+    pub display_name: String,
+    pub access: ProjectAccess,
+    /// The agent's own words for why, shown on the card.
+    pub reason: Option<String>,
+    /// The folder is a git repository's root or inside one.
+    pub in_git_repository: bool,
+}
+
+/// How an access request ended, as the asking agent is told.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AccessRequestOutcome {
+    /// The user approved, at this access; `applied_live` as for
+    /// [`SessionProjectsChange::applied_live`].
+    Granted {
+        access: ProjectAccess,
+        applied_live: bool,
+    },
+    /// The user denied it, dismissed the card, or the session went away.
+    Denied,
+    /// Already attached at this access or more; nothing was asked.
+    AlreadyGranted(ProjectAccess),
+    /// No answer within the wait. The card stays up.
+    Pending,
+}
+
+/// How long an attach waits on the agent's sandbox update (ADR-0008).
+const ROOTS_UPDATE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// The access card's option ids, read back off the user's pick.
+const ACCESS_OPTION_WRITE: &str = "grant_read_write";
+const ACCESS_OPTION_READ: &str = "grant_read_only";
+const ACCESS_OPTION_DENY: &str = "deny";
+
+/// The roots a session's attached projects call for.
+pub(crate) fn session_roots(projects: &[AttachedProject]) -> atlas_acp_thread::SessionRoots {
+    let mut roots = atlas_acp_thread::SessionRoots::default();
+    for project in projects {
+        if project.access.is_writable() {
+            roots.read_write.push(project.path.clone());
+        } else {
+            roots.read_only.push(project.path.clone());
+        }
+    }
+    roots
+}
+
+/// `~/work/server` for a path under the home folder, the path as is
+/// otherwise: the card has to say clearly which folder, in the form the user
+/// knows it by.
+pub(crate) fn display_path(path: &Path) -> String {
+    if let Some(home) = dirs::home_dir() {
+        if let Ok(rest) = path.strip_prefix(&home) {
+            return format!("~/{}", rest.display());
+        }
+    }
+    path.display().to_string()
+}
+
+fn access_card_title(request: &ProjectAccessRequest) -> String {
+    let what = if request.access.is_writable() {
+        "write access"
+    } else {
+        "read access"
+    };
+    format!("Wants {what} to {}", display_path(&request.path))
+}
+
+fn access_card_body(request: &ProjectAccessRequest) -> String {
+    let mut body = String::new();
+    if let Some(reason) = request.reason.as_deref().filter(|r| !r.trim().is_empty()) {
+        body.push_str(reason.trim());
+        body.push_str("\n\n");
+    }
+    body.push_str(&format!("Folder: {}", request.path.display()));
+    if request.in_git_repository {
+        body.push_str(" (git repository)");
+    }
+    body.push_str(if request.access.is_writable() {
+        "\n\nApproving attaches it to this session. Read and write lets the agent edit it; \
+         read-only lets it look but never change anything."
+    } else {
+        "\n\nApproving attaches it to this session, read-only: the agent can look but never \
+         change anything."
+    });
+    body
 }
 
 /// What `thread_row` needs to decide [`ThreadRow::live_elsewhere`].
@@ -3443,6 +3948,11 @@ fn thread_row(thread: &ThreadMetadata, live: &LiveContext<'_>) -> ThreadRow {
         live_elsewhere,
         branch: thread.branch.as_deref().map(str::to_string),
         model: thread.model.as_deref().map(str::to_string),
+        attached_projects: thread
+            .attached_projects
+            .iter()
+            .map(AttachedProjectWire::from)
+            .collect(),
     }
 }
 

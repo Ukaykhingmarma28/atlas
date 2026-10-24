@@ -16,6 +16,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::paths::{PathList, WorktreePaths};
+use crate::projects::AttachedProject;
 
 /// The default shown for a thread nobody has titled yet.
 pub const DEFAULT_THREAD_TITLE: &str = "New Thread";
@@ -129,6 +130,10 @@ pub struct ThreadMetadata {
     /// "unread" is measured against. `None` for a session Atlas never ran a
     /// turn in (an import), which is never unread.
     pub last_turn_completed_at: Option<DateTime<Utc>>,
+    /// The projects attached to the session besides its own folder, in the
+    /// order they were attached ([`crate::AttachedProject`]). Empty for most
+    /// sessions, and for every row older than the column.
+    pub attached_projects: Vec<AttachedProject>,
 }
 
 impl ThreadMetadata {
@@ -160,6 +165,7 @@ impl ThreadMetadata {
             last_snooze_wake_at: None,
             last_viewed_at: None,
             last_turn_completed_at: None,
+            attached_projects: Vec::new(),
         }
     }
 

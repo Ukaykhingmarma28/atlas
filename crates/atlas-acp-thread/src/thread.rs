@@ -1116,6 +1116,17 @@ pub fn is_host_machinery_title(title: &str) -> bool {
 pub struct AcpThread {
     session_id: acp::SessionId,
     work_dirs: Vec<PathBuf>,
+    /// The projects attached to the session, as Atlas currently grants them
+    /// ([`crate::SessionRoots`]). What the client-side `fs/*` handlers widen
+    /// to — read-only roots for reads, read-write roots for reads and writes —
+    /// and what [`Self::own_work_dirs`] leaves out.
+    attached_roots: crate::SessionRoots,
+    /// Every path ever attached to this thread. A read-write root is opened
+    /// with the session as one of its `work_dirs` (that is how it reaches the
+    /// agent as an additional directory), so a root later made read-only or
+    /// detached must stop counting as a working directory: this is how the
+    /// thread tells its own folders from attached ones.
+    attached_ever: Vec<PathBuf>,
     parent_session_id: Option<acp::SessionId>,
     title: Option<Arc<str>>,
     entries: Vec<AgentThreadEntry>,
@@ -1174,6 +1185,8 @@ impl AcpThread {
         Self {
             session_id,
             work_dirs,
+            attached_roots: crate::SessionRoots::default(),
+            attached_ever: Vec::new(),
             parent_session_id: None,
             // Filtered on the way in as well as on update: a resume seeds this
             // from the stored row (`agent_host.rs`, the `Some(session_id)`
@@ -1220,6 +1233,52 @@ impl AcpThread {
     pub fn set_work_dirs(&mut self, work_dirs: Vec<PathBuf>) {
         self.work_dirs = work_dirs;
         self.emit(AcpThreadEvent::WorkingDirectoriesUpdated);
+    }
+
+    /// The session's own folders: its working directories without any that
+    /// are, or were, attached projects. The first one (the cwd) is always
+    /// kept. What history records as the session's folders, so attaching a
+    /// project never moves the session to another project's group.
+    pub fn own_work_dirs(&self) -> Vec<PathBuf> {
+        self.work_dirs
+            .iter()
+            .enumerate()
+            .filter(|(ix, dir)| *ix == 0 || !self.attached_ever.contains(dir))
+            .map(|(_, dir)| dir.clone())
+            .collect()
+    }
+
+    /// The projects currently attached to the session.
+    pub fn attached_roots(&self) -> &crate::SessionRoots {
+        &self.attached_roots
+    }
+
+    /// Replace the projects attached to the session. Silent: nothing about
+    /// the thread the sidebar shows changes.
+    pub fn set_attached_roots(&mut self, roots: crate::SessionRoots) {
+        for path in roots.all() {
+            if !self.attached_ever.contains(path) {
+                self.attached_ever.push(path.clone());
+            }
+        }
+        self.attached_roots = roots;
+    }
+
+    /// Where the client-side `fs/read_text_file` may read: the session's own
+    /// folders and every attached project.
+    pub fn readable_roots(&self) -> Vec<PathBuf> {
+        let mut roots = self.own_work_dirs();
+        roots.extend(self.attached_roots.all().cloned());
+        roots
+    }
+
+    /// Where the client-side `fs/write_text_file` may write: the session's
+    /// own folders and the read-write attached projects — never a read-only
+    /// one, even one the session was opened with as read-write.
+    pub fn writable_roots(&self) -> Vec<PathBuf> {
+        let mut roots = self.own_work_dirs();
+        roots.extend(self.attached_roots.read_write.iter().cloned());
+        roots
     }
 
     pub fn title(&self) -> Option<&Arc<str>> {

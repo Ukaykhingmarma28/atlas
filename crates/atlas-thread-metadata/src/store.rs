@@ -37,6 +37,7 @@ use crate::db::Db;
 use crate::error::{Error, Result};
 use crate::model::{ThreadId, ThreadMetadata};
 use crate::paths::{PathList, WorktreePaths};
+use crate::projects::{self, AttachedProject, ProjectAccess};
 
 /// How many change events a slow subscriber may fall behind before it is told
 /// it lagged. The payload carries no data, so a subscriber that lags simply
@@ -756,6 +757,69 @@ impl ThreadMetadataStore {
             thread.branch = branch;
             true
         });
+    }
+
+    /// The projects attached to the session, in the order they were attached.
+    /// Empty for a row that does not exist.
+    pub fn attached_projects(&self, thread_id: ThreadId) -> Vec<AttachedProject> {
+        read(&self.inner.cache)
+            .threads
+            .get(&thread_id)
+            .map(|thread| thread.attached_projects.clone())
+            .unwrap_or_default()
+    }
+
+    /// Attach `project` to the session. Answers whether anything changed.
+    ///
+    /// One entry per path: attaching a path that is already attached changes
+    /// nothing — not its access, which only [`Self::set_project_access`]
+    /// moves, so a second `@` mention (read-only by default) never quietly
+    /// takes write access away. Nor is a session's own folder attached to
+    /// it: the agent already runs there. Attaching is not activity, so
+    /// `updated_at` stays where it is.
+    pub fn attach_project(&self, thread_id: ThreadId, project: AttachedProject) -> bool {
+        self.update(thread_id, |thread| {
+            if thread.references_folder_path(&project.path)
+                || projects::position(&thread.attached_projects, &project.path).is_some()
+            {
+                return false;
+            }
+            thread.attached_projects.push(project);
+            true
+        })
+    }
+
+    /// Detach the project at `path`. Answers whether it was attached.
+    pub fn detach_project(&self, thread_id: ThreadId, path: &Path) -> bool {
+        self.update(thread_id, |thread| {
+            let Some(ix) = projects::position(&thread.attached_projects, path) else {
+                return false;
+            };
+            thread.attached_projects.remove(ix);
+            true
+        })
+    }
+
+    /// Change what the agent may do in the attached project at `path`.
+    /// Answers whether anything changed: `false` for a path that is not
+    /// attached, or already at `access`.
+    pub fn set_project_access(
+        &self,
+        thread_id: ThreadId,
+        path: &Path,
+        access: ProjectAccess,
+    ) -> bool {
+        self.update(thread_id, |thread| {
+            let Some(ix) = projects::position(&thread.attached_projects, path) else {
+                return false;
+            };
+            let entry = &mut thread.attached_projects[ix];
+            if entry.access == access {
+                return false;
+            }
+            entry.access = access;
+            true
+        })
     }
 
     /// Move the session to the Settled shelf: done for now, still listed,
