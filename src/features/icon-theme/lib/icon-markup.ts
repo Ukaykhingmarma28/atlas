@@ -81,8 +81,13 @@ export function fileIconMarkup(path: string, kind: IconKind = "file"): string | 
     html = span.outerHTML;
   } else {
     const prepared = state.prepared[icon.definition];
-    // Resolved, and its asset still in flight.
-    if (!prepared) return undefined;
+    if (!prepared) {
+      // Settled without an asset (it failed, or sanitising left nothing):
+      // keep the fallback, and do not wait for an answer that is not coming.
+      if (state.missing[icon.definition]) return null;
+      // Resolved, and its asset still in flight.
+      return undefined;
+    }
     const src = prepared.url ?? (prepared.svg ? svgImageSource(prepared.svg) : null);
     if (src) {
       const img = document.createElement("img");
@@ -122,6 +127,11 @@ function paintSlot(slot: HTMLElement): boolean {
     if (!entry) {
       entry = { path, kind, slots: new Set() };
       waiting.set(key, entry);
+    } else {
+      // A streaming tail replaces its HTML on every tick, so the slots the
+      // last tick added are detached by now. Drop them here, not only when
+      // the store next changes, which may be never.
+      for (const old of entry.slots) if (!old.isConnected) entry.slots.delete(old);
     }
     entry.slots.add(slot);
     return false;
@@ -192,6 +202,13 @@ function listen(): void {
       for (const slot of entry.slots) if (slot.isConnected) paintSlot(slot);
     }
   });
+}
+
+/** Test seam: how many slots are waiting for an answer. */
+export function waitingSlotCountForTests(): number {
+  let count = 0;
+  for (const entry of waiting.values()) count += entry.slots.size;
+  return count;
 }
 
 /** Test seam: forget every cached string, waiting slot and the subscription. */

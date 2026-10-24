@@ -40,12 +40,14 @@ let cacheChars = 0;
 const SYNC_LIMIT = 2000;
 
 /**
- * The cache key for a source rendered under a project root. The root changes
- * the HTML (paths in it become file chips), so it is part of the key; without
- * one the key is the source itself, as it always was.
+ * The cache key for a source rendered under a project root, as the user's
+ * words or an agent's. Both change the HTML (paths become file chips; only a
+ * user's message opens a mention outside the project), so both are part of
+ * the key; with neither the key is the source itself, as it always was.
  */
-function keyOf(src: string, fileRoot: string | undefined): string {
-  return fileRoot ? `${fileRoot}\u0000${src}` : src;
+function keyOf(src: string, fileRoot: string | undefined, userAuthored?: boolean): string {
+  if (!fileRoot && !userAuthored) return src;
+  return `${userAuthored ? "u" : ""}\u0000${fileRoot ?? ""}\u0000${src}`;
 }
 
 function cacheGet(src: string): string | undefined {
@@ -105,27 +107,35 @@ export function primeMarkdownRenderer(): void {
  *  renderer chunk is already resident. Returns `null` when it isn't, so the
  *  caller can route the block through the worker instead of blocking on a
  *  module load. */
-function renderToHtmlSyncIfReady(src: string, fileRoot?: string): string | null {
-  const key = keyOf(src, fileRoot);
+function renderToHtmlSyncIfReady(
+  src: string,
+  fileRoot?: string,
+  userAuthored?: boolean,
+): string | null {
+  const key = keyOf(src, fileRoot, userAuthored);
   const cached = cacheGet(key);
   if (cached !== undefined) return cached;
   if (!renderMod) {
     void ensureRenderer();
     return null;
   }
-  const html = renderMod.parseMarkdown(src, fileRoot);
+  const html = renderMod.parseMarkdown(src, fileRoot, { userAuthored });
   cacheSet(key, html);
   return html;
 }
 
 /** Main-thread parse, loading the renderer chunk first if needed. The
  *  worker-unavailable fallback path — correctness over latency. */
-async function renderToHtmlAsync(src: string, fileRoot?: string): Promise<string> {
-  const key = keyOf(src, fileRoot);
+async function renderToHtmlAsync(
+  src: string,
+  fileRoot?: string,
+  userAuthored?: boolean,
+): Promise<string> {
+  const key = keyOf(src, fileRoot, userAuthored);
   const cached = cacheGet(key);
   if (cached !== undefined) return cached;
   const m = await ensureRenderer();
-  const html = m.parseMarkdown(src, fileRoot);
+  const html = m.parseMarkdown(src, fileRoot, { userAuthored });
   cacheSet(key, html);
   return html;
 }
@@ -146,7 +156,7 @@ let seq = 0;
 // without it each in-flight block sat blank until its own 3s watchdog fired.
 const waiters = new Map<
   number,
-  { source: string; fileRoot?: string; finish: (html: string) => void }
+  { source: string; fileRoot?: string; userAuthored?: boolean; finish: (html: string) => void }
 >();
 // Dedupe concurrent requests for the same source so two visible copies of an
 // identical message don't parse twice.
@@ -175,7 +185,8 @@ function ensureWorker(): Worker | null {
       workerBroken = true;
       const stranded = Array.from(waiters.values());
       waiters.clear();
-      for (const w of stranded) void renderToHtmlAsync(w.source, w.fileRoot).then(w.finish);
+      for (const w of stranded)
+        void renderToHtmlAsync(w.source, w.fileRoot, w.userAuthored).then(w.finish);
     };
   } catch {
     workerBroken = true;
@@ -274,8 +285,13 @@ function bumpPriority(source: string, priority: number): void {
 /** Parse a large block off the main thread. Falls back to a gated-idle main-
  *  thread parse (the pre-worker behavior) if the worker is unavailable.
  *  `priority` orders the queue — higher goes first. */
-function parseLarge(source: string, priority: number, fileRoot?: string): Promise<string> {
-  const key = keyOf(source, fileRoot);
+function parseLarge(
+  source: string,
+  priority: number,
+  fileRoot?: string,
+  userAuthored?: boolean,
+): Promise<string> {
+  const key = keyOf(source, fileRoot, userAuthored);
   const hit = cacheGet(key);
   if (hit !== undefined) return Promise.resolve(hit);
   const existing = pending.get(key);
@@ -304,7 +320,7 @@ function parseLarge(source: string, priority: number, fileRoot?: string): Promis
         source: key,
         priority,
         dispatch: () => {
-          waiters.set(id, { source, fileRoot, finish });
+          waiters.set(id, { source, fileRoot, userAuthored, finish });
           // Watchdog: if the worker never answers, fall back to a main-thread
           // parse so the message still renders instead of hanging blank. Only
           // a worker that has NEVER answered is presumed dead — a slow parse
@@ -313,10 +329,10 @@ function parseLarge(source: string, priority: number, fileRoot?: string): Promis
           window.setTimeout(() => {
             if (!settled) {
               if (!workerEverAnswered) workerBroken = true;
-              void renderToHtmlAsync(source, fileRoot).then(finish);
+              void renderToHtmlAsync(source, fileRoot, userAuthored).then(finish);
             }
           }, 3000);
-          w.postMessage({ id, source, fileRoot });
+          w.postMessage({ id, source, fileRoot, userAuthored });
         },
       });
       pump();
@@ -337,7 +353,7 @@ function parseLarge(source: string, priority: number, fileRoot?: string): Promis
           schedule();
           return;
         }
-        void renderToHtmlAsync(source, fileRoot).then(resolve);
+        void renderToHtmlAsync(source, fileRoot, userAuthored).then(resolve);
       }
       schedule();
     });
@@ -472,6 +488,12 @@ interface CachedMarkdownProps {
    * it (`markdown-render.ts`). Part of the cache key.
    */
   fileRoot?: string;
+  /**
+   * The user wrote this (a sent message): an absolute `@file` mention outside
+   * the project opens too. An agent's reply leaves it unset, so only paths in
+   * the project are clickable there. Part of the cache key.
+   */
+  userAuthored?: boolean;
 }
 
 /**
@@ -487,8 +509,9 @@ export function CachedMarkdown({
   unstyled,
   priority = 0,
   fileRoot,
+  userAuthored,
 }: CachedMarkdownProps) {
-  const key = keyOf(source, fileRoot);
+  const key = keyOf(source, fileRoot, userAuthored);
   const [html, setHtml] = useState<string | null>(() => {
     const hit = cacheGet(key);
     if (hit !== undefined) return hit;
@@ -503,7 +526,7 @@ export function CachedMarkdown({
     // past (black viewport). Cache hits above still render instantly; a
     // fresh block shows its raw-text placeholder and formats on settle.
     if (source.length <= SYNC_LIMIT && !isScrollHot()) {
-      return renderToHtmlSyncIfReady(source, fileRoot);
+      return renderToHtmlSyncIfReady(source, fileRoot, userAuthored);
     }
     return null;
   });
@@ -516,7 +539,7 @@ export function CachedMarkdown({
       return;
     }
     if (source.length <= SYNC_LIMIT && !isScrollHot()) {
-      const fresh = renderToHtmlSyncIfReady(source, fileRoot);
+      const fresh = renderToHtmlSyncIfReady(source, fileRoot, userAuthored);
       if (fresh !== null) {
         if (fresh !== html) setHtml(fresh);
         return;
@@ -526,14 +549,14 @@ export function CachedMarkdown({
     // Large block (or a small one before the renderer lands) → parse off the
     // main thread, then swap in the HTML.
     let cancelled = false;
-    void parseLarge(source, priority, fileRoot).then((result) => {
+    void parseLarge(source, priority, fileRoot, userAuthored).then((result) => {
       if (!cancelled) setHtml(result);
     });
     return () => {
       cancelled = true;
     };
     // `html` intentionally omitted: re-running on our own setHtml would loop.
-    // `key` covers `source` and `fileRoot`.
+    // `key` covers `source`, `fileRoot` and `userAuthored`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, priority]);
 

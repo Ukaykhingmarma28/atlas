@@ -7,8 +7,11 @@
 // path lands inside the project root. Whether the file EXISTS is a question
 // for the click (`open-path-link.ts`), which asks the file index.
 //
-// POSIX paths only. A Windows project root still works for relative paths,
-// which are what agents write almost all of the time.
+// Windows roots (`C:\Users\me\proj`) work: both sides are compared with `/`
+// separators and an upper-case drive letter, and a resolved path comes back
+// in the root's own separators. Inline code naming a drive-letter path is not
+// detected (its colon reads as `host:port`); agents write relative paths
+// almost all of the time.
 
 /** A file a chip points at. */
 export interface FileLinkTarget {
@@ -94,6 +97,56 @@ const HOST_TLDS = new Set([
   "eu",
 ]);
 
+/**
+ * Folders whose names look like files: a macOS bundle (`Foo.app`) or an Xcode
+ * project. A click shows them in the file manager rather than opening them as
+ * a file — and never runs an app.
+ */
+const BUNDLE_EXTENSIONS = new Set([
+  "app",
+  "appex",
+  "bundle",
+  "framework",
+  "xcframework",
+  "kext",
+  "plugin",
+  "dsym",
+  "lproj",
+  "xcodeproj",
+  "xcworkspace",
+  "xcassets",
+  "playground",
+  "photoslibrary",
+]);
+
+/** Whether a base name is a bundle: a folder, though it reads like a file. */
+export function isBundleName(base: string): boolean {
+  const dot = base.lastIndexOf(".");
+  return dot > 0 && BUNDLE_EXTENSIONS.has(base.slice(dot + 1).toLowerCase());
+}
+
+/**
+ * Ports a bare `name.ext:N` is far more likely to be (`server.js:8080`) than
+ * a line number in a file written without its folder.
+ */
+const COMMON_PORTS = new Set([
+  1080, 1433, 1521, 2375, 2376, 3000, 3001, 3306, 4000, 4200, 4443, 5000, 5001, 5173, 5432, 5672,
+  6379, 6443, 7000, 8000, 8008, 8080, 8081, 8443, 8888, 9000, 9090, 9200, 9229, 9443,
+]);
+/** No file anyone points at has a line past this: `:123456` is not a line. */
+const MAX_LINE = 99_999;
+
+/**
+ * Whether `name:N` reads as a host and port rather than a line: past any
+ * plausible line, or a bare name (no folder) with a common port or a
+ * five-digit number.
+ */
+function looksLikePort(path: string, line: number, column: number | undefined): boolean {
+  if (line > MAX_LINE) return true;
+  if (path.includes("/") || column !== undefined) return false;
+  return COMMON_PORTS.has(line) || line >= 10_000;
+}
+
 function looksLikeHost(segment: string): boolean {
   if (segment.startsWith(".")) return false;
   if (segment === "localhost" || NUMERIC_DOTTED.test(segment)) return true;
@@ -135,6 +188,9 @@ export function inlineCodePathCandidate(code: string): {
   const { path } = position;
   const hasPosition = position.line !== undefined;
   if (!path || GLOB_CHARS.test(path) || path.includes("//")) return null;
+  if (position.line !== undefined && looksLikePort(path, position.line, position.column)) {
+    return null;
+  }
   // A remaining colon is a scheme or a `host:port`, not a path.
   if (path.includes(":") || path.includes("#")) return null;
   if (!hasPosition && !path.includes("/")) return null;
@@ -187,13 +243,32 @@ export function linkHrefPathCandidate(href: string): {
   if (!folder && !EXTENSIONLESS_FILES.has(base)) {
     if (!FILE_EXTENSION.test(base) || VERSION_SUFFIX.test(base)) return null;
   }
-  return { ...position, path, folder };
+  return { ...position, path, folder: folder || isBundleName(base) };
 }
 
-/** Collapse `.` and `..` segments. Null when `..` climbs above the root. */
-function normalise(absolute: string): string | null {
+/** A drive-letter prefix, `C:`, with a separator (or nothing) after it. */
+const DRIVE = /^([A-Za-z]):(?=[\\/]|$)/;
+
+/** Whether `path` is absolute: POSIX `/…` or Windows `C:\…` / `C:/…`. */
+export function isAbsolutePath(path: string): boolean {
+  return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path);
+}
+
+/**
+ * `path` with `/` separators, `.` and `..` collapsed, no trailing slash, and
+ * an upper-case drive letter: the form two paths are compared in. Null when
+ * `..` climbs above the top.
+ */
+export function normalisePath(path: string): string | null {
+  let rest = path.replace(/\\/g, "/");
+  let prefix = "";
+  const drive = rest.match(DRIVE);
+  if (drive) {
+    prefix = `${drive[1].toUpperCase()}:`;
+    rest = rest.slice(2);
+  }
   const out: string[] = [];
-  for (const segment of absolute.split("/")) {
+  for (const segment of rest.split("/")) {
     if (segment === "" || segment === ".") continue;
     if (segment === "..") {
       if (out.length === 0) return null;
@@ -202,42 +277,64 @@ function normalise(absolute: string): string | null {
     }
     out.push(segment);
   }
-  return `/${out.join("/")}`;
+  return `${prefix}/${out.join("/")}`;
 }
 
-/** The home directory a project root sits under, for `~/` paths. */
+/** Whether `path` is `root` or inside it, whichever separators either uses. */
+export function isUnderRoot(path: string, root: string): boolean {
+  const p = normalisePath(path);
+  const r = normalisePath(root);
+  if (!p || !r) return false;
+  return p === r || p.startsWith(r.endsWith("/") ? r : `${r}/`);
+}
+
+/** `path` (normalised) in the separators `root` is written with: `\` for a
+ *  Windows root written that way. */
+function inRootStyle(path: string, root: string): string {
+  return DRIVE.test(root) && root.includes("\\") ? path.replace(/\//g, "\\") : path;
+}
+
+/** The home directory a (normalised) project root sits under, for `~/`. */
 function homeOf(root: string): string | null {
-  const match = root.match(/^\/(?:Users|home)\/[^/]+/);
+  const match = root.match(/^(?:[A-Z]:)?\/(?:Users|home)\/[^/]+/);
   return match ? match[0] : null;
 }
 
 /**
  * Where `path` lands, if inside `root`: relative paths resolve against the
  * root, `~/` against the home the root sits in, and absolute paths are taken
- * as they are. Anything that ends up outside the root is null.
+ * as they are. Anything that ends up outside the root is null. The result is
+ * written in the root's separators.
  */
 export function resolveInProject(path: string, root: string): string | null {
-  const cleanRoot = normalise(root.replace(/\\/g, "/"));
-  if (!cleanRoot || cleanRoot === "/") return null;
+  const cleanRoot = normalisePath(root);
+  if (!cleanRoot || /^(?:[A-Z]:)?\/$/.test(cleanRoot)) return null;
   let absolute: string;
-  if (path.startsWith("/")) absolute = path;
+  if (isAbsolutePath(path)) absolute = path;
   else if (path.startsWith("~/")) {
     const home = homeOf(cleanRoot);
     if (!home) return null;
     absolute = `${home}/${path.slice(2)}`;
   } else absolute = `${cleanRoot}/${path}`;
-  const resolved = normalise(absolute);
+  const resolved = normalisePath(absolute);
   if (!resolved) return null;
-  return resolved === cleanRoot || resolved.startsWith(`${cleanRoot}/`) ? resolved : null;
+  if (resolved !== cleanRoot && !resolved.startsWith(`${cleanRoot}/`)) return null;
+  return inRootStyle(resolved, root);
 }
 
-/** The project file inline code names, or null. */
+/** The last segment of a path, either separator. */
+export function baseNameOf(path: string): string {
+  return path.slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1);
+}
+
+/** The project file inline code names, or null. A bundle (`build/Foo.app`)
+ *  comes back as a folder. */
 export function inlineCodeFileTarget(code: string, root: string): FileLinkTarget | null {
   const candidate = inlineCodePathCandidate(code);
   if (!candidate) return null;
   const path = resolveInProject(candidate.path, root);
   if (!path) return null;
-  return { ...candidate, path, folder: false };
+  return { ...candidate, path, folder: isBundleName(baseNameOf(path)) };
 }
 
 /** The project file or folder a link destination names, or null. */
@@ -247,12 +344,6 @@ export function linkFileTarget(href: string, root: string): FileLinkTarget | nul
   const path = resolveInProject(candidate.path, root);
   if (!path) return null;
   return { ...candidate, path };
-}
-
-/** What a chip says: the base name, with the line when one was named. */
-export function fileChipLabel(target: FileLinkTarget): string {
-  const base = target.path.slice(target.path.lastIndexOf("/") + 1);
-  return target.line === undefined ? base : `${base}:${target.line}`;
 }
 
 /** The full path a chip's tooltip shows, with the position when named. */

@@ -4,13 +4,21 @@
 //
 // Inside the open project the file becomes an Atlas tab, through the same
 // open path as a click in the file tree, with the cursor on the line the chip
-// named. Anything Atlas has nowhere to place — outside the project, or no
-// project open — goes to the app the system opens that file type with, as a
-// file opened from a diff does (`open-review-file.ts`).
+// named. A file Atlas has nowhere to place — outside the project, or no
+// project open — goes where a file opened from a diff goes
+// (`open-review-file.ts`): the editor the user named, else the system's app,
+// through the external-editor command, whose Rust side shows anything the
+// system would *run* in Finder instead. A folder (or a bundle such as
+// `Foo.app`, a folder that reads like a file) is revealed in the file manager.
+//
+// Never the opener plugin's JS `openPath`: it is outside Atlas's capabilities,
+// and it would skip that executable guard.
 
 import { toast } from "sonner";
 import { useAppStore } from "@/features/app/stores/app-store";
+import { openOutsideFile } from "@/features/external-editor/lib/preferred-editor";
 import { fileIndex } from "@/features/file-picker/lib/file-picker-api";
+import { baseNameOf, isBundleName, isUnderRoot, normalisePath } from "@/lib/file-links";
 import { openInProject } from "./open-in-project";
 
 /** What a chip carries. */
@@ -22,9 +30,10 @@ export interface PathLink {
   folder?: boolean;
 }
 
-function isUnder(path: string, root: string): boolean {
-  const base = root.replace(/\/+$/, "");
-  return path === base || path.startsWith(`${base}/`);
+/** `/` separators and an upper-case drive letter, for comparing index paths
+ *  with a chip's whichever way either is written. */
+function comparable(path: string): string {
+  return normalisePath(path) ?? path;
 }
 
 /**
@@ -39,33 +48,41 @@ function isUnder(path: string, root: string): boolean {
  * path as written, and the editor says if it is not there.
  */
 export async function locateInProject(path: string, root: string): Promise<string> {
-  const base = root.replace(/\/+$/, "");
-  const rel = path.slice(base.length + 1);
-  if (!rel) return path;
+  const base = comparable(root).replace(/\/+$/, "");
+  const full = comparable(path);
+  const rel = full.slice(base.length + 1);
+  if (!rel || !isUnderRoot(path, root)) return path;
   try {
     const matches = await fileIndex.search(rel, 50);
-    if (matches.some((m) => m.path === path)) return path;
-    const tail = matches.filter((m) => m.rel === rel || m.rel.endsWith(`/${rel}`));
+    if (matches.some((m) => comparable(m.path) === full)) return path;
+    const tail = matches.filter((m) => {
+      const r = m.rel.replace(/\\/g, "/");
+      return r === rel || r.endsWith(`/${rel}`);
+    });
     return tail.length === 1 ? tail[0].path : path;
   } catch {
     return path;
   }
 }
 
-async function openWithSystem(path: string): Promise<void> {
+async function revealInFileManager(path: string): Promise<void> {
   try {
-    const { openPath } = await import("@tauri-apps/plugin-opener");
-    await openPath(path);
+    const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
+    await revealItemInDir(path);
   } catch (e) {
-    toast.error("Couldn't open the file", { description: String(e) });
+    toast.error("Couldn't show the folder", { description: String(e) });
   }
 }
 
 export async function openPathLink(link: PathLink): Promise<void> {
+  if (link.folder || isBundleName(baseNameOf(link.path))) {
+    // A folder has no tab to open in, and a bundle must never be run.
+    await revealInFileManager(link.path);
+    return;
+  }
   const root = useAppStore.getState().currentProject?.path ?? null;
-  if (!root || !isUnder(link.path, root) || link.folder) {
-    // A folder has no tab to open in; the system shows it in its file manager.
-    await openWithSystem(link.path);
+  if (!root || !isUnderRoot(link.path, root)) {
+    await openOutsideFile(link.path);
     return;
   }
   const path = await locateInProject(link.path, root);

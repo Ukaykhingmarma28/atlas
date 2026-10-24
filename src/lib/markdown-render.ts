@@ -22,9 +22,10 @@ import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import rehypeStringify from "rehype-stringify";
 import {
-  fileChipLabel,
+  baseNameOf,
   fileChipTitle,
   inlineCodeFileTarget,
+  isAbsolutePath,
   linkFileTarget,
   resolveInProject,
   type FileLinkTarget,
@@ -157,11 +158,6 @@ function protectMentions(src: string): { text: string; tokens: MentionToken[] } 
     },
   );
   return { text, tokens };
-}
-
-function baseName(s: string): string {
-  const i = s.lastIndexOf("/");
-  return i >= 0 ? s.slice(i + 1) : s;
 }
 
 // Lucide icon node data (v0.468.0) per mention kind — identical to the glyphs
@@ -405,18 +401,22 @@ function fileChipNode(opts: {
   };
 }
 
-function chipNode(prefix: string, value: string, fileRoot: string | undefined): Hast {
+function chipNode(prefix: string, value: string, data: RenderData): Hast {
   const kind = MENTION_PREFIX_KIND[prefix] ?? "file";
   if (kind === "file" || kind === "folder") {
     // A mention's path is project-relative (`toShortForm`), or absolute when
-    // the file is outside the project.
-    const resolved = fileRoot ? resolveInProject(value, fileRoot) : null;
-    const absolute = resolved ?? (value.startsWith("/") ? value : null);
+    // the file is outside the project. Outside it, only a message the user
+    // wrote opens it: they attached that file themselves. An agent's reply
+    // can write any `@file:` it likes, so there it opens project files only,
+    // as its inline code does — never `@file:/Applications/Some.app`.
+    const resolved = data.fileRoot ? resolveInProject(value, data.fileRoot) : null;
+    const outside = data.userAuthored && isAbsolutePath(value) ? value : null;
+    const absolute = resolved ?? outside;
     return fileChipNode({
       target: absolute ? { path: absolute, folder: kind === "folder" } : null,
       iconPath: absolute ?? value,
       folder: kind === "folder",
-      label: baseName(value),
+      label: baseNameOf(value),
       title: absolute ?? value,
     });
   }
@@ -448,7 +448,7 @@ function splitMentionText(
   value: string,
   tokens: MentionToken[],
   literal: boolean,
-  fileRoot: string | undefined,
+  data: RenderData,
 ): Hast[] | null {
   PLACEHOLDER_RE.lastIndex = 0;
   const out: Hast[] = [];
@@ -461,7 +461,7 @@ function splitMentionText(
     if (m.index > last) out.push({ type: "text", value: value.slice(last, m.index) });
     if (!token) out.push({ type: "text", value: m[0] });
     else if (literal) out.push({ type: "text", value: token.raw });
-    else out.push(chipNode(token.prefix, token.value, fileRoot));
+    else out.push(chipNode(token.prefix, token.value, data));
     last = m.index + m[0].length;
   }
   if (!found) return null;
@@ -478,14 +478,13 @@ const MENTION_SKIP_TAGS = new Set(["code", "pre"]);
 function rehypeMentionChips() {
   return (tree: Hast, file: { data: RenderData }) => {
     const tokens = file.data.mentionTokens;
-    const fileRoot = file.data.fileRoot;
     if (!tokens || tokens.length === 0) return;
     const walk = (node: Hast, literal: boolean) => {
       if (!node.children) return;
       const next: Hast[] = [];
       for (const child of node.children) {
         if (child.type === "text" && typeof child.value === "string") {
-          const split = splitMentionText(child.value, tokens, literal, fileRoot);
+          const split = splitMentionText(child.value, tokens, literal, file.data);
           next.push(...(split ?? [child]));
           continue;
         }
@@ -506,7 +505,19 @@ type RenderData = {
   mentionTokens?: MentionToken[];
   /** The session's project root. Unset, no path becomes a chip. */
   fileRoot?: string;
+  /** See {@link ParseOptions.userAuthored}. */
+  userAuthored?: boolean;
 };
+
+/** How one string is rendered, besides its project root. */
+export interface ParseOptions {
+  /**
+   * The user wrote this text (a sent message), so an absolute `@file:` or
+   * `@folder:` mention outside the project opens what it names. Unset (an
+   * agent's reply), only paths inside the project are clickable.
+   */
+  userAuthored?: boolean;
+}
 
 // ── File paths in prose ───────────────────────────────────────────────────────
 // Inline code and link destinations that name a file in the session's project
@@ -543,14 +554,28 @@ function labelRestatesTarget(label: string, href: string): boolean {
   return l.length > 0 && (h === l || h.endsWith(`/${l}`));
 }
 
-function fileTargetChip(target: FileLinkTarget): Hast {
+/** A chip for a path found in prose. Its label is the text as written —
+ *  `src/a/index.ts` and `src/b/index.ts` must not both read `index.ts`, and
+ *  copying the reply keeps the path — and its tooltip the resolved path. */
+function fileTargetChip(target: FileLinkTarget, written: string): Hast {
   return fileChipNode({
     target,
     iconPath: target.path,
     folder: target.folder,
-    label: fileChipLabel(target),
+    label: written.trim(),
     title: fileChipTitle(target),
   });
+}
+
+/** A link destination as a person would read it: `file://` dropped and
+ *  percent-escapes decoded. */
+function writtenHref(href: string): string {
+  const bare = href.replace(/^file:\/\//i, "");
+  try {
+    return decodeURIComponent(bare);
+  } catch {
+    return bare;
+  }
 }
 
 function rehypeFileChips() {
@@ -568,7 +593,7 @@ function rehypeFileChips() {
         if (child.tagName === "code") {
           const text = plainText(child);
           const target = text === null ? null : inlineCodeFileTarget(text, root);
-          next.push(target ? fileTargetChip(target) : child);
+          next.push(target && text !== null ? fileTargetChip(target, text) : child);
           continue;
         }
         const href = child.tagName === "a" ? child.properties?.href : undefined;
@@ -576,7 +601,7 @@ function rehypeFileChips() {
         if (target && typeof href === "string") {
           const label = plainText(child);
           if (label !== null && labelRestatesTarget(label, href)) {
-            next.push(fileTargetChip(target));
+            next.push(fileTargetChip(target, label));
           } else {
             // The link's own words stay, as text: an anchor with a relative
             // href would navigate the webview away. The chip follows them.
@@ -584,7 +609,7 @@ function rehypeFileChips() {
             next.push(
               ...(child.children ?? []),
               { type: "text", value: " " },
-              fileTargetChip(target),
+              fileTargetChip(target, writtenHref(href)),
             );
           }
           continue;
@@ -638,11 +663,15 @@ function escapeHtml(s: string): string {
  *
  *  `fileRoot` is the session's project root: given one, file paths in inline
  *  code and links become chips, and mention chips resolve against it. The
- *  output depends on it, so a cache must key on it too. */
-export function parseMarkdown(src: string, fileRoot?: string): string {
+ *  output depends on it (and on `options`), so a cache must key on them too. */
+export function parseMarkdown(src: string, fileRoot?: string, options?: ParseOptions): string {
   try {
     const { text, tokens } = protectMentions(src);
-    const data: RenderData = { mentionTokens: tokens, fileRoot: fileRoot || undefined };
+    const data: RenderData = {
+      mentionTokens: tokens,
+      fileRoot: fileRoot || undefined,
+      userAuthored: options?.userAuthored === true,
+    };
     return String(getProcessor().processSync({ value: text, data }));
   } catch {
     return `<p>${escapeHtml(src)}</p>`;

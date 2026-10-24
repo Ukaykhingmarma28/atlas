@@ -79,6 +79,13 @@ interface IconThemeState {
   resolved: Record<string, ResolvedIcon | null>;
   /** Asset bytes, keyed by definition id. Shared across every path using it. */
   prepared: Record<string, PreparedIcon>;
+  /**
+   * Definitions whose asset will never arrive under this theme: it failed to
+   * load, came back absent, or `sanitizeSvg` stripped it to nothing. Without
+   * this a caller could not tell "still in flight" from "never", and would
+   * wait forever (`icon-markup.ts`). Callers keep their fallback.
+   */
+  missing: Record<string, true>;
   /** Font faces, fetched only once a glyph icon has actually been resolved. */
   fonts: IconFontFace[];
   loading: boolean;
@@ -94,8 +101,8 @@ interface IconThemeState {
 }
 
 /** Everything that was true only of the previous theme. */
-function emptyCaches(): Pick<IconThemeState, "resolved" | "prepared" | "fonts"> {
-  return { resolved: {}, prepared: {}, fonts: [] };
+function emptyCaches(): Pick<IconThemeState, "resolved" | "prepared" | "missing" | "fonts"> {
+  return { resolved: {}, prepared: {}, missing: {}, fonts: [] };
 }
 
 let generation = 0;
@@ -258,6 +265,7 @@ async function loadAssets(themeId: string, at: number, definitions: string[]): P
     assets = await getIconThemeAssets(themeId, definitions);
   } catch (error) {
     console.warn("Icon assets failed to load", error);
+    markMissing(themeId, at, definitions);
     return;
   }
   if (isStale(themeId, at)) return;
@@ -272,8 +280,21 @@ async function loadAssets(themeId: string, at: number, definitions: string[]): P
       prepared[definition] = { svg: null, url: asset.url };
     }
   }
+  markMissing(
+    themeId,
+    at,
+    definitions.filter((d) => !(d in prepared)),
+  );
   if (Object.keys(prepared).length === 0) return;
   baseStore.setState((state) => ({ prepared: { ...state.prepared, ...prepared } }));
+}
+
+/** Record that `definitions` will not arrive under this theme generation. */
+function markMissing(themeId: string, at: number, definitions: string[]): void {
+  if (definitions.length === 0 || isStale(themeId, at)) return;
+  const missing: Record<string, true> = {};
+  for (const definition of definitions) missing[definition] = true;
+  baseStore.setState((state) => ({ missing: { ...state.missing, ...missing } }));
 }
 
 async function loadFonts(themeId: string, at: number): Promise<void> {

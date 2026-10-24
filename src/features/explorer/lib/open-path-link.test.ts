@@ -10,8 +10,10 @@ vi.mock("@/features/app/stores/app-store", () => ({
     getState: () => ({ currentProject: project.path ? { path: project.path } : null }),
   },
 }));
-const openPath = vi.hoisted(() => vi.fn(async () => {}));
-vi.mock("@tauri-apps/plugin-opener", () => ({ openPath }));
+const revealItemInDir = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("@tauri-apps/plugin-opener", () => ({ revealItemInDir }));
+const openOutsideFile = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("@/features/external-editor/lib/preferred-editor", () => ({ openOutsideFile }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
 import { locateInProject, openPathLink } from "./open-path-link";
@@ -29,7 +31,7 @@ describe("opening a session's file chip", () => {
     expect(openInProject).toHaveBeenCalledWith("/p/src/a.ts", undefined, {
       reveal: { line: 12, column: undefined },
     });
-    expect(openPath).not.toHaveBeenCalled();
+    expect(openOutsideFile).not.toHaveBeenCalled();
   });
 
   it("opens without a reveal when no line was named", async () => {
@@ -37,21 +39,40 @@ describe("opening a session's file chip", () => {
     expect(openInProject).toHaveBeenCalledWith("/p/src/a.ts", undefined, undefined);
   });
 
-  it("hands a file outside the project to the system", async () => {
+  it("hands a file outside the project to the preferred editor or the system", async () => {
     await openPathLink({ path: "/elsewhere/x.ts", line: 3 });
-    expect(openPath).toHaveBeenCalledWith("/elsewhere/x.ts");
+    expect(openOutsideFile).toHaveBeenCalledWith("/elsewhere/x.ts");
     expect(openInProject).not.toHaveBeenCalled();
   });
 
-  it("hands a folder to the system's file manager", async () => {
+  it("reveals a folder in the file manager, inside the project or out", async () => {
     await openPathLink({ path: "/p/src", folder: true });
-    expect(openPath).toHaveBeenCalledWith("/p/src");
+    await openPathLink({ path: "/elsewhere", folder: true });
+    expect(revealItemInDir).toHaveBeenNthCalledWith(1, "/p/src");
+    expect(revealItemInDir).toHaveBeenNthCalledWith(2, "/elsewhere");
+    expect(openOutsideFile).not.toHaveBeenCalled();
   });
 
-  it("hands anything to the system when no project is open", async () => {
+  it("reveals a bundle rather than opening it as a file or running it", async () => {
+    await openPathLink({ path: "/p/build/Foo.app" });
+    await openPathLink({ path: "/Applications/Calculator.app" });
+    expect(revealItemInDir).toHaveBeenCalledTimes(2);
+    expect(openInProject).not.toHaveBeenCalled();
+    expect(openOutsideFile).not.toHaveBeenCalled();
+  });
+
+  it("hands a file to the preferred editor or the system when no project is open", async () => {
     project.path = null;
     await openPathLink({ path: "/p/src/a.ts" });
-    expect(openPath).toHaveBeenCalledWith("/p/src/a.ts");
+    expect(openOutsideFile).toHaveBeenCalledWith("/p/src/a.ts");
+  });
+
+  it("opens a Windows project file as a tab whichever separators the chip uses", async () => {
+    project.path = "C:\\Users\\me\\proj";
+    search.mockResolvedValue([{ path: "C:\\Users\\me\\proj\\src\\a.ts", rel: "src\\a.ts" }]);
+    await openPathLink({ path: "C:/Users/me/proj/src/a.ts" });
+    expect(openInProject).toHaveBeenCalledWith("C:/Users/me/proj/src/a.ts", undefined, undefined);
+    expect(openOutsideFile).not.toHaveBeenCalled();
   });
 });
 
@@ -62,6 +83,14 @@ describe("locateInProject", () => {
       { path: "/p/src/lib/api.test.ts", rel: "src/lib/api.test.ts" },
     ]);
     expect(await locateInProject("/p/api.ts", "/p")).toBe("/p/src/lib/api.ts");
+    expect(search).toHaveBeenCalledWith("api.ts", 50);
+  });
+
+  it("finds a short path in a Windows index", async () => {
+    search.mockResolvedValue([{ path: "C:\\proj\\src\\lib\\api.ts", rel: "src\\lib\\api.ts" }]);
+    expect(await locateInProject("C:\\proj\\api.ts", "C:\\proj")).toBe(
+      "C:\\proj\\src\\lib\\api.ts",
+    );
     expect(search).toHaveBeenCalledWith("api.ts", 50);
   });
 

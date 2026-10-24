@@ -153,6 +153,7 @@ export const UserRowView = memo(function UserRowView({
               unstyled
               priority={priority}
               fileRoot={fileRoot}
+              userAuthored
               className="atlas-prose atlas-prose--user"
             />
           </div>

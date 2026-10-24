@@ -22,7 +22,7 @@ describe("file paths as chips", () => {
   it("turns inline code naming a project file into a chip with an icon slot", () => {
     const html = parseMarkdown("Read `src/lib/api.ts:42` first.", ROOT);
     expect(fileChips(html)).toEqual([
-      { path: `${ROOT}/src/lib/api.ts`, line: "42", label: "api.ts:42" },
+      { path: `${ROOT}/src/lib/api.ts`, line: "42", label: "src/lib/api.ts:42" },
     ]);
     expect(html).toContain(`data-file-icon="file"`);
     expect(html).toContain(`title="${ROOT}/src/lib/api.ts:42"`);
@@ -51,12 +51,14 @@ describe("file paths as chips", () => {
 
   it("replaces a link whose text is its path, and keeps a link's own words", () => {
     const own = parseMarkdown("[src/lib/utils.ts](src/lib/utils.ts)", ROOT);
-    expect(fileChips(own)).toEqual([{ path: `${ROOT}/src/lib/utils.ts`, label: "utils.ts" }]);
+    expect(fileChips(own)).toEqual([
+      { path: `${ROOT}/src/lib/utils.ts`, label: "src/lib/utils.ts" },
+    ]);
     expect(own).not.toContain("<a ");
 
     const worded = parseMarkdown("See [the helper](src/lib/api.ts#L10).", ROOT);
     expect(fileChips(worded)).toEqual([
-      { path: `${ROOT}/src/lib/api.ts`, line: "10", label: "api.ts:10" },
+      { path: `${ROOT}/src/lib/api.ts`, line: "10", label: "src/lib/api.ts#L10" },
     ]);
     expect(worded).toContain("the helper");
     expect(worded).not.toContain("<a ");
@@ -75,6 +77,36 @@ describe("file paths as chips", () => {
       { path: `${ROOT}/src/lib`, label: "lib" },
     ]);
     expect(html).toContain(`data-file-icon="folder"`);
+  });
+
+  it("labels inline code as written, so two index.ts files stay apart", () => {
+    const html = parseMarkdown("`src/a/index.ts` and `src/b/index.ts`", ROOT);
+    expect(fileChips(html).map((c) => c.label)).toEqual(["src/a/index.ts", "src/b/index.ts"]);
+    // Copying the reply copies the paths.
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    expect(doc.body.textContent).toContain("src/a/index.ts and src/b/index.ts");
+  });
+
+  it("opens an out-of-project mention only in a message the user wrote", () => {
+    const src = "@file:/Applications/Calculator.app and @folder:/etc";
+    // An agent's reply: drawn, never clickable.
+    for (const html of [parseMarkdown(src, ROOT), parseMarkdown(src)]) {
+      expect(fileChips(html).map((c) => c.path)).toEqual(["", ""]);
+      expect(html).not.toContain(`role="link"`);
+    }
+    // The user's own message: they attached those themselves.
+    const sent = parseMarkdown(src, ROOT, { userAuthored: true });
+    expect(fileChips(sent).map((c) => c.path)).toEqual(["/Applications/Calculator.app", "/etc"]);
+    // Inside the project, a reply's mention still opens.
+    expect(fileChips(parseMarkdown("@file:src/a.ts", ROOT))).toEqual([
+      { path: `${ROOT}/src/a.ts`, label: "a.ts" },
+    ]);
+  });
+
+  it("makes a bundle a folder chip", () => {
+    const html = parseMarkdown("Built `build/Foo.app`.", ROOT);
+    expect(html).toContain(`data-mention-kind="folder"`);
+    expect(fileChips(html)).toEqual([{ path: `${ROOT}/build/Foo.app`, label: "build/Foo.app" }]);
   });
 
   it("draws a mention it cannot resolve with an icon but no target", () => {

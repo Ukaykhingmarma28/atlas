@@ -17,7 +17,8 @@ vi.mock("./icon-theme-api", () => ({
 vi.mock("./icon-preview", () => ({ clearIconThemePreviews: () => {} }));
 
 const { useIconThemeStore, cacheKey } = await import("../stores/icon-theme-store");
-const { fileIconMarkup, paintFileIcons, resetIconMarkupForTests } = await import("./icon-markup");
+const { fileIconMarkup, paintFileIcons, resetIconMarkupForTests, waitingSlotCountForTests } =
+  await import("./icon-markup");
 
 const FALLBACK = '<svg data-fallback=""></svg>';
 const TS_SVG = '<svg fill="currentColor" data-ts=""></svg>';
@@ -44,6 +45,7 @@ beforeEach(() => {
     generation: 1,
     resolved: {},
     prepared: {},
+    missing: {},
   });
 });
 
@@ -101,6 +103,33 @@ describe("file icons outside React", () => {
     expect(el.innerHTML).toBe(TS_SVG);
     useIconThemeStore.setState({ generation: 2, resolved: { [KEY]: null }, prepared: {} });
     expect(el.innerHTML).toBe("");
+  });
+
+  it("keeps the fallback, without waiting, when the asset will never arrive", () => {
+    useIconThemeStore.setState((s) => ({
+      resolved: { ...s.resolved, [KEY]: { kind: "image", definition: "ts" } },
+    }));
+    const root = slot();
+    paintFileIcons(root);
+    const el = root.querySelector<HTMLElement>("[data-file-icon]")!;
+    // Resolved, asset in flight: it waits.
+    expect(fileIconMarkup("/p/a.ts")).toBeUndefined();
+    expect(waitingSlotCountForTests()).toBe(1);
+    // The asset was stripped by the sanitiser, or failed to load.
+    useIconThemeStore.setState({ missing: { ts: true } });
+    expect(fileIconMarkup("/p/a.ts")).toBeNull();
+    expect(el.innerHTML).toBe(FALLBACK);
+    expect(el.dataset.fileIconPainted).toBe("fallback");
+    expect(waitingSlotCountForTests()).toBe(0);
+    // A later message with the same path does not wait either.
+    paintFileIcons(slot());
+    expect(waitingSlotCountForTests()).toBe(0);
+  });
+
+  it("drops detached slots while a streaming tail repaints", () => {
+    // Each tick replaces the tail's HTML; nothing answers in between.
+    for (let tick = 0; tick < 20; tick++) paintFileIcons(slot());
+    expect(waitingSlotCountForTests()).toBe(1);
   });
 
   it("repaints a painted slot when the theme changes", () => {
