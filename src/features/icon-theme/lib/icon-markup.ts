@@ -1,4 +1,4 @@
-import { detectLanguage, PLAINTEXT } from "@/features/editor/lib/languages";
+import { detectLanguage, PLAINTEXT } from "./language-id";
 import { cacheKey, useIconThemeStore } from "../stores/icon-theme-store";
 import { MINIMAL_ICON_THEME_ID, type IconKind, type IconRequest } from "./icon-theme-api";
 import { safeFontIdent } from "./font-face-css";
