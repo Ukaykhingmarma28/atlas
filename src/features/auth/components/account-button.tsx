@@ -1,6 +1,6 @@
 import { CircleUser, Loader2 } from "lucide-react";
 
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
@@ -22,11 +22,14 @@ import { AccountMenu } from "./account-menu";
 export function AccountButton({
   compact = false,
   menuSide = "bottom",
+  menuExtra,
 }: {
   compact?: boolean;
   /** Which way the account menu opens: down from the window bar, up from the
    *  sidebar footer. */
   menuSide?: "top" | "bottom";
+  /** Rows folded into the account menu after Privacy. */
+  menuExtra?: ReactNode;
 } = {}) {
   const snapshot = useAuthStore.use.snapshot();
   const starting = useAuthStore.use.starting();
@@ -100,7 +103,7 @@ export function AccountButton({
   // putting that behind a menu adds a step to a state that lasts seconds.
   if (snapshot.status === "connecting") return button;
   return (
-    <AccountMenu account={snapshot} side={menuSide}>
+    <AccountMenu account={snapshot} side={menuSide} extra={menuExtra}>
       {button}
     </AccountMenu>
   );
