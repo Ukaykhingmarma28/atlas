@@ -4,6 +4,13 @@
 // Reads the git store, which mirrors the ACTIVE project's repository. The
 // section renders only when that repository is this session's project, so a
 // background project's chat never shows another repo's branch.
+//
+// A session that works in another checkout — a pull request session's
+// worktree (`sessionWorkPath`) — is not the repository the git store mirrors.
+// Its branch, the push / pull / publish verbs and Create PR would all act on
+// the project's own checkout, so they are left out there; what stays is
+// what belongs to the session itself: its linked pull requests and its
+// changes.
 
 import { useEffect, useState } from "react";
 import {
@@ -68,13 +75,17 @@ import {
 export function VersionControlSection({
   tabId,
   projectPath,
+  workPath = projectPath,
 }: {
   tabId: string | null;
   projectPath: string;
+  /** Where the session works; a worktree when it is not `projectPath`. */
+  workPath?: string;
 }) {
   const repoPath = useGitStore.use.repoPath();
   const isRepo = useGitStore.use.isRepo();
-  const ours = repoPath === projectPath && isRepo;
+  const worktree = workPath !== projectPath;
+  const ours = repoPath === projectPath && isRepo && !worktree;
 
   // Fresh numbers on open: the store is patched by the watcher, but ahead /
   // behind against the upstream only move on a snapshot.
@@ -82,8 +93,24 @@ export function VersionControlSection({
     if (ours) void useGitStore.getState().actions.refresh(projectPath);
   }, [ours, projectPath]);
 
+  if (worktree) return <WorktreeRows tabId={tabId} projectPath={projectPath} />;
   if (!ours) return null;
   return <VersionControlRows tabId={tabId} projectPath={projectPath} />;
+}
+
+/** A worktree session: its own pull requests and changes, nothing that would
+ *  act on the project's checkout. */
+function WorktreeRows({ tabId, projectPath }: { tabId: string | null; projectPath: string }) {
+  const sessionId = useChatStore((s) => (tabId ? (s.sessions[tabId]?.acpSessionId ?? null) : null));
+  // No branch: the git store's is the project's, not the worktree's.
+  const prs = useSessionPullRequests(projectPath, null, sessionId);
+  return (
+    <ContextSection title="Version control" showHeading={false}>
+      <PullRequestRows projectPath={projectPath} prs={prs} />
+      <PullRequestLinkRows projectPath={projectPath} prs={prs} />
+      <ChangesRow tabId={tabId} projectPath={projectPath} sessionOnly />
+    </ContextSection>
+  );
 }
 
 function VersionControlRows({ tabId, projectPath }: { tabId: string | null; projectPath: string }) {
@@ -325,7 +352,16 @@ function QuickActionRow({
  * working tree's (what Source Control would commit). The first opens the
  * session's changes tab, the second Source Control.
  */
-function ChangesRow({ tabId, projectPath }: { tabId: string | null; projectPath: string }) {
+function ChangesRow({
+  tabId,
+  projectPath,
+  sessionOnly = false,
+}: {
+  tabId: string | null;
+  projectPath: string;
+  /** Leave out the working tree's changes (they are the project's). */
+  sessionOnly?: boolean;
+}) {
   const session = useSessionChanges(tabId, projectPath);
   const workingTree = useGitStore((s) => s.files.length);
 
@@ -371,7 +407,7 @@ function ChangesRow({ tabId, projectPath }: { tabId: string | null; projectPath:
     );
   }
 
-  if (workingTree === 0) return null;
+  if (workingTree === 0 || sessionOnly) return null;
   return (
     <ContextRow title="Uncommitted changes in the working tree" onClick={revealSourceControl}>
       <RowIcon icon={FileDiff} />
