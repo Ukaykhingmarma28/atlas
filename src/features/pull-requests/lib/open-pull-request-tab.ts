@@ -11,6 +11,9 @@ export interface PullRequestTabData {
   /** The checkout the `pr_*` commands run `gh` in. */
   repoPath: string;
   number: number;
+  /** The tab it was opened from (the pull-request list, a session's pull
+   *  request panel): the header's back arrow returns there while it is open. */
+  openedFrom?: string;
 }
 
 /** A restored tab's data, or `null` when it no longer names a pull request. */
@@ -18,7 +21,9 @@ export function readPullRequestTabData(data: Record<string, unknown>): PullReque
   const repoPath = typeof data.repoPath === "string" ? data.repoPath : null;
   const number = typeof data.number === "number" ? data.number : Number(data.number);
   if (!repoPath || !Number.isSafeInteger(number) || number <= 0) return null;
-  return { repoPath, number };
+  const openedFrom =
+    typeof data.openedFrom === "string" && data.openedFrom ? data.openedFrom : undefined;
+  return openedFrom ? { repoPath, number, openedFrom } : { repoPath, number };
 }
 
 /** The tab strip's label: the number, then the title once it is known. */
@@ -44,12 +49,17 @@ export function openPullRequestTab(opts: {
   number: number;
   /** The title, when the caller already has it; the tab reads it otherwise. */
   title?: string;
+  /** The tab opening it, for the back arrow. Opening an open pull request
+   *  again from somewhere else moves its arrow there; from nowhere in
+   *  particular (a toast, a link), it keeps the one it had. */
+  openedFrom?: string;
 }): void {
-  const { repoPath, number, title } = opts;
+  const { repoPath, number, title, openedFrom } = opts;
   const id = pullRequestTabId(repoPath, number);
   const layout = useLayoutStore.getState();
   const { actions } = layout;
   if (layout.tabs.some((t) => t.id === id)) {
+    if (openedFrom && openedFrom !== id) actions.setTabData(id, { openedFrom });
     actions.setActiveTab(id);
     return;
   }
@@ -66,7 +76,8 @@ export function openPullRequestTab(opts: {
   }
   if (!target) target = layout.groupOrder[1] ?? main;
 
-  const data: PullRequestTabData = { repoPath, number };
+  const data: PullRequestTabData =
+    openedFrom && openedFrom !== id ? { repoPath, number, openedFrom } : { repoPath, number };
   actions.addTab(
     {
       id,

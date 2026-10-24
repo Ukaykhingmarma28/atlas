@@ -11,6 +11,11 @@
 //    code, and no new line comment can be started.
 //  - Unchanged lines around a hunk expand from both sides of the file at the
 //    pull request's base and head (`pr_diff_file_contents`).
+//  - Files read source first, each after what it imports, then tests, then
+//    generated files (`pull-request-file-order.ts`).
+//  - Picked lines open a box that comments on them or asks an agent session
+//    about them ("Ask about these lines"); a reader who may not comment can
+//    still ask.
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -48,6 +53,9 @@ import {
 import { Hint } from "@/ui/tooltip";
 
 import { classifyPrError } from "../lib/pr-errors";
+import { fileDiffLines, orderDiffFiles } from "../lib/pull-request-file-order";
+import { fileDiffRows, pickedLines } from "../lib/pull-request-guide-tour";
+import type { PickedLines } from "../lib/pull-request-handoff";
 import {
   isLineInFileDiff,
   pendingCommentPlacement,
@@ -144,6 +152,7 @@ export function PullRequestCodeTab({
   activity,
   commit,
   onCommitChange,
+  onAskAboutLines,
 }: {
   tabId: string;
   /** The viewer's scroller, so the tab's header folds as the diff scrolls. */
@@ -154,6 +163,8 @@ export function PullRequestCodeTab({
   /** The commit on show; `null` for all of them. */
   commit: string | null;
   onCommitChange: (oid: string | null) => void;
+  /** "Ask about these lines": a question about picked lines, in a session. */
+  onAskAboutLines?: (lines: PickedLines, question: string) => void;
 }) {
   const number = detail.number;
   const ignoreWhitespace = useDiffIgnoreWhitespace();
@@ -167,7 +178,16 @@ export function PullRequestCodeTab({
     () => prDiffFiles(pages ?? [], `pull-request:${repoPath}:${number}`, ignoreWhitespace),
     [pages, repoPath, number, ignoreWhitespace],
   );
-  const { files } = diff;
+  // Reading order, not the host's: source, then tests, then generated.
+  const files = useMemo(
+    () =>
+      orderDiffFiles(
+        diff.files,
+        (file) => file.stat.path,
+        (file) => (file.state === "ready" ? fileDiffLines(file.source) : []),
+      ),
+    [diff.files],
+  );
   const pageError = pagesQuery.error;
 
   // ── viewed, kept by GitHub ───────────────────────────────────────────
@@ -204,6 +224,10 @@ export function PullRequestCodeTab({
     resolve: detail.capabilities.review.resolve && detail.viewerPermissions.resolve,
   };
   const canComment = review.inlineComment && commit === null;
+  // Asking needs no permission on the host: lines can be picked for it
+  // wherever a comment could sit, on all commits.
+  const canAsk = onAskAboutLines !== undefined && commit === null;
+  const canPick = canComment || canAsk;
   const threads = useMemo(() => activity?.reviewThreads ?? [], [activity]);
   const pendingComments = usePendingReviewComments(repoPath, number);
   const reviewActions = usePullRequestReviewStore.use.actions();
@@ -317,11 +341,11 @@ export function PullRequestCodeTab({
   const submitReview = usePrSubmitReviewMutation(repoPath, number);
   const filesRef = useRef(files);
   filesRef.current = files;
-  const canCommentRef = useRef(canComment);
-  canCommentRef.current = canComment;
+  const canPickRef = useRef(canPick);
+  canPickRef.current = canPick;
   const beginComment = useCallback(
     (range: SelectedLineRange | null, context: { item: CodeViewItem<unknown> }) => {
-      if (!range || !canCommentRef.current || context.item.type !== "diff") return;
+      if (!range || !canPickRef.current || context.item.type !== "diff") return;
       const file = filesRef.current.find((f) => itemIdOf(f) === context.item.id);
       if (!file || file.state !== "ready") return;
       // A range comes down to its last line: a one-line comment GitHub
@@ -339,10 +363,21 @@ export function PullRequestCodeTab({
     setDraft(null);
     setSelectedLines(null);
   }, [setDraft]);
+  const askAbout = useCallback(
+    (target: Draft, question: string) => {
+      const file = filesRef.current.find((f) => f.stat.path === target.path);
+      if (!file || file.state !== "ready" || !onAskAboutLines) return;
+      onAskAboutLines(pickedLines(target.path, fileDiffRows(file.source), target.range), question);
+      closeDraft();
+    },
+    [onAskAboutLines, closeDraft],
+  );
 
   const deps = {
     draft,
     review,
+    canComment,
+    askAbout: canAsk ? askAbout : null,
     canReact: detail.capabilities.reactions,
     submitReview,
     reviewKey,
@@ -360,6 +395,8 @@ export function PullRequestCodeTab({
       const {
         draft,
         review,
+        canComment,
+        askAbout,
         canReact,
         submitReview,
         reviewKey,
@@ -392,6 +429,8 @@ export function PullRequestCodeTab({
               initialText={draftTextRef.current}
               onTextChange={setDraftText}
               onCancel={closeDraft}
+              canComment={canComment}
+              onAsk={askAbout ? (question) => askAbout(draft, question) : undefined}
               onAddToReview={(body) => {
                 reviewActions.add(reviewKey, {
                   id: nextPendingCommentId(),
@@ -432,12 +471,12 @@ export function PullRequestCodeTab({
   );
   const gutterOptions = useMemo(
     () => ({
-      enableGutterUtility: canComment && draft === null,
-      enableLineSelection: canComment && draft === null,
+      enableGutterUtility: canPick && draft === null,
+      enableLineSelection: canPick && draft === null,
       onGutterUtilityClick: beginComment,
       onLineSelectionEnd: beginComment,
     }),
-    [canComment, draft, beginComment],
+    [canPick, draft, beginComment],
   );
   const byFile = placement.byFile;
   const annotationsOf = useCallback(
@@ -531,7 +570,7 @@ export function PullRequestCodeTab({
   const shownOf = hasNextPage ? `${files.length} of ${detail.changedFiles} files` : null;
   const info = (
     <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-      {shownOf ? <span className="shrink-0 tabular-nums">{shownOf}</span> : null}
+      {shownOf ? <span className="min-w-0 truncate tabular-nums">{shownOf}</span> : null}
       {viewed?.error ? (
         <Hint
           label={`Your viewed marks could not be read; the boxes show the last read. ${viewed.error}`}

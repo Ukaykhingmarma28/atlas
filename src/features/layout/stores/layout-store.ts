@@ -145,6 +145,9 @@ interface LayoutActions {
     setTabDirty: (id: string, dirty: boolean) => void;
     /** Rename a tab, e.g. once a pull request's title has loaded. */
     setTabTitle: (id: string, title: string) => void;
+    /** Merge fields into a tab's persisted `data` (a pull request tab's
+     *  `openedFrom`, when it is opened again from somewhere else). */
+    setTabData: (id: string, patch: Record<string, unknown>) => void;
     navigateTabBack: () => void;
     navigateTabForward: () => void;
     activateTabByIndex: (i: number) => void;
@@ -966,6 +969,11 @@ export const useLayoutStore = createSelectors(
             set((s) => {
               const tab = s.tabs.find((t) => t.id === id);
               if (tab && tab.title !== title) tab.title = title;
+            }),
+          setTabData: (id, patch) =>
+            set((s) => {
+              const tab = s.tabs.find((t) => t.id === id);
+              if (tab) tab.data = { ...tab.data, ...patch };
             }),
           // Persist the whole project layout (split columns + their tabs) per
           // project so the AKB arrangement comes back on reopen. The Rust

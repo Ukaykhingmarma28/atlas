@@ -12,6 +12,7 @@
 // Conditional REST reads cost no quota when nothing changed (the native
 // side revalidates with an ETag), so the poll is cheaper than it looks.
 
+import { useEffect } from "react";
 import {
   useInfiniteQuery,
   useMutation,
@@ -23,6 +24,10 @@ import {
 } from "@tanstack/react-query";
 
 import { ghGate, prRetryDelay, shouldRetryPrError } from "./pr-errors";
+import {
+  readCachedPullRequestDetail,
+  writeCachedPullRequestDetail,
+} from "./pull-request-detail-cache";
 import {
   prAction,
   prActivity,
@@ -182,14 +187,23 @@ export function detailStaleTime(detail: PrDetail | undefined): number {
   return STALE.detail;
 }
 
+/** One pull request's detail. Until the first read lands, the last one kept
+ *  on this machine stands in (`isPlaceholderData`), so the tab paints at
+ *  once; each read that lands is kept for next time. */
 export function usePrDetail(cwd: string | null, number: number | null): Result<PrDetail> {
-  return useQuery<PrDetail, PrError>({
+  const query = useQuery<PrDetail, PrError>({
     ...COMMON,
     queryKey: pullRequestKeys.detail(cwd ?? "", number ?? 0),
     queryFn: () => prDetail(cwd!, number!),
     enabled: !!cwd && !!number,
     staleTime: (query) => detailStaleTime(query.state.data),
+    placeholderData: () => (cwd && number ? readCachedPullRequestDetail(cwd, number) : undefined),
   });
+  const fresh = query.isPlaceholderData ? undefined : query.data;
+  useEffect(() => {
+    if (cwd && fresh) writeCachedPullRequestDetail(cwd, fresh);
+  }, [cwd, fresh]);
+  return query;
 }
 
 export function usePrActivity(cwd: string | null, number: number | null): Result<PrActivity> {

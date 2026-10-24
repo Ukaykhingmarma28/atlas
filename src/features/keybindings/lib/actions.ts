@@ -31,6 +31,7 @@ export type When =
   | "pdfFocus"
   | "canvasFocus"
   | "diffFocus"
+  | "pullRequestFocus"
   | "modelPicker";
 
 export type ActionCategory =
@@ -68,6 +69,7 @@ export const WHEN_LABELS: Record<When, string> = {
   pdfFocus: "pdfFocus",
   canvasFocus: "canvasFocus",
   diffFocus: "diffFocus",
+  pullRequestFocus: "pullRequestFocus",
   modelPicker: "modelPickerOpen",
 };
 
@@ -493,6 +495,22 @@ export const ACTIONS = [
     category: "Review",
     when: "diffFocus",
     defaults: ["cmd+f"],
+  },
+  {
+    // A pull request tab's ⋯ menu shows both. ⇧⌘C is team chat everywhere
+    // else; a pull request tab shadows it while it is the active tab.
+    id: "pullRequest.copyLink",
+    title: "Copy pull request link",
+    category: "Review",
+    when: "pullRequestFocus",
+    defaults: ["cmd+shift+c"],
+  },
+  {
+    id: "pullRequest.copyNumber",
+    title: "Copy pull request number",
+    category: "Review",
+    when: "pullRequestFocus",
+    defaults: ["cmd+shift+k"],
   },
   // ── Knowledge ──
   {

@@ -1,30 +1,37 @@
 // The header's controls: the one prominent action (Merge, Ready for review,
-// auto-merge, or the state once it is done), the ⋯ menu with everything
-// else, and the checks popover in the tab bar. A merge, auto-merge, close or
-// branch delete needs a second press on the same control.
+// auto-merge, Resolve conflicts, or the state once it is done), Check out,
+// the ⋯ menu with everything else, and in the tab bar the checks popover or
+// Approve workflows. A merge, auto-merge, close, revert, approval or branch
+// delete needs a second press on the same control.
 
-import { useState } from "react";
-import { toast } from "sonner";
+import { useState, type ReactNode } from "react";
 import {
   ArrowUpRight,
   BookOpen,
   Check,
+  ChevronDown,
   Copy,
+  FolderGit2,
+  GitBranch,
   GitMerge,
   GitPullRequestArrow,
   GitPullRequestClosed,
   GitPullRequestDraft,
   Hammer,
   Link,
+  MessageCircleQuestion,
   MoreHorizontal,
+  Play,
   RefreshCw,
   RotateCcw,
   Sparkles,
   Trash2,
+  Unlink,
+  type LucideIcon,
 } from "lucide-react";
 
 import { openPullRequest } from "@/features/git/lib/git-pr-api";
-import { copyText } from "@/lib/clipboard";
+import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
@@ -35,6 +42,7 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 import { IconButton } from "@/ui/icon-button";
@@ -58,7 +66,8 @@ import type {
 } from "../lib/pull-requests-types";
 import { useInlineConfirm } from "../lib/use-inline-confirm";
 import type { PerformPullRequestAction } from "../lib/use-pull-request-actions";
-import type { PullRequestAgentActions } from "../lib/use-pull-request-agent-actions";
+import type { CheckoutMode, PullRequestAgentActions } from "../lib/use-pull-request-agent-actions";
+import type { SessionPullRequestLink } from "../lib/use-session-pull-request-link";
 import { StatePill } from "./pull-request-header";
 import {
   CheckStatusIcon,
@@ -66,11 +75,6 @@ import {
   type StatePresentation,
 } from "./pull-request-presentation";
 import { ChecksButton } from "./pull-request-triggers";
-
-async function copyWithToast(value: string, label: string) {
-  if (await copyText(value)) toast.success(`${label} copied`);
-  else toast.error(`Could not copy the ${label.toLowerCase()}`);
-}
 
 // ── the primary control ─────────────────────────────────────────────────
 
@@ -114,6 +118,7 @@ export function PullRequestPrimaryAction({
   statePresentation,
   pendingAction,
   perform,
+  resolveConflicts = null,
 }: {
   scopeKey: string;
   primary: PrimaryControl;
@@ -123,6 +128,8 @@ export function PullRequestPrimaryAction({
   statePresentation: StatePresentation;
   pendingAction: PrAction | null;
   perform: PerformPullRequestAction;
+  /** "Resolve conflicts", where an agent can take them; else a badge says so. */
+  resolveConflicts?: ReactNode;
 }) {
   const confirm = useInlineConfirm(scopeKey);
   const busy = pendingAction !== null;
@@ -130,6 +137,7 @@ export function PullRequestPrimaryAction({
   const autoMergeLabel = `Auto-merge (${mergeLabel.toLowerCase()})`;
 
   if (primary === "resolve") {
+    if (resolveConflicts) return resolveConflicts;
     return (
       <Tooltip>
         <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
@@ -185,8 +193,165 @@ export function PullRequestPrimaryAction({
   return autoMergeArmed ? <ArmedAutoMerge label={armedAutoMergeLabel} /> : null;
 }
 
+// ── header buttons beside the primary control ───────────────────────────
+
+/** "Resolve conflicts": a session on the pull request's branch with the task
+ *  of bringing it up to date with its base. */
+export function ResolveConflictsButton({
+  pending,
+  disabled,
+  onResolve,
+}: {
+  pending: boolean;
+  disabled: boolean;
+  onResolve: () => void;
+}) {
+  const label = pending ? "Preparing…" : "Resolve conflicts";
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
+        <Button
+          size="xs"
+          variant="destructive-outline"
+          disabled={disabled}
+          onClick={onResolve}
+          aria-label={label}
+        >
+          <GitPullRequestClosed aria-hidden className="size-3.5" />
+          {label}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        This branch conflicts with its base. An agent session on the branch brings it up to date.
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** "Approve workflows to run": a fork's runs wait for someone with write
+ *  access. A second press approves, as a merge does. */
+export function ApproveWorkflowsButton({
+  scopeKey,
+  pendingAction,
+  perform,
+}: {
+  scopeKey: string;
+  pendingAction: PrAction | null;
+  perform: PerformPullRequestAction;
+}) {
+  const confirm = useInlineConfirm(`${scopeKey}:approve`);
+  const idle = "Approve workflows to run";
+  const confirmText = "Confirm approve?";
+  const shown =
+    pendingAction === "approve-workflows"
+      ? "Approving…"
+      : confirm.isArmed("approve-workflows")
+        ? confirmText
+        : idle;
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span className="ml-auto inline-flex shrink-0" />}>
+        <Button
+          size="xs"
+          variant="warning-outline"
+          disabled={pendingAction !== null}
+          aria-label={shown}
+          {...confirm.props("approve-workflows", () => void perform("approve-workflows"))}
+        >
+          <Play aria-hidden className="size-3.5" />
+          <SteadyLabel widest={[idle, confirmText]} shown={shown} />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        Workflow runs from this fork are waiting for approval before they run.
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** "Check out": the head in a worktree of its own, or the project's own
+ *  checkout switched to it. */
+export function CheckoutMenu({
+  pending,
+  onCheckout,
+}: {
+  /** The mode being prepared, or `null`. */
+  pending: CheckoutMode | null;
+  onCheckout: (mode: CheckoutMode) => void;
+}) {
+  const label = pending ? "Checking out…" : "Check out";
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <DropdownMenuTrigger
+              disabled={pending !== null}
+              render={<Button size="xs" variant="outline" aria-label={label} />}
+            />
+          }
+        >
+          <GitBranch aria-hidden className="size-3.5" />
+          {label}
+          <ChevronDown aria-hidden className="size-3.5 text-muted-foreground" />
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Check out this pull request</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="end" side="bottom" className="w-72">
+        <DropdownMenuItem onClick={() => onCheckout("worktree")}>
+          <GitBranch className="mt-0.5 self-start" />
+          <span className="flex min-w-0 flex-col">
+            <span>In a separate worktree</span>
+            <span className="text-2xs text-muted-foreground">
+              Its own folder and session. Nothing you have open moves.
+            </span>
+          </span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onCheckout("local")}>
+          <FolderGit2 className="mt-0.5 self-start" />
+          <span className="flex min-w-0 flex-col">
+            <span>In this repository</span>
+            <span className="text-2xs text-muted-foreground">
+              Switches the branch you are working in, like `gh pr checkout`.
+            </span>
+          </span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 // ── the ⋯ menu ──────────────────────────────────────────────────────────
 
+/** One item with a second line beneath its label. */
+function TwoLine({
+  icon: Icon,
+  label,
+  detail,
+  detailClassName,
+}: {
+  icon: LucideIcon;
+  label: string;
+  detail: string;
+  detailClassName?: string;
+}) {
+  return (
+    <>
+      <Icon className="mt-0.5 self-start" />
+      <span className="flex min-w-0 flex-col">
+        <span>{label}</span>
+        <span className={cn("text-2xs text-muted-foreground", detailClassName)}>{detail}</span>
+      </span>
+    </>
+  );
+}
+
+/**
+ * Everything else the reader can do with the pull request, in the order the
+ * header's overflow lists it: the session link and Refresh, the agent
+ * actions, the state changes (and the merge method), the links, then the
+ * one-way doors — close, reopen or revert, and deleting the branch.
+ */
 export function PullRequestActionsMenu({
   scopeKey,
   detail,
@@ -204,12 +369,18 @@ export function PullRequestActionsMenu({
   showsDeleteBranch,
   pendingAction,
   perform,
+  onRevert,
   agent,
+  sessionLink,
   onWriteGuide,
+  onCopyLink,
+  onCopyNumber,
 }: {
   scopeKey: string;
   detail: Pick<PrDetail, "url" | "number" | "state" | "isDraft" | "headBranch">;
   agent: PullRequestAgentActions;
+  /** Linked to the session beside the tab, or not; `null` with no session. */
+  sessionLink: SessionPullRequestLink | null;
   /** Starts the guide and shows its tab. */
   onWriteGuide: () => void;
   refreshing: boolean;
@@ -226,12 +397,19 @@ export function PullRequestActionsMenu({
   showsDeleteBranch: boolean;
   pendingAction: PrAction | null;
   perform: PerformPullRequestAction;
+  /** Opens the revert as a new pull request. */
+  onRevert: () => void;
+  onCopyLink: () => void;
+  onCopyNumber: () => void;
 }) {
   const confirm = useInlineConfirm(`${scopeKey}:menu`);
   const busy = pendingAction !== null;
-  const stateGroup =
-    detail.state === "open" &&
-    (showsDraftToggle || showsMergeNow || showsAutoMerge || autoMergeArmed || showsMergeMethods);
+  const copyLinkShortcut = useActionShortcut("pullRequest.copyLink");
+  const copyNumberShortcut = useActionShortcut("pullRequest.copyNumber");
+  const open = detail.state === "open";
+  const stateItems =
+    open && (showsDraftToggle || showsMergeNow || showsAutoMerge || autoMergeArmed);
+  const methods = open && showsMergeMethods;
 
   /** A menu item that needs a second press: the first arms it and keeps the
    *  menu open, the second runs it and closes. */
@@ -239,6 +417,36 @@ export function PullRequestActionsMenu({
     closeOnClick: confirm.isArmed(action),
     ...confirm.props(action, run),
   });
+
+  const endGroup =
+    open && can("close") ? (
+      <DropdownMenuItem
+        variant="destructive"
+        disabled={busy}
+        {...confirmed("close", () => void perform("close"))}
+      >
+        <GitPullRequestClosed />
+        {confirm.isArmed("close") ? "Confirm close?" : "Close pull request"}
+      </DropdownMenuItem>
+    ) : detail.state === "closed" && can("reopen") ? (
+      <DropdownMenuItem disabled={busy} onClick={() => void perform("reopen")}>
+        <RotateCcw />
+        Reopen pull request
+      </DropdownMenuItem>
+    ) : detail.state === "merged" && can("revert") ? (
+      <DropdownMenuItem
+        variant={confirm.isArmed("revert") ? "destructive" : "default"}
+        disabled={busy}
+        {...confirmed("revert", onRevert)}
+      >
+        <RotateCcw />
+        {pendingAction === "revert"
+          ? "Reverting…"
+          : confirm.isArmed("revert")
+            ? "Confirm revert?"
+            : "Revert changes"}
+      </DropdownMenuItem>
+    ) : null;
 
   return (
     <DropdownMenu>
@@ -258,14 +466,20 @@ export function PullRequestActionsMenu({
         />
         <TooltipContent side="bottom">More pull request actions</TooltipContent>
       </Tooltip>
-      <DropdownMenuContent align="end" side="bottom" className="min-w-52">
+      <DropdownMenuContent align="end" side="bottom" className="w-80">
+        {sessionLink ? (
+          <DropdownMenuItem disabled={sessionLink.pending} onClick={sessionLink.toggle}>
+            {sessionLink.linked ? <Unlink /> : <Link />}
+            {sessionLink.linked ? "Unlink from this session" : "Link to this session"}
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem disabled={refreshing} onClick={onRefresh}>
           <RefreshCw className={cn(refreshing && "animate-spin")} />
           Refresh
         </DropdownMenuItem>
         <AgentMenuItems agent={agent} onWriteGuide={onWriteGuide} />
-        {stateGroup ? <DropdownMenuSeparator /> : null}
-        {detail.state === "open" ? (
+        <DropdownMenuSeparator />
+        {stateItems ? (
           <>
             {showsDraftToggle ? (
               <DropdownMenuItem
@@ -304,57 +518,47 @@ export function PullRequestActionsMenu({
                   : "Turn on auto-merge"}
               </DropdownMenuItem>
             ) : null}
-            {showsMergeMethods ? (
-              <>
-                {showsDraftToggle || showsMergeNow || showsAutoMerge || autoMergeArmed ? (
-                  <DropdownMenuSeparator />
-                ) : null}
-                <DropdownMenuRadioGroup
-                  value={mergeMethod}
-                  onValueChange={(method) => onSelectMergeMethod(method as PrMergeMethod)}
-                >
-                  {allowedMergeMethods.map((method) => (
-                    <DropdownMenuRadioItem key={method} value={method} disabled={busy}>
-                      {MERGE_METHOD_LABELS[method]}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-              </>
-            ) : null}
+            {methods ? <DropdownMenuSeparator /> : null}
           </>
         ) : null}
-        <DropdownMenuSeparator />
+        {methods ? (
+          <DropdownMenuRadioGroup
+            value={mergeMethod}
+            onValueChange={(method) => onSelectMergeMethod(method as PrMergeMethod)}
+          >
+            {allowedMergeMethods.map((method) => (
+              <DropdownMenuRadioItem key={method} value={method} disabled={busy} closeOnClick>
+                <span className="flex min-w-0 items-center gap-2">
+                  <GitMerge aria-hidden className="size-3.5" />
+                  {MERGE_METHOD_LABELS[method]}
+                </span>
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        ) : null}
+        {stateItems || methods ? <DropdownMenuSeparator /> : null}
         <DropdownMenuItem onClick={() => openPullRequest(detail.url)}>
           <ArrowUpRight />
           Open on GitHub
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => void copyWithToast(detail.url, "Link")}>
+        <DropdownMenuItem onClick={onCopyLink}>
           <Link />
           Copy link
+          {copyLinkShortcut ? (
+            <DropdownMenuShortcut>{copyLinkShortcut.label}</DropdownMenuShortcut>
+          ) : null}
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => void copyWithToast(`#${detail.number}`, "Number")}>
+        <DropdownMenuItem onClick={onCopyNumber}>
           <Copy />
           Copy PR number
+          {copyNumberShortcut ? (
+            <DropdownMenuShortcut>{copyNumberShortcut.label}</DropdownMenuShortcut>
+          ) : null}
         </DropdownMenuItem>
-        {detail.state === "open" && can("close") ? (
+        {endGroup ? (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              variant="destructive"
-              disabled={busy}
-              {...confirmed("close", () => void perform("close"))}
-            >
-              <GitPullRequestClosed />
-              {confirm.isArmed("close") ? "Confirm close?" : "Close pull request"}
-            </DropdownMenuItem>
-          </>
-        ) : detail.state === "closed" && can("reopen") ? (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem disabled={busy} onClick={() => void perform("reopen")}>
-              <RotateCcw />
-              Reopen pull request
-            </DropdownMenuItem>
+            {endGroup}
           </>
         ) : null}
         {showsDeleteBranch ? (
@@ -365,19 +569,18 @@ export function PullRequestActionsMenu({
               disabled={busy}
               {...confirmed("delete-branch", () => void perform("delete-branch"))}
             >
-              <Trash2 className="mt-0.5 self-start" />
-              <span className="flex min-w-0 flex-col">
-                <span>
-                  {pendingAction === "delete-branch"
+              <TwoLine
+                icon={Trash2}
+                label={
+                  pendingAction === "delete-branch"
                     ? "Deleting branch…"
                     : confirm.isArmed("delete-branch")
                       ? "Confirm delete?"
-                      : "Delete branch"}
-                </span>
-                <span className="truncate font-mono text-2xs text-muted-foreground">
-                  {detail.headBranch}
-                </span>
-              </span>
+                      : "Delete branch"
+                }
+                detail={detail.headBranch}
+                detailClassName="truncate"
+              />
             </DropdownMenuItem>
           </>
         ) : null}
@@ -386,7 +589,7 @@ export function PullRequestActionsMenu({
   );
 }
 
-/** The ⋯ menu's agent group: each item names the agent it hands work to. */
+/** The ⋯ menu's agent group: ask, explain, fix, and the guide. */
 function AgentMenuItems({
   agent,
   onWriteGuide,
@@ -395,42 +598,34 @@ function AgentMenuItems({
   onWriteGuide: () => void;
 }) {
   const handing = agent.pending !== null;
-  const inCurrent = agent.canExplainInCurrent();
   const { guide } = agent;
   return (
     <>
-      <DropdownMenuSeparator />
-      <DropdownMenuItem disabled={handing} onClick={() => agent.explain("new")}>
-        <BookOpen className="mt-0.5 self-start" />
-        <span className="flex min-w-0 flex-col">
-          <span>{agent.pending === "explain" ? "Opening…" : "Explain this PR"}</span>
-          <span className="text-2xs text-muted-foreground">
-            In a new {agent.agentLabel} session
-          </span>
-        </span>
+      <DropdownMenuItem disabled={handing} onClick={agent.ask}>
+        <TwoLine
+          icon={MessageCircleQuestion}
+          label={agent.pending === "ask" ? "Opening…" : "Ask a question"}
+          detail={
+            agent.attachesToComposer
+              ? "Adds the pull request to this session's composer."
+              : `Opens a ${agent.agentLabel} session that knows which pull request you mean.`
+          }
+        />
       </DropdownMenuItem>
-      {inCurrent ? (
-        <DropdownMenuItem disabled={handing} onClick={() => agent.explain("current")}>
-          <BookOpen className="mt-0.5 self-start" />
-          <span className="flex min-w-0 flex-col">
-            <span>Explain in this session</span>
-            <span className="text-2xs text-muted-foreground">
-              Adds it to the session beside this tab
-            </span>
-          </span>
-        </DropdownMenuItem>
-      ) : null}
-      {agent.fixFindings ? (
-        <DropdownMenuItem disabled={handing} onClick={agent.fixFindings}>
-          <Hammer className="mt-0.5 self-start" />
-          <span className="flex min-w-0 flex-col">
-            <span>{agent.pending === "findings" ? "Preparing…" : "Fix findings"}</span>
-            <span className="text-2xs text-muted-foreground">
-              {agent.agentLabel}, on the pull request&apos;s branch
-            </span>
-          </span>
-        </DropdownMenuItem>
-      ) : null}
+      <DropdownMenuItem disabled={handing} onClick={() => agent.explain()}>
+        <TwoLine
+          icon={BookOpen}
+          label={agent.pending === "explain" ? "Opening…" : "Explain this PR"}
+          detail="A walk through the diff and what to read closely."
+        />
+      </DropdownMenuItem>
+      <DropdownMenuItem
+        disabled={handing || agent.fixFindings === null}
+        onClick={agent.fixFindings ?? undefined}
+      >
+        <Hammer />
+        {agent.pending === "findings" ? "Preparing…" : agent.fixFindingsLabel}
+      </DropdownMenuItem>
       {guide.canWrite ? (
         <DropdownMenuItem disabled={guide.running} onClick={onWriteGuide}>
           <Sparkles />

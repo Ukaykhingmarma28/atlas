@@ -12,6 +12,7 @@ import { copyText } from "@/lib/clipboard";
 import { timeAgo } from "@/lib/time-ago";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
+import { IconButton } from "@/ui/icon-button";
 import { Input } from "@/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
@@ -69,6 +70,33 @@ export function PullRequestCrumbs({
   toneClassName,
   condensed,
   repositoryUrl,
+  onBack = null,
+}: {
+  detail: Pick<PrDetail, "url" | "number" | "repository" | "title">;
+  toneClassName: string;
+  condensed: boolean;
+  repositoryUrl: string | null;
+  /** Back to the tab this one was opened from; `null` hides the arrow. */
+  onBack?: (() => void) | null;
+}) {
+  return (
+    <div className={cn("flex h-7 min-w-0 items-center gap-1", onBack ? "pl-2.5" : "pl-4")}>
+      {onBack ? <IconButton icon={ArrowLeft} label="Back" size="xs" onClick={onBack} /> : null}
+      <CrumbRows
+        detail={detail}
+        toneClassName={toneClassName}
+        condensed={condensed}
+        repositoryUrl={repositoryUrl}
+      />
+    </div>
+  );
+}
+
+function CrumbRows({
+  detail,
+  toneClassName,
+  condensed,
+  repositoryUrl,
 }: {
   detail: Pick<PrDetail, "url" | "number" | "repository" | "title">;
   toneClassName: string;
@@ -76,7 +104,7 @@ export function PullRequestCrumbs({
   repositoryUrl: string | null;
 }) {
   return (
-    <div className="grid h-7 min-w-0 items-center overflow-hidden pl-4">
+    <div className="grid h-7 min-w-0 flex-1 items-center overflow-hidden">
       <div
         aria-hidden={condensed}
         inert={condensed}

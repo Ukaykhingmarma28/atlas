@@ -37,7 +37,7 @@ import { IconButton } from "@/ui/icon-button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 
 import { classifyPrError } from "../lib/pr-errors";
-import { reviewOutcome, type ReviewOutcome } from "../lib/pull-request-logic";
+import { latestReviewOutcomes, reviewOutcome, type ReviewOutcome } from "../lib/pull-request-logic";
 import {
   buildTimeline,
   forcePushSpan,
@@ -52,7 +52,7 @@ import {
   type TimelineThread,
 } from "../lib/pull-request-timeline";
 import { usePrTimelineHistory } from "../lib/pull-requests-queries";
-import type { PrActivity, PrActor, PrDetail, PrLabel } from "../lib/pull-requests-types";
+import type { PrActivity, PrActor, PrDetail, PrError, PrLabel } from "../lib/pull-requests-types";
 import { PullRequestCommentActions } from "./pull-request-comment-actions";
 import { PullRequestMarkdown } from "./pull-request-markdown";
 import {
@@ -802,6 +802,88 @@ function TimelineGhost() {
   );
 }
 
+// ── the tab bar's counts and order ──────────────────────────────────────
+
+/** Beside the Timeline tab: comments · commits (and approvals, when any
+ *  stand), then the order toggle. The counts dim while the conversation
+ *  loads, and say "—" when it could not be read. */
+export function TimelineCounts({
+  detail,
+  activity,
+  pending,
+  error,
+  order,
+  onOrderChange,
+}: {
+  detail: Pick<PrDetail, "commitCount">;
+  activity: PrActivity | null;
+  pending: boolean;
+  error: PrError | null;
+  order: TimelineOrder;
+  onOrderChange: (order: TimelineOrder) => void;
+}) {
+  const comments = activity?.commentCount ?? 0;
+  const commits = detail.commitCount;
+  const approvals =
+    activity && !activity.commentsTruncated
+      ? latestReviewOutcomes(activity.comments, activity.commits).filter(
+          (entry) => entry.outcome === "approved" && !entry.stale,
+        ).length
+      : 0;
+  const shown = (n: number) => (error ? "—" : pending ? "…" : n.toLocaleString());
+  return (
+    <div className="ml-auto flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+      <MetaLine
+        className={cn(
+          "text-2xs whitespace-nowrap transition-opacity",
+          (pending || error) && "opacity-40",
+        )}
+      >
+        <span
+          key="comments"
+          className="inline-flex items-center gap-1 tabular-nums"
+          aria-label={error ? "Comments unavailable" : count(comments, "comment", "comments")}
+        >
+          <MessageSquare aria-hidden className="size-3" />
+          {shown(comments)}
+        </span>
+        <span
+          key="commits"
+          className="inline-flex items-center gap-1 tabular-nums"
+          aria-label={count(commits, "commit", "commits")}
+        >
+          <GitCommitHorizontal aria-hidden className="size-3" />
+          {commits.toLocaleString()}
+        </span>
+        {approvals > 0 ? (
+          <span
+            key="approvals"
+            className={cn(
+              "inline-flex items-center gap-1 tabular-nums",
+              reviewOutcomeToneClassName("approved"),
+            )}
+            aria-label={count(approvals, "approval", "approvals")}
+          >
+            <CircleCheck aria-hidden className="size-3" />
+            {approvals.toLocaleString()}
+          </span>
+        ) : null}
+      </MetaLine>
+      <Button
+        size="xs"
+        variant="ghost"
+        aria-label={
+          order === "newest" ? "Show oldest activity first" : "Show newest activity first"
+        }
+        onClick={() => onOrderChange(order === "newest" ? "oldest" : "newest")}
+      >
+        <ArrowDownUp aria-hidden className="size-3" />
+        {order === "newest" ? "Newest first" : "Oldest first"}
+      </Button>
+    </div>
+  );
+}
+
 // ── the tab ─────────────────────────────────────────────────────────────
 
 export function PullRequestTimelineTab({
@@ -809,6 +891,7 @@ export function PullRequestTimelineTab({
   repoPath,
   detail,
   activity,
+  order,
   onViewCommit,
 }: {
   scrollerRef: (node: HTMLDivElement | null) => void;
@@ -817,12 +900,12 @@ export function PullRequestTimelineTab({
   /** Reactions, edit marks, review threads and commit stats; the history
    *  reads without it. */
   activity: PrActivity | null;
-  /** Opens one commit in the Code tab. Not wired yet: step 4 builds the
-   *  commit picker it lands on. */
+  /** Newest or oldest first: the tab bar's toggle (`TimelineCounts`). */
+  order: TimelineOrder;
+  /** Opens one commit in the Code tab. */
   onViewCommit?: (oid: string) => void;
 }) {
   const history = usePrTimelineHistory(repoPath, detail.number);
-  const [order, setOrder] = useState<TimelineOrder>("newest");
   const items = history.data?.items;
   const events = useMemo(() => (items ? buildTimeline(items, activity) : []), [items, activity]);
   const rows = useMemo(() => groupTimeline(events, order), [events, order]);
@@ -831,24 +914,7 @@ export function PullRequestTimelineTab({
 
   return (
     <div ref={scrollerRef} className="h-full overflow-y-auto pb-20" data-pr-timeline-scroll>
-      <div className="sticky top-0 z-20 flex items-center gap-2 bg-background px-4 py-2">
-        <span className="text-xs font-medium text-muted-foreground">
-          {history.data ? count(events.length, "event", "events") : "History"}
-        </span>
-        <Button
-          size="xs"
-          variant="ghost"
-          className="ml-auto"
-          aria-label={
-            order === "newest" ? "Show oldest activity first" : "Show newest activity first"
-          }
-          onClick={() => setOrder(order === "newest" ? "oldest" : "newest")}
-        >
-          <ArrowDownUp aria-hidden className="size-3" />
-          {order === "newest" ? "Newest first" : "Oldest first"}
-        </Button>
-      </div>
-      <div className="mx-auto max-w-3xl px-4 pt-2">
+      <div className="mx-auto max-w-3xl px-4 pt-6">
         {history.isPending ? (
           <TimelineGhost />
         ) : !history.data ? (

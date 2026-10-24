@@ -1,16 +1,24 @@
 // The agent actions a pull request offers, each handing work to a session on
 // the user's default agent (named on every action):
 //
-// - "Explain this PR" — a new session in the project, or the session beside
-//   the tab when it is in the same project, with the explanation task and the
-//   pull request's description and changed files in its composer. Nothing is
-//   checked out: the task says to read the diff with `gh pr diff`.
+// - "Ask a question" and "Explain this PR" — the session beside the tab when
+//   it is in the same project, else a new session there, with the pull
+//   request in its composer (and for Explain, the task, description and
+//   changed files). Nothing is checked out: the task says to read the diff
+//   with `gh pr diff`.
 // - "Fix" on a failing check, a review thread or a remark, and "Fix findings"
 //   for all of them — a new session on the pull request's head branch: where
 //   that branch is already checked out, or in a worktree of its own
 //   (`pr_prepare_checkout`). The main checkout is never switched. The task is
 //   in the composer, not sent; once the session has done the work, the user
 //   pushes it from the session context overlay. Nothing is pushed for them.
+//   When the session beside the tab already works on the pull request's
+//   branch, the task goes into its composer instead ("in this session").
+// - "Resolve conflicts" — as Fix, with the task of bringing the branch up to
+//   date with its base.
+// - "Check out" — the head in its own worktree with a fresh session there,
+//   or the project's checkout switched to it (refused while the tree has
+//   changes or an agent works in it, as "New session on branch" is).
 // - "Write guide" — the Guide tab's background run (`guide-run-store.ts`) on
 //   the guide's own agent (`guideAgentFor`); on a pull request from a fork,
 //   only after the reader confirms, since the run's agent works in a checkout
@@ -18,21 +26,34 @@
 //   is off for the project.
 
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { agentMeta } from "@/features/agents/lib/agent-meta";
+import { checkoutState } from "@/features/git/lib/git-remote-api";
+import { useGitStore } from "@/features/git/stores/git-store";
+import { busySessions } from "@/features/projects/lib/stop-agents-confirm";
+import { agentWorkingElsewhere } from "@/features/sidebar/lib/sidebar-actions";
 import { useProjectSetting } from "@/features/settings/lib/use-scoped-setting";
 
-import { actionAgent, currentSessionTab, openHandoffSession } from "./pr-agent-session";
+import {
+  actionAgent,
+  currentSessionTab,
+  openHandoffSession,
+  sessionCwd,
+  useCurrentSessionTab,
+} from "./pr-agent-session";
+import { classifyPrError, prErrorMessage } from "./pr-errors";
 import { fetchCheckLogForHandoff } from "./pull-request-check-log";
 import { findingKey, type Finding } from "./pull-request-logic";
 import {
   buildAskAboutGuideStopHandoff,
   buildAskAboutLinesHandoff,
+  buildAskAboutPullRequestHandoff,
   buildExplainHandoff,
   buildFixFindingHandoff,
   buildFixFindingsHandoff,
+  buildResolveConflictsHandoff,
   hasFindings,
   type Handoff,
   type PickedLines,
@@ -72,14 +93,30 @@ export interface PullRequestGuideState {
   forkConfirm: { confirm: () => void; cancel: () => void } | null;
 }
 
+export type CheckoutMode = "worktree" | "local";
+
 export interface PullRequestAgentActions {
   /** The agent every action uses: the project's default. */
   agentLabel: string;
+  /** "Ask a question": the pull request into a session's composer. */
+  ask: () => void;
+  /** Ask and Explain write into the session beside the tab, not a new one. */
+  attachesToComposer: boolean;
+  /** The session beside the tab works on the pull request's branch, so the
+   *  Fix actions hand their task to it. */
+  fixesInSession: boolean;
+  /** "Fix findings"'s label, which says where the work goes. */
+  fixFindingsLabel: string;
+  /** "Resolve conflicts": `null` unless the pull request conflicts. */
+  resolveConflicts: (() => void) | null;
+  /** "Check out": its own worktree and session, or the project's checkout. */
+  checkout: (mode: CheckoutMode) => void;
   /** `null` while agent actions are unavailable; the Summary hides "Fix". */
   fixFinding: ((finding: Finding) => void) | null;
   /** "Fix findings": `null` when there is nothing to fix. */
   fixFindings: (() => void) | null;
-  explain: (where: "new" | "current") => void;
+  /** `auto`: the session beside the tab when it is in the project. */
+  explain: (where?: "new" | "current" | "auto") => void;
   /** A question about one guide stop, in a session (the current one when it
    *  is in the project, as "Explain"). */
   askAboutStop: (stop: GuideStop, index: number, question: string) => void;
@@ -88,7 +125,8 @@ export interface PullRequestAgentActions {
   askAboutLines: (lines: PickedLines, question: string) => void;
   /** The session beside the tab can take "Explain" instead of a new one. */
   canExplainInCurrent: () => boolean;
-  /** The action being handed off: a `findingKey`, "findings" or "explain". */
+  /** The action being handed off: a `findingKey`, "findings", "explain",
+   *  "ask", "conflicts" or "checkout:<mode>". */
   pending: string | null;
   /** The Fix button's label. */
   fixLabel: string;
@@ -114,6 +152,24 @@ export function usePullRequestAgentActions(target: {
   // "Write guide" on a pull request from a fork waits for a yes first.
   const [confirmingFork, setConfirmingFork] = useState(false);
   const agent = actionAgent(repoPath);
+  // The session beside the tab, and the branch its checkout is on: when that
+  // is the pull request's, the Fix actions work there instead of preparing
+  // another checkout.
+  const sessionTab = useCurrentSessionTab(repoPath);
+  const sessionDir = sessionTab ? sessionCwd(sessionTab, repoPath) : null;
+  const sessionBranch = useQuery({
+    queryKey: ["pull-request-session-branch", sessionDir],
+    queryFn: async () => (await checkoutState(sessionDir!))?.branch ?? null,
+    enabled: sessionDir !== null && detail?.state === "open",
+    staleTime: 10_000,
+  }).data;
+  const prBranch = detail
+    ? detail.isCrossRepository
+      ? `atlas/pr-${detail.number}/${detail.headBranch}`
+      : detail.headBranch
+    : null;
+  const fixesInSession =
+    sessionTab !== null && prBranch !== null && sessionBranch != null && sessionBranch === prBranch;
 
   const guideEnabled = useProjectSetting(repoPath, "pullRequestGuideEnabled");
   // Read each render: it follows the setting and the installed agents.
@@ -144,6 +200,25 @@ export function usePullRequestAgentActions(target: {
   ) => {
     if (!detail || pending !== null) return;
     setPending(kind);
+    if (fixesInSession && sessionTab && sessionDir) {
+      try {
+        await openHandoffSession({
+          projectPath: repoPath,
+          cwd: sessionDir,
+          agent: agent.agent,
+          handoff: await build(await changedFiles()),
+          into: sessionTab,
+        });
+        toast.success("Added to this session", {
+          description: "It is on the pull request's branch. Read the task over, then send.",
+        });
+      } catch (err) {
+        toast.error("Couldn't add it to this session", { description: errorMessage(err) });
+      } finally {
+        setPending(null);
+      }
+      return;
+    }
     const toastId = toast.loading("Preparing the pull request checkout…");
     try {
       const [checkout, files] = await Promise.all([
@@ -207,13 +282,13 @@ export function usePullRequestAgentActions(target: {
         }
       : null;
 
-  const explain = (where: "new" | "current") => {
+  const explain = (where: "new" | "current" | "auto" = "auto") => {
     if (!detail || pending !== null) return;
     setPending("explain");
     void (async () => {
       try {
         const files = await changedFiles();
-        const into = where === "current" ? currentSessionTab(repoPath) : null;
+        const into = where === "new" ? null : currentSessionTab(repoPath);
         await openHandoffSession({
           projectPath: repoPath,
           cwd: repoPath,
@@ -230,6 +305,95 @@ export function usePullRequestAgentActions(target: {
         setPending(null);
       }
     })();
+  };
+
+  const askQuestion = () => {
+    if (!detail || pending !== null) return;
+    setPending("ask");
+    const into = currentSessionTab(repoPath);
+    void openHandoffSession({
+      projectPath: repoPath,
+      cwd: repoPath,
+      agent: agent.agent,
+      handoff: buildAskAboutPullRequestHandoff(detail),
+      into,
+    })
+      .then(() =>
+        toast.success(into ? "Added to this session" : `Opened a ${agent.label} session`, {
+          description: "The pull request is in the composer: type your question, then send.",
+        }),
+      )
+      .catch((err: unknown) =>
+        toast.error("Couldn't open a session", { description: errorMessage(err) }),
+      )
+      .finally(() => setPending(null));
+  };
+
+  const resolveConflicts =
+    detail?.state === "open" && detail.mergeability === "conflicting"
+      ? () => void fixWith("conflicts", () => buildResolveConflictsHandoff(detail))
+      : null;
+
+  const checkoutHere = async (pr: PrDetail) => {
+    // As "New session on branch": never under uncommitted changes, never
+    // under an agent working in the checkout. Rust reads the tree again
+    // right before it switches, so a change made since cannot slip through.
+    const target = prBranch ?? pr.headBranch;
+    const state = await checkoutState(repoPath);
+    if (state && state.branch !== target) {
+      const leaveAlone = (blocker: string) =>
+        toast.error(`Didn't switch to ${target}`, {
+          description: `The project is on ${state.branch} and ${blocker}, so Atlas left it alone. Check it out in a separate worktree instead.`,
+        });
+      if (state.dirty) return leaveAlone("it has uncommitted changes");
+      if (busySessions(repoPath).length > 0 || (await agentWorkingElsewhere(repoPath))) {
+        return leaveAlone("an agent is working in it");
+      }
+    }
+    const checkout = await prPrepareCheckout(repoPath, pr, true);
+    void useGitStore.getState().actions.refreshStatusNow(repoPath);
+    await openHandoffSession({
+      projectPath: repoPath,
+      cwd: repoPath,
+      agent: agent.agent,
+      handoff: { prompt: "", context: "" },
+    });
+    toast.success(
+      checkout.reused ? `Already on ${checkout.branch}` : `Switched to ${checkout.branch}`,
+      {
+        description: checkout.isOnPullRequestHead
+          ? `The project is on the pull request's branch, with a new ${agent.label} session.`
+          : "The branch holds commits of its own or could not move to the pull request's head.",
+      },
+    );
+  };
+
+  const checkoutWorktree = async (pr: PrDetail) => {
+    const checkout = await prPrepareCheckout(repoPath, pr);
+    await openHandoffSession({
+      projectPath: repoPath,
+      cwd: checkout.cwd,
+      agent: agent.agent,
+      handoff: { prompt: "", context: "" },
+    });
+    const where = checkout.worktreePath
+      ? `${checkout.reused ? "Its existing worktree" : "A new worktree"} on ${checkout.branch}`
+      : `The project, already on ${checkout.branch}`;
+    toast.success("Checked out", {
+      description: `${where}, with a new ${agent.label} session there.`,
+    });
+  };
+
+  const checkout = (mode: CheckoutMode) => {
+    if (!detail || pending !== null) return;
+    setPending(`checkout:${mode}`);
+    void (mode === "local" ? checkoutHere(detail) : checkoutWorktree(detail))
+      .catch((err: unknown) =>
+        toast.error("Couldn't check out the pull request", {
+          description: prErrorMessage(classifyPrError(err)),
+        }),
+      )
+      .finally(() => setPending(null));
   };
 
   /** A question in a session: the current one when it is in the project. */
@@ -320,6 +484,12 @@ export function usePullRequestAgentActions(target: {
 
   return {
     agentLabel: agent.label,
+    ask: askQuestion,
+    attachesToComposer: sessionTab !== null,
+    fixesInSession,
+    fixFindingsLabel: fixesInSession ? "Fix findings in this session" : "Fix findings in a session",
+    resolveConflicts,
+    checkout,
     fixFinding,
     fixFindings,
     explain,
@@ -327,7 +497,7 @@ export function usePullRequestAgentActions(target: {
     askAboutLines,
     canExplainInCurrent: () => currentSessionTab(repoPath) !== null,
     pending,
-    fixLabel: "Fix",
+    fixLabel: fixesInSession ? "Fix in this session" : "Fix",
     guide: guideState,
   };
 }

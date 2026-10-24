@@ -27,6 +27,7 @@ const TAB_SURFACE: Partial<Record<TabType, string>> = {
   browser: "browserFocus",
   diff: "diffFocus",
   "session-changes": "diffFocus",
+  "pull-request": "pullRequestFocus",
 };
 
 function isTextInput(el: Element | null): boolean {

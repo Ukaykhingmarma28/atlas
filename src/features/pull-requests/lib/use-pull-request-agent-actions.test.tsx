@@ -12,6 +12,8 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("./pr-agent-session", () => ({
   actionAgent: () => ({ agent: "claude", label: "Claude" }),
   currentSessionTab: () => null,
+  useCurrentSessionTab: () => null,
+  sessionCwd: () => "/repo",
   openHandoffSession: vi.fn(),
 }));
 // Review guides on for the project (`pullRequestGuideEnabled`).
