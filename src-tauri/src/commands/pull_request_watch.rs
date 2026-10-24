@@ -66,11 +66,11 @@ use tauri::{AppHandle, Emitter};
 
 use super::agent_host::{AgentHost, PendingWake, SessionKey};
 use super::agents::{send_prompt, OutgoingPrompt, PromptOrigin};
-use crate::state::atlas_config;
 use super::pull_requests::{
     quota_paused_until, GitHub, PrCheck, PrCheckStatus, PrChecksState, PrComment, PrCommentKind,
     PrDetail, PrError, PrMergeability, PrReviewDecision, PrState, ReadPolicy,
 };
+use crate::state::atlas_config;
 
 /// Checks take minutes, so a faster pass mostly spends the rate limit every
 /// machine on the account shares.
@@ -217,10 +217,7 @@ pub fn evaluate(
         passed_checks = if passed_now { gate_names } else { Vec::new() };
     }
 
-    let own = state
-        .viewer
-        .or(state.author)
-        .map(str::to_ascii_lowercase);
+    let own = state.viewer.or(state.author).map(str::to_ascii_lowercase);
     let through = parse_time(&watch.remarks_through);
     // Host times are per second, so remarks at the boundary are told apart by id.
     let fresh: Vec<PrComment> = remarks
@@ -231,11 +228,7 @@ pub fn evaluate(
                 return false;
             };
             let after = at > through || (at == through && !watch.remark_ids.contains(&remark.id));
-            let theirs = remark
-                .author
-                .as_ref()
-                .map(|a| a.login.to_ascii_lowercase())
-                != own;
+            let theirs = remark.author.as_ref().map(|a| a.login.to_ascii_lowercase()) != own;
             after && theirs
         })
         .cloned()
@@ -692,7 +685,11 @@ impl WatchSource for GitHubSource {
     ) -> BoxFuture<'static, Result<WatchRead, PrError>> {
         Box::pin(async move {
             let github = GitHub::open_with(&checkout, ReadPolicy::Background).await?;
-            if !github.provider().repository.eq_ignore_ascii_case(&repository) {
+            if !github
+                .provider()
+                .repository
+                .eq_ignore_ascii_case(&repository)
+            {
                 return Err(PrError::Unsupported {
                     message: "The session's checkout is another repository.".into(),
                 });
@@ -969,13 +966,22 @@ async fn sweep(
             prints.sort();
             prints.dedup();
             let fingerprint = prints.join("\n");
-            plan_read(&watches, &fingerprint, state.last_reads.get(&group.key), now)
-                .then_some((group, fingerprint, watches))
+            plan_read(
+                &watches,
+                &fingerprint,
+                state.last_reads.get(&group.key),
+                now,
+            )
+            .then_some((group, fingerprint, watches))
         })
         .collect();
     let reads: Vec<_> = futures::stream::iter(due)
         .map(|(group, fingerprint, watches)| {
-            let read = source.read(group.checkout.clone(), group.repository.clone(), group.number);
+            let read = source.read(
+                group.checkout.clone(),
+                group.repository.clone(),
+                group.number,
+            );
             async move {
                 let result = match tokio::time::timeout(READ_TIMEOUT, read).await {
                     Ok(result) => result,
@@ -1151,7 +1157,10 @@ fn send_wake(host: &Arc<AgentHost>, thread_id: ThreadId, wake: WakeMessage) {
 
 /// A full read as a link's snapshot. The detail does not count comments, so
 /// the held count stays.
-fn snapshot_of_detail(detail: &WatchedPr, held: Option<&PullRequestSnapshot>) -> PullRequestSnapshot {
+fn snapshot_of_detail(
+    detail: &WatchedPr,
+    held: Option<&PullRequestSnapshot>,
+) -> PullRequestSnapshot {
     PullRequestSnapshot {
         state: match detail.state {
             PrState::Open => "open",

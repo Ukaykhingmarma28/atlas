@@ -2184,7 +2184,14 @@ impl OutgoingPrompt {
 /// Tauri app; [`AppBooks`] is the real one.
 pub(crate) trait PromptBooks {
     /// Session capture: the prompt, and the session bound to its scope.
-    fn capture(&self, session_id: &str, cwd: &str, plugin_id: &str, model: Option<&str>, text: &str);
+    fn capture(
+        &self,
+        session_id: &str,
+        cwd: &str,
+        plugin_id: &str,
+        model: Option<&str>,
+        text: &str,
+    );
     /// The user interacted with the session (`interacted_at`).
     fn interaction(&self, session_id: &str);
     /// Atlas's own transcript of the session.
@@ -2258,7 +2265,14 @@ struct AppBooks<'a> {
 }
 
 impl PromptBooks for AppBooks<'_> {
-    fn capture(&self, session_id: &str, cwd: &str, plugin_id: &str, model: Option<&str>, text: &str) {
+    fn capture(
+        &self,
+        session_id: &str,
+        cwd: &str,
+        plugin_id: &str,
+        model: Option<&str>,
+        text: &str,
+    ) {
         self.app
             .state::<super::capture::CaptureState>()
             .note_prompt(session_id, cwd, plugin_id, model, text);
@@ -3246,7 +3260,14 @@ mod prompt_books_tests {
     }
 
     impl PromptBooks for Recording {
-        fn capture(&self, session_id: &str, cwd: &str, plugin_id: &str, model: Option<&str>, text: &str) {
+        fn capture(
+            &self,
+            session_id: &str,
+            cwd: &str,
+            plugin_id: &str,
+            model: Option<&str>,
+            text: &str,
+        ) {
             self.writes.borrow_mut().push(format!(
                 "capture {session_id} {cwd} {plugin_id} {} {text}",
                 model.unwrap_or("-")

@@ -93,10 +93,7 @@ fn detail() -> Detail {
 }
 
 fn with_checks(checks: Vec<PrCheck>) -> Detail {
-    Detail {
-        checks,
-        ..detail()
-    }
+    Detail { checks, ..detail() }
 }
 
 fn remark(login: &str, created_at: &str, body: &str) -> PrComment {
@@ -281,7 +278,9 @@ fn keeps_remarks_for_a_later_pass_when_the_conversation_was_not_read_whole() {
     let partial = eval(&watch(), &detail(), None);
     assert!(partial.changes.is_empty());
     assert!(matches!(
-        eval(&partial.next, &detail(), Some(&comments)).changes.first(),
+        eval(&partial.next, &detail(), Some(&comments))
+            .changes
+            .first(),
         Some(WatchChange::Remarks(_))
     ));
 }
@@ -294,7 +293,11 @@ fn reports_a_remark_that_shows_up_late_with_the_same_time_as_a_reported_one() {
         ..rename("bot", "2026-10-02T12:06:00Z")
     };
     let reported = eval(&watch(), &detail(), Some(std::slice::from_ref(&first)));
-    let again = eval(&reported.next, &detail(), Some(&[first.clone(), late.clone()]));
+    let again = eval(
+        &reported.next,
+        &detail(),
+        Some(&[first.clone(), late.clone()]),
+    );
     assert_eq!(again.changes, vec![WatchChange::Remarks(vec![late])]);
     assert_eq!(again.next.remark_ids, vec![first.id, "late".to_string()]);
 }
@@ -316,13 +319,18 @@ fn reports_edits_after_the_watermark_once_and_counts_them_toward_the_wake_limit(
         ..old.clone()
     };
     let report = eval(&watching, &detail(), Some(std::slice::from_ref(&edited)));
-    assert_eq!(report.changes, vec![WatchChange::Remarks(vec![edited.clone()])]);
+    assert_eq!(
+        report.changes,
+        vec![WatchChange::Remarks(vec![edited.clone()])]
+    );
     assert_eq!(report.next.remarks_through, "2026-10-02T12:06:00Z");
     assert_eq!(report.next.remark_ids, vec![old.id]);
     assert!(report.exhausted);
-    assert!(eval(&report.next, &detail(), Some(std::slice::from_ref(&edited)))
-        .changes
-        .is_empty());
+    assert!(
+        eval(&report.next, &detail(), Some(std::slice::from_ref(&edited)))
+            .changes
+            .is_empty()
+    );
     let late = PrComment {
         id: "late".into(),
         ..edited.clone()
@@ -339,7 +347,9 @@ fn does_not_treat_a_failed_check_read_as_a_rerun() {
     let reported = eval(&watch(), &failed, NO_REMARKS);
     assert_eq!(reported.changes.len(), 1);
     let unreadable = eval(&reported.next, &with_checks(vec![]), NO_REMARKS);
-    assert!(eval(&unreadable.next, &failed, NO_REMARKS).changes.is_empty());
+    assert!(eval(&unreadable.next, &failed, NO_REMARKS)
+        .changes
+        .is_empty());
 }
 
 #[test]
@@ -357,13 +367,19 @@ fn wakes_for_the_pull_request_s_author_when_the_agent_is_someone_else() {
         viewer: None,
         ..contributor
     };
-    assert!(eval(&watch(), &no_viewer, Some(&[reply])).changes.is_empty());
+    assert!(eval(&watch(), &no_viewer, Some(&[reply]))
+        .changes
+        .is_empty());
 }
 
 #[test]
 fn reports_remarks_from_others_once_and_never_the_agent_s_own() {
     let comments = vec![
-        remark("agent-user", "2026-10-02T12:05:00Z", "Fixed in the latest push."),
+        remark(
+            "agent-user",
+            "2026-10-02T12:05:00Z",
+            "Fixed in the latest push.",
+        ),
         rename("macroscope-app[bot]", "2026-10-02T12:06:00Z"),
         remark("reviewer", "2026-10-02T11:00:00Z", "Older than the watch."),
     ];
@@ -472,7 +488,9 @@ fn a_wake_lists_what_changed_and_says_how_to_hand_back() {
     ));
     assert!(wake.text.contains("- Checks failed on aaaaaaa:"));
     assert!(wake.text.contains("  - lint https://ci.example/lint"));
-    assert!(wake.text.contains("  - e2e (cancelled) https://ci.example/e2e"));
+    assert!(wake
+        .text
+        .contains("  - e2e (cancelled) https://ci.example/e2e"));
     assert!(wake
         .text
         .contains("  - reviewer on src/index.ts: \"Please rename this.\""));
@@ -542,7 +560,10 @@ fn a_pull_request_is_read_only_when_it_might_have_news() {
         watches: watches.clone(),
     };
     assert!(!plan_read(&watches, "open", Some(&last), now), "quiet");
-    assert!(plan_read(&watches, "open passing", Some(&last), now), "moved");
+    assert!(
+        plan_read(&watches, "open passing", Some(&last), now),
+        "moved"
+    );
     let more: HashSet<String> = ["w1".to_string(), "w2".to_string()].into();
     assert!(plan_read(&more, "open", Some(&last), now), "a new watch");
     assert!(plan_read(
@@ -652,7 +673,11 @@ fn an_open_or_unread_pull_request_holds_the_session() {
     );
     thread.pull_requests = vec![
         merged.clone(),
-        linked(2, "2026-10-02T09:00:00Z", Some(("open", "2026-10-02T11:00:00Z"))),
+        linked(
+            2,
+            "2026-10-02T09:00:00Z",
+            Some(("open", "2026-10-02T11:00:00Z")),
+        ),
     ];
     assert!(!settles(&thread, true));
     thread.pull_requests = vec![merged, linked(3, "2026-10-02T09:00:00Z", None)];

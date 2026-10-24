@@ -1910,7 +1910,8 @@ impl AgentHost {
     pub fn stop(&self, key: &SessionKey) -> Result<()> {
         self.forget_wakes(&key.session_id);
         if let Some(history) = self.history() {
-            if let Some(thread_id) = history.thread_for(&acp::SessionId::new(key.session_id.as_str()))
+            if let Some(thread_id) =
+                history.thread_for(&acp::SessionId::new(key.session_id.as_str()))
             {
                 history.store().end_pull_request_watches(thread_id);
             }

@@ -1676,7 +1676,11 @@ fn sent_to_recently(thread: &ThreadMetadata, now: DateTime<Utc>) -> bool {
 ///
 /// A watched pull request always keeps its session; any linked one does when
 /// `keep_pull_requests`.
-fn due_for_settling(thread: &ThreadMetadata, cutoff: DateTime<Utc>, keep_pull_requests: bool) -> bool {
+fn due_for_settling(
+    thread: &ThreadMetadata,
+    cutoff: DateTime<Utc>,
+    keep_pull_requests: bool,
+) -> bool {
     let last = thread.last_activity();
     let mut links = pull_requests::visible(&thread.pull_requests);
     let held_by_pull_request = if keep_pull_requests {

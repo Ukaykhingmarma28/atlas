@@ -1341,7 +1341,10 @@ mod tests {
         assert_eq!(stacks(&refs), vec![vec![1, 3, 2]]);
         let text = list_text(&links);
         assert!(text.contains("acme/shop#9 \"Step 9\": open, checks passing, other -> main"));
-        assert!(text.ends_with("Stack (bottom to top): #1 -> #3 -> #2"), "{text}");
+        assert!(
+            text.ends_with("Stack (bottom to top): #1 -> #3 -> #2"),
+            "{text}"
+        );
     }
 
     #[test]

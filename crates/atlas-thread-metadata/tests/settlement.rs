@@ -346,7 +346,10 @@ fn the_idle_sweep_leaves_sessions_with_pull_requests_to_their_pull_request() {
         .map(|(session, _)| session)
         .collect();
     assert_eq!(idle.len(), 1, "only the session with no pull request");
-    assert_eq!(store.auto_settle_idle_keeping(cutoff, &HashSet::new(), true), 1);
+    assert_eq!(
+        store.auto_settle_idle_keeping(cutoff, &HashSet::new(), true),
+        1
+    );
     assert!(store.thread(plain_id).unwrap().is_settled());
     assert!(!store.thread(linked_id).unwrap().is_settled());
 

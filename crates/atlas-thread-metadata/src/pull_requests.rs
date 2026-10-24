@@ -355,8 +355,7 @@ pub(crate) fn sync_watch(
         return false;
     };
     let existing = &mut links[ix];
-    if !existing.is_visible() || existing.watch.as_ref().map(|w| w.started_at) != Some(started_at)
-    {
+    if !existing.is_visible() || existing.watch.as_ref().map(|w| w.started_at) != Some(started_at) {
         return false;
     }
     match result {
