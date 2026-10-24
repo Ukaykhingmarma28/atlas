@@ -734,6 +734,19 @@ impl ThreadMetadataStore {
     /// should clear the last one seen is the caller's policy — the host keeps
     /// the last known branch and only writes names it actually read. No change
     /// means no write and no event.
+    /// Record the model the session is running on. Skips the write, and the
+    /// sidebar event, when it has not changed.
+    pub fn update_model(&self, thread_id: ThreadId, model: Option<Arc<str>>) {
+        let model = model.filter(|m| !m.trim().is_empty());
+        self.update(thread_id, |thread| {
+            if thread.model == model {
+                return false;
+            }
+            thread.model = model;
+            true
+        });
+    }
+
     pub fn update_branch(&self, thread_id: ThreadId, branch: Option<Arc<str>>) {
         let branch = branch.filter(|b| !b.trim().is_empty());
         self.update(thread_id, |thread| {

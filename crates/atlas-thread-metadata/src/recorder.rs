@@ -231,6 +231,16 @@ impl ThreadRecorder {
         }
     }
 
+    /// The model the session's turn runs on. Like the branch, the host's to
+    /// know: the thread's events do not carry it. A session not bound to a
+    /// row is ignored.
+    pub fn note_model(&self, session_id: &acp::SessionId, model: Arc<str>) {
+        let thread_id = self.lock().get(session_id).copied();
+        if let Some(thread_id) = thread_id {
+            self.store.update_model(thread_id, Some(model));
+        }
+    }
+
     /// The conversation is over.
     ///
     /// A thread that was ever sent to keeps its row — history outliving the

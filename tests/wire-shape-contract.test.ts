@@ -286,6 +286,10 @@ describe("thread history ↔ agent_host wire shapes (#7)", () => {
     );
   });
 
+  it("ThreadRow carries model, so the hover card names it for a session not open", () => {
+    expect(tsInterfaceProps(ts, "ThreadRow")).toContain("model");
+  });
+
   it("the threads_* history commands are returned as those structs", () => {
     expect(commands).toMatch(/fn threads_history\([\s\S]*?\) -> Result<Vec<[\w:]*ThreadRow>/);
     expect(commands).toMatch(

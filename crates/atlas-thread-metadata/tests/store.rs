@@ -830,3 +830,32 @@ fn a_recorded_branch_survives_a_reopen_and_later_live_updates() {
     let store = open(&dir);
     assert_eq!(store.thread(saved.thread_id).unwrap().branch, None);
 }
+
+#[test]
+fn a_recorded_model_survives_a_reopen_and_later_live_updates() {
+    let dir = tempfile::tempdir().unwrap();
+    let saved = thread("atlas-agent", &["/tmp/atlas"]);
+    {
+        let store = open(&dir);
+        store.save_one(saved.clone());
+        assert_eq!(store.thread(saved.thread_id).unwrap().model, None);
+        let mut changes = store.subscribe();
+
+        store.update_model(saved.thread_id, Some("Claude Sonnet 4.5".into()));
+        assert_eq!(changes.try_recv().unwrap(), ThreadStoreEvent::Changed);
+
+        // The same model again is not a change.
+        store.update_model(saved.thread_id, Some("Claude Sonnet 4.5".into()));
+        assert!(changes.try_recv().is_err());
+
+        // A conversation event does not own the model and must not drop it.
+        store.record_live_update(live(&saved, Some("Discount codes")));
+        store.flush().unwrap();
+    }
+
+    let store = open(&dir);
+    assert_eq!(
+        store.thread(saved.thread_id).unwrap().model.as_deref(),
+        Some("Claude Sonnet 4.5")
+    );
+}

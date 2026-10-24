@@ -153,6 +153,10 @@ const MIGRATIONS: &[Migration] = &[
         name: "threads_lifecycle",
         apply: add_lifecycle_columns,
     },
+    Migration {
+        name: "threads_model",
+        apply: add_model_column,
+    },
 ];
 
 const LEDGER: &str = "
@@ -273,6 +277,16 @@ fn add_branch_column(conn: &Connection) -> Result<()> {
         .is_some();
     if !present {
         conn.execute_batch(V4)?;
+    }
+    Ok(())
+}
+
+/// `model`, the model the latest turn ran on, added only when absent — the
+/// same guard as [`add_branch_column`]. Existing rows read `NULL`: unknown,
+/// never back-filled with a guess.
+fn add_model_column(conn: &Connection) -> Result<()> {
+    if !has_column(conn, "threads", "model")? {
+        conn.execute_batch("ALTER TABLE threads ADD COLUMN model TEXT;")?;
     }
     Ok(())
 }
