@@ -54,6 +54,7 @@ import {
 } from "@/features/chat/stores/recent-files-store";
 import { openNewAgentChat } from "@/features/chat/lib/open-agent-session";
 import { settleAndAdvance } from "@/features/chat/lib/settle-and-advance";
+import { toggleSessionDrawer } from "@/features/terminal/lib/session-drawer";
 import { requestCloseTab } from "@/features/chat/lib/close-tab";
 import { pruneContextUsageCache } from "@/features/chat/lib/context-usage-cache";
 import { isScrollHot } from "@/lib/scroll-hot";
@@ -1369,6 +1370,13 @@ export function App() {
       const tab = layout.tabs.find((t) => t.id === layout.activeTabId);
       if (!tab || tab.type !== "chat") return;
       settleAndAdvance(tab.id);
+    },
+    // ⌘⇧J — the open session's terminal drawer, under its composer.
+    "chat.toggleTerminalDrawer": () => {
+      const layout = useLayoutStore.getState();
+      const tab = layout.tabs.find((t) => t.id === layout.activeTabId);
+      if (!tab || tab.type !== "chat") return;
+      toggleSessionDrawer(tab.id);
     },
     // ⌘T — open a surface. A single column grows a pane beside
     // it whose launcher takes a bare letter; a split window opens the focused

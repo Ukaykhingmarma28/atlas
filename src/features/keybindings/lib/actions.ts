@@ -319,6 +319,16 @@ export const ACTIONS = [
     defaults: ["cmd+alt+s"],
   },
   {
+    // The session's terminal drawer, under the composer. ⌘⇧J: ⌘J already
+    // toggles the terminal tab (`panels.terminal`), and the drawer is its
+    // per-session sibling. Global, so it closes from inside the drawer too.
+    id: "chat.toggleTerminalDrawer",
+    title: "Toggle session terminal",
+    category: "Session",
+    when: "global",
+    defaults: ["cmd+shift+j"],
+  },
+  {
     id: "chat.cyclePermissionMode",
     title: "Cycle permission mode",
     category: "Session",

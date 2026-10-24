@@ -110,6 +110,8 @@ import { usePaneFind } from "../lib/use-pane-find";
 import { MessageInput } from "./message-input";
 import { AgentUpdateBar } from "./agent-update-bar";
 import { SessionHeaderControls } from "./session-header";
+import { SessionTerminalDrawer } from "@/features/terminal/components/session-terminal-drawer";
+import { adoptSessionDrawer } from "@/features/terminal/lib/session-drawer";
 import { SessionDockLane } from "./session-dock-lane";
 import { forkSessionToNewTab } from "../lib/fork-session";
 import { projectPathForTab } from "../lib/tab-project";
@@ -130,6 +132,13 @@ function memorySince(sessionId: string): number {
     memorySinceBySession.set(sessionId, at);
   }
   return at;
+}
+
+/** Focus is in the session's terminal drawer, which sits inside this panel
+ *  but is a shell: its keys (Shift+Tab completion and the rest) are the
+ *  shell's, not the composer's. */
+function inTerminalDrawer(el: HTMLElement): boolean {
+  return el.closest("[data-session-terminal-drawer]") !== null;
 }
 import { PermissionModal } from "./permission-modal";
 import { ChatCommentsController } from "./chat-comments-controller";
@@ -319,7 +328,11 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   // to the session that bind produced — and must not be left on the tab
   // scope, where the tab's next session would inherit it.
   useEffect(() => {
-    if (session?.acpSessionId) adoptOverview(overviewScope(tabId, undefined), overviewKey);
+    if (!session?.acpSessionId) return;
+    adoptOverview(overviewScope(tabId, undefined), overviewKey);
+    // The terminal drawer too: shells opened before the first message are
+    // the session's, and stay open and running across the bind.
+    adoptSessionDrawer(overviewScope(tabId, undefined), overviewKey);
   }, [adoptOverview, tabId, session?.acpSessionId, overviewKey]);
 
   // A turn's diff, in the review panel beside the session. Driven by a window
@@ -923,7 +936,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
       if (!matchesAction(e, "chat.toggleModelPicker")) return;
       const root = rootRef.current;
       const active = document.activeElement as HTMLElement | null;
-      if (!root || !active || !root.contains(active)) return;
+      if (!root || !active || !root.contains(active) || inTerminalDrawer(active)) return;
       e.preventDefault();
       e.stopPropagation();
       requestModelPicker(tabId);
@@ -940,7 +953,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
       const root = rootRef.current;
       const active = document.activeElement as HTMLElement | null;
       // Only intercept when focus is somewhere inside this chat panel.
-      if (!root || !active || !root.contains(active)) return;
+      if (!root || !active || !root.contains(active) || inTerminalDrawer(active)) return;
       e.preventDefault();
       e.stopPropagation();
       // The store action both cycles the mode AND propagates it to the bound
@@ -1685,6 +1698,10 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
             stopping={!!session.stopping}
           />
         </div>
+        {/* The session's terminal drawer, under the composer. Two strings in,
+            its own subscriptions: closed it renders nothing, and nothing in
+            it ever re-renders this panel. */}
+        <SessionTerminalDrawer tabId={tabId} scope={overviewKey} />
       </div>
 
       {bashPanelOpen && (
