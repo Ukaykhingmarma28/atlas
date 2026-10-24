@@ -309,8 +309,8 @@ export interface AppSettings {
    */
   diffIgnoreWhitespace: boolean;
   /**
-   * Open a diff of several files, such as a commit or your changes, with each file collapsed to
-   * its header. Off: every file starts expanded.
+   * Open a diff, such as your changes or a commit, as a list of its files, each collapsed to
+   * its header; click a file to expand it. Off: every file starts expanded.
    */
   diffFilesCollapsed: boolean;
   /**
@@ -457,7 +457,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   editorFontSize: 13,
   terminalFontSize: 13,
   diffIgnoreWhitespace: false,
-  diffFilesCollapsed: false,
+  diffFilesCollapsed: true,
   diffPalette: "theme",
   interfaceContrast: 100,
   showTurnRail: true,
@@ -1163,7 +1163,7 @@ export const SETTINGS_REGISTRY: readonly SettingMeta[] = [
     page: "source-control",
     section: "Diffs",
     title: "Start files collapsed",
-    summary: "Open a diff of several files with each one collapsed to its header.",
+    summary: "Open a diff with each file collapsed to its header.",
   },
   {
     key: "diffPalette",

@@ -24,9 +24,6 @@ import { useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
 import type { FileDiffMetadata } from "@pierre/diffs";
 
-import { useChatStore } from "@/features/chat/stores/chat-store";
-import { editsSignature } from "@/features/chat/lib/turn-edits";
-import { tallyChanges } from "@/features/chat/lib/session-overview";
 import {
   OTHER_GROUP,
   ROOT_SEPARATOR,
@@ -89,46 +86,16 @@ export interface CombinedReview {
 const NO_ROOTS: readonly SessionRoot[] = [];
 
 /**
- * The absolute paths of every file the session's agent edited, from its own
- * tool calls. Re-read only when the session's edits may have changed.
- */
-export function useSessionTouchedPaths(sessionId: string | null): ReadonlySet<string> | null {
-  const signature = useChatStore((s) => {
-    if (!sessionId) return "";
-    for (const id in s.sessions) {
-      const session = s.sessions[id]!;
-      if (session.acpSessionId !== sessionId) continue;
-      return `${id}|${editsSignature(session.messages, session.toolRevision)}`;
-    }
-    return "";
-  });
-  return useMemo(() => {
-    if (!signature) return null;
-    const tabId = signature.slice(0, signature.indexOf("|"));
-    const session = useChatStore.getState().sessions[tabId];
-    if (!session) return null;
-    const tally = tallyChanges(session.messages, session.turnScratch?.tools);
-    return new Set(tally.files.map((f) => f.path));
-    // `signature` stands for the session's messages, read through `getState`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signature]);
-}
-
-/**
  * The working-tree (or branch) review of each attached project that is a git
  * repository. `kind` null turns every call off (the turn scope reads no git).
- * `touched`, when given, narrows each root to the files the session edited
- * there — the session scope.
  */
 export function useAttachedRootReviews({
   roots,
   kind,
-  touched,
   ignoreWhitespace,
 }: {
   roots: readonly SessionRoot[];
   kind: DiffSource["kind"] | null;
-  touched: ReadonlySet<string> | null;
   ignoreWhitespace: boolean;
 }) {
   const active = kind ? roots.slice(0, MAX_ATTACHED_ROOTS) : NO_ROOTS;
@@ -143,46 +110,28 @@ export function useAttachedRootReviews({
   const sourceAt = (i: number): DiffSource | null =>
     kind ? (previews[i]?.data?.sources.find((s) => s.kind === kind) ?? null) : null;
 
-  const onlyKey = touched ? [...touched].join("\0") : "";
   const rootsKey = active.map((r) => r.path).join("\0");
-  const only = useMemo(() => {
-    if (!touched) return active.map(() => null);
-    return active.map((root) => {
-      const set = new Set<string>();
-      for (const path of touched) {
-        const placed = placeFile(path, [root]);
-        if (placed.root) set.add(placed.rel);
-      }
-      return set as ReadonlySet<string>;
-    });
-    // Keyed by the strings: `touched` and `active` are new arrays per render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onlyKey, rootsKey]);
 
   // A fixed number of slots: hooks cannot be called in a loop over a list
   // that changes length. An unused slot has no source and asks for nothing.
   const s0 = useReviewFiles({
     repoPath: active[0]?.path ?? "",
     source: sourceAt(0),
-    only: only[0] ?? null,
     ignoreWhitespace,
   });
   const s1 = useReviewFiles({
     repoPath: active[1]?.path ?? "",
     source: sourceAt(1),
-    only: only[1] ?? null,
     ignoreWhitespace,
   });
   const s2 = useReviewFiles({
     repoPath: active[2]?.path ?? "",
     source: sourceAt(2),
-    only: only[2] ?? null,
     ignoreWhitespace,
   });
   const s3 = useReviewFiles({
     repoPath: active[3]?.path ?? "",
     source: sourceAt(3),
-    only: only[3] ?? null,
     ignoreWhitespace,
   });
   const slots = [s0, s1, s2, s3];

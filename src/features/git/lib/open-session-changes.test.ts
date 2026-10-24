@@ -67,16 +67,16 @@ describe("openSessionChanges", () => {
     expect(panel.turn["session-changes:s1"]).toBe("t:m1");
   });
 
-  it("takes a panel left on a turn back to the session when no turn is asked for", () => {
+  it("takes a panel left on a turn back to Changes when no turn is asked for", () => {
     openSessionChanges({ projectPath: "/p", sessionId: "s1", file: "a.ts", turnId: "t:m1" });
     open("s1", "b.ts");
-    expect(useDiffPanelStore.getState().scope["session-changes:s1"]).toBe("session");
+    expect(useDiffPanelStore.getState().scope["session-changes:s1"]).toBe("branch-range");
   });
 
   it("leaves a git scope the reader chose alone", () => {
-    useDiffPanelStore.getState().actions.setScope("session-changes:s1", "branch-range");
+    useDiffPanelStore.getState().actions.setScope("session-changes:s1", "working-tree");
     open("s1", "b.ts");
-    expect(useDiffPanelStore.getState().scope["session-changes:s1"]).toBe("branch-range");
+    expect(useDiffPanelStore.getState().scope["session-changes:s1"]).toBe("working-tree");
   });
 
   it("delivers the file to a view that mounts after the click, and to one already mounted", () => {

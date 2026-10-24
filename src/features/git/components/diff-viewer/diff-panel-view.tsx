@@ -180,33 +180,28 @@ export const DiffStat = memo(function DiffStat({
   );
 });
 
-/** A file header's counts, written the way the viewer writes its own: removals
- *  first, and a side with nothing in it left out (`-8`, `-36 +1`, `+12`). */
-const HeaderStat = memo(function HeaderStat({
+/** A file header's counts: additions then deletions, both always shown
+ *  (`+12 −0`), each in a fixed four-character column right-aligned, so the
+ *  counts of a list of collapsed files line up down the panel. */
+export const HeaderStat = memo(function HeaderStat({
   additions,
   deletions,
 }: {
   additions: number;
   deletions: number;
 }) {
-  const showDeletions = deletions > 0 || additions === 0;
-  const showAdditions = additions > 0 || deletions === 0;
   return (
     <span
       role="group"
       aria-label={`${additions} additions, ${deletions} deletions`}
-      className="inline-flex items-center gap-1 font-mono text-xs tabular-nums"
+      className="inline-grid grid-cols-[4ch_4ch] gap-2 text-right font-mono text-xs tabular-nums"
     >
-      {showDeletions && (
-        <span aria-hidden className="text-[var(--atlas-diff-removed-text)]">
-          -{formatCompactCount(deletions)}
-        </span>
-      )}
-      {showAdditions && (
-        <span aria-hidden className="text-[var(--atlas-diff-added-text)]">
-          +{formatCompactCount(additions)}
-        </span>
-      )}
+      <span aria-hidden className="text-[var(--atlas-diff-added-text)]">
+        +{formatCompactCount(additions)}
+      </span>
+      <span aria-hidden className="text-[var(--atlas-diff-removed-text)]">
+        −{formatCompactCount(deletions)}
+      </span>
     </span>
   );
 });
@@ -277,9 +272,12 @@ export function DiffPanelView({
   const actionsApi = useDiffPanelStore.use.actions();
 
   // ── Folds: the reader's departures from each file's default, which is
-  // folded when the setting says so, or when the file is marked viewed. ──
+  // folded when the setting says so (on unless turned off: a diff opens as a
+  // list of its files, each expanded on a click), or when the file is marked
+  // viewed. The departures are kept per scope, so a file opened stays open
+  // across tab and scope switches. ──
   const folds = useDiffPanelStore((s) => s.folds[scopeKey] ?? NO_FOLDS);
-  const collapseAll = collapseByDefault && files.length > 1;
+  const collapseAll = collapseByDefault;
   const isViewed = viewed?.isViewed;
   const foldedByDefault = useCallback(
     (path: string) => collapseAll || (isViewed?.(path) ?? false),
@@ -329,35 +327,40 @@ export function DiffPanelView({
     [files, viewed],
   );
 
-  const items = useMemo<CodeViewDiffItem<unknown>[]>(
-    () =>
-      files.map((file) => {
-        const id = itemIdOf(file);
-        const path = file.stat.path;
-        const isFold = file.state !== "ready" || isFolded(folds, id, foldedByDefault(path));
-        const viewedMark = viewed
-          ? viewed.isStale(path)
-            ? "s"
-            : viewed.isViewed(path)
-              ? "v"
-              : ""
-          : "";
-        const annotated = annotations?.of(file) ?? null;
-        return {
-          id,
-          type: "diff",
-          fileDiff: file.fileDiff,
-          collapsed: isFold,
-          ...(annotated ? { annotations: annotated.annotations } : {}),
-          // The viewer re-renders an item only when its version moves, so
-          // everything its header and annotations show is in it.
-          version: fnv1a32(
-            `${contentVersion(file.fileDiff)}:${isFold ? 1 : 0}:${file.state}:${viewedMark}:${annotated?.version ?? ""}`,
-          ),
-        };
-      }),
-    [files, folds, foldedByDefault, viewed, annotations],
-  );
+  // `opened`: the files the reader wants open, loaded or not. A file still
+  // to load is drawn folded until its patch arrives, and asks for it only
+  // once it is wanted open: a collapsed row costs a header and no request.
+  const { items, opened } = useMemo(() => {
+    const opened = new Set<string>();
+    const items = files.map((file): CodeViewDiffItem<unknown> => {
+      const id = itemIdOf(file);
+      const path = file.stat.path;
+      const wanted = !isFolded(folds, id, foldedByDefault(path));
+      if (wanted) opened.add(id);
+      const isFold = file.state !== "ready" || !wanted;
+      const viewedMark = viewed
+        ? viewed.isStale(path)
+          ? "s"
+          : viewed.isViewed(path)
+            ? "v"
+            : ""
+        : "";
+      const annotated = annotations?.of(file) ?? null;
+      return {
+        id,
+        type: "diff",
+        fileDiff: file.fileDiff,
+        collapsed: isFold,
+        ...(annotated ? { annotations: annotated.annotations } : {}),
+        // The viewer re-renders an item only when its version moves, so
+        // everything its header and annotations show is in it.
+        version: fnv1a32(
+          `${contentVersion(file.fileDiff)}:${isFold ? 1 : 0}:${wanted ? 1 : 0}:${file.state}:${viewedMark}:${annotated?.version ?? ""}`,
+        ),
+      };
+    });
+    return { items, opened };
+  }, [files, folds, foldedByDefault, viewed, annotations]);
 
   // ── Revealing a file: from the tree, or from outside (`requestDiffJump`) ──
   // The handle is held with the scope key its viewer was mounted for: the
@@ -442,8 +445,15 @@ export function DiffPanelView({
   // these render props and on `options`: a fresh identity would recreate every
   // portal on screen on any re-render (a viewed press, a keystroke in a
   // comment), so they are held stable and read what changes through refs.
-  const renderDeps = useRef({ fileById, copyPathOf, requestFile, retry, turn: !!source.turn });
-  renderDeps.current = { fileById, copyPathOf, requestFile, retry, turn: !!source.turn };
+  const renderDeps = useRef({
+    fileById,
+    opened,
+    copyPathOf,
+    requestFile,
+    retry,
+    turn: !!source.turn,
+  });
+  renderDeps.current = { fileById, opened, copyPathOf, requestFile, retry, turn: !!source.turn };
   const renderHeaderPrefix = useCallback(
     (item: CodeViewItem<unknown>) => {
       const file = renderDeps.current.fileById.get(item.id);
@@ -462,12 +472,13 @@ export function DiffPanelView({
     [toggleFile],
   );
   const renderHeaderFilenameSuffix = useCallback((item: CodeViewItem<unknown>) => {
-    const { fileById, copyPathOf, requestFile, retry, turn } = renderDeps.current;
+    const { fileById, opened, copyPathOf, requestFile, retry, turn } = renderDeps.current;
     const file = fileById.get(item.id);
     if (!file) return null;
     return (
       <FileStatus
         file={file}
+        wanted={opened.has(item.id)}
         copyPath={copyPathOf?.(file.stat.path)}
         onRequest={requestFile}
         onRetry={retry}
@@ -791,16 +802,20 @@ const CollapseToggle = memo(function CollapseToggle({
 });
 
 /** The header's tail: copy, and what is wrong with the file if anything. A
- *  pending file's row asks for its contents when it mounts, which is when the
- *  viewer has scrolled it into its render window. */
+ *  pending file the reader wants open asks for its contents when its row
+ *  mounts, which is when the viewer has scrolled it into its render window;
+ *  a collapsed one asks for nothing until it is opened. */
 function FileStatus({
   file,
+  wanted,
   copyPath,
   onRequest,
   onRetry,
   turn = false,
 }: {
   file: ReviewFile;
+  /** The reader wants it open (not collapsed). */
+  wanted: boolean;
   /** What "Copy path" copies: the path in the file's own root. */
   copyPath?: string;
   onRequest: (path: string) => void;
@@ -809,7 +824,7 @@ function FileStatus({
   turn?: boolean;
 }) {
   const { path } = file.stat;
-  const pending = file.state === "pending";
+  const pending = file.state === "pending" && wanted;
   useEffect(() => {
     if (pending) onRequest(path);
   }, [pending, path, onRequest]);

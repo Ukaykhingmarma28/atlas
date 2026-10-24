@@ -305,10 +305,10 @@ terminalFontSize = 13
 # false)
 diffIgnoreWhitespace = false
 
-# Open a diff of several files, such as a commit or your changes, with each
-# file collapsed to its header. Off: every file starts expanded. (default:
-# false)
-diffFilesCollapsed = false
+# Open a diff, such as your changes or a commit, as a list of its files, each
+# collapsed to its header; click a file to expand it. Off: every file starts
+# expanded. (default: true)
+diffFilesCollapsed = true
 
 # The colours for added and removed lines: "theme" uses the theme's green and
 # red, "blue-orange" uses its blue and orange, which stay distinct with

@@ -41,7 +41,7 @@ describe("useReviewFiles", () => {
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
     );
     const { result } = renderHook(
-      () => useReviewFiles({ repoPath: "/repo", source, only: null, ignoreWhitespace: false }),
+      () => useReviewFiles({ repoPath: "/repo", source, ignoreWhitespace: false }),
       { wrapper },
     );
 

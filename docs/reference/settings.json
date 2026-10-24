@@ -838,9 +838,9 @@
       "page": "source-control",
       "section": "Diffs",
       "title": "Start files collapsed",
-      "summary": "Open a diff of several files with each one collapsed to its header.",
-      "default": "false",
-      "doc": "Open a diff of several files, such as a commit or your changes, with each file collapsed to its header. Off: every file starts expanded.",
+      "summary": "Open a diff with each file collapsed to its header.",
+      "default": "true",
+      "doc": "Open a diff, such as your changes or a commit, as a list of its files, each collapsed to its header; click a file to expand it. Off: every file starts expanded.",
       "validation": "—"
     },
     {
