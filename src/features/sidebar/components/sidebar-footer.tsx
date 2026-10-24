@@ -27,7 +27,8 @@ export function SidebarFooter() {
     // Flush with the rail: no border, no layer of its own. A short fade from
     // the rail's colour is what separates the scrolling list from the row.
     <div className="relative flex shrink-0 px-2 pb-2 pt-1 before:pointer-events-none before:absolute before:inset-x-0 before:-top-4 before:h-4 before:bg-gradient-to-t before:from-sidebar before:to-transparent">
-      <HintGroup>
+      {/* Tooltips open upward: the row sits on the window's bottom edge. */}
+      <HintGroup side="top">
         <nav aria-label="Destinations" className="flex h-control-md flex-1 items-center gap-0.5">
           <TeamChatButton />
           <TimelineButton />
