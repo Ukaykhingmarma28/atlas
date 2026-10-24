@@ -43,6 +43,7 @@ fn snapshot(state: &str) -> PullRequestSnapshot {
         base_branch: "main".into(),
         is_draft: false,
         updated_at: Some("2026-10-20T10:00:00Z".into()),
+        merged_at: None,
         checks_state: Some("pending".into()),
         review_decision: Some("review-required".into()),
         comment_count: Some(3),

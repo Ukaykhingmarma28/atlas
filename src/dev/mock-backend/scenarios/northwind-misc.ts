@@ -524,6 +524,7 @@ function seedThreads(): ThreadRow[] {
                   baseBranch: "main",
                   isDraft: false,
                   updatedAt: iso(s.lastMs),
+                  mergedAt: iso(s.lastMs),
                   checksState: "passing" as const,
                   reviewDecision: "approved" as const,
                   commentCount: 2,

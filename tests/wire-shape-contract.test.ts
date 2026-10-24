@@ -796,6 +796,15 @@ describe("linked pull requests: session row, store and commands (#15)", () => {
     expect([...wire].sort()).toEqual([...kept].sort());
   });
 
+  it("the snapshot keeps the merge time, which dates a merge for settling", () => {
+    // Additive: optional on both sides, so a snapshot stored before it still
+    // reads. Settle on merge falls back to `updated_at` when it is missing.
+    const kept = rustItem(store, "struct", "PullRequestSnapshot").body;
+    expect(rustStructFields(kept)).toContain("merged_at");
+    expect(kept).toMatch(/#\[serde\(default[^\]]*\)\]\s*pub merged_at: Option<String>/);
+    expect(tsInterfaceProps(history, "PullRequestLinkSnapshot")).toContain("mergedAt");
+  });
+
   it("the source words are the store's variants, less the tombstone", () => {
     const { attrs, body } = rustItem(store, "enum", "PullRequestLinkSource");
     expect(attrs).toMatch(/rename_all\s*=\s*"snake_case"/);

@@ -561,13 +561,10 @@ pub fn plan_read(
 // ── settle on merge (pure) ──────────────────────────────────────────────
 
 /// When the link's pull request merged or closed, as far as Atlas knows: the
-/// host's last update time on a snapshot that says it is done.
+/// merge time on a merged snapshot, else the host's last update time on one
+/// that says it is done ([`PullRequestSnapshot::done_at`]).
 fn terminal_at(link: &PullRequestLink) -> Option<i64> {
-    let snapshot = link.snapshot.as_ref()?;
-    if snapshot.state == "open" {
-        return None;
-    }
-    snapshot.updated_at.as_deref().and_then(parse_time)
+    link.snapshot.as_ref()?.done_at().and_then(parse_time)
 }
 
 /// Whether the session's pull requests settle it: every one it waits on is
@@ -624,6 +621,8 @@ pub struct WatchedPr {
     pub base_branch: String,
     pub is_draft: bool,
     pub updated_at: String,
+    /// When it merged; `None` while it is not merged.
+    pub merged_at: Option<String>,
     pub checks_state: Option<PrChecksState>,
     pub review_decision: Option<PrReviewDecision>,
     pub head_sha: Option<String>,
@@ -642,6 +641,7 @@ impl From<PrDetail> for WatchedPr {
             base_branch: d.base_branch,
             is_draft: d.is_draft,
             updated_at: d.updated_at,
+            merged_at: d.merged_at,
             checks_state: d.checks_state,
             review_decision: d.review_decision,
             head_sha: d.head_sha,
@@ -1175,6 +1175,7 @@ fn snapshot_of_detail(
         base_branch: detail.base_branch.clone(),
         is_draft: detail.is_draft,
         updated_at: Some(detail.updated_at.clone()).filter(|u| !u.is_empty()),
+        merged_at: detail.merged_at.clone().filter(|m| !m.is_empty()),
         checks_state: detail.checks_state.map(|c| {
             match c {
                 PrChecksState::Passing => "passing",
@@ -1248,9 +1249,13 @@ mod fake {
         mergeability: Option<String>,
         #[serde(default)]
         viewer: Option<String>,
-        /// The host's last update time; a merge or close is dated by it.
+        /// The host's last update time; a close is dated by it, and a merge
+        /// too when `mergedAt` is left out.
         #[serde(default)]
         updated_at: Option<String>,
+        /// When it merged; a merge is dated by it.
+        #[serde(default)]
+        merged_at: Option<String>,
         #[serde(default)]
         checks: Vec<FakeCheck>,
         #[serde(default)]
@@ -1381,6 +1386,7 @@ mod fake {
                     base_branch: pr.base_branch,
                     is_draft: false,
                     updated_at: pr.updated_at.unwrap_or_default(),
+                    merged_at: pr.merged_at,
                     checks_state,
                     review_decision: None,
                     head_sha: pr.head_sha,

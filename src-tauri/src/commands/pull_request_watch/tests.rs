@@ -623,12 +623,94 @@ fn linked(number: u32, linked_at: &str, state: Option<(&str, &str)>) -> PullRequ
         base_branch: "main".into(),
         is_draft: false,
         updated_at: Some(updated.into()),
+        merged_at: None,
         checks_state: None,
         review_decision: None,
         comment_count: None,
         synced_at: Utc::now(),
     });
     link
+}
+
+fn merged_at(mut link: PullRequestLink, merged: &str) -> PullRequestLink {
+    if let Some(s) = link.snapshot.as_mut() {
+        s.merged_at = Some(merged.into());
+    }
+    link
+}
+
+#[test]
+fn a_merge_is_dated_by_its_merge_time_not_a_later_update() {
+    // Merged before the user spoke again, then touched after (a label, a
+    // branch deleted): the merge time says it does not settle.
+    let mut thread = session("2026-10-02T12:00:00Z");
+    thread.pull_requests = vec![merged_at(
+        linked(
+            1,
+            "2026-10-02T09:00:00Z",
+            Some(("merged", "2026-10-02T13:00:00Z")),
+        ),
+        "2026-10-02T11:00:00Z",
+    )];
+    assert!(!settles(&thread, true));
+
+    // Merged after the user's last word, whatever the update time says.
+    let mut thread = session("2026-10-02T10:00:00Z");
+    thread.pull_requests = vec![merged_at(
+        linked(
+            1,
+            "2026-10-02T09:00:00Z",
+            Some(("merged", "2026-10-02T13:00:00Z")),
+        ),
+        "2026-10-02T11:00:00Z",
+    )];
+    assert!(settles(&thread, true));
+}
+
+#[test]
+fn a_watch_read_keeps_the_merge_time_on_the_snapshot() {
+    let read = WatchedPr {
+        state: PrState::Merged,
+        title: "t".into(),
+        head_branch: "f".into(),
+        base_branch: "main".into(),
+        is_draft: false,
+        updated_at: "2026-10-02T13:00:00Z".into(),
+        merged_at: Some("2026-10-02T11:00:00Z".into()),
+        checks_state: None,
+        review_decision: None,
+        head_sha: None,
+        checks: vec![],
+        mergeability: PrMergeability::Unknown,
+        viewer: None,
+        author: None,
+    };
+    let snapshot = snapshot_of_detail(&read, None);
+    assert_eq!(snapshot.merged_at.as_deref(), Some("2026-10-02T11:00:00Z"));
+    assert_eq!(snapshot.done_at(), Some("2026-10-02T11:00:00Z"));
+
+    let open = WatchedPr {
+        state: PrState::Open,
+        merged_at: None,
+        ..read
+    };
+    assert_eq!(snapshot_of_detail(&open, None).merged_at, None);
+}
+
+#[test]
+fn a_merge_time_before_the_link_means_the_link_records_finished_work() {
+    // Linked at 10:00, merged at 09:00, updated at 11:00: by the update time
+    // it would look merged after linking and settle the session.
+    let mut thread = session("2026-10-02T08:00:00Z");
+    thread.pull_requests = vec![merged_at(
+        linked(
+            1,
+            "2026-10-02T10:00:00Z",
+            Some(("merged", "2026-10-02T11:00:00Z")),
+        ),
+        "2026-10-02T09:00:00Z",
+    )];
+    assert!(!settles(&thread, true));
 }
 
 #[test]

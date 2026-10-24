@@ -2,11 +2,11 @@ use serde::Serialize;
 use std::fs;
 use std::path::{Component, Path};
 
-/// `#[tauri::command]` handlers WITHOUT `async` run on the NSApp main thread.
-/// Any meaningful file I/O there freezes the whole app (beachball). Every
-/// command in this module therefore declares `async fn` + dispatches its
-/// blocking work through `tokio::task::spawn_blocking`, which puts the syscall
-/// on tokio's blocking worker pool and leaves the main thread responsive.
+// `#[tauri::command]` handlers WITHOUT `async` run on the NSApp main thread.
+// Any meaningful file I/O there freezes the whole app (beachball). Every
+// command in this module therefore declares `async fn` + dispatches its
+// blocking work through `tokio::task::spawn_blocking`, which puts the syscall
+// on tokio's blocking worker pool and leaves the main thread responsive.
 
 /// The error a `read_file_content` over its `max_bytes` returns: this prefix,
 /// then the file's size in bytes. The frontend matches on it to show "too

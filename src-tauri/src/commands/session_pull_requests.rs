@@ -165,6 +165,9 @@ pub struct PullRequestSnapshotWire {
     pub base_branch: String,
     pub is_draft: bool,
     pub updated_at: Option<String>,
+    /// When it merged; `None` while it is not merged, or when the snapshot
+    /// predates the merge time being kept.
+    pub merged_at: Option<String>,
     /// `passing`, `failing` or `pending`.
     pub checks_state: Option<String>,
     /// `approved`, `changes-requested` or `review-required`.
@@ -189,6 +192,7 @@ impl From<&PullRequestLink> for PullRequestLinkWire {
                 base_branch: s.base_branch.clone(),
                 is_draft: s.is_draft,
                 updated_at: s.updated_at.clone(),
+                merged_at: s.merged_at.clone(),
                 checks_state: s.checks_state.clone(),
                 review_decision: s.review_decision.clone(),
                 comment_count: s.comment_count,
@@ -458,6 +462,7 @@ pub fn record_created(
         base_branch: base_branch.unwrap_or_default().to_string(),
         is_draft,
         updated_at: Some(now.to_rfc3339()),
+        merged_at: None,
         checks_state: None,
         review_decision: None,
         comment_count: Some(0),
@@ -931,6 +936,7 @@ pub fn snapshot_of(entry: &PrListEntry, synced_at: DateTime<Utc>) -> PullRequest
         base_branch: entry.base_branch.clone(),
         is_draft: entry.is_draft,
         updated_at: Some(entry.updated_at.clone()).filter(|u| !u.is_empty()),
+        merged_at: entry.merged_at.clone().filter(|m| !m.is_empty()),
         checks_state: entry.checks_state.map(|c| checks_word(c).to_string()),
         review_decision: entry.review_decision.map(|r| review_word(r).to_string()),
         comment_count: Some(entry.comment_count),
@@ -1296,6 +1302,7 @@ mod tests {
             deletions: 1,
             created_at: "2026-10-01T00:00:00Z".into(),
             updated_at: updated_at.into(),
+            merged_at: None,
             viewer_review_requested: false,
             labels: vec![],
             review_decision: Some(PrReviewDecision::Approved),
@@ -1320,6 +1327,7 @@ mod tests {
             base_branch: base.into(),
             is_draft: false,
             updated_at: None,
+            merged_at: None,
             checks_state: Some("passing".into()),
             review_decision: None,
             comment_count: None,
@@ -1514,6 +1522,15 @@ mod tests {
         assert_eq!(s.checks_state.as_deref(), Some("failing"));
         assert_eq!(s.review_decision.as_deref(), Some("approved"));
         assert_eq!(s.comment_count, Some(3));
+        assert_eq!(s.merged_at, None);
+
+        let merged = PrListEntry {
+            merged_at: Some("2026-10-10T08:00:00Z".into()),
+            ..entry(PrState::Merged, "2026-10-11T00:00:00Z")
+        };
+        let s = snapshot_of(&merged, Utc::now());
+        assert_eq!(s.merged_at.as_deref(), Some("2026-10-10T08:00:00Z"));
+        assert_eq!(s.done_at(), Some("2026-10-10T08:00:00Z"));
     }
 
     #[test]

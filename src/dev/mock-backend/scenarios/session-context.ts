@@ -49,6 +49,7 @@ function pr(
     deletions: 12,
     createdAt: hoursAgo(updatedHoursAgo + 20),
     updatedAt: hoursAgo(updatedHoursAgo),
+    mergedAt: state === "merged" ? hoursAgo(updatedHoursAgo) : null,
     viewerReviewRequested: false,
     labels: [],
     reviewDecision: null,

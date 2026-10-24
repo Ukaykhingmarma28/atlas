@@ -298,6 +298,8 @@ export interface PrListEntry {
   deletions: number;
   createdAt: string;
   updatedAt: string;
+  /** When it merged; `null` (or absent) while it is not merged. */
+  mergedAt?: string | null;
   viewerReviewRequested: boolean;
   labels: PrLabel[];
   reviewDecision: PrReviewDecision | null;
