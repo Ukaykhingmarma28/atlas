@@ -3,7 +3,12 @@
 //
 //   Enter          send when `enterToSend`, else a newline that continues a
 //                  list (`- `, `* `, `1. `, `- [ ] `) or a quote (`> `).
-//   Shift+Enter    a plain newline.
+//   Shift+Enter    a newline that continues a list or quote too — with
+//   Ctrl+J         `enterToSend` it is the only newline there is, and a list
+//                  the user has to re-mark on every line is no list. An
+//                  empty item ends the list, as on Enter. Ctrl+J is the
+//                  terminal's newline, beside the Ctrl+A / Ctrl+E that macOS
+//                  gives every text field.
 //   ⌘/Ctrl+Enter   send, always.
 //   Backspace      right after a list or quote marker, removes the marker.
 //   Tab / ⇧Tab     indent / outdent a list line by two spaces; elsewhere the
@@ -318,7 +323,8 @@ export const ComposerKeymap = Extension.create<ComposerKeymapOptions>({
         }
         return newline(this.editor, true);
       }),
-      "Shift-Enter": guard(() => newline(this.editor, false)),
+      "Shift-Enter": guard(() => newline(this.editor, true)),
+      "Ctrl-j": guard(() => newline(this.editor, true)),
       "Mod-Enter": guard(() => {
         this.options.onSubmit();
         return true;

@@ -143,24 +143,9 @@ const slashCommandPickerPromise: Promise<typeof import("./slash-command-picker")
 // queue" hand back a stable reference instead of allocating per render.
 const EMPTY_QUEUE: readonly string[] = Object.freeze([]);
 
-/** Read an image `File` (clipboard paste) into a base64 attachment. Returns
- *  null for non-images. The `data:` URI prefix is stripped — the wire shape
- *  carries raw base64 + mime separately. */
-async function fileToImageAttachment(file: File): Promise<ImageAttachment | null> {
-  if (!file.type.startsWith("image/")) return null;
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  }).catch(() => null);
-  if (!dataUrl) return null;
-  const comma = dataUrl.indexOf(",");
-  return downscaleAttachment({
-    mimeType: file.type,
-    dataBase64: comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl,
-  });
-}
+/** A staged image: the wire attachment, plus the file it is, which joins it
+ *  to its chip in the prompt (`attachPaths`). */
+type StagedImage = ImageAttachment & { path: string };
 
 /**
  * Shrink an attachment that would not fit the gateway's body cap (D15c).
@@ -1109,11 +1094,12 @@ export function MessageInput({
   );
 
   // ── File chips ──────────────────────────────────────────────────────────
-  // A path the agent reads off disk. `attachPaths` (below) decides between
-  // this and an inline image; only that and the screenshot fallback call it.
+  // A path the agent reads off disk, as a chip at the caret. Every file with
+  // a path arrives through `attachPaths` (below), which calls this for all of
+  // them; an image gets a thumbnail above the field as well.
   const composerRef = useRef<HTMLDivElement>(null);
   const insertFileChips = useCallback(
-    (paths: string[]) => {
+    (paths: string[], sizes?: ReadonlyMap<string, number>) => {
       const root = projectPath && !projectPath.endsWith("/") ? `${projectPath}/` : projectPath;
       for (const abs of paths) {
         // Relative-to-project display name when the file lives inside the
@@ -1126,7 +1112,7 @@ export function MessageInput({
           displayName,
           absPath: abs,
         };
-        inputRef.current?.insertMention(mention);
+        inputRef.current?.insertMention(mention, { sizeBytes: sizes?.get(abs) });
       }
       requestAnimationFrame(() => inputRef.current?.focus());
     },
@@ -1137,11 +1123,21 @@ export function MessageInput({
   // Only populated when the bound agent advertised promptCapabilities.image;
   // otherwise picked images degrade to path mention chips (any agent can
   // read those off disk).
-  const [stagedImages, setStagedImages] = useState<ImageAttachment[]>([]);
-  const removeStagedImage = useCallback(
-    (index: number) => setStagedImages((prev) => prev.filter((_, j) => j !== index)),
-    [],
-  );
+  //
+  // A staged image is also a chip in the prompt — the thumbnail is the
+  // preview, the chip is the reference in the sentence — and the two are one
+  // attachment, joined by `path`: the thumbnail's ✕ takes the chip out, and
+  // deleting the chip drops the thumbnail (`handleDocChange`). The agent gets
+  // both the inline bytes (downscaled if over budget) and the path, which it
+  // can open at full size.
+  const [stagedImages, setStagedImages] = useState<StagedImage[]>([]);
+  const stagedRef = useRef(stagedImages);
+  stagedRef.current = stagedImages;
+  const removeStagedImage = useCallback((index: number) => {
+    const path = stagedRef.current[index]?.path;
+    if (path) inputRef.current?.removeMention("file", path);
+    setStagedImages((prev) => prev.filter((_, j) => j !== index));
+  }, []);
   // Non-null (the repo's full_name) while a GitHub repo is cloning into
   // `.atlas/repos`. The composer is locked for the duration so the user can't
   // send a prompt that references a half-synced repo.
@@ -1198,31 +1194,38 @@ export function MessageInput({
   }, [stagedOverAggregateBudget]);
 
   // ── Attaching files by path ──────────────────────────────────────────────
-  // The one routing rule for every way a file with a path arrives — dropped
-  // from Finder, picked in the "+" menu, copied in Finder and pasted: images
-  // become inline base64 attachments when the agent supports them; everything
-  // else — and any image that won't read — becomes a path chip. A drop used to
-  // skip the image branch, so a dropped screenshot reached the agent as a path
-  // it might never open, while the same image pasted arrived inline.
+  // The one routing rule for every way a file arrives — dropped from Finder,
+  // picked in the "+" menu, copied in Finder and pasted, a pasted screenshot
+  // (spooled to a file first, `handlePasteImages`), the screenshot tool:
+  // every file becomes a chip at the caret, and an image the agent can take
+  // is staged inline as well, with a thumbnail above the field. One routing
+  // for all of them, because the ways used to disagree: a paste staged a
+  // thumbnail and left nothing in the sentence, so "look at [this]" had no
+  // "this" in it; a drop made a chip and no thumbnail; and before that a
+  // dropped screenshot reached the agent as a path it might never open while
+  // the same image pasted arrived inline.
   const attachPaths = useCallback(
     async (paths: string[]) => {
-      const images: ImageAttachment[] = [];
-      const chipPaths: string[] = [];
+      const images: StagedImage[] = [];
+      const sizes = new Map<string, number>();
       for (const p of paths) {
         const mime = imageSupported ? imageMimeFromPath(p) : null;
-        if (mime) {
-          try {
-            const data = await invoke<string>("read_file_base64", { path: p });
-            images.push(await downscaleAttachment({ mimeType: mime, dataBase64: data }));
-            continue;
-          } catch {
-            // Unreadable as base64 → fall through to a path chip.
-          }
+        if (!mime) continue;
+        try {
+          const data = await invoke<string>("read_file_base64", { path: p });
+          // The file's size, from the base64 it came as (the padding makes
+          // this at most two bytes over).
+          sizes.set(p, Math.floor((data.length * 3) / 4));
+          images.push({
+            ...(await downscaleAttachment({ mimeType: mime, dataBase64: data })),
+            path: p,
+          });
+        } catch {
+          // Unreadable as base64: the chip alone, as for any other file.
         }
-        chipPaths.push(p);
       }
       if (images.length) setStagedImages((prev) => [...prev, ...images]);
-      if (chipPaths.length) insertFileChips(chipPaths);
+      insertFileChips(paths, sizes);
       requestAnimationFrame(() => inputRef.current?.focus());
     },
     [imageSupported, insertFileChips],
@@ -1234,18 +1237,11 @@ export function MessageInput({
   // seemingly at random. Each split pane has its own column, so a drop still
   // lands in the pane under the cursor. Outside a chat panel, the composer.
   //
-  // A drop ALWAYS becomes an inline `@file` chip at the caret — it does not go
-  // through `attachPaths`, and an image is no exception. Dragging a file into
-  // the conversation is a pointing gesture: "this one, here, in the sentence I
-  // am writing". Routing a dropped image to the thumbnail strip above the
-  // field answered a question the user had not asked — it detached the file
-  // from the place they aimed it, and left the prompt with no reference to it
-  // at all, so the sentence read "look at this" with no "this" in it. The
-  // explicit attach gestures ("+" ▸ Add files / Attach media, and paste) still
-  // route through `attachPaths`, where a thumbnail IS the thing being asked
-  // for. The chip carries the absolute path, which rides to the agent as an
-  // ACP `ResourceLink` (`compose_prompt`) — every agent reads those, and a
-  // vision agent opens the image itself.
+  // A drop is a pointing gesture — "this one, here, in the sentence I am
+  // writing" — and `attachPaths` keeps that: the chip lands at the caret, and
+  // the thumbnail is on top of it, not instead of it. The chip carries the
+  // absolute path, which rides to the agent as an ACP `ResourceLink`
+  // (`compose_prompt`) — every agent reads those.
   const dropZoneRef = useRef<HTMLElement | null>(null);
   const [dropZoneEl, setDropZoneEl] = useState<HTMLElement | null>(null);
   useLayoutEffect(() => {
@@ -1254,7 +1250,7 @@ export function MessageInput({
     dropZoneRef.current = zone;
     setDropZoneEl(zone);
   }, []);
-  const onDropFiles = useCallback((paths: string[]) => insertFileChips(paths), [insertFileChips]);
+  const onDropFiles = useCallback((paths: string[]) => void attachPaths(paths), [attachPaths]);
   const { isDropTarget } = useComposerFileDrop({
     targetRef: dropZoneRef,
     enabled: !disabled,
@@ -1326,8 +1322,7 @@ export function MessageInput({
 
   // "+" menu → "Take a screenshot". Shells out to the native macOS
   // `screencapture` CLI (region selection or whole desktop), then attaches the
-  // PNG — inline (multimodal) when the agent supports images, else as an @file
-  // chip pointing at the saved `.atlas/screenshots/…` path.
+  // saved `.atlas/screenshots/…` PNG like any other file (`attachPaths`).
   const handleTakeScreenshot = useCallback(
     async (mode: "region" | "full") => {
       try {
@@ -1335,29 +1330,17 @@ export function MessageInput({
         // in a whole-desktop capture.
         await new Promise((r) => setTimeout(r, 250));
         const proj = useAppStore.getState().currentProject?.path ?? null;
-        const res = await invoke<{
-          path: string;
-          mimeType: string;
-          dataBase64: string;
-        } | null>("capture_screenshot", { mode, projectPath: proj });
+        const res = await invoke<{ path: string } | null>("capture_screenshot", {
+          mode,
+          projectPath: proj,
+        });
         if (!res) return; // cancelled (Esc during region select)
-        if (imageSupported) {
-          // Shrunk before it is staged, not inside the updater — the state
-          // callback is synchronous and cannot await.
-          const shrunk = await downscaleAttachment({
-            mimeType: res.mimeType,
-            dataBase64: res.dataBase64,
-          });
-          setStagedImages((prev) => [...prev, shrunk]);
-        } else {
-          insertFileChips([res.path]);
-        }
-        requestAnimationFrame(() => inputRef.current?.focus());
+        await attachPaths([res.path]);
       } catch (err) {
         toast.error(`Screenshot failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
-    [imageSupported, insertFileChips],
+    [attachPaths],
   );
 
   // "+" menu → "Add from GitHub". Shorthand for the GitHub panel's search+clone:
@@ -1427,32 +1410,39 @@ export function MessageInput({
     [tabId],
   );
 
-  // Clipboard images (screenshots) → staged attachments. Returning false
-  // lets chat-input's default file-paste (native pasteboard → quoted paths)
-  // handle everything else.
-  // A pasted screenshot is bytes with no path. Inline when the agent takes
-  // images; otherwise spooled to a scratch file and attached as a path chip,
-  // like the screenshot tool does — declining it left the paste to a handler
-  // that only knows Finder paths, and the image vanished without a word.
+  // Clipboard images (screenshots). A pasted screenshot is bytes with no
+  // path, so it is spooled to a scratch file first and then attached like
+  // every other file (`attachPaths`): a chip in the sentence, and a thumbnail
+  // when the agent takes images. Taking the paste either way matters —
+  // declining it left the paste to a handler that only knows Finder paths,
+  // and the image vanished without a word.
   const handlePasteImages = useCallback(
     (files: File[]) => {
-      if (imageSupported) {
-        void Promise.all(files.map(fileToImageAttachment)).then((atts) => {
-          const ok = atts.filter((a): a is ImageAttachment => a !== null);
-          if (ok.length) setStagedImages((prev) => [...prev, ...ok]);
-        });
-        return true;
-      }
       void Promise.all(files.map(scratchPathForFile))
-        .then(insertFileChips)
+        .then(attachPaths)
         .catch((err) => {
           console.warn("image paste failed:", err);
           toast.error("Could not attach the pasted image.");
         });
       return true;
     },
-    [imageSupported, insertFileChips],
+    [attachPaths],
   );
+
+  // The draft mirror's doc listener, plus pruning: a chip the user deleted
+  // (Backspace, ⌘Z, a cleared draft) takes its thumbnail with it. Checked
+  // only while an image is staged, so the common keystroke pays nothing.
+  const { onDocChange: mirrorDraft } = draft;
+  const handleDocChange = useCallback(() => {
+    mirrorDraft();
+    if (!stagedRef.current.some((img) => img.path)) return;
+    const input = inputRef.current;
+    if (!input) return;
+    setStagedImages((prev) => {
+      const next = prev.filter((img) => !img.path || input.hasMention("file", img.path));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [mirrorDraft]);
 
   // A paste over the large-paste limit (`isLargePaste`: ~4,000 characters or
   // 80 lines) — a log, a stack dump, a whole file — becomes a chip holding
@@ -1826,7 +1816,8 @@ export function MessageInput({
       forgetSentTexts(mentions);
     } else {
       if (modeUnrestored || heldForTerminal) return;
-      const images = stagedImages;
+      // The wire shape is mime + bytes; the path stays with the composer.
+      const images = stagedImages.map(({ path: _path, ...img }) => img);
       onSend(trimmed, mentions, images.length ? images : undefined);
       forgetSentTexts(mentions);
       if (images.length) setStagedImages([]);
@@ -2059,7 +2050,7 @@ export function MessageInput({
                     placeholder={effectivePlaceholder}
                     projectPath={projectPath}
                     onEmptyChange={onEmptyChange}
-                    onDocChange={draft.onDocChange}
+                    onDocChange={handleDocChange}
                     onSubmit={submit}
                     enterToSend={enterToSend}
                     onMentionTrigger={setTrigger}

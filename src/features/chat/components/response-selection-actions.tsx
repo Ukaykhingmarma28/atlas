@@ -11,22 +11,30 @@ import {
   useCommentBucket,
   useCommentDirectory,
 } from "../stores/chat-comments-store";
-import { actionPosition, responseAt, selectedResponse } from "../lib/response-selection";
+import { actionPosition, selectedResponse } from "../lib/response-selection";
 
 /** One pill for both actions — the CommentButton takes it as its className,
- *  so its height, padding and radius cannot drift from Cite's. */
+ *  so its height, padding and radius cannot drift from Cite's. The design
+ *  system's pill: control-xs tall, 2xs type, secondary ink that comes up to
+ *  the foreground on hover, a 12px glyph. */
 const PILL_BUTTON =
-  "flex h-6 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] [&_svg]:shrink-0";
+  "flex h-control-xs shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2 text-2xs font-medium text-secondary-foreground transition-colors hover:bg-accent hover:text-foreground [&_svg]:size-3 [&_svg]:shrink-0";
 
 interface Target {
   response: HTMLElement;
   messageId: string;
-  text: string | null;
+  /** The selection, as selected. */
+  text: string;
   anchor: { x: number; top: number; bottom: number };
 }
 
 /** One delegated controller per visible transcript, rather than document
- * listeners or pointer-driven React renders on every response row. */
+ * listeners or pointer-driven React renders on every response row.
+ *
+ * The pill answers a selection and nothing else. It used to follow the
+ * pointer over prose as well, offering a whole-reply Comment beside wherever
+ * the reader hovered; that read as chrome chasing the cursor, and the reply's
+ * footer already carries the whole-reply Comment. */
 export function ResponseSelectionActions({
   viewportRef,
   tabId,
@@ -101,40 +109,6 @@ export function ResponseSelectionActions({
       dismissed = false;
       schedule();
     };
-    const move = (event: PointerEvent) => {
-      if (
-        event.pointerType === "touch" ||
-        event.buttons ||
-        openRef.current ||
-        (targetRef.current?.text !== null && targetRef.current?.text !== undefined)
-      )
-        return;
-      if (toolbarRef.current?.contains(event.target as Node)) return;
-      const response = responseAt(event.target as Node, viewport);
-      if (!response) {
-        setTarget(null);
-        return;
-      }
-      // A stationary button is easier to hit than one chasing every pointer
-      // pixel. Move it only after the reader moves to another line/response.
-      const prev = targetRef.current;
-      if (prev?.response === response && Math.abs(event.clientY - prev.anchor.top) < 32) return;
-      setTarget({
-        response,
-        messageId: response.dataset.agentResponse!,
-        text: null,
-        anchor: { x: event.clientX + 12, top: event.clientY, bottom: event.clientY + 4 },
-      });
-    };
-    const leave = (event: PointerEvent) => {
-      if (toolbarRef.current?.contains(event.relatedTarget as Node)) return;
-      if (
-        !targetRef.current?.text &&
-        !openRef.current &&
-        !toolbarRef.current?.contains(document.activeElement)
-      )
-        setTarget(null);
-    };
     const focus = (event: FocusEvent) => {
       if (!openRef.current && !toolbarRef.current?.contains(event.target as Node)) dismiss();
     };
@@ -158,7 +132,7 @@ export function ResponseSelectionActions({
       } else if (
         event.key === "Tab" &&
         !event.shiftKey &&
-        targetRef.current?.text &&
+        targetRef.current &&
         !toolbarRef.current?.contains(document.activeElement)
       ) {
         event.preventDefault();
@@ -197,8 +171,6 @@ export function ResponseSelectionActions({
     document.addEventListener("pointerdown", pointerDown);
     document.addEventListener("focusin", focus);
     document.addEventListener("keydown", key);
-    viewport.addEventListener("pointermove", move);
-    viewport.addEventListener("pointerleave", leave);
     viewport.addEventListener("scroll", layoutDismiss, true);
     window.addEventListener("resize", layoutDismiss);
     window.addEventListener("blur", layoutDismiss);
@@ -212,8 +184,6 @@ export function ResponseSelectionActions({
       document.removeEventListener("pointerdown", pointerDown);
       document.removeEventListener("focusin", focus);
       document.removeEventListener("keydown", key);
-      viewport.removeEventListener("pointermove", move);
-      viewport.removeEventListener("pointerleave", leave);
       viewport.removeEventListener("scroll", layoutDismiss, true);
       window.removeEventListener("resize", layoutDismiss);
       window.removeEventListener("blur", layoutDismiss);
@@ -224,7 +194,7 @@ export function ResponseSelectionActions({
   if (!enabled || !target) return null;
   return (
     <SelectionToolbar
-      key={`${tabId}:${target.messageId}:${target.text ?? ""}`}
+      key={`${tabId}:${target.messageId}:${target.text}`}
       target={target}
       tabId={tabId}
       viewportRef={viewportRef}
@@ -232,14 +202,6 @@ export function ResponseSelectionActions({
       onOpenChange={(open) => {
         openRef.current = open;
         if (!open) setTarget(null);
-      }}
-      onPointerLeave={(event) => {
-        if (
-          !openRef.current &&
-          targetRef.current?.text === null &&
-          !viewportRef.current?.contains(event.relatedTarget as Node)
-        )
-          setTarget(null);
       }}
     />
   );
@@ -251,14 +213,12 @@ function SelectionToolbar({
   viewportRef,
   toolbarRef,
   onOpenChange,
-  onPointerLeave,
 }: {
   target: Target;
   tabId: string;
   viewportRef: React.RefObject<HTMLDivElement | null>;
   toolbarRef: React.RefObject<HTMLDivElement | null>;
   onOpenChange: (open: boolean) => void;
-  onPointerLeave: React.PointerEventHandler<HTMLDivElement>;
 }) {
   const hit = useAnchorHit(tabId, target.messageId);
   const comments = useCommentBucket(tabId, target.messageId);
@@ -299,25 +259,22 @@ function SelectionToolbar({
       ),
     );
   }, [target, viewportRef, toolbarRef, canComment]);
-  if (!target.text && !canComment) return null;
   return (
     <div
       ref={toolbarRef}
       role="group"
-      aria-label={target.text ? "Selected response actions" : "Response actions"}
-      // The house floating pill: the background fill under the menu-rung
-      // shadow and the inset top highlight. Fully round, and the two buttons
+      aria-label="Selected response actions"
+      // The design system's floating pill: a card surface on a hairline
+      // border, the menu-rung shadow for lift, fully round. The two buttons
       // inside are the same round pill at the same height with the same 12px
-      // icon, so neither reads as the odd one out.
+      // glyph, so neither reads as the odd one out.
       className={cn(
-        "absolute z-popover flex max-w-full items-center gap-0.5 rounded-full p-1",
+        "absolute z-popover flex max-w-full items-center gap-0.5 rounded-full p-0.5",
         // Opaque, no blur: a live backdrop blur under a pill that follows the
         // selection repaints on every move, and the surface reads fine solid.
-        "border border-[var(--atlas-element-active)] bg-[var(--background)]",
-        "inset-highlight shadow-md text-foreground atlas-pill-in",
+        "border border-border bg-card shadow-md text-foreground atlas-pill-in",
       )}
       style={position}
-      onPointerLeave={onPointerLeave}
       // Keep the selection while the pill is pressed. Only the pill's own
       // DOM: React bubbles a portalled popover's events through here too, and
       // preventing those would stop a click placing the caret in its field.
@@ -325,7 +282,7 @@ function SelectionToolbar({
         if (event.currentTarget.contains(event.target as Node)) event.preventDefault();
       }}
     >
-      {target.text !== null && (
+      {
         <Popover open={citing} onOpenChange={changeCiting}>
           {/* The bare trigger wearing the pill's button, as `CommentButton`
               does, so Cite and Comment stay one shape. */}
@@ -351,7 +308,7 @@ function SelectionToolbar({
             </PopoverContent>
           )}
         </Popover>
-      )}
+      }
       {/* A shared session keeps Comment beside Cite: it is also the reply's
           thread (read, reply, resolve), and the way to comment on a passage
           without pointing the agent at it. An unshared session has nothing to
@@ -366,7 +323,7 @@ function SelectionToolbar({
           comments={comments}
           actions={actions!}
           directory={directory!}
-          selectedText={target.text ?? undefined}
+          selectedText={target.text}
           onOpenChange={onOpenChange}
           collisionBoundary={viewportRef.current ?? undefined}
         />

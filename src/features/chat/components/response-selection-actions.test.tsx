@@ -212,18 +212,13 @@ describe("selected response actions", () => {
     expect(screen.queryByRole("group", { name: "Selected response actions" })).toBeNull();
   });
 
-  it("offers whole-message Comment near hovered prose without adding an excerpt", async () => {
+  it("shows nothing for a pointer over prose — only a selection brings the pill", async () => {
     render(<Harness />);
     fireEvent.pointerMove(screen.getByTestId("prose"), { clientX: 100, clientY: 200 });
-    const toolbar = await screen.findByRole("group", { name: "Response actions" });
-    expect(within(toolbar).queryByRole("button", { name: "Cite" })).toBeNull();
-    fireEvent.click(within(toolbar).getByRole("button", { name: "Comment" }));
-    const composer = await screen.findByPlaceholderText("Start a discussion");
-    fireEvent.change(composer, { target: { value: "Whole response" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send comment" }));
-    await waitFor(() =>
-      expect(state.post).toHaveBeenCalledWith("message", "cloud-response", "Whole response", null),
-    );
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+    expect(screen.queryByRole("group")).toBeNull();
   });
 
   it("removes selection actions when the panel is hidden or the response disappears", async () => {

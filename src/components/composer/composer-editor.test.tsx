@@ -83,11 +83,13 @@ const KEY_CODES: Record<string, number> = {
   ArrowDown: 40,
   "[": 219,
   "]": 221,
+  j: 74,
   k: 75,
   K: 75,
 };
 
-/** Press `Mod-Shift-Alt-key`-style chords on the editor, as a real keydown. */
+/** Press `Mod-Shift-Alt-key`-style chords on the editor, as a real keydown.
+ *  `Ctrl` is the Control key itself (`Mod` is ⌘ on a Mac). */
 function press(dom: HTMLElement, chord: string) {
   const parts = chord.split("-");
   const key = parts.pop()!;
@@ -100,7 +102,7 @@ function press(dom: HTMLElement, chord: string) {
     shiftKey: shift,
     altKey: mods.has("Alt"),
     metaKey: mods.has("Mod") && MAC,
-    ctrlKey: mods.has("Mod") && !MAC,
+    ctrlKey: mods.has("Ctrl") || (mods.has("Mod") && !MAC),
   });
   Object.defineProperty(event, "keyCode", { value: KEY_CODES[key] ?? 0 });
   act(() => {
@@ -158,6 +160,25 @@ describe("markdown lists", () => {
     const { dom, value } = composer("```\ncode\n```\n- item|");
     press(dom, "Enter");
     expect(value()).toBe("```\ncode\n```\n- item\n- ");
+  });
+
+  // With Enter sending, Shift+Enter and Ctrl+J are the only newlines, so
+  // they carry the marker too; typing `- ` on every line is not a list.
+  it("Shift+Enter continues a list and ends it on an empty item", () => {
+    const { dom, value } = composer("- item|");
+    press(dom, "Shift-Enter");
+    expect(value()).toBe("- item\n- ");
+    press(dom, "Shift-Enter");
+    expect(value()).toBe("- item\n");
+  });
+
+  it("Ctrl+J is a newline that continues a list, like Shift+Enter", () => {
+    const { dom, value } = composer("1. a|\n2. b");
+    press(dom, "Ctrl-j");
+    expect(value()).toBe("1. a\n2. \n3. b");
+    const plain = composer("plain|");
+    press(plain.dom, "Ctrl-j");
+    expect(plain.value()).toBe("plain\n");
   });
 });
 

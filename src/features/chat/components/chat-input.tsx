@@ -65,10 +65,13 @@ export interface ChatInputHandle {
   /** The mentions in the prompt, in reading order. */
   getMentions(): MentionData[];
   /** Insert a mention chip. With `from`/`to`, that range is replaced (a
-   *  picker swallowing the `@query` the user typed). */
-  insertMention(m: MentionData, opts?: InsertChipOptions): void;
+   *  picker swallowing the `@query` the user typed). `sizeBytes` is shown on
+   *  a file chip and stays in the chip. */
+  insertMention(m: MentionData, opts?: InsertChipOptions & { sizeBytes?: number }): void;
   /** Take out every chip of `kind` with `id`; false when there was none. */
   removeMention(kind: MentionKind, id: string): boolean;
+  /** Whether a chip of `kind` with `id` is in the prompt. */
+  hasMention(kind: MentionKind, id: string): boolean;
   /** Replace a range with text, caret after it. */
   replaceRange(from: number, to: number, text: string): void;
   /** Insert text at the caret, as a paste would. */
@@ -172,9 +175,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
         // Remembered so its short form becomes this chip again when the text
         // comes back (a draft restore, a paste of the composer's own text).
         // Every insert is the user's pick or drop, so the chip is `picked`.
-        const chip = pickedChip(m);
+        const chip = pickedChip(m, opts?.sizeBytes);
         rememberMention(chip, projectRef.current);
         inner.current?.insertChip(SESSION_MENTION, chip, opts);
+      },
+      hasMention: (kind, id) => {
+        const editor = inner.current?.editor();
+        if (!editor) return false;
+        return docChips(editor.state.doc, SESSION_MENTION).some((n) => {
+          const data = n.attrs.data as SessionChipRecord;
+          return data.kind === kind && data.id === id;
+        });
       },
       removeMention: (kind, id) => {
         const editor = inner.current?.editor();

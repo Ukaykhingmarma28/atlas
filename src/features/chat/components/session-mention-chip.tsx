@@ -40,6 +40,7 @@ import {
   createChipNode,
   type ComposerChipViewProps,
 } from "@/components/composer/composer-chip";
+import { formatBytes } from "@/lib/format-bytes";
 import { SESSION_MENTION } from "../lib/composer-short-forms";
 import { toShortForm, type MentionData } from "../lib/mentions";
 import { markPicked } from "../lib/picked-mentions";
@@ -48,19 +49,22 @@ import { useAttachedProject } from "../stores/session-projects-store";
 
 /**
  * What a session chip node carries: the mention, plus whether it came from
- * the picker or a drop. The flag never leaves the composer: `mentionOf`
- * strips it before the mention goes anywhere.
+ * the picker or a drop, and for a file whose size is known (an attached
+ * image), that size. Neither leaves the composer: `mentionOf` strips them
+ * before the mention goes anywhere.
  */
-export type SessionChipRecord = MentionData & { picked?: true };
+export type SessionChipRecord = MentionData & { picked?: true; sizeBytes?: number };
 
 /** A mention the user picked or dropped, as the chip records it. */
-export function pickedChip(mention: MentionData): SessionChipRecord {
-  return { ...mention, picked: true };
+export function pickedChip(mention: MentionData, sizeBytes?: number): SessionChipRecord {
+  return sizeBytes === undefined
+    ? { ...mention, picked: true }
+    : { ...mention, picked: true, sizeBytes };
 }
 
-/** The mention a chip stands for, without the composer's own flag. */
+/** The mention a chip stands for, without the composer's own fields. */
 export function mentionOf(record: SessionChipRecord): MentionData {
-  const { picked, ...mention } = record;
+  const { picked, sizeBytes: _size, ...mention } = record;
   // The flag stays out of the mention, but the send still needs to know
   // which outside paths the user picked (`picked-mentions.ts`).
   if (picked) markPicked(mention as MentionData);
@@ -95,6 +99,12 @@ function SessionMentionChip({
       onMouseLeave={preview.onLeave}
     >
       {preview.card}
+      {/* An attached image says how big it is, beside its name. */}
+      {mention.sizeBytes !== undefined && (
+        <span className="text-2xs tabular-nums text-muted-foreground">
+          {formatBytes(mention.sizeBytes)}
+        </span>
+      )}
       {(mention.kind === "workspace" || mention.kind === "repo") && (
         <ProjectAccessToggle path={mention.absPath} name={mention.displayName} />
       )}
