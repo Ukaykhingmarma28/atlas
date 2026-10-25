@@ -227,6 +227,15 @@ export const ACTIONS = [
     defaults: [],
   },
   {
+    // Opens the palette onto the project list, each row ⌘1–⌘9; with one
+    // project there is nothing to pick, and it is a new session there.
+    id: "tabs.newChatIn",
+    title: "New session in project…",
+    category: "Tabs",
+    when: "global",
+    defaults: ["cmd+shift+o"],
+  },
+  {
     id: "tabs.newTerminal",
     title: "New terminal tab",
     category: "Tabs",

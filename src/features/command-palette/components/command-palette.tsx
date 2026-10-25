@@ -10,7 +10,7 @@
 // The file mode is `file-search.tsx`. Opened from "Go to file", its Escape
 // returns here with the query it left; opened by ⌘P, Escape closes it.
 
-import { useMemo, useReducer, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useReducer, useRef, type ReactNode } from "react";
 import {
   ArrowLeft,
   ArrowLeftToLine,
@@ -81,15 +81,23 @@ import {
   buildRootGroups,
   commandPaletteEmptyMessage,
   createCommandPaletteSearchState,
+  enumerateCommandPaletteItems,
   filterCommandPaletteGroups,
   reduceCommandPaletteSearchState,
   type CommandPaletteActionItem,
   type CommandPaletteEntry,
   type CommandPaletteGroup,
+  type CommandPaletteInitialView,
   type CommandPaletteReturnContext,
   type CommandPaletteView,
 } from "../lib/command-palette-logic";
 import { buildSessionActionItems, usePaletteSessions } from "../lib/palette-sessions";
+import {
+  ADD_PROJECT_ENTRY,
+  ADD_PROJECT_VIEW,
+  NEW_PROJECT_VIEW,
+  useAddProjectFlow,
+} from "../lib/palette-add-project";
 import { usePaletteThemeItems } from "../lib/palette-theme-items";
 import {
   CommandEscapeContext,
@@ -130,7 +138,11 @@ export function CommandPalette() {
               escapeLabel={ui.parentSearch ? "Back" : "Close"}
             />
           ) : (
-            <OpenCommandPalette initialContext={ui.restoredSearch} onClose={() => setOpen(false)} />
+            <OpenCommandPalette
+              initialContext={ui.restoredSearch}
+              initialView={ui.initialView}
+              onClose={() => setOpen(false)}
+            />
           )}
         </CommandEscapeContext.Provider>
       </CommandDialogPopup>
@@ -180,6 +192,8 @@ function action(
 
 function OpenCommandPalette(props: {
   initialContext: CommandPaletteReturnContext | undefined;
+  /** A view to open straight onto (⌘⇧O's project list). */
+  initialView: CommandPaletteInitialView | undefined;
   onClose: () => void;
 }) {
   const { onClose } = props;
@@ -215,26 +229,30 @@ function OpenCommandPalette(props: {
   const popView = () => dispatchSearch({ type: "back" });
 
   // ── Projects ──────────────────────────────────────────────────────────────
-  const projectBadge = (name: string) => <ProjectBadge name={name} className="size-4" />;
-  const newSessionInItems: CommandPaletteActionItem[] = orgProjects.map((project) => ({
-    kind: "action",
-    value: `new-session-in:${project.id}`,
-    title: project.name,
-    description: project.path,
-    searchTerms: [project.name, project.path],
-    icon: projectBadge(project.name),
-    run: async () => {
-      await activateProject(project.path);
-      openNewAgentChat();
-    },
-  }));
+  const projectBadge = (name: string, path: string) => (
+    <ProjectBadge name={name} path={path} className="size-4" />
+  );
+  const newSessionInItems: CommandPaletteActionItem[] = enumerateCommandPaletteItems(
+    orgProjects.map((project) => ({
+      kind: "action",
+      value: `new-session-in:${project.id}`,
+      title: project.name,
+      description: project.path,
+      searchTerms: [project.name, project.path],
+      icon: projectBadge(project.name, project.path),
+      run: async () => {
+        await activateProject(project.path);
+        openNewAgentChat();
+      },
+    })),
+  );
   const projectSearchItems: CommandPaletteActionItem[] = orgProjects.map((project) => ({
     kind: "action",
     value: `project:${project.id}`,
     title: project.name,
     description: project.path,
     searchTerms: [project.name, project.path, "project"],
-    icon: projectBadge(project.name),
+    icon: projectBadge(project.name, project.path),
     run: () => activateProject(project.path),
   }));
   const recentProjectItems: CommandPaletteActionItem[] = recentsForOrg(
@@ -257,20 +275,6 @@ function OpenCommandPalette(props: {
     value: "new-session-in",
     placeholder: "Search projects…",
     groups: [{ value: "projects", label: "Projects", items: newSessionInItems }],
-  };
-  const addProjectView: CommandPaletteView = {
-    value: "add-project",
-    placeholder: "Search recent projects…",
-    groups: [
-      {
-        value: "add-project",
-        label: "Add project",
-        items: [
-          action("add-project:open-folder", "Open folder…", FolderOpen, () => pickAndAddProject()),
-        ],
-      },
-      { value: "recent-projects", label: "Recent", items: recentProjectItems },
-    ],
   };
 
   // ── Actions (the reference app's set, mapped onto Atlas) ──────────────────
@@ -330,19 +334,21 @@ function OpenCommandPalette(props: {
       "action:new-project",
       "New project",
       FolderGit2,
-      () => pickAndAddProject({ create: true }),
+      () => pushView({ value: NEW_PROJECT_VIEW, groups: [], placeholder: "Project name" }),
       {
-        searchTerms: ["create project", "new folder", "empty"],
+        searchTerms: ["create project", "new folder", "empty", "git init"],
+        keepOpen: true,
       },
     ),
     {
       kind: "submenu",
-      value: "action:add-project",
+      // The flow's own view id: its steps are built live by `useAddProjectFlow`.
+      value: ADD_PROJECT_VIEW,
       title: "Add project",
       searchTerms: ["add project", "open folder", "folder", "directory", "recent projects"],
       icon: ICON(FolderPlus),
-      groups: addProjectView.groups,
-      placeholder: addProjectView.placeholder,
+      groups: ADD_PROJECT_ENTRY.groups,
+      placeholder: ADD_PROJECT_ENTRY.placeholder,
       shortcutAction: "workspace.add",
     },
     changeThemeItem,
@@ -526,15 +532,41 @@ function OpenCommandPalette(props: {
   );
   const recentSessionItems = sessionItems.slice(0, RECENT_SESSION_LIMIT);
 
-  const rootGroups = buildRootGroups({ actionItems, recentSessionItems, extraGroups });
-  const activeGroups = currentView?.groups ?? rootGroups;
-  const displayedGroups = filterCommandPaletteGroups({
-    activeGroups,
+  const addProjectStep = useAddProjectFlow({
+    view: currentView?.value,
     query,
-    isInSubmenu: isSubmenu,
-    projectSearchItems,
-    sessionSearchItems: sessionItems,
+    setQuery: (next) => dispatchSearch({ type: "query", query: next }),
+    pushView,
+    popView,
+    onClose,
+    recentItems: recentProjectItems,
   });
+
+  // ⌘⇧O opens straight onto the project list.
+  const initialView = props.initialView;
+  const openedInitialView = useRef(false);
+  useLayoutEffect(() => {
+    if (openedInitialView.current) return;
+    openedInitialView.current = true;
+    if (initialView === "new-session-in") pushView(newSessionInView);
+    if (initialView === "add-project") pushView(ADD_PROJECT_ENTRY);
+    // Once, on open: the view stack is the user's after that.
+  }, [initialView, newSessionInView]);
+
+  const rootGroups = buildRootGroups({ actionItems, recentSessionItems, extraGroups });
+  const activeGroups = addProjectStep?.groups ?? currentView?.groups ?? rootGroups;
+  // The flow's steps past the source list run on the field's text, not a
+  // search over their rows.
+  const filtersRows = !addProjectStep || currentView?.value === ADD_PROJECT_VIEW;
+  const displayedGroups = filtersRows
+    ? filterCommandPaletteGroups({
+        activeGroups,
+        query,
+        isInSubmenu: isSubmenu,
+        projectSearchItems,
+        sessionSearchItems: sessionItems,
+      })
+    : activeGroups;
 
   const executeItem = (item: CommandPaletteEntry) => {
     if (item.disabled) return;
@@ -557,12 +589,21 @@ function OpenCommandPalette(props: {
       query={query}
       onQueryChange={(next) => dispatchSearch({ type: "query", query: next })}
       onExecute={executeItem}
-      placeholder={currentView?.placeholder ?? (isSubmenu ? "Search…" : ROOT_PLACEHOLDER)}
-      emptyMessage={commandPaletteEmptyMessage(isActionsOnly)}
-      footerActionLabel="Select"
-      escapeLabel={isSubmenu ? "Back" : "Close"}
+      placeholder={
+        addProjectStep?.placeholder ??
+        currentView?.placeholder ??
+        (isSubmenu ? "Search…" : ROOT_PLACEHOLDER)
+      }
+      emptyMessage={addProjectStep?.emptyMessage ?? commandPaletteEmptyMessage(isActionsOnly)}
+      footerActionLabel={addProjectStep?.footerActionLabel ?? "Select"}
+      footerTrailing={addProjectStep?.footerTrailing}
+      endAddon={addProjectStep?.endAddon}
+      onSubmit={addProjectStep?.onSubmit}
+      disabled={addProjectStep?.disabled}
+      // Escape closes the palette from any depth; Backspace on an empty field
+      // is the way back out of a submenu.
+      escapeLabel="Close"
       onBack={isSubmenu ? popView : undefined}
-      onEscape={isSubmenu ? popView : undefined}
       startAddon={
         isSubmenu ? (
           <button

@@ -42,7 +42,6 @@ import {
 import { activeProjectId } from "@/features/projects/lib/active-project";
 import { instructionSync } from "@/features/projects/lib/instruction-sync-api";
 import { useProjectStore } from "@/features/projects/stores/project-store";
-import { pickAndAddProject } from "@/features/projects/lib/pick-project";
 import { flushAll } from "@/features/projects/lib/flush-registry";
 import { captureSnapshot } from "@/features/projects/lib/project-snapshot";
 import { useGitStore } from "@/features/git/stores/git-store";
@@ -1300,12 +1299,9 @@ export function App() {
   // this is only the action-id → behaviour map. See
   // `src/features/keybindings/lib/actions.ts` for the registry.
   useActionHotkeys({
-    // ⌘⇧N — "new project": pick a folder and add it as a project in
-    // this window (Atlas is single-window now; this replaces the old
-    // "open a new native window" behaviour).
-    "workspace.add": () => {
-      void pickAndAddProject();
-    },
+    // ⌘⇧N — "Add project": the palette's sources (new, local folder, Git
+    // URL, GitHub).
+    "workspace.add": () => useCommandPaletteStore.getState().actions.openAddProject(),
     // ⌘⇧. — toggle the Arc-like project sidebar. (⌘. alone is the macOS
     // system "Cancel" chord and gets swallowed before reaching the webview.)
     "workspace.toggleSidebar": () => useProjectStore.getState().actions.toggleSidebar(),
@@ -1398,6 +1394,13 @@ export function App() {
     // the existing chat tab and resets it to a fresh session rather than
     // opening a second chat tab.
     "tabs.newChat": () => openNewAgentChat(),
+    "tabs.newChatIn": () => {
+      if (useProjectStore.getState().projects.length > 1) {
+        useCommandPaletteStore.getState().actions.openProjectPicker();
+      } else {
+        void openNewAgentChat();
+      }
+    },
     // ⌘N — new untitled editor. The synthetic `untitled:<ts>` path
     // tells the editor to start with an empty buffer and to fall
     // into the save-as flow on ⌘S (see `editor-panel.tsx`).

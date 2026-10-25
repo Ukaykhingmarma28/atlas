@@ -130,6 +130,7 @@ const REVIEWED_AGENT_COMMANDS = [
   "panels.zen",
   "tabs.openSurface",
   "tabs.newChat",
+  "tabs.newChatIn",
   "tabs.newTerminal",
   "tabs.newUntitled",
   "tabs.prev",
