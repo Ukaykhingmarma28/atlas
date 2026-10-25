@@ -2483,19 +2483,9 @@ html[data-word-wrap="off"] .prose-chat pre {
   opacity: 1;
 }
 
-/* The workspace rail. One monochrome gradient — brighter at the top, falling
-   to the theme's sidebar surface by the fold — so the rail reads as a distinct
-   surface beside the editor without a coloured tint or a hard edge; a 1px inner
-   highlight along the top edge is the only "light source". Two variants: the
-   docked rail is opaque over the base; the floating one is translucent and
-   sits on the overlay wrapper's own backdrop blur (blur + fill must share one
-   element or WKWebView has nothing to sample).
-
-   Every colour comes off the theme. The fill used to be a fixed near-black with
-   a white sheen, which on a light theme put a black band behind the traffic
-   lights and the org row, and drew the org name dark-on-black. The sheen is
-   the theme's foreground at a few percent, so it lifts on dark and shades on
-   light. */
+/* The workspace rail: the theme's flat sidebar surface, with a 1px inner
+   highlight along the top edge as the only "light source". Every colour comes
+   off the theme. */
 /* The rail's divider.
  *
  * `border.strong` held back toward the surface on the far side of it, so the
@@ -2519,21 +2509,7 @@ html[data-word-wrap="off"] .prose-chat pre {
 }
 
 .atlas-project-rail {
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--foreground) 3.8%, transparent) 0%,
-      color-mix(in srgb, var(--foreground) 1.6%, transparent) 34%,
-      color-mix(in srgb, var(--foreground) 0.6%, transparent) 70%,
-      transparent 100%
-    ),
-    var(--sidebar);
-  /* The gradient stops at the padding edge, so it never paints inside the
-     1px border strip. `border-box` is the default, and under it this vertical
-     fade tints the rail's own right border — brightest at the top, gone by
-     the bottom — which reads as a divider that fades down the window rather
-     than a line. The divider is a boundary; it has to be one value. */
-  background-clip: padding-box;
+  background: var(--sidebar);
   border-right-color: var(--atlas-rail-divider);
   box-shadow: var(--inset-highlight);
 }
