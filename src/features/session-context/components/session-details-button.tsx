@@ -27,7 +27,7 @@ import { IconButton } from "@/ui/icon-button";
 
 import { useDetailsProjectPath } from "../lib/details-project-path";
 import { useCaptureState, type CaptureState } from "../lib/use-capture-state";
-import { useSessionDetailsStore } from "../stores/session-details-store";
+import { selectDockedOpen, useSessionDetailsStore } from "../stores/session-details-store";
 
 const loadCard = () => import("./session-details-card");
 const SessionDetailsCard = lazy(() => loadCard().then((m) => ({ default: m.SessionDetailsCard })));
@@ -94,7 +94,7 @@ function DockToggle({
   label: string;
   capture: CaptureState;
 }) {
-  const open = useSessionDetailsStore((s) => !!s.open[scope]);
+  const open = useSessionDetailsStore((s) => selectDockedOpen(s, scope));
   const { toggle } = useSessionDetailsStore.use.actions();
   return (
     <DotFrame capture={capture}>

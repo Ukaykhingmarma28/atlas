@@ -47,7 +47,7 @@ beforeEach(() => {
     activeProjectId: "p1",
   } as never);
   useSessionDetailsStore.setState({
-    open: {},
+    hidden: {},
     popoverFor: null,
     dockable: {},
     view: "main",
@@ -111,7 +111,7 @@ describe("SessionDetailsButton", () => {
       fireEvent.click(button());
     });
     expect(useSessionDetailsStore.getState().popoverFor).toBe(SCOPE);
-    expect(useSessionDetailsStore.getState().open).toEqual({});
+    expect(useSessionDetailsStore.getState().hidden).toEqual({});
     // The card is lazy: its first import can outlast the default wait under a full run.
     expect(
       await screen.findByRole("region", { name: "Session details" }, { timeout: 5000 }),
@@ -122,14 +122,15 @@ describe("SessionDetailsButton", () => {
   it("is a toggle for the docked card where the chat panel can dock it", async () => {
     answer(false);
     await mount(true);
-    expect(button().getAttribute("aria-pressed")).toBe("false");
-    await act(async () => fireEvent.click(button()));
-    expect(useSessionDetailsStore.getState().open[SCOPE]).toBe(true);
-    // The card is the panel's, not a popover: nothing opened here.
-    expect(useSessionDetailsStore.getState().popoverFor).toBeNull();
+    // Shown by default where it docks.
     expect(button().getAttribute("aria-pressed")).toBe("true");
     await act(async () => fireEvent.click(button()));
-    expect(useSessionDetailsStore.getState().open[SCOPE]).toBeUndefined();
+    expect(useSessionDetailsStore.getState().hidden[SCOPE]).toBe(true);
+    // The card is the panel's, not a popover: nothing opened here.
+    expect(useSessionDetailsStore.getState().popoverFor).toBeNull();
+    expect(button().getAttribute("aria-pressed")).toBe("false");
+    await act(async () => fireEvent.click(button()));
+    expect(useSessionDetailsStore.getState().hidden[SCOPE]).toBeUndefined();
   });
 
   it("hands an open popover over to the docked card when room appears", async () => {
@@ -137,6 +138,6 @@ describe("SessionDetailsButton", () => {
     useSessionDetailsStore.setState({ popoverFor: SCOPE });
     await mount(true);
     expect(useSessionDetailsStore.getState().popoverFor).toBeNull();
-    expect(useSessionDetailsStore.getState().open[SCOPE]).toBe(true);
+    expect(useSessionDetailsStore.getState().hidden[SCOPE]).toBeUndefined();
   });
 });

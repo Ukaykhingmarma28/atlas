@@ -70,7 +70,7 @@ beforeEach(() => {
       return this.hasAttribute("data-panel") ? panelWidth : 0;
     },
   );
-  useSessionDetailsStore.setState({ open: {}, popoverFor: null, dockable: {}, view: "main" });
+  useSessionDetailsStore.setState({ hidden: {}, popoverFor: null, dockable: {}, view: "main" });
 });
 afterEach(() => {
   cleanup();

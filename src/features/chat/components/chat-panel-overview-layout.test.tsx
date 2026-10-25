@@ -78,7 +78,14 @@ beforeEach(() => {
     activeSessionId: null,
   });
   useChatStore.getState().actions.createSession(TAB, "claude-code");
-  useSessionDetailsStore.setState({ open: {}, popoverFor: null, instant: false, dockable: {} });
+  // Starts hidden, so the first toggle shows it (the docked card is on by
+  // default; these tests compare the panel with and without it).
+  useSessionDetailsStore.setState({
+    hidden: { [sessionScope(TAB, undefined)]: true },
+    popoverFor: null,
+    instant: false,
+    dockable: {},
+  });
   transcriptRenders.count = 0;
 });
 afterEach(() => {
@@ -168,35 +175,34 @@ describe("the Details card never moves the transcript or the composer", () => {
 
     act(() => useSessionDetailsStore.getState().actions.setPopover(scope, true));
     expect(frame(container)).toEqual(closed);
-    // The docked open flag is untouched: the popover is its own state.
-    expect(useSessionDetailsStore.getState().open).toEqual({});
+    // The docked flag is untouched: the popover is its own state.
+    expect(useSessionDetailsStore.getState().hidden).toEqual({ [scope]: true });
   });
 
-  it("on an empty session: no reservation, open flag or not", () => {
-    useSessionDetailsStore.setState({ open: { [sessionScope(TAB, undefined)]: true } });
+  it("on an empty session: no reservation, shown by default or not", () => {
+    useSessionDetailsStore.setState({ hidden: {} });
     const { container } = mount();
     const composer = container.querySelector("[data-chat-composer-stack]");
     expect(composer?.getAttribute("style")).toBeNull();
     expect(screen.queryByTestId("details-card")).toBeNull();
   });
 
-  it("is per session: a new session in the same tab starts closed", async () => {
-    useSessionDetailsStore.setState({ open: { [sessionScope(TAB, undefined)]: true } });
+  it("is per session: a new session in the same tab starts shown", async () => {
     withMessages("acp-a");
     const { container } = mount();
-    // The tab-scoped flag from before the bind moved onto session A.
-    expect(useSessionDetailsStore.getState().open).toEqual({ "s:acp-a": true });
-    expect(await screen.findByTestId("details-card")).toBeTruthy();
-    const open = frame(container);
+    // The tab-scoped hide from before the bind moved onto session A.
+    expect(useSessionDetailsStore.getState().hidden).toEqual({ "s:acp-a": true });
+    expect(screen.queryByTestId("details-card")).toBeNull();
+    const hidden = frame(container);
 
     act(() => withMessages("acp-b"));
-    expect(screen.queryByTestId("details-card")).toBeNull();
-    expect(frame(container)).toEqual(open);
-
-    // Back to session A, in the same run: its card is still open.
-    act(() => withMessages("acp-a"));
     expect(await screen.findByTestId("details-card")).toBeTruthy();
-    expect(frame(container)).toEqual(open);
+    expect(frame(container)).toEqual(hidden);
+
+    // Back to session A, in the same run: its card is still hidden.
+    act(() => withMessages("acp-a"));
+    expect(screen.queryByTestId("details-card")).toBeNull();
+    expect(frame(container)).toEqual(hidden);
   });
 
   it("opening and closing it, in either form, never re-renders the transcript", async () => {

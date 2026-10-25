@@ -10,9 +10,10 @@
 // The card has two forms, and the store holds both:
 //
 //  - **Docked.** Where the chat panel keeps room at its top-right
-//    (`context-dock.ts`), the card is drawn into that room and the button
-//    toggles `open` for the session. It stays until toggled off: across
-//    turns, across tab switches.
+//    (`context-dock.ts`), the card is drawn into that room. It shows by
+//    default — a window wide enough to dock it gets it without asking — and
+//    the button hides it for the session (`hidden`). Hidden stays hidden
+//    across turns and tab switches, until toggled back.
 //  - **Popover.** Anywhere else the card is a popover anchored to the button,
 //    open while `popoverFor` names the session. Like any popover it closes on
 //    an outside press and on Escape.
@@ -71,8 +72,9 @@ export interface CreatePrRequest {
 }
 
 interface SessionDetailsState {
-  /** The docked card's open flag, by session scope. Absent means closed. */
-  open: Record<string, true>;
+  /** Sessions whose docked card the user hid, by session scope. Absent
+   *  means shown: the docked card is on by default wherever there is room. */
+  hidden: Record<string, true>;
   /** Which session's popover is open, when its panel has no room to dock. */
   popoverFor: string | null;
   /** The last toggle came from the keyboard: the card shows without its
@@ -167,7 +169,7 @@ export const useSessionDetailsStore = createSelectors(
   create<SessionDetailsState>()(
     persist(
       (set) => ({
-        open: {},
+        hidden: {},
         popoverFor: null,
         instant: false,
         dockable: {},
@@ -179,11 +181,11 @@ export const useSessionDetailsStore = createSelectors(
         actions: {
           toggle: (scope, opts) =>
             set((s) => {
-              const open = { ...s.open };
-              if (open[scope]) delete open[scope];
-              else open[scope] = true;
-              // Opened or closed, the next look starts at the sections.
-              return { open, instant: !!opts?.instant, view: "main" };
+              const hidden = { ...s.hidden };
+              if (hidden[scope]) delete hidden[scope];
+              else hidden[scope] = true;
+              // Shown or hidden, the next look starts at the sections.
+              return { hidden, instant: !!opts?.instant, view: "main" };
             }),
           setPopover: (scope, next, opts) =>
             set((s) => {
@@ -192,11 +194,9 @@ export const useSessionDetailsStore = createSelectors(
             }),
           close: (scope) =>
             set((s) => {
-              if (!s.open[scope] && s.popoverFor !== scope) return s;
-              const open = { ...s.open };
-              delete open[scope];
+              if (s.hidden[scope] && s.popoverFor !== scope) return s;
               return {
-                open,
+                hidden: { ...s.hidden, [scope]: true },
                 popoverFor: s.popoverFor === scope ? null : s.popoverFor,
                 view: "main",
               };
@@ -205,20 +205,21 @@ export const useSessionDetailsStore = createSelectors(
             set((s) => {
               if (from === to) return s;
               const patch: Partial<SessionDetailsState> = {};
-              if (s.open[from]) {
-                const open = { ...s.open, [to]: true as const };
-                delete open[from];
-                patch.open = open;
+              if (s.hidden[from]) {
+                const hidden = { ...s.hidden, [to]: true as const };
+                delete hidden[from];
+                patch.hidden = hidden;
               }
               if (s.popoverFor === from) patch.popoverFor = to;
               return Object.keys(patch).length ? patch : s;
             }),
           handOver: (scope) =>
-            set((s) =>
-              s.popoverFor === scope
-                ? { popoverFor: null, open: { ...s.open, [scope]: true }, instant: true }
-                : s,
-            ),
+            set((s) => {
+              if (s.popoverFor !== scope) return s;
+              const hidden = { ...s.hidden };
+              delete hidden[scope];
+              return { popoverFor: null, hidden, instant: true };
+            }),
           setDockable: (tabId, dockable) =>
             set((s) => {
               if (!!s.dockable[tabId] === dockable) return s;
@@ -244,18 +245,17 @@ export const useSessionDetailsStore = createSelectors(
       {
         name: DETAILS_STORAGE_KEY,
         version: 0,
-        // Only the reader's preference. `open` is per-session layout for this
-        // run: a card that reopens itself on launch is a surface the user did
-        // not ask for.
+        // Only the reader's preference. `hidden` is per-session layout for
+        // this run: the docked card is back by default on the next launch.
         partialize: (s) => ({ collapsed: s.collapsed }),
       },
     ),
   ),
 );
 
-/** Whether `scope`'s card is showing, in either form. Selector-shaped. */
-export function selectDetailsOpen(s: SessionDetailsState, scope: string): boolean {
-  return !!s.open[scope] || s.popoverFor === scope;
+/** Whether `scope`'s docked card shows, where its panel has room. */
+export function selectDockedOpen(s: SessionDetailsState, scope: string): boolean {
+  return !s.hidden[scope];
 }
 
 /** The main column's session tab, when it shows one. */
@@ -279,8 +279,15 @@ export function openSessionDetails(
   const scope = sessionScope(tabId, useChatStore.getState().sessions[tabId]?.acpSessionId);
   useSessionDetailsStore.setState((s) =>
     s.dockable[tabId]
-      ? { open: { ...s.open, [scope]: true }, view, instant: false }
+      ? { hidden: withoutKey(s.hidden, scope), view, instant: false }
       : { popoverFor: scope, view, instant: false },
   );
   return true;
+}
+
+function withoutKey(record: Record<string, true>, key: string): Record<string, true> {
+  if (!record[key]) return record;
+  const next = { ...record };
+  delete next[key];
+  return next;
 }
