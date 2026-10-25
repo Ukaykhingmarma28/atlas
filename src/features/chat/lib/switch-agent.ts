@@ -19,6 +19,7 @@ import {
 } from "./remember";
 import { projectPathForTab } from "./tab-project";
 import { trustedMentionPaths } from "./picked-mentions";
+import { saveLastAgentPref } from "./last-agent-pref";
 
 /** The window event a handoff fires; the composer of `tabId` inserts the
  *  previous conversation as a past-session chip. */
@@ -82,6 +83,9 @@ export function switchAgentForTab(
   next: SwitchableAgent,
   opts: { afterRemember?: "sent" | "unsent"; typed?: string[]; model?: string } = {},
 ): void {
+  // The user's pick, whichever way it lands below: the next new session
+  // starts on it (`agentForNewSession`).
+  if (!opts.afterRemember) saveLastAgentPref(next);
   const pending = pendingSwitches.get(tabId);
   if (pending && !opts.afterRemember) {
     retargetPendingSwitch(pending, next, opts.model);

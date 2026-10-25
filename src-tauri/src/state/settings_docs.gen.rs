@@ -198,6 +198,10 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
         "# When Atlas quits, crashes or restarts to update while an agent is in the\n# middle of a turn, the next launch opens that session and tells the agent to\n# continue where it left off, with a row in the transcript saying so. Settled\n# and snoozed sessions are left alone, and a turn that keeps getting cut short\n# is let go after three tries in a row. (default: true)",
     ),
     (
+        "newSessionUsesLastAgent",
+        "# A new session starts on the agent you last picked in a composer, by\n# switching or with the agent shortcut, as long as it is still installed. Off,\n# or before you have picked one, new sessions start on defaultAgent. (default:\n# true)",
+    ),
+    (
         "defaultAgent",
         "# The agent a new session starts with: \"atlas-agent\" for Atlas Agent, or the\n# id of an installed ACP agent, such as \"claude-code\". An agent that isn't\n# installed falls back to Atlas Agent. (default: \"atlas-agent\") A project can\n# override it in its own .atlas/config.toml.",
     ),

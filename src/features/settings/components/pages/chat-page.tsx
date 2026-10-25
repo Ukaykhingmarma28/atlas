@@ -48,8 +48,12 @@ export function ChatPage() {
       <SettingsSection title="New sessions">
         <SettingsGroup>
           <SettingsRow
+            setting="newSessionUsesLastAgent"
+            control={<SettingSwitch setting="newSessionUsesLastAgent" />}
+          />
+          <SettingsRow
             setting="defaultAgent"
-            description="The agent a new chat starts with. Until it's installed, chats start with Atlas Agent."
+            description="The agent a new session starts with when it isn't the last one you picked. Until it's installed, sessions start with Atlas Agent."
             control={<DefaultAgentSelect />}
           />
         </SettingsGroup>

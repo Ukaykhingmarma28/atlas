@@ -246,6 +246,12 @@ confirmQuitWhileRunning = true
 # is let go after three tries in a row. (default: true)
 continueSessionsAfterRestart = true
 
+# A new session starts on the agent you last picked in a composer, by
+# switching or with the agent shortcut, as long as it is still installed. Off,
+# or before you have picked one, new sessions start on defaultAgent. (default:
+# true)
+newSessionUsesLastAgent = true
+
 # The agent a new session starts with: "atlas-agent" for Atlas Agent, or the
 # id of an installed ACP agent, such as "claude-code". An agent that isn't
 # installed falls back to Atlas Agent. (default: "atlas-agent") A project can

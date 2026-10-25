@@ -246,6 +246,12 @@ export interface AppSettings {
    */
   continueSessionsAfterRestart: boolean;
   /**
+   * A new session starts on the agent you last picked in a composer, by switching or with the
+   * agent shortcut, as long as it is still installed. Off, or before you have picked one, new
+   * sessions start on defaultAgent.
+   */
+  newSessionUsesLastAgent: boolean;
+  /**
    * The agent a new session starts with: "atlas-agent" for Atlas Agent, or the id of an
    * installed ACP agent, such as "claude-code". An agent that isn't installed falls back to
    * Atlas Agent.
@@ -452,6 +458,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   confirmDeleteChat: true,
   confirmQuitWhileRunning: true,
   continueSessionsAfterRestart: true,
+  newSessionUsesLastAgent: true,
   defaultAgent: "atlas-agent",
   chatWidth: "normal",
   wordWrap: true,
@@ -1042,6 +1049,16 @@ export const SETTINGS_REGISTRY: readonly SettingMeta[] = [
     title: "Continue sessions after a restart",
     summary:
       "A turn cut short when Atlas quits, crashes or updates carries on when Atlas opens again.",
+  },
+  {
+    key: "newSessionUsesLastAgent",
+    type: "boolean",
+    status: "live",
+    page: "chat",
+    section: "New sessions",
+    title: "Start with the last agent you picked",
+    summary:
+      "A new session starts on the agent you last chose in a composer, instead of the default agent.",
   },
   {
     key: "defaultAgent",

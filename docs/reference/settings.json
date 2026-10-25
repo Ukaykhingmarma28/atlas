@@ -667,6 +667,18 @@
       "validation": "—"
     },
     {
+      "key": "newSessionUsesLastAgent",
+      "type": "boolean",
+      "status": "live",
+      "page": "chat",
+      "section": "New sessions",
+      "title": "Start with the last agent you picked",
+      "summary": "A new session starts on the agent you last chose in a composer, instead of the default agent.",
+      "default": "true",
+      "doc": "A new session starts on the agent you last picked in a composer, by switching or with the agent shortcut, as long as it is still installed. Off, or before you have picked one, new sessions start on defaultAgent.",
+      "validation": "—"
+    },
+    {
       "key": "defaultAgent",
       "type": "string",
       "status": "live",
