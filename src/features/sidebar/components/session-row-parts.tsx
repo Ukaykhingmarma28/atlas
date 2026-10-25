@@ -24,27 +24,48 @@ import type { SidebarAgent } from "@/features/chat/lib/sidebar-agents";
 import { cn } from "@/lib/utils";
 import { snoozeRemainingLabel } from "@/features/chat/lib/session-snooze";
 import { compactAge } from "../lib/session-row-status";
+import {
+  projectMonogram,
+  projectMonogramColor,
+  useProjectIcon,
+} from "@/features/projects/lib/project-icon";
 
-/** Two-letter monogram for a project name: "northwind-shop" → "NS", "atlas" → "AT". */
-export function projectMonogram(name: string): string {
-  const words = name
-    .trim()
-    .split(/[\s\-_./]+/)
-    .filter(Boolean);
-  if (words.length === 0) return "?";
-  if (words.length === 1) return words[0]!.slice(0, 2).toUpperCase();
-  return (words[0]![0]! + words[1]![0]!).toUpperCase();
-}
-
-/** The project's badge: its monogram on a quiet tile, the size of an icon. */
-export function ProjectBadge({ name, className }: { name: string; className?: string }) {
+/**
+ * The project's badge, the size of an icon: the icon the project ships (its
+ * favicon or app icon) when it has one, else its monogram on a tile tinted
+ * with the project's colour. Pass `path` to look the icon up; without it the
+ * badge is always the monogram.
+ */
+export function ProjectBadge({
+  name,
+  path,
+  className,
+}: {
+  name: string;
+  path?: string | null;
+  className?: string;
+}) {
+  const icon = useProjectIcon(path);
+  if (icon) {
+    return (
+      <img
+        src={icon}
+        alt=""
+        aria-hidden
+        draggable={false}
+        className={cn("size-4 shrink-0 rounded-sm object-contain", className)}
+      />
+    );
+  }
+  const color = projectMonogramColor(name);
   return (
     <span
       aria-hidden
       className={cn(
-        "grid size-4 shrink-0 place-items-center rounded-sm bg-element-selected text-3xs font-semibold leading-none text-secondary-foreground",
+        "grid size-4 shrink-0 place-items-center rounded-sm font-mono text-3xs font-bold leading-none tracking-tighter",
         className,
       )}
+      style={{ color, backgroundColor: `color-mix(in srgb, ${color} 14%, transparent)` }}
     >
       {projectMonogram(name)}
     </span>
@@ -70,21 +91,23 @@ function StackedBadge({ children }: { children: ReactNode }) {
  *  access. */
 export function ProjectBadgeStack({
   name,
+  path,
   attached,
   attachedNames,
 }: {
   name: string;
-  attached: readonly { displayName: string }[];
+  path?: string | null;
+  attached: readonly { displayName: string; path?: string }[];
   attachedNames: string;
 }) {
-  if (attached.length === 0) return <ProjectBadge name={name} />;
+  if (attached.length === 0) return <ProjectBadge name={name} path={path} />;
   const shown = attached.slice(0, MAX_ATTACHED_BADGES);
   return (
     <span title={`${name}, with ${attachedNames} attached`} className="flex shrink-0 items-center">
-      <ProjectBadge name={name} />
+      <ProjectBadge name={name} path={path} />
       {shown.map((project, i) => (
         <StackedBadge key={`${i}-${project.displayName}`}>
-          <ProjectBadge name={project.displayName} className="text-muted-foreground" />
+          <ProjectBadge name={project.displayName} path={project.path} />
         </StackedBadge>
       ))}
       {attached.length > MAX_ATTACHED_BADGES && (

@@ -73,7 +73,11 @@ function SessionHoverCardBody({
       </div>
       <div className="grid gap-1.5 pl-0.5 text-xs text-muted-foreground">
         <div className="flex min-w-0 items-center gap-2">
-          <ProjectBadge name={session.projectName} className="size-3 text-3xs" />
+          <ProjectBadge
+            name={session.projectName}
+            path={session.projectPath}
+            className="size-3 text-3xs"
+          />
           <div className="min-w-0 truncate text-secondary-foreground">{session.projectName}</div>
         </div>
         {session.attachedProjects.map((project) => (
