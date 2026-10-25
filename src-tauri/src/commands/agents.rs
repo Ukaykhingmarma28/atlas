@@ -966,6 +966,8 @@ pub fn install_manager(app: &AppHandle) {
     super::session_pull_requests::sweep_leftover_checkouts_later(host.clone(), data_dir.clone());
     // Pull request watches wake their sessions' agents, window hidden or not.
     super::pull_request_watch::start(app.clone(), host.clone());
+    // Turns the last run left running carry on, through the wakes just wired.
+    super::restart_continuation::start(app, host.clone());
 
     // Shared memory: every write is announced to the webview (the Shared tab
     // re-pulls on it), session start/end are recorded in the scope's sessions
@@ -2151,13 +2153,13 @@ pub async fn agents_send(
 
 /// Who a prompt is from. The user's own words count as the user's
 /// interaction with the session; a prompt Atlas sends on its own (a pull
-/// request watch waking the agent) is recorded everywhere else the same way,
-/// but is not the user, so it neither marks the session interacted with nor
-/// un-settles it.
+/// request watch waking the agent, a turn continued after a restart) is
+/// recorded everywhere else the same way, but is not the user, so it neither
+/// marks the session interacted with nor un-settles it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PromptOrigin {
     User,
-    PullRequestWatch,
+    Atlas,
 }
 
 /// A prompt on its way to the agent: the text, and what rides with it.
@@ -3375,7 +3377,7 @@ mod prompt_books_tests {
             "s1",
             &meta("/work"),
             "Update on pull request #7",
-            PromptOrigin::PullRequestWatch,
+            PromptOrigin::Atlas,
         );
         assert_eq!(
             books.writes.into_inner(),

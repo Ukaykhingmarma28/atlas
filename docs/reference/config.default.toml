@@ -239,6 +239,13 @@ confirmDeleteChat = true
 # (default: true)
 confirmQuitWhileRunning = true
 
+# When Atlas quits, crashes or restarts to update while an agent is in the
+# middle of a turn, the next launch opens that session and tells the agent to
+# continue where it left off, with a row in the transcript saying so. Settled
+# and snoozed sessions are left alone, and a turn that keeps getting cut short
+# is let go after three tries in a row. (default: true)
+continueSessionsAfterRestart = true
+
 # The agent a new session starts with: "atlas-agent" for Atlas Agent, or the
 # id of an installed ACP agent, such as "claude-code". An agent that isn't
 # installed falls back to Atlas Agent. (default: "atlas-agent") A project can

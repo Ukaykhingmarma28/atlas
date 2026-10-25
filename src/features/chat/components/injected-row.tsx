@@ -1,5 +1,5 @@
 import { memo, useState } from "react";
-import { ChevronRight, GitPullRequest } from "lucide-react";
+import { ChevronRight, GitPullRequest, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CONTENT_COLUMN } from "../lib/row-metrics";
 import type { InjectedRow } from "../lib/turn-rows";
@@ -7,7 +7,9 @@ import { ICON_PX, ICON_STROKE } from "./tool-glyph";
 
 /**
  * A prompt Atlas sent the agent on its own — a watched pull request changed,
- * and Atlas woke the agent about it (`pull_request_watch.rs`).
+ * and Atlas woke the agent about it (`pull_request_watch.rs`), or Atlas came
+ * back from a quit, crash or update and continued the turn it cut short
+ * (`restart_continuation.rs`).
  *
  * It opens a turn the way a user message does, but it is not the user's words,
  * so it is not their bubble: one quiet line in the interruption row's
@@ -19,13 +21,15 @@ import { ICON_PX, ICON_STROKE } from "./tool-glyph";
  */
 export const InjectedRowView = memo(function InjectedRowView({ row }: { row: InjectedRow }) {
   const [open, setOpen] = useState(false);
-  const headline = `Pull request watch · ${row.injected.summary}`;
+  const restart = row.injected.source === "restart";
+  const headline = restart ? row.injected.summary : `Pull request watch · ${row.injected.summary}`;
+  const Icon = restart ? RotateCcw : GitPullRequest;
 
   return (
     <div data-testid="injected-row" className={cn(CONTENT_COLUMN, "pt-2 pb-3")}>
       <div className="flex min-h-[26px] items-center gap-2 text-base text-[var(--muted-foreground)]">
         <span className="flex w-4 shrink-0 justify-center text-[var(--atlas-status-info-foreground)]">
-          <GitPullRequest size={ICON_PX} strokeWidth={ICON_STROKE} />
+          <Icon size={ICON_PX} strokeWidth={ICON_STROKE} />
         </span>
         <span className="min-w-0 truncate" title={headline}>
           {headline}

@@ -801,9 +801,20 @@ describe("linked pull requests: session row, store and commands (#15)", () => {
     expect([...tsInterfaceProps(injected, "SessionPromptInjected")].sort()).toEqual(
       [...rustWire].sort(),
     );
-    // The source word Rust sends is one the frontend knows.
-    expect(watch).toMatch(/source:\s*"pull-request-watch"\.into\(\)/);
-    expect(injected).toMatch(/InjectedPromptSource = "pull-request-watch"/);
+    // Every source word Rust sends (`WakeSource::token`) is one the
+    // frontend knows, and the event carries the wake's own.
+    expect(watch).toMatch(/source:\s*wake\.source\.token\(\)\.into\(\)/);
+    const wake = read("src-tauri", "src", "commands", "agent_host", "wake.rs");
+    const tokenFn = wake.slice(wake.indexOf("pub fn token"));
+    const rustTokens = [
+      ...tokenFn.slice(0, tokenFn.indexOf("\n    }\n")).matchAll(/=> "([a-z-]+)"/g),
+    ]
+      .map((m) => m[1])
+      .sort();
+    const union = /InjectedPromptSource = ([^;]+);/.exec(injected)?.[1] ?? "";
+    const tsTokens = [...union.matchAll(/"([a-z-]+)"/g)].map((m) => m[1]).sort();
+    expect(rustTokens).toEqual(["pull-request-watch", "restart"]);
+    expect(tsTokens).toEqual(rustTokens);
   });
 
   it("ThreadRow carries pullRequests, the sidebar badge's and the overlay's only input", () => {
