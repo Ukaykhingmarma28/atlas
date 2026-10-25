@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseShellCommand } from "./parse-shell-command";
+import { commandProgramName, parseShellCommand } from "./parse-shell-command";
 
 /** The classification alone — the field every assertion below is really about. */
 const kindOf = (cmd: string) => parseShellCommand(cmd).kind;
@@ -158,5 +158,14 @@ describe("sed, which is a read only in one exact shape", () => {
   it("rejects every other sed", () => {
     expect(kindOf("sed -n 's/a/b/p' a.ts")).toBe("run");
     expect(kindOf("sed 's/a/b/' a.ts")).toBe("run");
+  });
+});
+
+describe("the program a live line names", () => {
+  it("is the command past scaffolding, assignments and launchers", () => {
+    expect(commandProgramName("sed -n '1,200p' src/a.ts")).toBe("sed");
+    expect(commandProgramName("cd crates/x && cargo test -p atlas")).toBe("cargo");
+    expect(commandProgramName("RUST_LOG=debug sudo /usr/local/bin/node x.js")).toBe("node");
+    expect(commandProgramName("bash -lc 'rg foo | head -20'")).toBe("rg");
   });
 });

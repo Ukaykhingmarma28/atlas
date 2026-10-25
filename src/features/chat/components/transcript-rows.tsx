@@ -464,6 +464,15 @@ export const ThinkingRowView = memo(function ThinkingRowView({
           </pre>
         </div>
       )}
+      {/* The current thought, open while the agent is in it: its newest
+          lines, bottom-aligned so the words land where the eye already is.
+          It folds back to the line above as soon as a tool call or the answer
+          follows (`ThinkingRow.live`). */}
+      {row.live && (
+        <div className="atlas-live-thought pb-1 pl-6">
+          <p className="text-sm leading-[19px] text-[var(--muted-foreground)]">{row.live}</p>
+        </div>
+      )}
     </Column>
   );
 });

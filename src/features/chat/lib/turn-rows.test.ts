@@ -8,6 +8,7 @@ import {
   type WorkHeaderRow,
   toolDisplayName,
   memoryToolOf,
+  mcpToolOf,
 } from "./turn-rows";
 import type { ChatMessage, ToolCallDisplay } from "@/types/agent";
 
@@ -577,7 +578,7 @@ describe("tool activity in the transcript", () => {
       ],
       { ...OPTS, streaming: true },
     ).rows.find((row): row is MarkerGroupRow => row.kind === RowKind.MarkerGroup);
-    expect([group?.liveTool, group?.liveLabel]).toEqual(["run", "Running bun run typecheck"]);
+    expect([group?.liveTool, group?.liveLabel]).toEqual(["run", "Running bun"]);
   });
 
   it("names the running call, not a later one still pending", () => {
@@ -601,7 +602,7 @@ describe("tool activity in the transcript", () => {
       { ...OPTS, streaming: true },
     ).rows.find((row): row is MarkerGroupRow => row.kind === RowKind.MarkerGroup);
     // Naming `b` would claim cargo test was running before it had started.
-    expect(group?.liveLabel).toBe("Running cargo build");
+    expect(group?.liveLabel).toBe("Running cargo");
   });
 
   it("counts finished calls beside the live line and times only the running one", () => {
@@ -652,7 +653,7 @@ describe("tool activity in the transcript", () => {
     // queue time on screen as if the command were working.
     expect([group?.running, group?.liveLabel, group?.liveStartedAt]).toEqual([
       true,
-      "Running cargo test",
+      "Running cargo",
       null,
     ]);
   });
@@ -935,5 +936,18 @@ describe("the response footer at the end of a turn", () => {
     const prose = rows.find((r) => r.kind === RowKind.Prose);
     expect(prose?.kind === RowKind.Prose && prose.footerBelow).toBeFalsy();
     expect(rows.some((r) => r.kind === RowKind.TurnFooter)).toBe(false);
+  });
+});
+
+describe("third-party MCP calls", () => {
+  it("read as their server and tool; browser drivers are one server", () => {
+    expect(mcpToolOf("mcp__github__list_pull_requests")).toEqual({
+      server: "github",
+      tool: "List pull requests",
+    });
+    expect(mcpToolOf("mcp__playwright__browser_snapshot")?.server).toBe("browser");
+    // Atlas's own servers keep their own readings.
+    expect(mcpToolOf("mcp__atlas_code__find_symbol")).toBeNull();
+    expect(mcpToolOf("Read")).toBeNull();
   });
 });

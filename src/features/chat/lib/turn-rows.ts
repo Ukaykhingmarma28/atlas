@@ -26,9 +26,9 @@ import type { ImageAttachment } from "@/types/agents";
 // Shared so a row without images keeps a stable prop for the row's `memo`.
 const NO_ATTACHMENTS: readonly ImageAttachment[] = Object.freeze([]);
 import { isBashToolCall, bashCommandOf } from "./tool-calls";
-import { thoughtHeadline } from "./thought-headline";
+import { liveThought, thoughtHeadline } from "./thought-headline";
 import { orgToolOf, orgToolRow } from "@/features/org-actions/lib/org-tool-rows";
-import { parseShellCommand } from "./parse-shell-command";
+import { commandProgramName, parseShellCommand } from "./parse-shell-command";
 import {
   getFilePathFromInput,
   classifyToolFileKind,
@@ -122,6 +122,11 @@ export interface ThinkingRow extends RowBase {
   text: string;
   /** What the agent is thinking about, from `thoughtHeadline`. */
   headline: string | null;
+  /** The thought as it arrives, from `liveThought`: set only while this is
+   *  the turn's current step — streaming, with no tool call or answer after
+   *  it yet. The row shows it open, then folds to `headline` the moment the
+   *  agent moves on. */
+  live: string | null;
   streaming: boolean;
   expanded: boolean;
 }
@@ -149,6 +154,7 @@ export type MarkerTool =
   | "file"
   | "org"
   | "memory"
+  | "browser"
   | "tool";
 
 export interface MarkerRow extends RowBase {
@@ -170,6 +176,10 @@ export interface MarkerRow extends RowBase {
    *  this is what the hover title falls back to — the information the
    *  reclassification hid has to stay reachable without opening the panel. */
   cmd?: string;
+  /** The MCP server the call went to, in words ("browser", "github"), for
+   *  calls Atlas has no verb for. A block counts these per server: "Used
+   *  browser 2 times" says more than "Used 2 tools". */
+  server?: string;
   /** Only set for edit markers, so the row can show `+n −m` inline. */
   added: number;
   removed: number;
@@ -544,6 +554,24 @@ export function toolIconFor(kind: string | null | undefined, toolName: string): 
   return "tool";
 }
 
+/**
+ * A call to a third-party MCP server, by Claude Code's name for it
+ * (`mcp__<server>__<tool>`): the server in words, and the tool as a phrase.
+ * Atlas's own servers are not here — memory, organisation and code calls
+ * already read as what they did.
+ */
+export function mcpToolOf(toolName: string): { server: string; tool: string } | null {
+  const match = /^mcp__(.+?)__(.+)$/.exec(toolName);
+  if (!match || match[1].startsWith("atlas_")) return null;
+  const [, server, tool] = match;
+  // Every browser-driving server is one thing to the reader.
+  const label = /browser|playwright|puppeteer|chrome|preview/i.test(server + tool)
+    ? "browser"
+    : server.replace(/[_-]+/g, " ").toLowerCase();
+  const words = tool.replace(/[_-]+/g, " ").trim();
+  return { server: label, tool: words.charAt(0).toUpperCase() + words.slice(1) };
+}
+
 // ── Folded-block summary ───────────────────────────────────────────────────
 //
 // "Ran 3 commands and read 2 files": a block of tool calls as one counted
@@ -554,7 +582,16 @@ export function toolIconFor(kind: string | null | undefined, toolName: string): 
 // generic tool, so a block that ran a build is never summarised by the file
 // it read on the way.
 
-type SummaryAction = "run" | "edit" | "read" | "search" | "fetch" | "org" | "memory" | "tool";
+type SummaryAction =
+  | "run"
+  | "edit"
+  | "read"
+  | "search"
+  | "fetch"
+  | "org"
+  | "memory"
+  | "server"
+  | "tool";
 
 /** Which group each row glyph counts toward. */
 const SUMMARY_ACTION: Record<MarkerTool, SummaryAction> = {
@@ -569,6 +606,7 @@ const SUMMARY_ACTION: Record<MarkerTool, SummaryAction> = {
   fetch: "fetch",
   org: "org",
   memory: "memory",
+  browser: "server",
   tool: "tool",
   think: "tool",
 };
@@ -582,6 +620,7 @@ const SUMMARY_PRIORITY: Record<SummaryAction, number> = {
   fetch: 1,
   org: 1,
   memory: 1,
+  server: 1,
   tool: 2,
 };
 
@@ -589,7 +628,7 @@ function counted(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-function actionLabel(action: SummaryAction, n: number): string {
+function actionLabel(action: SummaryAction, n: number, server: string | undefined): string {
   switch (action) {
     case "run":
       return `Ran ${counted(n, "command", "commands")}`;
@@ -605,6 +644,8 @@ function actionLabel(action: SummaryAction, n: number): string {
       return n === 1 ? "Checked your organization" : `Checked your organization ${n} times`;
     case "memory":
       return n === 1 ? "Used Atlas memory" : `Used Atlas memory ${n} times`;
+    case "server":
+      return n === 1 ? `Used ${server}` : `Used ${server} ${n} times`;
     case "tool":
       return n === 1 ? "Used a tool" : `Used ${n} tools`;
   }
@@ -613,30 +654,37 @@ function actionLabel(action: SummaryAction, n: number): string {
 /** One block → the sentence on its header, and the glyph of the group that
  *  leads it. */
 export function summarizeMarkers(markers: MarkerRow[]): { summary: string; tool: MarkerTool } {
-  const groups = new Map<SummaryAction, MarkerRow[]>();
+  // Keyed by action, and an MCP server's calls by server: two servers are two
+  // groups, each named for itself.
+  const groups = new Map<string, MarkerRow[]>();
   for (const m of markers) {
-    const action = SUMMARY_ACTION[m.tool];
-    const group = groups.get(action);
+    const key = m.server ? `server:${m.server}` : SUMMARY_ACTION[m.tool];
+    const group = groups.get(key);
     if (group) group.push(m);
-    else groups.set(action, [m]);
+    else groups.set(key, [m]);
   }
   if (groups.size === 0) return { summary: "Used tools", tool: "tool" };
 
-  const all = [...groups].map(([action, calls], index) => ({
-    action,
-    index,
-    calls: calls.length,
-    // Edits count files, not calls: three edits to one file changed one file.
-    n:
-      action === "edit"
-        ? new Set(calls.map((c) => c.path ?? (c.detail || c.toolCallId))).size
-        : calls.length,
-  }));
+  const all = [...groups.values()].map((calls, index) => {
+    const action: SummaryAction = calls[0].server ? "server" : SUMMARY_ACTION[calls[0].tool];
+    return {
+      action,
+      server: calls[0].server,
+      glyph: calls[0].tool,
+      index,
+      calls: calls.length,
+      // Edits count files, not calls: three edits to one file changed one file.
+      n:
+        action === "edit"
+          ? new Set(calls.map((c) => c.path ?? (c.detail || c.toolCallId))).size
+          : calls.length,
+    };
+  });
   const named = [...all]
     .sort((a, b) => SUMMARY_PRIORITY[a.action] - SUMMARY_PRIORITY[b.action] || a.index - b.index)
     .slice(0, 2)
     .sort((a, b) => a.index - b.index);
-  const labels = named.map((g) => actionLabel(g.action, g.n));
+  const labels = named.map((g) => actionLabel(g.action, g.n, g.server));
   const rest = markers.length - named.reduce((sum, g) => sum + g.calls, 0);
   if (rest > 0) labels.push(`Performed ${counted(rest, "other action", "other actions")}`);
 
@@ -645,7 +693,7 @@ export function summarizeMarkers(markers: MarkerRow[]): { summary: string; tool:
     parts.length < 3
       ? parts.join(" and ")
       : `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
-  return { summary, tool: named[0].action };
+  return { summary, tool: named[0].action === "server" ? named[0].glyph : named[0].action };
 }
 
 /**
@@ -684,8 +732,12 @@ function liveMarkerLabel(marker: MarkerRow): string {
     // the object of "searching for" rather than as a name.
     case "search":
       return target ? `Searching for ${target}` : "Searching files";
-    case "run":
-      return target ? `Running ${target}` : "Running command";
+    // The program, not the whole command line: "Running sed" holds the one
+    // line at any width, and the command is a click away in the block.
+    case "run": {
+      const program = target ? commandProgramName(target) : null;
+      return program ? `Running ${program}` : target ? `Running ${target}` : "Running command";
+    }
     case "fetch":
       return target ? `Fetching ${target}` : "Fetching content";
     case "think":
@@ -694,6 +746,8 @@ function liveMarkerLabel(marker: MarkerRow): string {
     case "org":
       return target ? `${marker.verb} ${target}` : marker.verb;
     default:
+      // An MCP call's verb is already the tool, in words ("Take snapshot").
+      if (marker.server) return target ? `${marker.verb} ${target}` : marker.verb;
       return target ? `Running ${marker.verb} ${target}` : "Using a tool";
   }
 }
@@ -765,6 +819,8 @@ function markerFor(tc: ToolCallDisplay, turnId: string, first: boolean): MarkerR
 
   const orgTool = orgToolOf(tc.toolName);
   const memoryTool = memoryToolOf(tc.toolName);
+  const mcp = mcpToolOf(tc.toolName);
+  let server: string | undefined;
   if (memoryTool) {
     const row = memoryToolRow(memoryTool, args);
     tool = "memory";
@@ -829,6 +885,11 @@ function markerFor(tc: ToolCallDisplay, turnId: string, first: boolean): MarkerR
     tool = "search";
     detail = args.pattern;
     opens = "output";
+  } else if (mcp) {
+    verb = mcp.tool;
+    server = mcp.server;
+    if (mcp.server === "browser") tool = "browser";
+    detail = path ? shortPath(path) : "";
   } else if (path) {
     verb = toolDisplayName(tc.toolName);
     // It named a file but neither `kind` nor its arguments say what it did to
@@ -853,6 +914,7 @@ function markerFor(tc: ToolCallDisplay, turnId: string, first: boolean): MarkerR
     opens,
     cmd,
     path: path ?? undefined,
+    ...(server && { server }),
     added,
     removed,
     startedAt: tc.startedAt,
@@ -1298,6 +1360,13 @@ function projectSegment(
           firstInTurn: rows.length === rowStart,
           text: opts.expanded.has(`th:${msg.id}`) ? msg.thinking : "",
           headline: headlineOf(msg),
+          live:
+            tail &&
+            !opts.expanded.has(`th:${msg.id}`) &&
+            msg.toolCalls.length === 0 &&
+            !derivedProse(msg)
+              ? liveThought(msg.thinking)
+              : null,
           streaming: tail,
           expanded: opts.expanded.has(`th:${msg.id}`),
         });

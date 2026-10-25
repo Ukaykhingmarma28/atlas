@@ -3031,3 +3031,14 @@ html:root[data-diff-palette="blue-orange"] {
 ::highlight(atlas-comment-draft) {
   background-color: color-mix(in srgb, var(--primary) 28%, transparent);
 }
+
+/* A thinking row's live thought (`ThinkingRowView`): at most four lines, the
+   newest ones, with the older text fading out at the top edge. */
+.atlas-live-thought {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  max-height: calc(4 * 19px + 4px);
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, transparent, black 20px);
+}
