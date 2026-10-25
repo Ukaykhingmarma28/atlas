@@ -78,7 +78,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CopyGlyph } from "@/ui/animated-icon";
-import { CornerUpRight, MoreHorizontal, Pin, RefreshCw } from "lucide-react";
+import { CornerUpRight, MessageSquare, MoreHorizontal, Pin, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { copyText } from "@/lib/clipboard";
@@ -93,16 +93,7 @@ import {
 import { retryLastTurn } from "../lib/retry-turn";
 import { userFooterActions } from "../lib/message-footer";
 import { useChatPinsStore } from "../stores/chat-pins-store";
-import { ActionCluster } from "@/features/artifacts/components/action-cluster";
-import { CommentButton } from "@/features/artifacts/components/comment-thread";
-import { visibleCount } from "@/features/artifacts/lib/comments-api";
-import {
-  useAnchorHit,
-  useThreadOpenSignal,
-  useCommentActions,
-  useCommentBucket,
-  useCommentDirectory,
-} from "../stores/chat-comments-store";
+import { useAnchorHit, useChatCommentsStore } from "../stores/chat-comments-store";
 import { useRowHasComments } from "./chat-comment-pills";
 
 /**
@@ -330,12 +321,10 @@ export function useCopy(text: string): { copied: boolean; onCopy: () => void } {
 }
 
 /**
- * Copy, with the comment pill beside it when the message is in the cloud.
- *
- * The two share one surround, as on the Timeline: the pill is how a
- * discussion announces itself, and a lone pill with a gap beside it reads as
- * something missing. Without a cloud anchor this is the plain copy button —
- * no surround around a single control.
+ * Comment and copy. Comment starts a thread about the whole message, under
+ * it (`inline-comment-threads.tsx`) — the same place a click on the prose
+ * or the selection pill's Comment goes. Drawn once the row is in the anchor
+ * map, which every settled prompt and response is.
  */
 export function CommentAndCopy({
   tabId,
@@ -350,36 +339,21 @@ export function CommentAndCopy({
 }) {
   const { copied, onCopy } = useCopy(text);
   const anchor = useAnchorHit(tabId, messageId);
-  // The comments popup asked for this row's thread: open it.
-  const openSignal = useThreadOpenSignal(tabId, anchor?.rowId);
-  const comments = useCommentBucket(tabId, messageId);
-  const commentActions = useCommentActions(tabId);
-  const directory = useCommentDirectory(tabId);
-  const copy = (
-    <ActionButton label={label} onClick={onCopy}>
-      <CopyGlyph copied={copied} size="sm" />
-    </ActionButton>
+  const onComment = useCallback(
+    () => useChatCommentsStore.getState().actions.startCompose(tabId, messageId, null),
+    [tabId, messageId],
   );
-  if (!anchor || !commentActions || !directory) return copy;
   return (
-    // The surround's OUTER edge is what the eye lines up with the bubble, so
-    // the cluster sits flush with the bar's end and the icons inset inside
-    // it. Pulling it out to keep the copy icon where it stands alone was
-    // tried and read as the pill overhanging the bubble (measured headless:
-    // the pill's border landed 4px past the bubble's edge).
-    <ActionCluster reveal="snap" pinned={visibleCount(comments) > 0}>
-      <CommentButton
-        bare
-        className="transition-none"
-        openSignal={openSignal}
-        anchorKind={anchor.anchorKind}
-        anchorId={anchor.rowId}
-        comments={comments}
-        actions={commentActions}
-        directory={directory}
-      />
-      {copy}
-    </ActionCluster>
+    <>
+      {anchor && (
+        <ActionButton label="Comment" onClick={onComment}>
+          <MessageSquare size={12} />
+        </ActionButton>
+      )}
+      <ActionButton label={label} onClick={onCopy}>
+        <CopyGlyph copied={copied} size="sm" />
+      </ActionButton>
+    </>
   );
 }
 

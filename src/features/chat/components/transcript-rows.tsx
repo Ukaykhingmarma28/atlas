@@ -24,6 +24,7 @@ import { openTurnDiff } from "../lib/open-turn-diff";
 import { ChangedFilesCard } from "./changed-files-card";
 import { UserRowActions } from "./user-row-actions";
 import { ImageAttachmentStrip } from "./image-attachments";
+import { InlineCommentThreads } from "./inline-comment-threads";
 import { FILE_DETAIL, ICON_PX, ICON_STROKE, ToolGlyph } from "./tool-glyph";
 import {
   GroupCommentPill,
@@ -90,6 +91,7 @@ export const UserRowView = memo(function UserRowView({
 }) {
   const clampRef = useRef<HTMLDivElement>(null);
   const { height: clampHeight, overflows } = useWholeLineClamp(clampRef, !row.expanded);
+  const messageId = userRowMessageId(row.id);
   return (
     // Generous space BELOW the prompt: the gap is what separates one exchange
     // from the next, and a tight one made the agent's reply read as a
@@ -121,6 +123,9 @@ export const UserRowView = memo(function UserRowView({
             inline content, and the moment the bubble holds block elements
             (paragraphs, a list, a fence) it stops clamping at all. */}
         <div
+          // A row a comment can hang off (`response-selection.ts`): the
+          // selection pill and a click on the prose read the key here.
+          data-comment-anchor={messageId}
           className={cn(
             // Apple-squircle read: one big continuous radius (no clipped
             // corner), a touch more padding — iMessage-adjacent geometry.
@@ -169,11 +174,13 @@ export const UserRowView = memo(function UserRowView({
           </button>
         )}
         {overflows && <ExpandToggle row={row} onToggleExpand={onToggleExpand} />}
+        {/* The prompt's threads, under the bubble and as wide as it may be. */}
+        <InlineCommentThreads tabId={tabId} chatKey={messageId} proseRef={clampRef} />
         <UserRowActions
           tabId={tabId}
           text={row.text}
           canRetry={canRetry}
-          messageId={userRowMessageId(row.id)}
+          messageId={messageId}
           timestamp={row.timestamp}
           timestampApproximate={row.timestampApproximate === true}
           pinScopeKey={pinScopeKey}
@@ -301,6 +308,8 @@ export const ProseRowView = memo(function ProseRowView({
   /** The session's project root: paths in the reply become file chips. */
   fileRoot?: string;
 }) {
+  const proseRef = useRef<HTMLDivElement>(null);
+  const messageId = row.id.slice(2);
   return (
     // A settled response reserves the gap its action bar sits in (see
     // `prose-row-actions.tsx`); the streaming tail does not — nothing here
@@ -356,7 +365,9 @@ export const ProseRowView = memo(function ProseRowView({
           className="atlas-prose"
         />
       ) : (
-        <div data-agent-response={row.id.slice(2)}>
+        // `data-agent-response` makes the reply citable; `data-comment-anchor`
+        // makes it commentable (`response-selection.ts`).
+        <div ref={proseRef} data-agent-response={messageId} data-comment-anchor={messageId}>
           <CachedMarkdown
             source={row.text}
             unstyled
@@ -366,10 +377,13 @@ export const ProseRowView = memo(function ProseRowView({
           />
         </div>
       )}
+      {!row.streaming && (
+        <InlineCommentThreads tabId={tabId} chatKey={messageId} proseRef={proseRef} />
+      )}
       {!row.streaming && !row.footerBelow && (
         <ProseRowActions
           tabId={tabId}
-          messageId={row.id.slice(2)}
+          messageId={messageId}
           timestamp={row.timestamp}
           text={row.text}
           pinScopeKey={pinScopeKey}

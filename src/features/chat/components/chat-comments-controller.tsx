@@ -1,9 +1,14 @@
 /**
- * Keeps one chat pane's cloud comments current. Renders nothing.
+ * Keeps one chat pane's comments current. Renders nothing.
  *
- * Mounted once per `ChatPanel`. It answers three questions and writes the
- * answers into `chat-comments-store`, where the header badge, the panel and
- * the transcript rows read them through narrow selectors:
+ * Mounted once per `ChatPanel`. A session's comments live in one of two
+ * places, and this is the only thing that knows which: on this machine
+ * (`local-comments-store.ts`) until the session is in the cloud, then on the
+ * server. Either way it writes the same shape into `chat-comments-store`,
+ * where the header badge, the panel and the transcript rows read it through
+ * narrow selectors and never ask where a comment lives.
+ *
+ * For a cloud session it answers three questions:
  *
  * 1. **Is this session in the cloud?** `chat_comment_target` says so only when
  *    the Organisation is synced, the Project is bound to Cloud for it, and the
@@ -15,22 +20,48 @@
  * 3. **What are the comments?** `useSessionComments`, verbatim from the
  *    Timeline: the same watch subscription, the same realtime handler, the
  *    same post/resolve/remove.
+ *
+ * For a local session the anchor map is built from the chat alone
+ * (`local-comment-anchors.ts`) and the actions write to the local store. The
+ * moment a cloud target appears for a session that has local threads, they
+ * are posted to the server — roots, then replies, resolved state kept — and
+ * forgotten here, so the team's copy is the only one from then on. A thread
+ * on a row the cloud map cannot place yet (a turn capture has not written)
+ * stays local until it can.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
+import type { CommentActions } from "@/features/artifacts/components/comment-thread";
+import type { RowComments } from "@/features/artifacts/components/session-detail";
+import { comments as cloudApi } from "@/features/artifacts/lib/comments-api";
 import { useSessionComments } from "@/features/artifacts/lib/use-session-comments";
+import { useAuthStore } from "@/features/auth/stores/auth-store";
 import { useIsTabVisible } from "@/features/layout/lib/use-tab-visible";
+import type { OrgDirectory } from "@/features/organisations/lib/use-org-directory";
 import { safeUnlistenPromise } from "@/lib/safe-unlisten";
 import { isBusyAgentStatus } from "@/types/agent";
 
-import { buildAnchorMap, structureKey, type AnchorEntry } from "../lib/comment-anchors";
+import {
+  buildAnchorMap,
+  structureKey,
+  type AnchorEntry,
+  type AnchorMap,
+} from "../lib/comment-anchors";
 import { commentToMention, linkCommentToComposer } from "../lib/comment-mentions";
+import { buildLocalAnchorMap } from "../lib/local-comment-anchors";
 import { projectPathForTab } from "../lib/tab-project";
 import { useChatCommentsStore, type CommentTargetIds } from "../stores/chat-comments-store";
+import { pinScope } from "../stores/chat-pins-store";
 import { useChatStore } from "../stores/chat-store";
+import {
+  bucketLocalComments,
+  LOCAL_AUTHOR,
+  localCommentsFor,
+  useLocalCommentsStore,
+} from "../stores/local-comments-store";
 
 export interface CommentTarget extends CommentTargetIds {
   entries: AnchorEntry[];
@@ -47,12 +78,97 @@ function entriesKey(entries: AnchorEntry[]): string {
   return key;
 }
 
+/**
+ * The roster of a local session: the signed-in account, so a comment says
+ * "You" and wears the account's face, or nobody when there is no account.
+ * `OrgDirectory` so every thread surface reads one shape.
+ */
+function useLocalDirectory(): OrgDirectory {
+  const user = useAuthStore((s) => (s.snapshot.status === "signed-in" ? s.snapshot.user : null));
+  return useMemo(() => {
+    const byId: OrgDirectory["byId"] = new Map();
+    if (user) {
+      byId.set(user.id, {
+        id: user.id,
+        userId: user.id,
+        name: user.name,
+        email: user.email,
+        role: null,
+        createdAt: null,
+        avatarPath: user.avatarPath,
+        isOwner: false,
+      });
+    }
+    return { byId, currentUserId: user?.id ?? LOCAL_AUTHOR };
+  }, [user]);
+}
+
+/**
+ * Post this session's local threads to the server and forget them. Roots
+ * first, then their replies under the new ids. One thread at a time, in
+ * order, so a failure halfway leaves the rest local and nothing twice.
+ */
+async function migrateLocalComments(
+  scope: string,
+  target: CommentTargetIds,
+  localAnchors: AnchorMap,
+  cloudAnchors: AnchorMap,
+): Promise<void> {
+  const list = localCommentsFor(useLocalCommentsStore.getState(), scope);
+  if (list.length === 0) return;
+  const { forget } = useLocalCommentsStore.getState().actions;
+  const roots = list.filter((c) => c.parentId === null && c.deletedAt === null);
+  for (const root of roots) {
+    const chatKey = localAnchors.chatKeyByRowId.get(root.anchorId);
+    const hit = chatKey ? cloudAnchors.rowIdByChatKey.get(chatKey) : undefined;
+    if (!hit || root.body === null) continue;
+    const replies = list.filter((c) => c.parentId === root.id && c.deletedAt === null);
+    const posted = await cloudApi.create(
+      target.remoteProjectId,
+      target.sessionId,
+      hit.anchorKind,
+      hit.rowId,
+      root.body,
+      null,
+    );
+    for (const reply of replies) {
+      if (reply.body === null) continue;
+      await cloudApi.create(
+        target.remoteProjectId,
+        target.sessionId,
+        hit.anchorKind,
+        hit.rowId,
+        reply.body,
+        posted.id,
+      );
+    }
+    if (root.resolvedAt) {
+      await cloudApi.update(target.remoteProjectId, target.sessionId, posted.id, {
+        resolved: true,
+      });
+    }
+    forget(scope, [root.id, ...replies.map((r) => r.id)]);
+  }
+  // Deleted rows and the replies of deleted roots have nothing to post.
+  const leftover = localCommentsFor(useLocalCommentsStore.getState(), scope).filter(
+    (c) =>
+      c.deletedAt !== null ||
+      (c.parentId !== null && !list.some((r) => r.id === c.parentId && r.deletedAt === null)),
+  );
+  if (leftover.length)
+    forget(
+      scope,
+      leftover.map((c) => c.id),
+    );
+}
+
 export function ChatCommentsController({ tabId }: { tabId: string }) {
   const acpSessionId = useChatStore((s) => s.sessions[tabId]?.acpSessionId);
   const busy = useChatStore((s) => isBusyAgentStatus(s.sessions[tabId]?.status));
   const shape = useChatStore((s) => structureKey(s.sessions[tabId]?.messages));
   const visible = useIsTabVisible(tabId);
   const { setTarget, setAnchors, setComments, clear } = useChatCommentsStore.use.actions();
+  const scope = pinScope(tabId, acpSessionId);
 
   const [target, setLocalTarget] = useState<CommentTarget | null>(null);
   const targetRef = useRef<CommentTarget | null>(null);
@@ -138,11 +254,47 @@ export function ChatCommentsController({ tabId }: { tabId: string }) {
     if (visible) void resolve.current();
   }, [visible]);
 
-  // The anchor map: chat shape × captured rows.
+  // The anchor map: chat shape × captured rows in the cloud; the chat alone
+  // locally. Both maps are kept while a target exists, because migration
+  // needs the local one to find each thread's row in the cloud one.
+  const [localAnchors, setLocalAnchors] = useState<AnchorMap>(() => buildLocalAnchorMap([]));
   useEffect(() => {
     const messages = useChatStore.getState().sessions[tabId]?.messages ?? [];
-    setAnchors(tabId, buildAnchorMap(messages, target?.entries ?? []));
+    const local = buildLocalAnchorMap(messages);
+    setLocalAnchors(local);
+    setAnchors(tabId, target ? buildAnchorMap(messages, target.entries) : local);
   }, [tabId, shape, target, setAnchors]);
+
+  // The local session's comments, as the store's shape.
+  const localList = useLocalCommentsStore((s) => localCommentsFor(s, scope));
+  const localDirectory = useLocalDirectory();
+  const localActions = useMemo((): CommentActions => {
+    const store = () => useLocalCommentsStore.getState().actions;
+    return {
+      post: async (anchorKind, anchorId, body, parentId) => {
+        store().post(
+          scope,
+          localDirectory.currentUserId ?? LOCAL_AUTHOR,
+          anchorKind,
+          anchorId,
+          body,
+          parentId,
+        );
+      },
+      edit: async (commentId, body) => store().edit(scope, commentId, body),
+      resolve: async (commentId, resolved) => store().resolve(scope, commentId, resolved),
+      remove: async (commentId) => store().remove(scope, commentId),
+    };
+  }, [scope, localDirectory]);
+  const localComments = useMemo(
+    (): RowComments => ({
+      byAnchor: bucketLocalComments(localList),
+      session: localList.filter((c) => c.anchorKind === "session"),
+      actions: localActions,
+      directory: localDirectory,
+    }),
+    [localList, localActions, localDirectory],
+  );
 
   // The comments themselves. Followed only while the pane is showing: a chat
   // pane stays mounted when hidden, and every follow is a socket. The hook
@@ -171,7 +323,7 @@ export function ChatCommentsController({ tabId }: { tabId: string }) {
     [comments, actions],
   );
   useEffect(() => {
-    setComments(tabId, linkable);
+    setComments(tabId, target ? linkable : localComments);
     if (!comments || !target) return;
     // A comment on a row the map cannot place: a turn that landed after the
     // last resolve. Ask once per change of the buckets, not per frame.
@@ -183,6 +335,23 @@ export function ChatCommentsController({ tabId }: { tabId: string }) {
       }
     }
   }, [tabId, comments, linkable, target, setComments]);
+
+  // A session that went to the cloud with local threads: post them. Runs
+  // when the cloud map changes too, so a thread on a row that was not
+  // captured yet goes up once it is. Serialised; a run that finds nothing to
+  // do costs one read of the local store.
+  const cloudAnchors = useChatCommentsStore((s) => s.byTab[tabId]?.anchors);
+  const migrating = useRef(false);
+  useEffect(() => {
+    if (!target || !cloudAnchors || migrating.current) return;
+    if (localCommentsFor(useLocalCommentsStore.getState(), scope).length === 0) return;
+    migrating.current = true;
+    void migrateLocalComments(scope, target, localAnchors, cloudAnchors)
+      .catch((err) => console.warn("comment migration failed:", err))
+      .finally(() => {
+        migrating.current = false;
+      });
+  }, [scope, target, localAnchors, cloudAnchors]);
 
   // Clearing the store entry must also forget the target this instance last
   // pushed: a hidden pane (an inactive center tab) runs its effect cleanups but

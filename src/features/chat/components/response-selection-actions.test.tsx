@@ -4,17 +4,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { ResponseSelectionActions } from "./response-selection-actions";
 import { selectionCommentBody } from "@/features/artifacts/lib/selection-comment";
-import { COMMENT_BODY_MAX } from "@/features/artifacts/lib/comments-api";
 import { CommentBody } from "@/features/artifacts/components/comment-thread";
 import { COMMENT_LINK_EVENT, type CommentLinkDetail } from "../lib/comment-mentions";
 
-const state = vi.hoisted(() => ({ shared: true, post: vi.fn(async () => {}) }));
+const state = vi.hoisted(() => ({
+  shared: true,
+  post: vi.fn(async () => {}),
+  startCompose: vi.fn(),
+}));
 const directory = { byId: new Map(), currentUserId: null };
 vi.mock("../stores/chat-comments-store", () => ({
   useAnchorHit: () => (state.shared ? { anchorKind: "message", rowId: "cloud-response" } : null),
   useCommentBucket: () => [],
   useCommentActions: () => ({ post: state.post, resolve: async () => {}, remove: async () => {} }),
   useCommentDirectory: () => directory,
+  useHasCloudTarget: () => state.shared,
+  useChatCommentsStore: { getState: () => ({ actions: { startCompose: state.startCompose } }) },
 }));
 
 function Harness({ enabled = true }: { enabled?: boolean }) {
@@ -22,9 +27,14 @@ function Harness({ enabled = true }: { enabled?: boolean }) {
   return (
     <div>
       <div ref={viewportRef} data-testid="viewport">
-        <p data-testid="user">User prompt</p>
-        <div data-agent-response="wire-response">
+        <div data-comment-anchor="wire-prompt">
+          <p data-testid="user">User prompt</p>
+        </div>
+        <div data-agent-response="wire-response" data-comment-anchor="wire-response">
           <p data-testid="prose">Scope it to the usage page.</p>
+          <p>
+            See the <a href="https://example.test">usage docs</a>.
+          </p>
           <pre data-testid="code">{"const onFocus = () => {\n  refreshUsage();\n};"}</pre>
         </div>
         <p data-testid="streaming">Still arriving</p>
@@ -47,6 +57,7 @@ function select(testId: string) {
 
 beforeEach(() => {
   state.shared = true;
+  state.startCompose.mockReset();
   state.post.mockReset();
   state.post.mockResolvedValue(undefined);
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
@@ -62,12 +73,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function passageComment() {
-  render(<Harness />);
-  select("prose");
-  const toolbar = await screen.findByRole("group", { name: "Selected response actions" });
-  fireEvent.click(within(toolbar).getByRole("button", { name: "Comment" }));
-  return screen.findByPlaceholderText("Comment on this passage…");
+/** A press and release that did not travel: a click, as the browser fires it. */
+function click(node: Element, at = { clientX: 100, clientY: 200 }) {
+  fireEvent.pointerDown(node, { button: 0, ...at });
+  fireEvent.pointerUp(node, at);
+  fireEvent.click(node, at);
 }
 
 /** Every chip the cite popover links into a composer, by detail. */
@@ -136,13 +146,26 @@ describe("selected response actions", () => {
     await screen.findByRole("group", { name: "Selected response actions" });
   });
 
-  it.each(["user", "streaming"])("does not offer selection actions for %s text", async (testId) => {
+  it("does not offer selection actions for streaming text", async () => {
     render(<Harness />);
-    select(testId);
+    select("streaming");
     await act(async () => {
       await new Promise((resolve) => requestAnimationFrame(resolve));
     });
     expect(screen.queryByRole("group", { name: "Selected response actions" })).toBeNull();
+  });
+
+  it("offers Comment but not Cite on a prompt: a cite points the agent at its own words", async () => {
+    render(<Harness />);
+    select("user");
+    const toolbar = await screen.findByRole("group", { name: "Selected response actions" });
+    expect(
+      within(toolbar)
+        .getAllByRole("button")
+        .map((b) => b.textContent),
+    ).toEqual(["Comment"]);
+    fireEvent.click(within(toolbar).getByRole("button", { name: "Comment" }));
+    expect(state.startCompose).toHaveBeenCalledWith("chat-a", "wire-prompt", "User prompt");
   });
 
   it("is Cite alone on a session that cannot be commented on", async () => {
@@ -158,7 +181,7 @@ describe("selected response actions", () => {
     ).toEqual(["Cite"]);
   });
 
-  it("keeps Comment beside Cite on a shared session", async () => {
+  it("keeps Comment beside Cite, and Comment starts a thread about the passage under the row", async () => {
     render(<Harness />);
     select("prose");
     const toolbar = await screen.findByRole("group", { name: "Selected response actions" });
@@ -167,6 +190,16 @@ describe("selected response actions", () => {
         .getAllByRole("button")
         .map((b) => b.textContent),
     ).toEqual(["Cite", "Comment"]);
+    fireEvent.click(within(toolbar).getByRole("button", { name: "Comment" }));
+    expect(state.startCompose).toHaveBeenCalledWith(
+      "chat-a",
+      "wire-response",
+      "Scope it to the usage page.",
+    );
+    expect(window.getSelection()?.isCollapsed).toBe(true);
+    await waitFor(() =>
+      expect(screen.queryByRole("group", { name: "Selected response actions" })).toBeNull(),
+    );
   });
 
   it("supports Tab focus and dismisses on Escape, outside click and panel scroll", async () => {
@@ -219,6 +252,34 @@ describe("selected response actions", () => {
       await new Promise((resolve) => requestAnimationFrame(resolve));
     });
     expect(screen.queryByRole("group")).toBeNull();
+  });
+
+  it("starts a whole-row thread on a click in the prose, on prompts and responses alike", () => {
+    render(<Harness />);
+    click(screen.getByTestId("prose").firstChild as Element);
+    expect(state.startCompose).toHaveBeenCalledWith("chat-a", "wire-response", null);
+    click(screen.getByTestId("user"));
+    expect(state.startCompose).toHaveBeenLastCalledWith("chat-a", "wire-prompt", null);
+  });
+
+  it("does not start one on a drag, a link, chrome, or a click that only cleared a selection", async () => {
+    render(<Harness />);
+    const prose = screen.getByTestId("prose");
+    // A press that travelled is a selection being made.
+    fireEvent.pointerDown(prose, { button: 0, clientX: 100, clientY: 200 });
+    fireEvent.pointerUp(prose, { clientX: 160, clientY: 200 });
+    fireEvent.click(prose, { clientX: 160, clientY: 200 });
+    // A link is a link.
+    click(screen.getByRole("link"));
+    // Chrome outside any row.
+    click(screen.getByText("Outside"));
+    // A selection stood when the press began: the click clears it, no more.
+    select("prose");
+    fireEvent.pointerDown(prose, { button: 0, clientX: 100, clientY: 200 });
+    window.getSelection()?.removeAllRanges();
+    fireEvent.pointerUp(prose, { clientX: 100, clientY: 200 });
+    fireEvent.click(prose, { clientX: 100, clientY: 200 });
+    expect(state.startCompose).not.toHaveBeenCalled();
   });
 
   it("removes selection actions when the panel is hidden or the response disappears", async () => {
@@ -343,37 +404,6 @@ describe("sharing a cite with the team", () => {
 });
 
 describe("passage comments", () => {
-  it("posts the selected passage with its response anchor and keeps the draft on failure", async () => {
-    state.post.mockRejectedValueOnce(new Error("offline"));
-    const composer = await passageComment();
-    expect(screen.getByRole("blockquote", { name: "Selected passage" }).textContent).toBe(
-      "Scope it to the usage page.",
-    );
-    fireEvent.change(composer, { target: { value: "Should billing refresh too?" } });
-    fireEvent.keyDown(composer, { key: "Enter" });
-    await screen.findByText("Error: offline");
-    expect((composer as HTMLTextAreaElement).value).toBe("Should billing refresh too?");
-    fireEvent.click(screen.getByRole("button", { name: "Send comment" }));
-    await waitFor(() => expect((composer as HTMLTextAreaElement).value).toBe(""));
-    expect(state.post).toHaveBeenLastCalledWith(
-      "message",
-      "cloud-response",
-      selectionCommentBody("Scope it to the usage page.", "Should billing refresh too?"),
-      null,
-    );
-  });
-
-  it("counts the persisted quote toward the server cap, including Enter sends", async () => {
-    const composer = await passageComment();
-    fireEvent.change(composer, { target: { value: "x".repeat(COMMENT_BODY_MAX) } });
-    expect(
-      (screen.getByRole("button", { name: "Send comment" }) as HTMLButtonElement).disabled,
-    ).toBe(true);
-    fireEvent.keyDown(composer, { key: "Enter" });
-    expect(state.post).not.toHaveBeenCalled();
-    expect(screen.getByText(/including the selected passage/)).toBeTruthy();
-  });
-
   it("renders a saved passage literally and renders actual comment mentions separately", () => {
     const text = "<script>literal</script>\n  <@someone> &lt;";
     render(

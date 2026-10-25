@@ -3009,3 +3009,14 @@ html:root[data-diff-palette="blue-orange"] {
     transparent
   );
 }
+
+/* A commented passage in a transcript row, painted by the CSS Custom
+   Highlight API (`comment-highlights.ts`) — no element is wrapped, so the
+   markdown cache's DOM is untouched. The draft is the passage a comment is
+   being written about right now, one step stronger. */
+::highlight(atlas-comment) {
+  background-color: color-mix(in srgb, var(--primary) 16%, transparent);
+}
+::highlight(atlas-comment-draft) {
+  background-color: color-mix(in srgb, var(--primary) 28%, transparent);
+}
