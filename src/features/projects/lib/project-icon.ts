@@ -75,7 +75,7 @@ function normalizeName(name: string): string {
 /**
  * Two letters for a project name: the first letter, then the first digit of
  * the first word, else the first letter of the last word, else the first
- * word's last letter. "atlas" → "AS", "atlas-work" → "AW", "t3code" → "T3".
+ * word's last letter. "atlas" → "AS", "atlas-work" → "AW", "k8s-tools" → "K8".
  */
 export function projectMonogram(name: string): string {
   const words = normalizeName(name).match(/[\p{L}\p{N}]+/gu) ?? [];
