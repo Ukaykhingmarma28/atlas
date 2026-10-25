@@ -568,7 +568,10 @@ impl AcpConnection {
         // is already open was acquired above and keeps the servers (and the
         // token) it was opened with. Dropped unbound on any failure below.
         let (mcp_offer, mcp_servers) = self.mcp_offer(&directories.cwd, Some(&session_id));
-        let meta = session_mcp::preapproval_meta(&mcp_servers, mcp_offer.ask_first());
+        let meta = Some(session_mcp::claude_code_meta(
+            &mcp_servers,
+            mcp_offer.ask_first(),
+        ));
         let thread = self.new_thread(session_id.clone(), work_dirs, title);
         // The replay ends once the load has answered AND the frames the agent
         // sent before that answer have been applied: they can still be queued
