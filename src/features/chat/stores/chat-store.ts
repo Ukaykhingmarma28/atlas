@@ -35,7 +35,7 @@ import {
 } from "../lib/acp-config-options-cache";
 import { loadCachedAcpModels, saveCachedAcpModels } from "../lib/acp-models-cache";
 import { resolveModelLabel } from "../lib/model-label";
-import { defaultAgentForNewSession } from "../lib/default-agent";
+import { agentForNewSession } from "../lib/default-agent";
 import { loadCachedContextUsage, saveCachedContextUsage } from "../lib/context-usage-cache";
 import { saveNativeModelPref, saveNativeEffort } from "../lib/native-model-pref";
 import { invoke } from "@tauri-apps/api/core";
@@ -889,11 +889,11 @@ export const useChatStore = createSelectors(
       activeSessionId: null,
       agentStartingStatus: {},
       actions: {
-        // No explicit agent → resolve the priority default (Claude Code when
-        // it's installed + authed, otherwise the native Atlas agent). Never
-        // hard-code "claude-code" here: on a fresh install that produces a
-        // permanently disabled composer with no way to reach another agent.
-        createSession: (tabId, agentType = defaultAgentForNewSession()) =>
+        // No explicit agent → the last one the user picked, else the
+        // `defaultAgent` setting, else Atlas Agent (`agentForNewSession`).
+        // Never hard-code an ACP agent here: on a fresh install that produces
+        // a permanently disabled composer with no way to reach another agent.
+        createSession: (tabId, agentType = agentForNewSession()) =>
           set((s) => {
             if (s.sessions[tabId]) return;
             s.sessions[tabId] = {

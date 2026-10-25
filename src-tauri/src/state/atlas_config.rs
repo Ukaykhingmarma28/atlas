@@ -508,6 +508,10 @@ pub struct AppSettings {
     /// Default ON. See `commands::restart_continuation`.
     #[serde(default = "default_true")]
     pub continue_sessions_after_restart: bool,
+    /// New sessions start on the agent last picked in a composer (the
+    /// frontend keeps it). Default ON; `default_agent` is the fallback.
+    #[serde(default = "default_true")]
+    pub new_session_uses_last_agent: bool,
     /// The agent a new chat starts with: `atlas-agent` or an installed ACP
     /// agent's id. One that isn't installed falls back to Atlas Agent.
     #[serde(default = "default_agent")]
@@ -716,6 +720,7 @@ impl Default for AppSettings {
             confirm_delete_chat: true,
             confirm_quit_while_running: true,
             continue_sessions_after_restart: true,
+            new_session_uses_last_agent: true,
             default_agent: default_agent(),
             chat_width: ChatWidth::default(),
             word_wrap: true,
@@ -1232,6 +1237,7 @@ pub struct SettingsPatch {
     pub confirm_delete_chat: Option<bool>,
     pub confirm_quit_while_running: Option<bool>,
     pub continue_sessions_after_restart: Option<bool>,
+    pub new_session_uses_last_agent: Option<bool>,
     pub default_agent: Option<String>,
     pub chat_width: Option<ChatWidth>,
     pub word_wrap: Option<bool>,
@@ -1409,6 +1415,7 @@ impl SettingsPatch {
             confirm_delete_chat,
             confirm_quit_while_running,
             continue_sessions_after_restart,
+            new_session_uses_last_agent,
             default_agent,
             chat_width,
             word_wrap,
@@ -1492,6 +1499,7 @@ impl SettingsPatch {
             continue_sessions_after_restart,
             "continueSessionsAfterRestart"
         );
+        set_bool!(new_session_uses_last_agent, "newSessionUsesLastAgent");
         set_bool!(word_wrap, "wordWrap");
         set_bool!(diff_ignore_whitespace, "diffIgnoreWhitespace");
         set_bool!(diff_files_collapsed, "diffFilesCollapsed");
@@ -2734,6 +2742,7 @@ someFutureKey = \"left alone\"
             confirm_delete_chat: Some(!defaults.confirm_delete_chat),
             confirm_quit_while_running: Some(!defaults.confirm_quit_while_running),
             continue_sessions_after_restart: Some(!defaults.continue_sessions_after_restart),
+            new_session_uses_last_agent: Some(!defaults.new_session_uses_last_agent),
             default_agent: Some("claude-code".to_string()),
             chat_width: Some(ChatWidth::Wide),
             word_wrap: Some(!defaults.word_wrap),

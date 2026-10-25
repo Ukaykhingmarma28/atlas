@@ -872,6 +872,22 @@ is let go after three tries in a row.
 validation = "—"
 
 [[setting]]
+key = "newSessionUsesLastAgent"
+type = "boolean"
+default = true
+status = "live"
+page = "chat"
+section = "New sessions"
+title = "Start with the last agent you picked"
+summary = "A new session starts on the agent you last chose in a composer, instead of the default agent."
+doc = """
+A new session starts on the agent you last picked in a composer, by switching
+or with the agent shortcut, as long as it is still installed. Off, or before
+you have picked one, new sessions start on defaultAgent.
+"""
+validation = "—"
+
+[[setting]]
 key = "defaultAgent"
 type = "string"
 default = "atlas-agent"

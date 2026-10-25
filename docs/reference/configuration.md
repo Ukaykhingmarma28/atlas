@@ -200,6 +200,7 @@ bookkeeping).
 | `confirmDeleteChat` | boolean | `true` | General › Confirmations › Confirm before deleting a session | — |
 | `confirmQuitWhileRunning` | boolean | `true` | General › Confirmations › Confirm before quitting while an agent is running | — |
 | `continueSessionsAfterRestart` | boolean | `true` | Sessions › Running sessions › Continue sessions after a restart | — |
+| `newSessionUsesLastAgent` | boolean | `true` | Sessions › New sessions › Start with the last agent you picked | — |
 | `defaultAgent` | string | `"atlas-agent"` | Sessions › New sessions › Default agent (per project too) | a non-empty agent id; one that isn't installed falls back to Atlas Agent |
 | `chatWidth` | `"normal"` \| `"wide"` \| `"full"` | `"normal"` | Appearance › Interface › Session width | exactly one of these three strings |
 | `wordWrap` | boolean | `true` | Appearance › Interface › Word wrap | — |
