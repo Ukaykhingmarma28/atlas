@@ -1278,7 +1278,11 @@ function projectSegment(
       rowEnd: rows.length,
       messageIndex: i,
       status: "settled",
-      preview: injected ? `Pull request watch: ${injected.summary}` : derived.preview,
+      preview: !injected
+        ? derived.preview
+        : injected.source === "restart"
+          ? injected.summary
+          : `Pull request watch: ${injected.summary}`,
       timestamp: m.timestamp,
       toolCount: 0,
       fileCount: 0,

@@ -58,8 +58,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+mod open_turns;
 mod wake;
-pub use wake::PendingWake;
+pub use open_turns::OpenTurn;
+pub use wake::{PendingWake, WakeSource};
 
 // ── The IPC wire shapes ─────────────────────────────────────────────────────
 //
@@ -479,6 +481,9 @@ pub struct AgentHost {
     /// Prompts Atlas sends on its own (a pull request watch's wake), held
     /// until their session's turn ends ([`AgentHost::wake`]).
     wakes: wake::Wakes,
+    /// Turns running now, on disk, so a launch after a quit or crash knows
+    /// which to continue ([`AgentHost::take_left_open_turns`]).
+    open_turns: open_turns::OpenTurns,
 }
 
 /// Where an access request's answer arrives.
@@ -612,6 +617,7 @@ impl AgentHost {
             client_version: env!("CARGO_PKG_VERSION").to_string(),
         };
         let manager = AgentManager::new(store.clone(), native, options);
+        let open_turns = open_turns::OpenTurns::load(config_dir.join("open-turns.json"));
         let host = Arc::new(Self {
             manager,
             projector,
@@ -637,6 +643,7 @@ impl AgentHost {
             session_mcp,
             access_requests: Mutex::new(HashMap::new()),
             wakes: wake::Wakes::default(),
+            open_turns,
         });
         // Weak, and installed after the host exists: the observer needs the
         // host to name the agent a session belongs to, and a strong reference
@@ -747,6 +754,9 @@ impl AgentHost {
     /// Atlas. Dropping a connection closes the child's stdin, which is how the
     /// transport asks it to leave; the caller gives that a bounded moment.
     pub fn shutdown(&self) {
+        // First: the sweep below fails every running turn's send, and those
+        // turns must stay recorded as cut short, not ended.
+        self.open_turns.freeze();
         // The manager sweeps its own maps rather than being driven through
         // `connections()`, which yields only entries that reached `Connected`.
         // An agent still connecting is invisible to that list and is exactly
@@ -1642,6 +1652,12 @@ impl AgentHost {
         // Before the agent can write a byte of this turn to its transcript, so
         // the session watcher never mistakes that write for another process.
         self.begin_atlas_turn(&key.session_id);
+        let thread = self
+            .history()
+            .and_then(|history| history.thread_for(&session_id));
+        if let Some(thread) = thread {
+            self.open_turns.begin(thread);
+        }
 
         let this = self.clone();
         let session_key = key.session_id.clone();
@@ -1650,6 +1666,16 @@ impl AgentHost {
             // Every way out of the turn ends it, a superseded one included:
             // each send counted itself in, so each counts itself out.
             this.end_atlas_turn(&session_key);
+            // A superseded turn's end must not write out the turn that
+            // replaced it. A session closed meanwhile ended its turn with it.
+            if let Some(thread) = thread {
+                let superseded = lock(&this.sessions)
+                    .get(&session_key)
+                    .is_some_and(|record| record.turn_seq != turn_seq);
+                if !superseded {
+                    this.open_turns.end(thread);
+                }
+            }
             // A wake held for this turn goes out once the session is idle.
             this.drain_wakes_later(&session_key);
             if let Err(e) = sent {
@@ -1682,6 +1708,18 @@ impl AgentHost {
             }
         });
         Ok(())
+    }
+
+    /// The turns the last run left running, emptied from the record. Each is
+    /// either continued (and recorded again when its turn starts) or let go.
+    pub fn take_left_open_turns(&self) -> Vec<(ThreadId, OpenTurn)> {
+        self.open_turns.take_left_open()
+    }
+
+    /// The next turn in `thread` continues one cut short by a restart, the
+    /// `count`th in a row.
+    pub fn expect_continuation(&self, thread: ThreadId, count: u32) {
+        self.open_turns.expect_continuation(thread, count);
     }
 
     fn begin_atlas_turn(&self, session_id: &str) {

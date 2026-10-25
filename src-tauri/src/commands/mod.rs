@@ -83,6 +83,7 @@ pub mod pull_requests;
 pub mod quit_guard;
 pub mod recent_files;
 pub mod registry;
+pub mod restart_continuation;
 pub mod save_guard;
 pub mod session_chat;
 pub mod session_chat_sessions;

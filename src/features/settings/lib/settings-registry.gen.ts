@@ -239,6 +239,13 @@ export interface AppSettings {
    */
   confirmQuitWhileRunning: boolean;
   /**
+   * When Atlas quits, crashes or restarts to update while an agent is in the middle of a turn,
+   * the next launch opens that session and tells the agent to continue where it left off, with
+   * a row in the transcript saying so. Settled and snoozed sessions are left alone, and a turn
+   * that keeps getting cut short is let go after three tries in a row.
+   */
+  continueSessionsAfterRestart: boolean;
+  /**
    * The agent a new session starts with: "atlas-agent" for Atlas Agent, or the id of an
    * installed ACP agent, such as "claude-code". An agent that isn't installed falls back to
    * Atlas Agent.
@@ -444,6 +451,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   favoriteModels: [],
   confirmDeleteChat: true,
   confirmQuitWhileRunning: true,
+  continueSessionsAfterRestart: true,
   defaultAgent: "atlas-agent",
   chatWidth: "normal",
   wordWrap: true,
@@ -1024,6 +1032,16 @@ export const SETTINGS_REGISTRY: readonly SettingMeta[] = [
     section: "Confirmations",
     title: "Confirm before quitting while an agent is running",
     summary: "Ask first when you quit Atlas with an agent in the middle of a turn.",
+  },
+  {
+    key: "continueSessionsAfterRestart",
+    type: "boolean",
+    status: "live",
+    page: "chat",
+    section: "Running sessions",
+    title: "Continue sessions after a restart",
+    summary:
+      "A turn cut short when Atlas quits, crashes or updates carries on when Atlas opens again.",
   },
   {
     key: "defaultAgent",

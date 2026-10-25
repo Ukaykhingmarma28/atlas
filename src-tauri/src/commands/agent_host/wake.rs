@@ -1,6 +1,7 @@
 //! Prompts Atlas sends on its own: a pull request watch waking the session's
-//! agent (`pull_request_watch`). Every other prompt starts in the frontend;
-//! this is the one that starts in Rust, so it brings its own queue.
+//! agent (`pull_request_watch`), and a turn a restart cut short being
+//! continued (`restart_continuation`). Every other prompt starts in the
+//! frontend; these start in Rust, so they bring their own queue.
 //!
 //! A wake never cuts into a turn. `AgentHost::send` supersedes a running
 //! turn, so a wake that went straight out mid-turn would cancel the agent's
@@ -38,9 +39,28 @@ pub(crate) const WAKE_GRACE: Duration = Duration::from_millis(1_500);
 /// its agent included (ADR-0008).
 pub(crate) const RESUME_TIMEOUT: Duration = Duration::from_secs(90);
 
+/// What sent a wake: the transcript row and the books name it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WakeSource {
+    PullRequestWatch,
+    /// A turn running when Atlas last stopped, continued at launch.
+    Restart,
+}
+
+impl WakeSource {
+    /// The wire token (`SessionPromptInjected.source`).
+    pub fn token(self) -> &'static str {
+        match self {
+            WakeSource::PullRequestWatch => "pull-request-watch",
+            WakeSource::Restart => "restart",
+        }
+    }
+}
+
 /// A prompt Atlas sends to a session's agent on its own.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingWake {
+    pub source: WakeSource,
     /// The session, by its history row.
     pub thread_id: ThreadId,
     /// What the agent is told.
@@ -57,6 +77,9 @@ impl PendingWake {
             return wakes.pop();
         }
         let thread_id = wakes[0].thread_id;
+        // Several held for one turn are pull request updates in practice; a
+        // continuation goes out at launch, before any of those.
+        let source = wakes[0].source;
         let text = wakes
             .iter()
             .map(|w| w.text.as_str())
@@ -68,6 +91,7 @@ impl PendingWake {
             .collect::<Vec<_>>()
             .join("; ");
         Some(PendingWake {
+            source,
             thread_id,
             text,
             summary,
@@ -222,6 +246,7 @@ mod tests {
 
     fn wake(text: &str) -> PendingWake {
         PendingWake {
+            source: WakeSource::PullRequestWatch,
             thread_id: ThreadId::from_uuid(uuid::Uuid::nil()),
             text: text.into(),
             summary: format!("#1: {text}"),

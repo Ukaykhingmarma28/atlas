@@ -64,7 +64,7 @@ use futures::StreamExt;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
-use super::agent_host::{AgentHost, PendingWake, SessionKey};
+use super::agent_host::{AgentHost, PendingWake, SessionKey, WakeSource};
 use super::agents::{send_prompt, OutgoingPrompt, PromptOrigin};
 use super::pull_requests::{
     quota_paused_until, GitHub, PrCheck, PrCheckStatus, PrChecksState, PrComment, PrCommentKind,
@@ -803,7 +803,7 @@ pub struct SessionPromptInjected {
     pub text: String,
     /// One line for the row's header (`#12: checks failed`).
     pub summary: String,
-    /// What sent it: `pull-request-watch`.
+    /// What sent it: `pull-request-watch` or `restart`.
     pub source: String,
     /// RFC 3339.
     pub at: String,
@@ -822,7 +822,7 @@ pub fn start(app: AppHandle, host: Arc<AgentHost>) {
                 thread_id: wake.thread_id.to_string(),
                 text: wake.text.clone(),
                 summary: wake.summary.clone(),
-                source: "pull-request-watch".into(),
+                source: wake.source.token().into(),
                 at: Utc::now().to_rfc3339(),
             },
         );
@@ -831,7 +831,7 @@ pub fn start(app: AppHandle, host: Arc<AgentHost>) {
             &host,
             key,
             OutgoingPrompt::text(wake.text.clone()),
-            PromptOrigin::PullRequestWatch,
+            PromptOrigin::Atlas,
         )
     }));
 
@@ -1147,6 +1147,7 @@ fn send_wake(host: &Arc<AgentHost>, thread_id: ThreadId, wake: WakeMessage) {
     let host = host.clone();
     tauri::async_runtime::spawn(async move {
         let pending = PendingWake {
+            source: WakeSource::PullRequestWatch,
             thread_id,
             text: wake.text,
             summary: wake.summary,

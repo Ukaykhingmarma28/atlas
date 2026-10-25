@@ -194,6 +194,10 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
         "# Ask before quitting while an agent is in the middle of a turn, since\n# quitting stops it. Quitting again while the question is open quits anyway.\n# (default: true)",
     ),
     (
+        "continueSessionsAfterRestart",
+        "# When Atlas quits, crashes or restarts to update while an agent is in the\n# middle of a turn, the next launch opens that session and tells the agent to\n# continue where it left off, with a row in the transcript saying so. Settled\n# and snoozed sessions are left alone, and a turn that keeps getting cut short\n# is let go after three tries in a row. (default: true)",
+    ),
+    (
         "defaultAgent",
         "# The agent a new session starts with: \"atlas-agent\" for Atlas Agent, or the\n# id of an installed ACP agent, such as \"claude-code\". An agent that isn't\n# installed falls back to Atlas Agent. (default: \"atlas-agent\") A project can\n# override it in its own .atlas/config.toml.",
     ),

@@ -55,6 +55,15 @@ export function ChatPage() {
         </SettingsGroup>
       </SettingsSection>
 
+      <SettingsSection title="Running sessions">
+        <SettingsGroup>
+          <SettingsRow
+            setting="continueSessionsAfterRestart"
+            control={<SettingSwitch setting="continueSessionsAfterRestart" />}
+          />
+        </SettingsGroup>
+      </SettingsSection>
+
       <SettingsSection title="Layout">
         <SettingsGroup>
           <SettingsRow
