@@ -28,10 +28,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
-import {
-  ADD_PROJECT_POPUP_CLASS,
-  AddProjectItems,
-} from "@/features/projects/components/add-project-menu";
+import { useCommandPaletteStore } from "@/features/command-palette/stores/command-palette-store";
 import {
   ORG_MENU_POPUP_CLASS,
   OrgAvatar,
@@ -43,8 +40,15 @@ import { ProjectBadge } from "./session-row-parts";
 /** Past this many projects the menu grows a search field. */
 const SEARCH_THRESHOLD = 6;
 
-const ITEM =
-  "flex h-control-md w-full cursor-pointer items-center gap-2 rounded px-2 text-xs text-secondary-foreground outline-none data-highlighted:bg-element-hover data-highlighted:text-foreground data-popup-open:bg-element-hover";
+// The organisation menu's recipe (`ORG_MENU_POPUP_CLASS`), so the two menus
+// that open side by side read as one: the choices (scope, projects) are inset
+// chips in a card on the app's background; the actions sit on the tinted
+// surround below it.
+const LIST_ITEM =
+  "mx-1 flex h-control-md w-[calc(100%-8px)] cursor-pointer items-center gap-2 rounded-md px-1.5 text-sm outline-none transition-colors hover:bg-foreground/6 hover:text-foreground data-highlighted:bg-foreground/6 data-highlighted:text-foreground";
+const LIST_ITEM_SELECTED = "bg-foreground/8 text-foreground";
+const ACTION =
+  "flex h-control-md w-full cursor-pointer items-center gap-2 rounded-md px-1.5 text-xs outline-none transition-colors hover:bg-element-hover hover:text-foreground data-highlighted:bg-element-hover data-highlighted:text-foreground data-popup-open:bg-element-hover";
 
 /** The projects a query keeps: by name, case-insensitively. Every project for
  *  an empty query. */
@@ -107,7 +111,7 @@ export function ProjectPicker({
           }
         >
           {scoped ? (
-            <ProjectBadge name={scoped.name} />
+            <ProjectBadge name={scoped.name} path={scoped.path} />
           ) : (
             <Layers aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
           )}
@@ -117,101 +121,95 @@ export function ProjectPicker({
 
         <DropdownMenu.Portal>
           <DropdownMenu.Positioner className="z-popover" align="start" sideOffset={4}>
-            <DropdownMenu.Popup className="flex max-h-[min(480px,70vh)] w-64 flex-col overflow-hidden rounded-lg border border-border bg-popover text-foreground shadow-md outline-none origin-[var(--transform-origin)] animate-scale-in">
-              {searchable ? (
-                <div
-                  className="flex h-control-lg shrink-0 items-center gap-1.5 border-b border-border px-2.5"
-                  onKeyDown={(event) => {
-                    // Keep keys from the popup's typeahead and arrow nav, but let
-                    // Escape bubble to the dismiss handler so it still closes.
-                    if (event.key !== "Escape") event.stopPropagation();
-                  }}
-                >
-                  <Search aria-hidden className="size-3 shrink-0 text-muted-foreground" />
-                  <input
-                    autoFocus
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Search projects…"
-                    aria-label="Search projects"
-                    className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
-                  />
-                </div>
-              ) : null}
-
-              <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto p-0.5">
-                {searching ? null : (
-                  <DropdownMenu.Item
-                    onClick={() => onScopeChange(null)}
-                    className={cn(ITEM, scoped === null && "text-foreground")}
+            <DropdownMenu.Popup className={ORG_MENU_POPUP_CLASS}>
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-background shadow-sm ring-1 ring-border">
+                {searchable ? (
+                  <div
+                    className="flex h-control-lg shrink-0 items-center gap-1.5 border-b border-foreground/8 px-2.5"
+                    onKeyDown={(event) => {
+                      // Keep keys from the popup's typeahead and arrow nav, but let
+                      // Escape bubble to the dismiss handler so it still closes.
+                      if (event.key !== "Escape") event.stopPropagation();
+                    }}
                   >
-                    <Layers aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate">All projects</span>
-                    {scoped === null ? <Check aria-hidden className="size-3.5 shrink-0" /> : null}
-                  </DropdownMenu.Item>
-                )}
-                {filtered.length === 0 ? (
-                  <div className="px-2 py-2 text-center text-2xs text-muted-foreground">
-                    {projects.length === 0 ? "No projects yet." : "No matching projects."}
+                    <Search aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+                    <input
+                      autoFocus
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder="Search projects…"
+                      aria-label="Search projects"
+                      className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
+                    />
                   </div>
-                ) : (
-                  filtered.map((project) => {
-                    const selected = project.id === scopeProjectId;
-                    return (
-                      <DropdownMenu.Item
-                        key={project.id}
-                        onClick={() => onScopeChange(project.id)}
-                        onContextMenu={(event) => {
-                          event.preventDefault();
-                          openSettings(project);
-                        }}
-                        className={cn(ITEM, "group/scope-item", selected && "text-foreground")}
-                      >
-                        <ProjectBadge name={project.name} />
-                        <span className="min-w-0 flex-1 truncate">{project.name}</span>
-                        <button
-                          type="button"
-                          tabIndex={-1}
-                          aria-label={`Project settings for ${project.name}`}
-                          title={`Project settings for ${project.name}`}
-                          onPointerDown={(event) => event.stopPropagation()}
-                          onClick={(event) => {
-                            event.stopPropagation();
+                ) : null}
+
+                <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain py-1">
+                  {searching ? null : (
+                    <DropdownMenu.Item
+                      onClick={() => onScopeChange(null)}
+                      className={cn(LIST_ITEM, scoped === null && LIST_ITEM_SELECTED)}
+                    >
+                      <Layers aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate">All projects</span>
+                      {scoped === null ? <Check aria-hidden className="size-3.5 shrink-0" /> : null}
+                    </DropdownMenu.Item>
+                  )}
+                  {filtered.length === 0 ? (
+                    <div className="px-2 py-2 text-center text-2xs text-muted-foreground">
+                      {projects.length === 0 ? "No projects yet." : "No matching projects."}
+                    </div>
+                  ) : (
+                    filtered.map((project) => {
+                      const selected = project.id === scopeProjectId;
+                      return (
+                        <DropdownMenu.Item
+                          key={project.id}
+                          onClick={() => onScopeChange(project.id)}
+                          onContextMenu={(event) => {
+                            event.preventDefault();
                             openSettings(project);
                           }}
-                          className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground opacity-0 hover:text-foreground group-hover/scope-item:opacity-100 group-data-highlighted/scope-item:opacity-100"
+                          className={cn(
+                            LIST_ITEM,
+                            "group/scope-item",
+                            selected && LIST_ITEM_SELECTED,
+                          )}
                         >
-                          <Settings aria-hidden className="size-3.5" />
-                        </button>
-                        {selected ? <Check aria-hidden className="size-3.5 shrink-0" /> : null}
-                      </DropdownMenu.Item>
-                    );
-                  })
-                )}
+                          <ProjectBadge name={project.name} path={project.path} />
+                          <span className="min-w-0 flex-1 truncate">{project.name}</span>
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            aria-label={`Project settings for ${project.name}`}
+                            title={`Project settings for ${project.name}`}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openSettings(project);
+                            }}
+                            className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground opacity-0 hover:text-foreground group-hover/scope-item:opacity-100 group-data-highlighted/scope-item:opacity-100"
+                          >
+                            <Settings aria-hidden className="size-3.5" />
+                          </button>
+                          {selected ? <Check aria-hidden className="size-3.5 shrink-0" /> : null}
+                        </DropdownMenu.Item>
+                      );
+                    })
+                  )}
+                </div>
               </div>
 
-              <div className="shrink-0 border-t border-border p-0.5">
-                <DropdownMenu.SubmenuRoot>
-                  <DropdownMenu.SubmenuTrigger className={ITEM}>
-                    <Plus aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate">Add project</span>
-                    <ChevronRight aria-hidden className="size-3 shrink-0 text-muted-foreground" />
-                  </DropdownMenu.SubmenuTrigger>
-                  <DropdownMenu.Portal>
-                    <DropdownMenu.Positioner
-                      className="z-popover"
-                      side="right"
-                      align="start"
-                      alignOffset={-3}
-                    >
-                      <DropdownMenu.Popup className={ADD_PROJECT_POPUP_CLASS}>
-                        <AddProjectItems />
-                      </DropdownMenu.Popup>
-                    </DropdownMenu.Positioner>
-                  </DropdownMenu.Portal>
-                </DropdownMenu.SubmenuRoot>
+              <div className="mt-1.5 shrink-0">
+                <DropdownMenu.Item
+                  onClick={() => useCommandPaletteStore.getState().actions.openAddProject()}
+                  className={ACTION}
+                >
+                  <Plus aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate">Add project</span>
+                </DropdownMenu.Item>
                 {scoped ? (
-                  <DropdownMenu.Item onClick={() => onProjectSettings(scoped)} className={ITEM}>
+                  <DropdownMenu.Item onClick={() => onProjectSettings(scoped)} className={ACTION}>
                     <Settings aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
                     <span className="min-w-0 flex-1 truncate">{scoped.name} settings</span>
                   </DropdownMenu.Item>
@@ -221,7 +219,7 @@ export function ProjectPicker({
                     onClick={() =>
                       openPullRequestListTab({ repoPath: scoped.path, name: scoped.name })
                     }
-                    className={ITEM}
+                    className={ACTION}
                   >
                     <GitPullRequest
                       aria-hidden
@@ -230,17 +228,18 @@ export function ProjectPicker({
                     <span className="min-w-0 flex-1 truncate">{scoped.name} pull requests</span>
                   </DropdownMenu.Item>
                 ) : null}
-                <DropdownMenu.Item onClick={onImportSessions} className={ITEM}>
+                <DropdownMenu.Item onClick={onImportSessions} className={ACTION}>
                   <Download aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1 truncate">Import sessions from agents…</span>
                 </DropdownMenu.Item>
               </div>
 
               {org.active ? (
-                <div className="shrink-0 border-t border-border p-0.5">
+                <div className="shrink-0">
+                  <DropdownMenu.Separator className="mx-1.5 my-1 h-px shrink-0 bg-border-subtle" />
                   <DropdownMenu.SubmenuRoot>
                     <DropdownMenu.SubmenuTrigger
-                      className={ITEM}
+                      className={ACTION}
                       aria-label={`Organization: ${org.active.name}`}
                     >
                       <OrgAvatar org={org.active} size={16} plain />

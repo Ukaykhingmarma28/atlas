@@ -105,6 +105,8 @@ export const PRESETS: readonly Preset[] = [
     bindings: {
       "nav.commandPalette": ["cmd+shift+a"],
       "nav.filePicker": ["cmd+shift+o"],
+      // ⇧⌘O is Go to File there, so the project list keeps the palette route.
+      "tabs.newChatIn": null,
       "panels.left": ["cmd+1"],
       "panels.terminal": ["alt+f12"],
       // ⌘0 Commit, ⌘9 Git — both open Source Control in Atlas.

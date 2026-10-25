@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { thoughtHeadline } from "./thought-headline";
+import { liveThought, thoughtHeadline } from "./thought-headline";
 
 describe("thoughtHeadline", () => {
   it("reads the newest section's bold heading", () => {
@@ -70,5 +70,19 @@ describe("thoughtHeadline before there is anything to show", () => {
   it("is null rather than empty for a bare `**` or an empty heading", () => {
     expect(thoughtHeadline("**")).toBeNull();
     expect(thoughtHeadline("** **\n")).toBeNull();
+  });
+});
+
+describe("liveThought", () => {
+  it("is the body under the newest heading", () => {
+    expect(liveThought("**Reading**\n\nOld.\n\n**Checking the cache**\n\nThe key is `id`.")).toBe(
+      "The key is id.",
+    );
+  });
+  it("is the newest paragraph without headings, and nothing before a body", () => {
+    expect(liveThought("First idea.\n\nSecond, longer idea about the store.")).toBe(
+      "Second, longer idea about the store.",
+    );
+    expect(liveThought("**Planning**\n")).toBeNull();
   });
 });

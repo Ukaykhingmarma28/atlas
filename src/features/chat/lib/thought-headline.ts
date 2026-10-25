@@ -64,3 +64,32 @@ function clean(text: string): string {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+/** How much of the current thought the open live row ever shows: more than
+ *  its four visible lines, so the newest text always fills them. */
+const LIVE_TAIL = 600;
+
+/**
+ * The thought the agent is in the middle of, for the live row that shows it
+ * open while it streams: the body of the newest bold-headed section (its
+ * heading is the row's line, from `thoughtHeadline`), else the newest
+ * paragraph. Only its tail, with inline markdown stripped — the row bottom-
+ * aligns it, so the reader sees the words as they arrive. Null when there is
+ * no body yet.
+ */
+export function liveThought(markdown: string): string | null {
+  const headings = [...markdown.matchAll(/^[ \t]*\*\*([^*\r\n]+)\*\*[ \t]*$/gm)];
+  const last = headings[headings.length - 1];
+  let body = last ? markdown.slice((last.index ?? 0) + last[0].length) : markdown;
+  if (!last) {
+    const paragraphs = body.split(/\r?\n\s*\r?\n/).filter((p) => p.trim());
+    // A paragraph just begun says less than the one before it.
+    const tail = paragraphs[paragraphs.length - 1] ?? "";
+    body =
+      tail.trim().length < MIN_UNFINISHED && paragraphs.length > 1
+        ? `${paragraphs[paragraphs.length - 2]}\n\n${tail}`
+        : tail;
+  }
+  const text = clean(body.slice(-LIVE_TAIL * 2)).slice(-LIVE_TAIL);
+  return text || null;
+}

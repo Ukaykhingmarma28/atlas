@@ -48,7 +48,7 @@ function showInMain(activeId: string, chat: boolean) {
 
 beforeEach(() => {
   useSessionDetailsStore.setState({
-    open: {},
+    hidden: {},
     popoverFor: null,
     dockable: {},
     view: "main",
@@ -113,7 +113,7 @@ describe("the capture deep link", () => {
     useSessionDetailsStore.getState().actions.setDockable(TAB, true);
     expect(openSessionDetails("capture")).toBe(true);
     const s = useSessionDetailsStore.getState();
-    expect(s.open[`t:${TAB}`]).toBe(true);
+    expect(s.hidden[`t:${TAB}`]).toBeUndefined();
     expect(s.popoverFor).toBeNull();
     expect(s.view).toBe("capture");
   });

@@ -24,6 +24,7 @@ import { knowledgeHandlers } from "../fixtures/knowledge";
 import { logHandlers } from "../fixtures/log";
 import { memoryHandlers } from "../fixtures/memory";
 import { miscHandlers } from "../fixtures/misc";
+import { projectSourcesHandlers } from "../fixtures/project-sources";
 import { pullRequestsHandlers } from "../fixtures/pull-requests";
 import { settingsHandlers } from "../fixtures/settings";
 import { skillsHandlers } from "../fixtures/skills";
@@ -185,6 +186,7 @@ export const baseHandlers: MockHandlers = {
   ...commsHandlers,
   ...integrationsHandlers,
   ...memoryHandlers,
+  ...projectSourcesHandlers,
   ...pullRequestsHandlers,
   ...skillsHandlers,
   ...spacesHandlers,

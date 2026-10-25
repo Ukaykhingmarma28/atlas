@@ -51,8 +51,15 @@ import { ChatPanel } from "./chat-panel";
 
 const TAB = "tab-1";
 const SCOPE = sessionScope(TAB, undefined);
+// Starts hidden, so the first toggle shows it: the docked card is on by
+// default, and these tests measure the panel with and without it.
 const reset = () =>
-  useSessionDetailsStore.setState({ open: {}, popoverFor: null, dockable: {}, view: "main" });
+  useSessionDetailsStore.setState({
+    hidden: { [SCOPE]: true },
+    popoverFor: null,
+    dockable: {},
+    view: "main",
+  });
 const COLUMN = 760;
 let WIDTH = 1000;
 

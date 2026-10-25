@@ -60,12 +60,14 @@ function CommandDialogPopup({
 }
 
 /** The search field. `startAddon` replaces the magnifier (a back arrow in a
- *  submenu). The input is a combobox over the list it controls. */
+ *  submenu); `endAddon` sits at its right end (a step's "Create ⌘ Enter").
+ *  The input is a combobox over the list it controls. */
 function CommandInput({
   className,
   startAddon,
+  endAddon,
   ...props
-}: React.ComponentProps<"input"> & { startAddon?: React.ReactNode }) {
+}: React.ComponentProps<"input"> & { startAddon?: React.ReactNode; endAddon?: React.ReactNode }) {
   return (
     <div data-slot="command-input" className="flex shrink-0 items-center gap-3 px-5 pt-4 pb-3">
       <span className="flex shrink-0 items-center text-muted-foreground">
@@ -86,6 +88,7 @@ function CommandInput({
         )}
         {...props}
       />
+      {endAddon}
     </div>
   );
 }
@@ -143,7 +146,7 @@ function CommandItem({
       aria-disabled={disabled || undefined}
       data-active={active || undefined}
       className={cn(
-        "flex min-h-8 w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-base text-foreground select-none",
+        "flex min-h-9 w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-md text-foreground select-none",
         disabled ? "disabled-look" : "cursor-pointer",
         active && "bg-element-selected",
         className,

@@ -20,7 +20,7 @@ export function SessionSubtitle({
     session.cwd !== "" && normalizePath(session.cwd) !== normalizePath(session.projectPath);
   return (
     <span className="inline-flex min-w-0 max-w-full items-center gap-1 text-xs text-muted-foreground">
-      <ProjectBadge name={session.projectName} className="size-3.5" />
+      <ProjectBadge name={session.projectName} path={session.projectPath} className="size-3.5" />
       <span className="min-w-0 truncate">{session.projectName}</span>
       <MetaDot />
       <span className="shrink-0">{inWorktree ? "Worktree" : "Local"}</span>

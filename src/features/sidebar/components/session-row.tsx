@@ -411,6 +411,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
             >
               <ProjectBadgeStack
                 name={session.projectName}
+                path={session.projectPath}
                 attached={session.attachedProjects}
                 attachedNames={session.attachedNames}
               />
@@ -516,6 +517,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
             <div className="flex h-5 min-w-0 items-center gap-1.5">
               <ProjectBadgeStack
                 name={session.projectName}
+                path={session.projectPath}
                 attached={session.attachedProjects}
                 attachedNames={session.attachedNames}
               />
@@ -702,6 +704,7 @@ export const SessionSearchResultRow = memo(function SessionSearchResultRow(props
         >
           <ProjectBadge
             name={session.projectName}
+            path={session.projectPath}
             className={cn(
               "transition-opacity",
               isSettled &&

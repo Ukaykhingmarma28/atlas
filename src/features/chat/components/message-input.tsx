@@ -114,6 +114,7 @@ import type {
   PastSessionRef,
 } from "../lib/mentions";
 import { toast } from "sonner";
+import { useComposerResting } from "@/features/chat/hooks/use-composer-resting";
 import { useComposerFileDrop } from "../hooks/use-composer-file-drop";
 import { scratchPathForFile } from "@/lib/scratch-file";
 import { useAppStore } from "@/features/app/stores/app-store";
@@ -1257,6 +1258,22 @@ export function MessageInput({
     onDropFiles,
   });
 
+  // Scrolled back through the session, an empty composer folds to a pill
+  // with its toolbar tucked under it (`use-composer-resting.ts`). Anything
+  // in it — text, a staged image, a queued message, an open picker — keeps
+  // it open.
+  const resting = useComposerResting(
+    composerRef,
+    !hasText &&
+      stagedImages.length === 0 &&
+      queue.length === 0 &&
+      trigger === null &&
+      slashTrigger === null &&
+      githubSyncing === null &&
+      !isDropTarget,
+  );
+  const expandResting = resting.expand;
+
   // "+" menu → "Add files or photos". The Tauri dialog hands back real
   // paths (a browser file input wouldn't), which is what makes the
   // `attachPaths` routing possible.
@@ -1434,6 +1451,7 @@ export function MessageInput({
   // only while an image is staged, so the common keystroke pays nothing.
   const { onDocChange: mirrorDraft } = draft;
   const handleDocChange = useCallback(() => {
+    expandResting();
     mirrorDraft();
     if (!stagedRef.current.some((img) => img.path)) return;
     const input = inputRef.current;
@@ -1442,7 +1460,7 @@ export function MessageInput({
       const next = prev.filter((img) => !img.path || input.hasMention("file", img.path));
       return next.length === prev.length ? prev : next;
     });
-  }, [mirrorDraft]);
+  }, [expandResting, mirrorDraft]);
 
   // A paste over the large-paste limit (`isLargePaste`: ~4,000 characters or
   // 80 lines) — a log, a stack dump, a whole file — becomes a chip holding
@@ -1927,6 +1945,7 @@ export function MessageInput({
         <div
           ref={composerRef}
           data-chat-composer
+          data-resting={resting.resting || undefined}
           className={cn(
             // Positioned + z-indexed so the composer paints over — and visually
             // tucks — the PlanDock's bottom edge (the attached-panel recipe).
@@ -1948,7 +1967,10 @@ export function MessageInput({
             "relative z-30 rounded-2xl border border-[var(--border)] bg-[var(--card)]",
             // The footer pills' labels collapse against THIS width.
             "@container",
-            "shadow-md",
+            "shadow-md transition-[background-color,border-color,box-shadow] duration-200 ease-out-strong",
+            // Resting: the shell steps back so the input surface floats as a
+            // pill, and the toolbar shows as a tray tucked under it.
+            resting.resting && "border-transparent bg-transparent shadow-none",
             // NOTE: the disabled dim is NOT applied here. It used to be
             // (`disabled && "opacity-60"` on this shell), and it faded the
             // whole composer — footer pills, the agent switcher, and every
@@ -1959,7 +1981,11 @@ export function MessageInput({
             // Lock the composer while a GitHub repo syncs into `.atlas/repos`.
             githubSyncing !== null && "opacity-60 pointer-events-none",
           )}
-          onFocusCapture={handleFocusCapture}
+          onFocusCapture={() => {
+            resting.onFocusCapture();
+            handleFocusCapture();
+          }}
+          onPointerDownCapture={resting.onPointerDownCapture}
         >
           {githubSyncing !== null && (
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-[var(--background)]/40 backdrop-blur-[1px]">
@@ -2027,6 +2053,7 @@ export function MessageInput({
               // button is already disabled and submit()/Cmd+Enter are gated
               // on `disabled`.
               disabled && "opacity-60",
+              resting.resting && "shadow-md",
             )}
           >
             <ImageAttachmentStrip
@@ -2131,7 +2158,16 @@ export function MessageInput({
               collapse to icons as the shell narrows (`composerPillLabelClass`),
               so the row never wraps or runs past the edge. No overflow clip:
               the pills' dropups are children and would be cut off. */}
-          <div className="flex items-center justify-between gap-2 px-2 pb-1.5 pt-1">
+          <div
+            className={cn(
+              "flex items-center justify-between gap-2 px-2 pb-1.5 pt-1",
+              "transition-[margin,opacity,background-color] duration-200 ease-out-strong",
+              // Resting: a tray inset under the pill, quiet until the pointer
+              // or focus reaches it. Its pickers work in place.
+              resting.resting &&
+                "mx-5 -mt-1 rounded-b-xl border border-t-0 border-[var(--border)] bg-[var(--card)] pt-2 opacity-70 hover:opacity-100 focus-within:opacity-100",
+            )}
+          >
             <div className="flex min-w-0 items-center gap-1">
               <ComposerAddMenu
                 // `disabledProp`, NOT `disabled`: a missing org AI grant locks

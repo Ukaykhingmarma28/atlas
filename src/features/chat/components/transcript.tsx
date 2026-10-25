@@ -1044,6 +1044,9 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
       <div
         ref={scrollRef}
         onScroll={onScroll}
+        // The composer finds the transcript by this to fold on a scroll
+        // gesture (`use-composer-resting.ts`).
+        data-chat-transcript-scroll
         className="h-full overflow-y-auto hide-scrollbar [overflow-anchor:none]"
       >
         {/* Pad past the ENTIRE blur band, not just the bar. Padding by the

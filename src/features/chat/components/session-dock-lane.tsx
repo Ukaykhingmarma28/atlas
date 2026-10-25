@@ -14,7 +14,10 @@
 import { lazy, Suspense, useEffect, useRef } from "react";
 
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
-import { useSessionDetailsStore } from "@/features/session-context/stores/session-details-store";
+import {
+  selectDockedOpen,
+  useSessionDetailsStore,
+} from "@/features/session-context/stores/session-details-store";
 
 import { OVERVIEW_CARD_GAP } from "../lib/session-overview-layout";
 import { useElementHeight } from "../lib/use-element-height";
@@ -38,7 +41,7 @@ export function SessionDockLane({
   docked: boolean;
   onOpenSearch: () => void;
 }) {
-  const open = useSessionDetailsStore((s) => docked && !!s.open[scope]);
+  const open = useSessionDetailsStore((s) => docked && selectDockedOpen(s, scope));
   const laneRef = useRef<HTMLDivElement>(null);
   const laneHeight = useElementHeight(laneRef, open);
   useDetailsEscape(tabId, scope, open);

@@ -463,3 +463,26 @@ export function parseShellCommand(command: string): ParsedShell {
 
   return classify(segments[0]);
 }
+
+/** Prefixes that run the command after them rather than being it. */
+const LAUNCHERS = new Set(["sudo", "env", "time", "nohup", "nice", "command", "exec"]);
+
+/**
+ * The program a command runs, for the live line ("Running sed"): the first
+ * segment that is not scaffolding (`cd x &&`) or output shaping (`| head`),
+ * past any `FOO=bar` assignments and launchers, as a basename. `null` when
+ * the command does not tokenize.
+ */
+export function commandProgramName(command: string): string | null {
+  const tokens = tokenize(command);
+  if (!tokens) return null;
+  const segments = splitOnConnectors(unwrap(tokens));
+  const real = segments.filter((s) => !isNoise(s) && !isFormattingHelper(s));
+  for (const segment of real.length > 0 ? real : segments) {
+    const program = segment.find(
+      (token) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(token) && !LAUNCHERS.has(token),
+    );
+    if (program) return program.split("/").pop() || program;
+  }
+  return null;
+}

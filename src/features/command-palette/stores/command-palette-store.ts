@@ -23,6 +23,10 @@ interface CommandPaletteStoreState {
     toggleCommands: () => void;
     /** ⌘P: open the file search, or close it when it is on screen. */
     toggleFiles: () => void;
+    /** ⌘⇧O: open the palette onto the project list ("New session in…"). */
+    openProjectPicker: () => void;
+    /** ⌘⇧N and the sidebar's "Add project": the palette's source list. */
+    openAddProject: () => void;
     setOpen: (open: boolean) => void;
   };
 }
@@ -37,6 +41,8 @@ export const useCommandPaletteStore = createSelectors(
         dispatch,
         toggleCommands: () => dispatch({ _tag: "ToggleMode", mode: "command" }),
         toggleFiles: () => dispatch({ _tag: "ToggleMode", mode: "files" }),
+        openProjectPicker: () => dispatch({ _tag: "OpenView", view: "new-session-in" }),
+        openAddProject: () => dispatch({ _tag: "OpenView", view: "add-project" }),
         setOpen: (open) => dispatch({ _tag: "SetOpen", open }),
       },
     };

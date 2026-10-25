@@ -23,6 +23,7 @@ import {
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Icon } from "@/ui/icon";
+import { isMac } from "@/lib/platform";
 import { Kbd, KbdGroup } from "@/ui/kbd";
 import {
   CommandEmpty,
@@ -65,8 +66,8 @@ export function useCommandEscape() {
 }
 
 const LABEL_ROW_HEIGHT = 30;
-const ITEM_ROW_HEIGHT = 32;
-const TWO_LINE_ROW_HEIGHT = 50;
+const ITEM_ROW_HEIGHT = 36;
+const TWO_LINE_ROW_HEIGHT = 56;
 
 export interface CommandPaletteContentProps {
   readonly groups: ReadonlyArray<CommandPaletteGroup>;
@@ -87,6 +88,14 @@ export interface CommandPaletteContentProps {
   readonly onEscape?: () => void;
   /** Replaces the magnifier: a submenu's back arrow. */
   readonly startAddon?: ReactNode;
+  /** At the field's right end: a step's primary action ("Create ⌘ Enter"). */
+  readonly endAddon?: ReactNode;
+  /**
+   * A step that runs on the field's text rather than a row (a clone URL, a
+   * new project's name): ⌘Enter always calls it, and Enter does when no row
+   * is highlighted.
+   */
+  readonly onSubmit?: (opts: { mod: boolean }) => void;
   readonly size?: "default" | "tall";
   readonly disabled?: boolean;
   /** For the tests and the screenshots. */
@@ -175,6 +184,25 @@ export function CommandPaletteContent(props: CommandPaletteContentProps) {
       scrollToValue(next);
       return;
     }
+    // ⌘1–⌘9 picks the numbered row (a project list's jump digits).
+    if ((isMac ? event.metaKey : event.ctrlKey) && /^[1-9]$/.test(event.key)) {
+      const digit = Number(event.key);
+      const jump = rows.find(
+        (row): row is Extract<CommandPaletteRow, { kind: "item" }> =>
+          row.kind === "item" && row.item.jumpDigit === digit && !row.item.disabled,
+      )?.item;
+      if (jump) {
+        event.preventDefault();
+        event.stopPropagation();
+        onExecute(jump);
+        return;
+      }
+    }
+    if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && props.onSubmit) {
+      event.preventDefault();
+      props.onSubmit({ mod: true });
+      return;
+    }
     if (event.key === "Enter") {
       event.preventDefault();
       const item = rows.find(
@@ -182,6 +210,7 @@ export function CommandPaletteContent(props: CommandPaletteContentProps) {
           row.kind === "item" && row.item.value === active && !row.item.disabled,
       )?.item;
       if (item) onExecute(item);
+      else props.onSubmit?.({ mod: false });
       return;
     }
     if (event.key === "Backspace" && query === "" && onBack) {
@@ -214,6 +243,7 @@ export function CommandPaletteContent(props: CommandPaletteContentProps) {
         aria-controls={listId}
         aria-activedescendant={activeRowId}
         startAddon={props.startAddon}
+        endAddon={props.endAddon}
       />
       {rows.length === 0 ? (
         <CommandEmpty>{props.emptyMessage}</CommandEmpty>
@@ -270,6 +300,14 @@ export function CommandPaletteContent(props: CommandPaletteContentProps) {
               <span>{props.footerActionLabel}</span>
             </CommandFooterHint>
           )}
+          {onBack && (
+            <CommandFooterHint>
+              <Kbd variant="soft" size="sm">
+                Backspace
+              </Kbd>
+              <span>Back</span>
+            </CommandFooterHint>
+          )}
           <CommandFooterHint>
             <Kbd variant="soft" size="sm">
               Esc
@@ -319,7 +357,7 @@ function CommandPaletteRowView(props: {
       {item.description ? (
         <span className="flex min-w-0 flex-1 flex-col">
           {title}
-          <span className="min-w-0 truncate text-xs text-muted-foreground">{item.description}</span>
+          <span className="min-w-0 truncate text-sm text-muted-foreground">{item.description}</span>
         </span>
       ) : (
         <span className="flex min-w-0 flex-1 items-center">{title}</span>
@@ -331,6 +369,9 @@ function CommandPaletteRowView(props: {
         </span>
       )}
       {item.shortcutAction && <ActionShortcut id={item.shortcutAction} />}
+      {item.jumpDigit !== undefined && !item.shortcutAction && (
+        <CommandShortcut>{isMac ? `⌘${item.jumpDigit}` : `Ctrl+${item.jumpDigit}`}</CommandShortcut>
+      )}
       {item.kind === "submenu" && <CommandSubmenuChevron />}
     </CommandItem>
   );

@@ -25,7 +25,13 @@ export interface CommandPaletteUiState {
   readonly parentSearch?: CommandPaletteReturnContext;
   /** Set on the way back, so the palette reopens on the query it had. */
   readonly restoredSearch?: CommandPaletteReturnContext;
+  /** A view the palette opens straight onto (⌘⇧O's project list, ⌘⇧N's
+   *  "Add project" sources). */
+  readonly initialView?: CommandPaletteInitialView;
 }
+
+/** The views the palette can be opened onto from outside it. */
+export type CommandPaletteInitialView = "new-session-in" | "add-project";
 
 export type CommandPaletteUiAction =
   | { readonly _tag: "SetOpen"; readonly open: boolean }
@@ -35,7 +41,8 @@ export type CommandPaletteUiAction =
       readonly mode: "files";
       readonly context: CommandPaletteReturnContext;
     }
-  | { readonly _tag: "BackToCommand" };
+  | { readonly _tag: "BackToCommand" }
+  | { readonly _tag: "OpenView"; readonly view: CommandPaletteInitialView };
 
 export const INITIAL_COMMAND_PALETTE_UI_STATE: CommandPaletteUiState = {
   open: false,
@@ -57,6 +64,8 @@ export function reduceCommandPaletteUiState(
         : { open: true, mode: action.mode };
     case "OpenChildSearch":
       return { open: true, mode: action.mode, parentSearch: action.context };
+    case "OpenView":
+      return { open: true, mode: "command", initialView: action.view };
     case "BackToCommand":
       return state.open && state.mode !== "command" && state.parentSearch
         ? { open: true, mode: "command", restoredSearch: state.parentSearch }
@@ -85,6 +94,8 @@ export interface CommandPaletteItem {
   readonly titleTrailingContent?: ReactNode;
   /** The action whose live chord shows on the right. */
   readonly shortcutAction?: ActionId;
+  /** ⌘1–⌘9 picks this row while its list is on screen (a project list). */
+  readonly jumpDigit?: number;
   /** Ranked after every non-secondary match. */
   readonly secondary?: boolean;
 }
@@ -115,6 +126,8 @@ export interface CommandPaletteView {
   readonly value: string;
   readonly groups: ReadonlyArray<CommandPaletteGroup>;
   readonly placeholder?: string;
+  /** The field's text on entering the view (a folder browser's `~/`). */
+  readonly initialQuery?: string;
 }
 
 /** What a child search keeps of the palette it left: the query only. */
@@ -147,7 +160,7 @@ export function reduceCommandPaletteSearchState(
       return { ...state, query: action.query };
     case "push":
       return {
-        query: "",
+        query: action.view.initialQuery ?? "",
         views: [...state.views, { view: action.view, parentQuery: state.query }],
       };
     case "back": {
@@ -377,4 +390,11 @@ export const ROOT_PLACEHOLDER = "Search commands, projects, and sessions…";
 
 export function commandPaletteEmptyMessage(isActionsOnly: boolean): string {
   return isActionsOnly ? "No matching actions." : "No matching commands, projects, or sessions.";
+}
+
+/** Number the first nine rows ⌘1–⌘9, in the order they are listed. */
+export function enumerateCommandPaletteItems<T extends CommandPaletteItem>(
+  items: ReadonlyArray<T>,
+): T[] {
+  return items.map((item, index) => (index < 9 ? { ...item, jumpDigit: index + 1 } : item));
 }
