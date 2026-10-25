@@ -866,9 +866,22 @@
   display: block;
 }
 .atlas-mention-chip__label {
+  /* `min-width: 0` lets the label give way inside the chip's `max-width`,
+     so a trailing meta span (a file's size) stays inside the pill; without
+     it the label kept its full width and pushed the meta out past the border,
+     where it wrapped. */
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* A quiet fact beside the label — an attached image's size. */
+.atlas-mention-chip__meta {
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
 }
 .atlas-mention-chip[data-mention-kind="file"] {
   color: var(--primary);

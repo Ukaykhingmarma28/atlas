@@ -101,9 +101,7 @@ function SessionMentionChip({
       {preview.card}
       {/* An attached image says how big it is, beside its name. */}
       {mention.sizeBytes !== undefined && (
-        <span className="text-2xs tabular-nums text-muted-foreground">
-          {formatBytes(mention.sizeBytes)}
-        </span>
+        <span className="atlas-mention-chip__meta">{formatBytes(mention.sizeBytes)}</span>
       )}
       {(mention.kind === "workspace" || mention.kind === "repo") && (
         <ProjectAccessToggle path={mention.absPath} name={mention.displayName} />
