@@ -1,4 +1,6 @@
 mod app_icon;
+#[cfg(target_os = "macos")]
+mod arrow_keys;
 mod auth;
 mod commands;
 mod keep_awake;
@@ -254,6 +256,10 @@ pub fn run() {
                 // resize; see the function.
                 commands::window::apply_traffic_light_inset(&window);
             }
+            // Arrow keys the webview leaves unhandled are not typed into the
+            // focused field; see the module.
+            #[cfg(target_os = "macos")]
+            arrow_keys::install();
             // The app icon, before the window shows. Later changes arrive
             // through `notify_settings_changed`.
             app_icon::apply(app.handle(), &config.effective().app_icon);
