@@ -1,3 +1,8 @@
+// @vitest-environment happy-dom
+//
+// happy-dom for `self`: the module under test reaches the diffs web worker
+// through `diff-panel-view`, and the worker touches `self` as it loads.
+//
 // Where line comments are drawn: under the last line of their range, grouped
 // per line, per file, with a version per file that moves only when what that
 // file shows does, so a change re-renders that file alone.
