@@ -1,7 +1,6 @@
 import { startTransition, useState, useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { AppLayout } from "@/features/layout/components/app-layout";
-import { AppContextMenu } from "@/components/app-context-menu";
 import { TooltipProvider } from "@/ui/tooltip";
 import { CommandPalette } from "@/features/command-palette/components/command-palette";
 import { useCommandPaletteStore } from "@/features/command-palette/stores/command-palette-store";
@@ -57,6 +56,7 @@ import { requestCloseTab } from "@/features/chat/lib/close-tab";
 import { pruneContextUsageCache } from "@/features/chat/lib/context-usage-cache";
 import { isScrollHot } from "@/lib/scroll-hot";
 import { useAppProfile } from "@/lib/app-profile";
+import { useNativeContextMenu } from "@/lib/native-context-menu";
 import {
   hydrateAgentRegistry,
   setAgentUpdatePhase,
@@ -170,6 +170,7 @@ const zoomReset = () =>
   useSettingsStore.getState().actions.updateSettings({ uiScale: DEFAULT_SCALE });
 
 export function App() {
+  useNativeContextMenu();
   // Own model download listeners at app scope so completion notifications are
   // delivered even when Settings is closed.
   useEffect(() => {
@@ -1454,11 +1455,9 @@ export function App() {
     // a SKIP group: hovering along a facepile shows each name instantly after
     // the first, instead of re-waiting per avatar.
     <TooltipProvider>
-      <AppContextMenu>
-        <div className="h-screen w-screen" onContextMenu={(e) => e.preventDefault()}>
-          <AppLayout />
-        </div>
-      </AppContextMenu>
+      <div className="h-screen w-screen">
+        <AppLayout />
+      </div>
       <CommandPalette />
       <NewTabPalette open={newTabPaletteOpen} onOpenChange={setNewTabPaletteOpen} />
       <LayoutSwitcher open={layoutSwitcherOpen} onOpenChange={setLayoutSwitcherOpen} />

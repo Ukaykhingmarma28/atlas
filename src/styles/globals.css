@@ -2337,9 +2337,25 @@ html[data-word-wrap="off"] .prose-chat pre {
   margin-top: 18px;
 }
 
+/* Bullets are drawn as `::before` text, not `list-style: disc`. WebKit
+   leaves a native marker's box out of the fill it paints between selected
+   blocks, so a selection across list items showed a dark box beside every
+   bullet. Generated content is not part of a selection, and as an
+   inline-block in the line (not absolutely positioned, which WebKit also
+   clips out of that fill) it leaves no hole. */
 .atlas-prose ul {
-  list-style-type: disc;
+  list-style: none;
   padding-left: 20px;
+}
+.atlas-prose ul > li:not(:has(> input[type="checkbox"]))::before {
+  content: "•";
+  display: inline-block;
+  width: 20px;
+  margin-left: -20px;
+  text-align: center;
+}
+.atlas-prose ul ul > li:not(:has(> input[type="checkbox"]))::before {
+  content: "◦";
 }
 .atlas-prose ol {
   list-style-type: decimal;
