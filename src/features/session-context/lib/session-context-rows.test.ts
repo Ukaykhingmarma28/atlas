@@ -1,4 +1,4 @@
-// The overlay's three pure orderings: the branch picker's options, the
+// The Details card's three pure orderings: the branch picker's options, the
 // session's lineage edges, and which of the branch's pull requests leads.
 
 import { describe, expect, it } from "vitest";
@@ -6,35 +6,50 @@ import { describe, expect, it } from "vitest";
 import type { ThreadRow } from "@/features/chat/lib/history-api";
 import type { PrListEntry } from "@/features/pull-requests/lib/pull-requests-types";
 
-import { branchOptions } from "../components/branch-picker";
+import { branchOptions } from "../components/branch-row";
 import { lineageEdges } from "./session-lineage";
 import { mergeSessionPullRequests, orderSessionPullRequests } from "./session-pull-requests";
 
 describe("branchOptions", () => {
   const branches = [
-    { name: "main", isCurrent: false },
-    { name: "fix/pdf", isCurrent: true },
-    { name: "feature/auth", isCurrent: false },
+    { name: "main", isCurrent: false, isRemote: false },
+    { name: "fix/pdf", isCurrent: true, isRemote: false },
+    { name: "feature/auth", isCurrent: false, isRemote: false },
+    { name: "origin/HEAD", isCurrent: false, isRemote: true },
+    { name: "origin/main", isCurrent: false, isRemote: true },
+    { name: "origin/release", isCurrent: false, isRemote: true },
   ];
 
-  it("lists the current branch first, then the rest by name", () => {
-    expect(branchOptions(branches, "").map((o) => o.name)).toEqual([
+  it("lists the current branch, then local, then remotes with no local copy", () => {
+    expect(branchOptions(branches, "main", "").map((o) => o.name)).toEqual([
       "fix/pdf",
       "feature/auth",
       "main",
+      "origin/release",
     ]);
   });
 
+  it("badges the current, default and remote branches; a remote checks out locally", () => {
+    const options = branchOptions(branches, "main", "");
+    expect(options.map((o) => (o.kind === "branch" ? o.badge : null))).toEqual([
+      "current",
+      null,
+      "default",
+      "remote",
+    ]);
+    expect(options[options.length - 1]).toMatchObject({ checkout: "release" });
+  });
+
   it("filters case-insensitively and offers to create a name nothing matches exactly", () => {
-    const options = branchOptions(branches, "Fe");
-    expect(options).toEqual([
-      { kind: "branch", name: "feature/auth", current: false },
+    expect(branchOptions(branches, "main", "Fe")).toEqual([
+      { kind: "branch", name: "feature/auth", checkout: "feature/auth", badge: null },
       { kind: "create", name: "Fe" },
     ]);
   });
 
-  it("does not offer to create a branch that exists", () => {
-    expect(branchOptions(branches, "main").some((o) => o.kind === "create")).toBe(false);
+  it("does not offer to create a branch that exists, locally or on the remote", () => {
+    expect(branchOptions(branches, "main", "main").some((o) => o.kind === "create")).toBe(false);
+    expect(branchOptions(branches, "main", "release").some((o) => o.kind === "create")).toBe(false);
   });
 });
 

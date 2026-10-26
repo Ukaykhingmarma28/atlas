@@ -51,7 +51,6 @@ import { useActiveOrgProjects } from "@/features/projects/lib/org-scope";
 import { useProjectGitStore } from "@/features/projects/stores/project-git-store";
 import { useProjectStore } from "@/features/projects/stores/project-store";
 import { basename } from "@/lib/paths";
-import { isMac, isWindows } from "@/lib/platform";
 import { timeAgo } from "@/lib/time-ago";
 import {
   DropdownMenu,
@@ -65,9 +64,15 @@ import { IconButton } from "@/ui/icon-button";
 import { Hint } from "@/ui/tooltip";
 
 import { revealProject } from "../lib/workspace-actions";
-import { ContextRow, ContextSection, MenuButton, RowIcon, RowLabel, RowMeta } from "./context-rows";
-
-const FILE_MANAGER = isMac ? "Finder" : isWindows ? "Explorer" : "file manager";
+import {
+  DetailsRow,
+  DetailsSection,
+  DetailsSelect,
+  RowIcon,
+  RowLabel,
+  RowMeta,
+} from "./details-rows";
+import { FILE_MANAGER } from "./workspace-section";
 
 const SOURCE_LABEL: Record<AttachSource, string> = {
   mention: "Attached by an @-mention",
@@ -95,12 +100,12 @@ export function ProjectsSection({ tabId, projectPath }: { tabId: string; project
   };
 
   return (
-    <ContextSection title="Projects">
-      <ContextRow title={projectPath}>
+    <DetailsSection label="Projects" title="Projects">
+      <DetailsRow title={projectPath}>
         <RowIcon icon={Folder} />
         <RowLabel>{mainName ?? basename(projectPath)}</RowLabel>
         <RowMeta>Main</RowMeta>
-      </ContextRow>
+      </DetailsRow>
       {sessionId &&
         attached.map((project) => (
           <AttachedProjectRow
@@ -118,7 +123,7 @@ export function ProjectsSection({ tabId, projectPath }: { tabId: string; project
           onAttached={noteResume}
         />
       ) : (
-        <ContextRow
+        <DetailsRow
           onClick={() => {}}
           disabled
           title="Projects can be attached once the session has connected to its agent."
@@ -126,7 +131,7 @@ export function ProjectsSection({ tabId, projectPath }: { tabId: string; project
         >
           <Plus size={14} className="shrink-0" aria-hidden />
           <RowLabel>Attach project</RowLabel>
-        </ContextRow>
+        </DetailsRow>
       )}
       {resumeOnly && (
         <p className="flex items-start gap-2 px-2.5 py-1 text-2xs text-muted-foreground">
@@ -134,7 +139,7 @@ export function ProjectsSection({ tabId, projectPath }: { tabId: string; project
           <span>{RESUME_HINT}</span>
         </p>
       )}
-    </ContextSection>
+    </DetailsSection>
   );
 }
 
@@ -160,7 +165,7 @@ function AttachedProjectRow({
     : "Read only · click to allow writes";
 
   return (
-    <ContextRow title={attachedTitle(project)} className="pe-1 hover:bg-element-hover">
+    <DetailsRow title={attachedTitle(project)} className="pe-1 hover:bg-element-hover">
       <RowIcon icon={git?.isRepo ? FolderGit2 : Folder} />
       <RowLabel>{project.displayName}</RowLabel>
       {git?.isRepo && (
@@ -189,7 +194,7 @@ function AttachedProjectRow({
         onToggleAccess={toggleAccess}
         onChanged={onChanged}
       />
-    </ContextRow>
+    </DetailsRow>
   );
 }
 
@@ -274,10 +279,10 @@ function AttachProjectPicker({
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <MenuButton kind="row" aria-label="Attach a project to this session">
-            <Plus size={14} className="shrink-0 text-muted-foreground" aria-hidden />
+          <DetailsSelect aria-label="Attach a project to this session" muted>
+            <RowIcon icon={Plus} />
             <RowLabel>Attach project</RowLabel>
-          </MenuButton>
+          </DetailsSelect>
         }
       />
       <DropdownMenuContent align="start" className="max-h-80 min-w-56 overflow-auto">

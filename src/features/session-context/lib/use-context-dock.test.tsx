@@ -3,8 +3,7 @@
 // The docked Details card's room: reserved from the panel's width alone, so
 // the transcript row, the column centred in it and the composer stack are laid
 // out the same whether or not the card shows. This mounts the real hook the
-// way `chat-panel.tsx` wires it, and checks what it reports to the store (the
-// `dockable` flag `openSessionDetails` picks a form by).
+// way `chat-panel.tsx` wires it.
 
 import { useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,16 +18,15 @@ import { resolveContextDock } from "./context-dock";
 import { useSessionDetailsStore } from "../stores/session-details-store";
 import { useContextDock } from "./use-context-dock";
 
-const TAB = "tab-1";
 let panelWidth = 1000;
 
 /** `chat-panel.tsx`'s wiring: the row's padding and the composer's margin,
  *  both from one `useContextDock`. */
 function Panel({ enabled = true }: { enabled?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
-  const dock = useContextDock(TAB, ref, enabled);
+  const dock = useContextDock(ref, enabled);
   return (
-    <div ref={ref} data-panel>
+    <div ref={ref} data-panel data-docked={String(dock.docked)}>
       <div
         data-chat-row
         style={dock.docked ? { paddingLeft: dock.inset, paddingRight: dock.reserve } : undefined}
@@ -42,6 +40,8 @@ function Panel({ enabled = true }: { enabled?: boolean }) {
     </div>
   );
 }
+
+const docked = () => document.querySelector("[data-panel]")!.getAttribute("data-docked");
 
 /** Everything the column's position and width are computed from. */
 function layout() {
@@ -70,7 +70,7 @@ beforeEach(() => {
       return this.hasAttribute("data-panel") ? panelWidth : 0;
     },
   );
-  useSessionDetailsStore.setState({ hidden: {}, popoverFor: null, dockable: {}, view: "main" });
+  useSessionDetailsStore.setState({ hidden: {}, popoverFor: null });
 });
 afterEach(() => {
   cleanup();
@@ -83,33 +83,26 @@ describe("the Details card's dock", () => {
     render(<Panel />);
     const { reserve } = resolveContextDock(1000, Number.POSITIVE_INFINITY);
     expect(reserve).toBeGreaterThan(0);
-    expect(useSessionDetailsStore.getState().dockable[TAB]).toBe(true);
+    expect(docked()).toBe("true");
 
     const closed = layout();
     expect(closed.row.style).toContain(`padding-right: ${reserve}px`);
     expect(closed.composer.style).toContain(`margin-right: ${reserve}px`);
 
-    act(() => useSessionDetailsStore.getState().actions.toggle(`t:${TAB}`));
+    act(() => useSessionDetailsStore.getState().actions.toggle("t:tab-1"));
     expect(layout()).toEqual(closed);
   });
 
   it("does not dock, or reserve, where the panel is too narrow", () => {
     panelWidth = 700;
     render(<Panel />);
-    expect(useSessionDetailsStore.getState().dockable[TAB]).toBeUndefined();
+    expect(docked()).toBe("false");
     expect(layout().row.style).toBeNull();
   });
 
   it("reserves nothing while disabled (an empty session has no column to clear)", () => {
     render(<Panel enabled={false} />);
-    expect(useSessionDetailsStore.getState().dockable[TAB]).toBeUndefined();
+    expect(docked()).toBe("false");
     expect(layout().row.style).toBeNull();
-  });
-
-  it("clears the tab's dockable flag when the panel unmounts", () => {
-    const { unmount } = render(<Panel />);
-    expect(useSessionDetailsStore.getState().dockable[TAB]).toBe(true);
-    unmount();
-    expect(useSessionDetailsStore.getState().dockable[TAB]).toBeUndefined();
   });
 });

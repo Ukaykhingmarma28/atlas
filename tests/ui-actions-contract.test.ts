@@ -115,6 +115,8 @@ const REVIEWED_AGENT_COMMANDS = [
   "workspace.toggleSidebar",
   "app.settings",
   "app.capture",
+  // Opens the session's checkout in the user's own editor; changes nothing.
+  "app.openInEditor",
   "nav.commandPalette",
   "nav.filePicker",
   "nav.search",
@@ -124,6 +126,7 @@ const REVIEWED_AGENT_COMMANDS = [
   "hintNav.toggle",
   "panels.left",
   "panels.right",
+  "panels.sessionDetails",
   "panels.teamChat",
   "panels.terminal",
   "panels.knowledge",

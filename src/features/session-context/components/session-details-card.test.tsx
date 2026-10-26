@@ -1,13 +1,12 @@
 // @vitest-environment happy-dom
 //
-// The Details card merged two cards that said the same things twice. What it
-// promises: every section either card had, each fact once (one Changes
-// section, the child agents in Lineage only), in reading order; the sections
-// shed from the top as the card runs short of height, keeping the session's
-// own record; and the capture view replacing the sections when deep-linked.
-// The sections are stubbed: this is about which ones the card puts where.
+// The Details card's sections, in reading order, and the rows it sheds as it
+// runs short of height: the environment, Projects and Lineage first, then
+// "Open in" and the Commit row. Branch, pull request and Changes stay. The
+// sections are stubbed (each reports the props that choose its rows): this is
+// about what the card asks of them.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => null) }));
@@ -15,43 +14,42 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async () => () => {}),
   emit: vi.fn(async () => {}),
 }));
-const stub = vi.hoisted(() => (name: string) => () => (
-  <section data-stub={name} aria-label={name} />
+const stub = vi.hoisted(() => (name: string) => (props: Record<string, unknown>) => (
+  <section
+    data-stub={name}
+    data-props={JSON.stringify(
+      Object.fromEntries(Object.entries(props).filter(([, v]) => typeof v === "boolean")),
+    )}
+  />
 ));
 vi.mock("./workspace-section", () => ({ WorkspaceSection: stub("workspace") }));
-vi.mock("./projects-section", () => ({ ProjectsSection: stub("projects") }));
 vi.mock("./version-control-section", () => ({ VersionControlSection: stub("version-control") }));
-vi.mock("./changes-section", () => ({ ChangesSection: stub("changes") }));
+vi.mock("./projects-section", () => ({ ProjectsSection: stub("projects") }));
 vi.mock("./lineage-section", () => ({ LineageSection: stub("lineage") }));
-vi.mock("./memory-section", () => ({ MemorySection: stub("memory") }));
-vi.mock("./session-section", () => ({ SessionSection: stub("session") }));
-vi.mock("@/features/capture/components/capture-popover", () => ({
-  CapturePopover: () => <div data-testid="capture-view" />,
-}));
 vi.mock("../lib/details-project-path", () => ({ useDetailsProjectPath: () => "/work/acme" }));
+vi.mock("../lib/session-work-path", () => ({ useSessionWorkPath: () => null }));
 
-import { useSessionDetailsStore } from "../stores/session-details-store";
 import { SessionDetailsCard } from "./session-details-card";
 
-const order = () =>
-  [...document.querySelectorAll("[data-stub]")].map((el) => el.getAttribute("data-stub"));
+const sections = () =>
+  [...document.querySelectorAll("[data-stub]")].map((el) => [
+    el.getAttribute("data-stub"),
+    JSON.parse(el.getAttribute("data-props") ?? "{}"),
+  ]);
 
-beforeEach(() => {
-  useSessionDetailsStore.setState({ view: "main", collapsed: {} });
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
 });
-afterEach(cleanup);
 
 describe("SessionDetailsCard", () => {
-  it("holds every section of both old cards, each once, in reading order", () => {
+  it("shows every section, in reading order, when it has the room", () => {
     render(<SessionDetailsCard tabId="t1" presentation="docked" maxHeight={null} />);
-    expect(order()).toEqual([
-      "workspace",
-      "projects",
-      "version-control",
-      "changes",
-      "lineage",
-      "memory",
-      "session",
+    expect(sections()).toEqual([
+      ["workspace", { showEnvironment: true, showOpenIn: true }],
+      ["version-control", { compact: false }],
+      ["projects", {}],
+      ["lineage", {}],
     ]);
     expect(screen.getByRole("region", { name: "Session details" })).toBeTruthy();
   });
@@ -60,24 +58,18 @@ describe("SessionDetailsCard", () => {
     render(<SessionDetailsCard tabId="t1" presentation="popover" maxHeight={null} />);
     const card = document.querySelector("[data-session-details-card]")!;
     expect(card.getAttribute("data-session-details-card")).toBe("popover");
-    expect(order()).toHaveLength(7);
+    expect(sections()).toHaveLength(4);
   });
 
-  it("sheds the project-wide rows first, and keeps the session's own record", () => {
+  it("sheds the environment, projects, lineage, Open in and the git action, in that order", () => {
     // Measured too tall for any height: full, then compact, then essential.
     vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(10_000);
     render(<SessionDetailsCard tabId="t1" presentation="docked" maxHeight={200} />);
     const card = document.querySelector("[data-session-details-card]")!;
     expect(card.getAttribute("data-density")).toBe("essential");
-    expect(order()).toEqual(["changes", "lineage", "memory"]);
-    vi.restoreAllMocks();
-  });
-
-  it("opens straight onto its capture view when deep-linked", () => {
-    useSessionDetailsStore.setState({ view: "capture" });
-    render(<SessionDetailsCard tabId="t1" presentation="docked" maxHeight={null} />);
-    expect(screen.getByTestId("capture-view")).toBeTruthy();
-    expect(screen.getByText("Session capture")).toBeTruthy();
-    expect(order()).toEqual([]);
+    expect(sections()).toEqual([
+      ["workspace", { showEnvironment: false, showOpenIn: false }],
+      ["version-control", { compact: true }],
+    ]);
   });
 });

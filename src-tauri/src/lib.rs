@@ -637,6 +637,7 @@ pub fn run() {
             commands::git::git_log,
             commands::git::git_diff_all,
             commands::git::git_workspace_summary,
+            commands::git::git_branch_compare,
             commands::usage_dashboard::usage_dashboard,
             commands::capture::capture_session_summary,
             commands::capture::capture_session_files,

@@ -54,7 +54,7 @@ import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { revealSourceControl, toggleSourceControl } from "@/features/layout/lib/source-control";
 import { revealFiles, toggleFiles } from "@/features/layout/lib/files-surface";
 import { toggleTeamChat } from "@/features/layout/lib/team-chat";
-import { openCapture } from "@/features/session-context/lib/open-capture";
+import { openCapture } from "@/features/capture/lib/open-capture";
 import { openDestination } from "@/features/layout/lib/destinations";
 import { useProjectStore } from "@/features/projects/stores/project-store";
 import { useActiveOrgProjects } from "@/features/projects/lib/org-scope";

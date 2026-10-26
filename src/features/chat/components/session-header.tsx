@@ -116,13 +116,7 @@ export const SessionHeaderControls = memo(function SessionHeaderControls({
         open={pinsOpen}
         onOpenChange={setPinsOpen}
       />
-      <SessionDetailsButton
-        tabId={tabId}
-        scope={scope}
-        docked={docked}
-        stageRef={stageRef}
-        onOpenSearch={onOpenSearch}
-      />
+      <SessionDetailsButton tabId={tabId} scope={scope} docked={docked} stageRef={stageRef} />
       <MoreMenu
         onOpenSearch={onOpenSearch}
         roleFilter={roleFilter}

@@ -43,7 +43,7 @@ Glossary of domain terms as this project uses them. Decisions with lasting conse
 - **Destination** — a full-page view that takes the area right of the rail, one at a time, while the session keeps running underneath: Timeline, Usage, Knowledge, the knowledge graph, Memory, Spaces. Esc or the back arrow returns to the session. *Avoid: page, screen, for this concept.* Settings is similar but separate: it takes the whole window and is not a tab type. See ADR-0024.
 - **Peek** — a compact view of a destination, designed for a column, that can sit beside the session. Added for a destination only when someone needs it; none exists yet.
 - **Placement** — which of session, surface or destination a tab type is (`TAB_PLACEMENT`). Every tab type has exactly one, and one of them, `surface-or-destination`, is both: team chat opens as a surface tab or as a destination by how it was opened, and is still one per window. See ADR-0024's 2026-10-24 amendment.
-- **Details** — the session's one card of facts and actions: workspace, version control, changes, lineage, memory, capture, usage. The title bar's first session control opens it, docked at the session's top-right where there is room, else as a popover under the button. *Avoid: overview, session context, for this card.*
+- **Details** — the session's one card of facts and actions: where it runs and how to open it, its project scripts, version control (branch, pull requests, the git action, changes), attached projects and lineage. The title bar's first session control opens it, docked at the session's top-right where there is room, else as a popover under the button. *Avoid: overview, session context, for this card.*
 
 ## Shared memory domain
 

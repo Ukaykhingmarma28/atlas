@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 //
-// The project row opens the preferred editor — the user's choice, or with
+// "Open in" opens the preferred editor — the user's choice, or with
 // "Automatic" the first one detected — and the file manager only when no
-// editor is installed. Its menu lists every installed editor either way,
-// closed off by a separator.
+// editor is installed. Its ⌄ chooses which editor that is: it sets the
+// preference, marks it, and opens nothing.
 
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -49,11 +49,11 @@ beforeEach(() => {
 });
 afterEach(() => cleanup());
 
-async function mount() {
+async function mount(workPath = "/work/acme") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <WorkspaceSection projectPath="/work/acme" />
+      <WorkspaceSection projectPath="/work/acme" workPath={workPath} showEnvironment showOpenIn />
     </QueryClientProvider>,
   );
   await settle();
@@ -77,7 +77,7 @@ describe("WorkspaceSection", () => {
       cmd === "external_editors_detect" ? [] : null,
     );
     await mount();
-    fireEvent.click(screen.getByText(/^Open in (Finder|Explorer|file manager)$/));
+    fireEvent.click(screen.getByText(/^Open in (Finder|Explorer|File Manager)$/));
     await settle();
     expect(revealItemInDir).toHaveBeenCalledWith("/work/acme");
     expect(invoke).not.toHaveBeenCalledWith("external_editor_open", expect.anything());
@@ -96,13 +96,22 @@ describe("WorkspaceSection", () => {
     });
   });
 
-  it("lists every editor in the menu, then a separator, even with Automatic", async () => {
+  it("chooses the editor from the menu, and opens nothing", async () => {
     await mount();
-    fireEvent.click(screen.getByRole("button", { name: "Other ways to open the project" }));
+    fireEvent.click(screen.getByRole("button", { name: "Choose an editor" }));
     await settle();
     const items = (await screen.findAllByRole("menuitem")).map((el) => el.textContent);
-    expect(items.slice(0, 2)).toEqual(["Open in Cursor", "Open in Zed"]);
-    expect(screen.getAllByRole("separator").length).toBeGreaterThan(0);
+    expect(items[0]).toMatch(/^Cursor/);
+    expect(items[1]).toBe("Zed");
+    expect(items[2]).toMatch(/^(Finder|Explorer|File Manager)/);
+    invoke.mockClear();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Zed" }));
+    await settle();
+    expect(invoke).toHaveBeenCalledWith("update_atlas_settings", {
+      patch: { preferredEditor: "zed" },
+      expectedGeneration: expect.any(Number),
+    });
+    expect(invoke).not.toHaveBeenCalledWith("external_editor_open", expect.anything());
   });
 });
 
@@ -110,13 +119,7 @@ describe("WorkspaceSection in a worktree session", () => {
   const WORKTREE = "/Users/me/Library/Application Support/atlas/worktrees/acme-pr-42";
 
   it("opens the session's worktree, not the project's checkout", async () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(
-      <QueryClientProvider client={client}>
-        <WorkspaceSection projectPath="/work/acme" workPath={WORKTREE} />
-      </QueryClientProvider>,
-    );
-    await settle();
+    await mount(WORKTREE);
     fireEvent.click(screen.getByText("Open in Cursor"));
     await settle();
     expect(invoke).toHaveBeenCalledWith("external_editor_open", {

@@ -4,8 +4,8 @@
 // The lane is an absolute layer over the transcript area: it starts a gap
 // below the title bar, ends a gap above the composer, and never takes layout
 // space, so opening or closing the card moves neither the transcript nor the
-// composer. A card taller than the lane first sheds sections it can do
-// without (`session-overview-layout.ts`), then scrolls inside itself.
+// composer. A card taller than the lane first sheds rows it can do
+// without (`details-density.ts`), then scrolls inside itself.
 //
 // A component of its own so the open flag it reads re-renders this and
 // nothing else: the chat panel, and the transcript under it, never hear a
@@ -19,7 +19,7 @@ import {
   useSessionDetailsStore,
 } from "@/features/session-context/stores/session-details-store";
 
-import { OVERVIEW_CARD_GAP } from "../lib/session-overview-layout";
+import { DETAILS_CARD_GAP } from "@/features/session-context/lib/details-density";
 import { useElementHeight } from "../lib/use-element-height";
 
 const SessionDetailsCard = lazy(() =>
@@ -32,14 +32,12 @@ export function SessionDockLane({
   tabId,
   scope,
   docked,
-  onOpenSearch,
 }: {
   tabId: string;
   /** The session's scope (`sessionScope`). */
   scope: string;
   /** Whether the panel keeps the room at all; nothing docks without it. */
   docked: boolean;
-  onOpenSearch: () => void;
 }) {
   const open = useSessionDetailsStore((s) => docked && selectDockedOpen(s, scope));
   const laneRef = useRef<HTMLDivElement>(null);
@@ -54,19 +52,14 @@ export function SessionDockLane({
       // `pointer-events-none`: the lane is mostly empty air over the
       // transcript's gutter; only the card in it takes the pointer.
       className="pointer-events-none absolute right-3 z-panel flex flex-col items-end"
-      style={{ top: OVERVIEW_CARD_GAP, bottom: OVERVIEW_CARD_GAP }}
+      style={{ top: DETAILS_CARD_GAP, bottom: DETAILS_CARD_GAP }}
     >
       {open && (
         // No entrance: docked, the card is a panel the toggle shows, and the
         // toggle is the feedback. Only the popover form grows from its button.
         <div data-session-details-dock className="pointer-events-auto flex min-h-0 shrink flex-col">
           <Suspense fallback={null}>
-            <SessionDetailsCard
-              tabId={tabId}
-              onOpenSearch={onOpenSearch}
-              presentation="docked"
-              maxHeight={laneHeight}
-            />
+            <SessionDetailsCard tabId={tabId} presentation="docked" maxHeight={laneHeight} />
           </Suspense>
         </div>
       )}

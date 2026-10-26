@@ -49,8 +49,9 @@ const VSCODE: PresetBindings = {
   "panels.terminal": ["ctrl+`", "cmd+j"],
   "tabs.newTerminal": ["ctrl+shift+`"],
   // `panels.right` is Source Control (the id predates it being a surface):
-  // ⌥⌘B is VS Code's secondary side bar, ⌃⇧G its Source Control view.
-  "panels.right": ["cmd+alt+b", "ctrl+shift+g"],
+  // ⌃⇧G is VS Code's Source Control view. ⌥⌘B, its secondary side bar, keeps
+  // Atlas's default: the session Details card, the panel on the right.
+  "panels.right": ["ctrl+shift+g"],
   "workspace.toggleSidebar": ["cmd+ctrl+i"],
   "tabs.prev": ["cmd+alt+left", "cmd+shift+["],
   "tabs.next": ["cmd+alt+right", "cmd+shift+]"],

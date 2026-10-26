@@ -26,10 +26,10 @@ import {
   useProjectScripts,
 } from "../lib/project-scripts";
 import { useSessionDetailsStore } from "../stores/session-details-store";
-import { ContextRow, ContextSplitRow, RowIcon, RowLabel } from "./context-rows";
+import { DetailsRow, DetailsSplit, RowIcon, RowLabel } from "./details-rows";
 import { ProjectScriptGlyph } from "./project-script-icons";
 
-export function ProjectScriptsControl({
+export function ProjectScriptsRow({
   projectPath,
   cwd = projectPath,
 }: {
@@ -43,15 +43,15 @@ export function ProjectScriptsControl({
 
   if (!primary) {
     return (
-      <ContextRow onClick={() => editScript({ projectPath, script: null })}>
+      <DetailsRow onClick={() => editScript({ projectPath, script: null })}>
         <RowIcon icon={Plus} />
         <RowLabel>Add project script</RowLabel>
-      </ContextRow>
+      </DetailsRow>
     );
   }
 
   return (
-    <ContextSplitRow
+    <DetailsSplit
       title={primary.command}
       onClick={() => runProjectScript(projectPath, primary, cwd)}
       menuLabel="Project scripts"
@@ -97,6 +97,6 @@ export function ProjectScriptsControl({
       <span className="min-w-0 max-w-1/2 shrink truncate font-mono text-2xs text-muted-foreground">
         {commandSummary(primary.command)}
       </span>
-    </ContextSplitRow>
+    </DetailsSplit>
   );
 }

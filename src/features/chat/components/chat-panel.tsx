@@ -373,7 +373,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   // transcript or the composer. Off on an empty session, which has no column
   // to clear: the card is its button's popover there.
   const conversationRef = useRef<HTMLDivElement>(null);
-  const contextDock = useContextDock(tabId, conversationRef, (session?.messages.length ?? 0) > 0);
+  const contextDock = useContextDock(conversationRef, (session?.messages.length ?? 0) > 0);
   // The transcript's box, under the title bar and down to the composer: the
   // Details popover is capped at its height.
   const stageRef = useRef<HTMLDivElement>(null);
@@ -1636,12 +1636,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
             </div>
             {/* The docked Details card: an absolute layer over the transcript's
                 top-right, in room the row above already leaves. */}
-            <SessionDockLane
-              tabId={tabId}
-              scope={scope}
-              docked={contextDock.docked}
-              onOpenSearch={onOpenSearchStable}
-            />
+            <SessionDockLane tabId={tabId} scope={scope} docked={contextDock.docked} />
           </div>
         )}
 

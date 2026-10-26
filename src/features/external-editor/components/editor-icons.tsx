@@ -116,5 +116,6 @@ export function EditorIcon({ id, className }: { id: string; className?: string }
       />
     );
   }
-  return <Mark className={cn("size-3.5 shrink-0", className)} />;
+  // 14px like the fallback glyph: `size-3.5` is rem, and the root is 13px.
+  return <Mark className={cn("size-[14px] shrink-0", className)} />;
 }

@@ -119,6 +119,13 @@ export const ACTIONS = [
     defaults: ["cmd+,"],
   },
   {
+    id: "app.openInEditor",
+    title: "Open Session in Preferred Editor",
+    category: "Project",
+    when: "global",
+    defaults: ["cmd+o"],
+  },
+  {
     id: "app.capture",
     title: "Open Session Capture",
     category: "Project",
@@ -185,6 +192,13 @@ export const ACTIONS = [
     category: "Panels",
     when: "global",
     defaults: ["cmd+shift+b"],
+  },
+  {
+    id: "panels.sessionDetails",
+    title: "Toggle session details",
+    category: "Panels",
+    when: "global",
+    defaults: ["cmd+alt+b"],
   },
   {
     id: "panels.teamChat",

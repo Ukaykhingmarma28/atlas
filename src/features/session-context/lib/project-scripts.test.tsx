@@ -22,7 +22,7 @@ vi.mock("@/features/terminal/lib/open-command-terminal", async (importOriginal) 
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 import { ProjectScriptConfirmHost } from "../components/project-script-confirm";
-import { ProjectScriptsControl } from "../components/project-scripts-control";
+import { ProjectScriptsRow } from "../components/project-scripts-row";
 import { useSessionDetailsStore } from "../stores/session-details-store";
 import { commandSummary, projectScriptTerminalLine, runProjectScript } from "./project-scripts";
 import type { ProjectScript } from "./session-context-api";
@@ -152,7 +152,7 @@ describe("running a project script", () => {
     );
     render(
       <QueryClientProvider client={new QueryClient()}>
-        <ProjectScriptsControl projectPath={PROJECT} />
+        <ProjectScriptsRow projectPath={PROJECT} />
       </QueryClientProvider>,
     );
     // The list arrives through react-query, which can take more than one tick.

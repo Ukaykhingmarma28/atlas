@@ -6,28 +6,35 @@
 // the button. The button itself never animates: no press scale, and hover is
 // a colour step only.
 //
-// While capture is recording it carries a small STEADY dot, never a pulse:
-// capture is on for hours, and a light that moves pulls the eye every time it
-// does. A fault keeps its own colour: a stopped recorder painted green would
-// be a lie.
+// It also answers the card's two shortcuts for the session on screen
+// (`details-commands.ts`): ⌘⌥B shows or hides the card in whichever form
+// fits, ⌘O opens the session's checkout in the preferred editor.
 //
 // Each form subscribes to its own slice of the Details store, so a toggle
 // re-renders this button and the card, never the chat panel.
 
-import { lazy, Suspense, useEffect, type ReactNode, type RefObject } from "react";
+import { lazy, Suspense, useEffect, type RefObject } from "react";
 import { Popover } from "@base-ui/react/popover";
 import { SquareMenu } from "lucide-react";
 
-import { CaptureDot } from "@/features/capture/components/capture-status";
-import { OVERVIEW_CARD_GAP } from "@/features/chat/lib/session-overview-layout";
 import { useElementHeight } from "@/features/chat/lib/use-element-height";
+import { useSettingsStore } from "@/features/settings/stores/settings-store";
+import { useLayoutStore } from "@/features/layout/stores/layout-store";
+import { useExternalEditorStore } from "@/features/external-editor/stores/external-editor-store";
+import { resolvePreferredEditor } from "@/features/external-editor/lib/preferred-editor";
 import { cn } from "@/lib/utils";
 import { HintItem } from "@/ui/hint-group";
 import { IconButton } from "@/ui/icon-button";
 
+import {
+  OPEN_SESSION_IN_EDITOR_EVENT,
+  TOGGLE_SESSION_DETAILS_EVENT,
+} from "../lib/details-commands";
+import { DETAILS_CARD_GAP } from "../lib/details-density";
 import { useDetailsProjectPath } from "../lib/details-project-path";
-import { useCaptureState, type CaptureState } from "../lib/use-capture-state";
+import { useSessionWorkPath } from "../lib/session-work-path";
 import { selectDockedOpen, useSessionDetailsStore } from "../stores/session-details-store";
+import { openWithPreference } from "./workspace-section";
 
 const loadCard = () => import("./session-details-card");
 const SessionDetailsCard = lazy(() => loadCard().then((m) => ({ default: m.SessionDetailsCard })));
@@ -48,7 +55,6 @@ export function SessionDetailsButton({
   scope,
   docked,
   stageRef,
-  onOpenSearch,
 }: {
   tabId: string;
   /** The session's scope (`sessionScope`). */
@@ -58,59 +64,59 @@ export function SessionDetailsButton({
   /** The transcript's box: the popover is capped at its height, so it can
    *  never reach the composer below it. */
   stageRef: RefObject<HTMLElement | null>;
-  onOpenSearch: () => void;
 }) {
-  const projectPath = useDetailsProjectPath(tabId);
-  const capture = useCaptureState(projectPath);
-  const label = capture.recording
-    ? `${DETAILS_LABEL} · ${capture.health?.summary ?? "capture is on"}`
-    : DETAILS_LABEL;
-  return (
-    <>
-      {docked ? (
-        <DockToggle scope={scope} label={label} capture={capture} />
-      ) : (
-        <DetailsPopover
-          tabId={tabId}
-          scope={scope}
-          label={label}
-          capture={capture}
-          stageRef={stageRef}
-          onOpenSearch={onOpenSearch}
-        />
-      )}
-      <HandOver scope={scope} docked={docked} />
-    </>
+  useDetailsShortcuts(tabId, scope, docked);
+  return docked ? (
+    <DockToggle scope={scope} />
+  ) : (
+    <DetailsPopover tabId={tabId} scope={scope} stageRef={stageRef} />
   );
 }
 
+/** ⌘⌥B and ⌘O, answered only by the session on screen. */
+function useDetailsShortcuts(tabId: string, scope: string, docked: boolean) {
+  const projectPath = useDetailsProjectPath(tabId);
+  const workPath = useSessionWorkPath(tabId, projectPath) ?? projectPath;
+  useEffect(() => {
+    const onScreen = () => useLayoutStore.getState().activeTabId === tabId;
+    const toggle = () => {
+      if (!onScreen()) return;
+      const { actions, popoverFor } = useSessionDetailsStore.getState();
+      if (docked) actions.toggle(scope, { instant: true });
+      else actions.setPopover(scope, popoverFor !== scope, { instant: true });
+    };
+    const openInEditor = () => {
+      if (!onScreen() || !workPath) return;
+      const setting = useSettingsStore.getState().settings.preferredEditor;
+      const editors = useExternalEditorStore.getState().editors;
+      void openWithPreference(resolvePreferredEditor(setting, editors)?.id ?? null, workPath);
+    };
+    window.addEventListener(TOGGLE_SESSION_DETAILS_EVENT, toggle);
+    window.addEventListener(OPEN_SESSION_IN_EDITOR_EVENT, openInEditor);
+    return () => {
+      window.removeEventListener(TOGGLE_SESSION_DETAILS_EVENT, toggle);
+      window.removeEventListener(OPEN_SESSION_IN_EDITOR_EVENT, openInEditor);
+    };
+  }, [tabId, scope, docked, workPath]);
+}
+
 /** Docked: the button shows or hides the card drawn into the panel's room. */
-function DockToggle({
-  scope,
-  label,
-  capture,
-}: {
-  scope: string;
-  label: string;
-  capture: CaptureState;
-}) {
+function DockToggle({ scope }: { scope: string }) {
   const open = useSessionDetailsStore((s) => selectDockedOpen(s, scope));
   const { toggle } = useSessionDetailsStore.use.actions();
   return (
-    <DotFrame capture={capture}>
-      <HintItem label={label}>
-        <IconButton
-          icon={SquareMenu}
-          label={DETAILS_LABEL}
-          size="sm"
-          iconSize="md"
-          aria-pressed={open}
-          data-session-details-toggle
-          onPointerEnter={() => void loadCard()}
-          onClick={(e) => toggle(scope, { instant: fromKeyboard(e.nativeEvent) })}
-        />
-      </HintItem>
-    </DotFrame>
+    <HintItem label={DETAILS_LABEL}>
+      <IconButton
+        icon={SquareMenu}
+        label={DETAILS_LABEL}
+        size="sm"
+        iconSize="md"
+        aria-pressed={open}
+        data-session-details-toggle
+        onPointerEnter={() => void loadCard()}
+        onClick={(e) => toggle(scope, { instant: fromKeyboard(e.nativeEvent) })}
+      />
+    </HintItem>
   );
 }
 
@@ -118,17 +124,11 @@ function DockToggle({
 function DetailsPopover({
   tabId,
   scope,
-  label,
-  capture,
   stageRef,
-  onOpenSearch,
 }: {
   tabId: string;
   scope: string;
-  label: string;
-  capture: CaptureState;
   stageRef: RefObject<HTMLElement | null>;
-  onOpenSearch: () => void;
 }) {
   const open = useSessionDetailsStore((s) => s.popoverFor === scope);
   const instant = useSessionDetailsStore((s) => s.instant);
@@ -136,51 +136,36 @@ function DetailsPopover({
   // Measured only while open: the room under the title bar, down to the
   // composer, less the gap the card keeps from it.
   const stage = useElementHeight(stageRef, open);
-  const maxHeight = stage === null ? null : Math.max(0, stage - POPOVER_OFFSET - OVERVIEW_CARD_GAP);
+  const maxHeight = stage === null ? null : Math.max(0, stage - POPOVER_OFFSET - DETAILS_CARD_GAP);
   return (
     <Popover.Root
       open={open}
-      onOpenChange={(next, details) => {
-        // The Session section's comments and share morphs open in a portal of
-        // their own, and so do the card's menus; a press inside one is not a
-        // press outside the card.
-        if (!next && (details.reason === "outside-press" || details.reason === "focus-out")) {
-          const target =
-            details.reason === "focus-out"
-              ? (details.event as FocusEvent).relatedTarget
-              : details.event.target;
-          if (target instanceof Element && target.closest("[data-session-details-portal]")) {
-            details.cancel();
-            return;
-          }
-        }
-        setPopover(scope, next, { instant: fromKeyboard(details.event) });
-      }}
+      onOpenChange={(next, details) =>
+        setPopover(scope, next, { instant: fromKeyboard(details.event) })
+      }
     >
-      <DotFrame capture={capture}>
-        <HintItem label={label}>
-          <Popover.Trigger
-            data-session-details-toggle
-            onPointerEnter={() => void loadCard()}
-            render={
-              <IconButton
-                icon={SquareMenu}
-                label={DETAILS_LABEL}
-                size="sm"
-                iconSize="md"
-                aria-pressed={open}
-              />
-            }
-          />
-        </HintItem>
-      </DotFrame>
+      <HintItem label={DETAILS_LABEL}>
+        <Popover.Trigger
+          data-session-details-toggle
+          onPointerEnter={() => void loadCard()}
+          render={
+            <IconButton
+              icon={SquareMenu}
+              label={DETAILS_LABEL}
+              size="sm"
+              iconSize="md"
+              aria-pressed={open}
+            />
+          }
+        />
+      </HintItem>
       <Popover.Portal>
         <Popover.Positioner
           className="z-popover"
           side="bottom"
           align="end"
           sideOffset={POPOVER_OFFSET}
-          collisionPadding={OVERVIEW_CARD_GAP}
+          collisionPadding={DETAILS_CARD_GAP}
         >
           <Popover.Popup
             aria-label={DETAILS_LABEL}
@@ -193,43 +178,11 @@ function DetailsPopover({
             )}
           >
             <Suspense fallback={null}>
-              <SessionDetailsCard
-                tabId={tabId}
-                onOpenSearch={onOpenSearch}
-                presentation="popover"
-                maxHeight={maxHeight}
-              />
+              <SessionDetailsCard tabId={tabId} presentation="popover" maxHeight={maxHeight} />
             </Suspense>
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
-  );
-}
-
-/** A popover left open when the panel gains room to dock becomes the docked
- *  card, so the card the user opened stays open. */
-function HandOver({ scope, docked }: { scope: string; docked: boolean }) {
-  useEffect(() => {
-    if (docked) useSessionDetailsStore.getState().actions.handOver(scope);
-  }, [docked, scope]);
-  return null;
-}
-
-/** The button's box, with the capture dot over its corner. */
-function DotFrame({ capture, children }: { capture: CaptureState; children: ReactNode }) {
-  return (
-    <span className="relative inline-flex">
-      {children}
-      {capture.recording && (
-        <span
-          data-capture-dot
-          className="pointer-events-none absolute -top-0.5 -right-0.5"
-          aria-hidden
-        >
-          <CaptureDot tone={capture.tone === "idle" ? "success" : capture.tone} />
-        </span>
-      )}
-    </span>
   );
 }

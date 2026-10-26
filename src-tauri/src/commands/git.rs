@@ -475,6 +475,108 @@ pub async fn git_workspace_summary(path: String) -> Result<GitProjectSummary, St
     .map_err(|e| e.to_string())
 }
 
+/// Where a checkout's branch stands against the repository's default branch:
+/// what the session Details card's Commit and Changes rows read, beside
+/// `git_snapshot`'s upstream view.
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitBranchCompare {
+    /// `main`, from `origin/HEAD`, else a local `main` / `master`.
+    pub default_branch: Option<String>,
+    /// HEAD is the default branch.
+    pub is_default: bool,
+    /// The repository has at least one remote.
+    pub has_remote: bool,
+    /// Commits on HEAD the default branch does not have; `None` without one.
+    pub ahead_of_default: Option<u32>,
+    /// Lines added and removed since the branch left the default branch,
+    /// uncommitted changes included. On the default branch (or with no
+    /// default branch) the working tree against HEAD.
+    pub additions: u32,
+    pub deletions: u32,
+}
+
+/// Sum a `git diff --numstat` listing. Binary files (`-`) count nothing.
+fn sum_numstat(numstat: &str) -> (u32, u32) {
+    numstat.lines().fold((0, 0), |(a, d), line| {
+        let mut cols = line.split('\t');
+        let add = cols.next().and_then(|c| c.parse::<u32>().ok()).unwrap_or(0);
+        let del = cols.next().and_then(|c| c.parse::<u32>().ok()).unwrap_or(0);
+        (a.saturating_add(add), d.saturating_add(del))
+    })
+}
+
+/// `origin/main` → `main`: the remote's name is everything before the first `/`.
+fn strip_remote(remote_ref: &str) -> &str {
+    remote_ref.split_once('/').map_or(remote_ref, |(_, b)| b)
+}
+
+#[tauri::command]
+pub async fn git_branch_compare(path: String) -> Result<GitBranchCompare, String> {
+    tokio::task::spawn_blocking(move || {
+        let git = |args: &[&str]| -> Option<String> {
+            let out = git_read().args(args).current_dir(&path).output().ok()?;
+            if !out.status.success() {
+                return None;
+            }
+            Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
+        };
+        let exists = |rev: &str| git(&["rev-parse", "--verify", "--quiet", rev]).is_some();
+
+        let has_remote = git(&["remote"]).is_some_and(|s| !s.is_empty());
+        let origin_head = git(&[
+            "symbolic-ref",
+            "--quiet",
+            "--short",
+            "refs/remotes/origin/HEAD",
+        ]);
+        let default_branch = origin_head
+            .as_deref()
+            .map(|r| strip_remote(r).to_string())
+            .or_else(|| {
+                ["main", "master"]
+                    .into_iter()
+                    .find(|b| exists(&format!("refs/heads/{b}")))
+                    .map(String::from)
+            });
+        let current = git(&["symbolic-ref", "--quiet", "--short", "HEAD"]);
+        let is_default = matches!((&current, &default_branch), (Some(c), Some(d)) if c == d);
+
+        // The remote's copy when there is one: a local `main` left behind
+        // would count every commit merged since as this branch's.
+        let base = default_branch.as_ref().and_then(|d| {
+            origin_head
+                .as_ref()
+                .map(|_| format!("origin/{d}"))
+                .filter(|r| exists(r))
+                .or_else(|| exists(d).then(|| d.clone()))
+        });
+        let ahead_of_default = base
+            .as_ref()
+            .and_then(|b| git(&["rev-list", "--count", &format!("{b}..HEAD")]))
+            .and_then(|s| s.parse().ok());
+        let from = match (&base, is_default) {
+            (Some(b), false) => git(&["merge-base", b, "HEAD"]),
+            _ => None,
+        }
+        .unwrap_or_else(|| "HEAD".to_string());
+        let (additions, deletions) = git(&["diff", "--numstat", &from])
+            .map(|s| sum_numstat(&s))
+            .unwrap_or((0, 0));
+
+        GitBranchCompare {
+            default_branch,
+            is_default,
+            has_remote,
+            ahead_of_default,
+            additions,
+            deletions,
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn git_diff_all(path: String) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
@@ -749,6 +851,49 @@ mod tests {
             .output()
             .unwrap();
         String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    }
+
+    #[test]
+    fn numstat_sums_lines_and_skips_binaries() {
+        assert_eq!(
+            sum_numstat("3\t1\ta.rs\n-\t-\tlogo.png\n10\t0\tb.rs\n"),
+            (13, 1)
+        );
+        assert_eq!(sum_numstat(""), (0, 0));
+        assert_eq!(strip_remote("origin/main"), "main");
+        assert_eq!(strip_remote("origin/release/1.0"), "release/1.0");
+    }
+
+    /// A feature branch counts its commits past `main` and every line since
+    /// it left `main`, uncommitted ones included; `main` itself counts only
+    /// its working tree.
+    #[tokio::test]
+    async fn branch_compare_measures_a_branch_against_main() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        git(root, &["init", "-q", "-b", "main"]);
+        fs::write(root.join("f"), "a\n").unwrap();
+        git(root, &["add", "-A"]);
+        git(root, &["commit", "-qm", "init"]);
+        let path = root.to_string_lossy().into_owned();
+
+        let on_main = git_branch_compare(path.clone()).await.unwrap();
+        assert_eq!(on_main.default_branch.as_deref(), Some("main"));
+        assert!(on_main.is_default);
+        assert!(!on_main.has_remote);
+        assert_eq!(on_main.ahead_of_default, Some(0));
+        assert_eq!((on_main.additions, on_main.deletions), (0, 0));
+
+        git(root, &["checkout", "-qb", "feature"]);
+        fs::write(root.join("f"), "a\nb\nc\n").unwrap();
+        git(root, &["commit", "-qam", "two lines"]);
+        fs::write(root.join("f"), "b\nc\nd\n").unwrap();
+
+        let feature = git_branch_compare(path).await.unwrap();
+        assert!(!feature.is_default);
+        assert_eq!(feature.ahead_of_default, Some(1));
+        // a → b c d: one removed, three added, the last uncommitted.
+        assert_eq!((feature.additions, feature.deletions), (3, 1));
     }
 
     /// Starting a session on another session's branch: the switch happens

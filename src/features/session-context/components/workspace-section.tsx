@@ -1,41 +1,43 @@
-// Where the session runs, how to open it, and the project's scripts — the
-// Workspace group.
+// Where the session runs, how to open it, and the project's scripts: the
+// Workspace group, three rows with no heading.
 //
-// First row: the environment. A machine glyph and a folder glyph, then the
-// machine's name (`m4-pro`); the folder's tooltip is the project path. Every
-// Atlas session runs on this machine, so it states that rather than offering
-// a choice of machine or run mode.
-//
-// Second row: "Open in <editor>" as a split. The main action opens the
-// project in the preferred editor (Settings ▸ Preferred editor; "Automatic"
-// is the first one detected), the ▾ lists every other detected editor, then
-// the file manager, a terminal and the clipboard. With no editor detected
-// the main action is the file manager.
-//
-// Third: the project's scripts (`ProjectScriptsControl`).
+//  - Environment: a machine glyph and a folder glyph, then the machine's
+//    name (`m4-pro`). Every Atlas session runs on this machine, in its
+//    project's checkout or a pull request's worktree, so the row states that
+//    rather than offering a choice. Right-click copies the path.
+//  - Open in: "Open in <editor>" opens where the session works; the ⌄ picks
+//    which editor that is (it sets Settings ▸ Preferred editor, and opens
+//    nothing). The file manager is one of the choices. ⌘O does the same as
+//    the main button.
+//  - Project scripts (`ProjectScriptsRow`).
 
 import { useQuery } from "@tanstack/react-query";
-import { Copy, Folder, FolderOpen, Laptop, SquareTerminal } from "lucide-react";
+import { Check, Copy, Folder, FolderGit2, FolderOpen, Laptop } from "lucide-react";
 
 import { EditorIcon } from "@/features/external-editor/components/editor-icons";
-import { OpenInEditorDropdownItems } from "@/features/external-editor/components/open-in-editor-menu";
 import { SYSTEM_EDITOR_ID } from "@/features/external-editor/lib/external-editor-api";
 import {
   openInEditor,
   openInLabel,
   usePreferredEditor,
 } from "@/features/external-editor/lib/preferred-editor";
-import { useProjectStore } from "@/features/projects/stores/project-store";
+import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
+import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { isMac, isWindows } from "@/lib/platform";
-import { DropdownMenuItem } from "@/ui/dropdown-menu";
-import { Hint } from "@/ui/tooltip";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/ui/context-menu";
+import { DropdownMenuItem, DropdownMenuShortcut } from "@/ui/dropdown-menu";
 
 import { sessionEnvironment } from "../lib/session-context-api";
-import { copyProjectPath, openProjectInTerminal, revealProject } from "../lib/workspace-actions";
-import { ContextRow, ContextSection, ContextSplitRow, RowIcon, RowLabel } from "./context-rows";
-import { ProjectScriptsControl } from "./project-scripts-control";
+import { copyProjectPath, revealProject } from "../lib/workspace-actions";
+import { DetailsRow, DetailsSection, DetailsSplit, RowIcon, RowLabel } from "./details-rows";
+import { ProjectScriptsRow } from "./project-scripts-row";
 
-const FILE_MANAGER = isMac ? "Finder" : isWindows ? "Explorer" : "file manager";
+export const FILE_MANAGER = isMac ? "Finder" : isWindows ? "Explorer" : "File Manager";
 
 function useSessionEnvironment() {
   return useQuery({
@@ -47,58 +49,97 @@ function useSessionEnvironment() {
 
 export function WorkspaceSection({
   projectPath,
-  workPath = projectPath,
+  workPath,
+  showEnvironment,
+  showOpenIn,
 }: {
   projectPath: string;
-  /** Where the session works (`sessionWorkPath`): a pull request session's
-   *  worktree, else the project. What opens, and where scripts run. */
-  workPath?: string;
+  /** Where the session works (`sessionWorkPath`): what opens, where scripts run. */
+  workPath: string;
+  showEnvironment: boolean;
+  showOpenIn: boolean;
 }) {
-  const name = useProjectStore((s) => s.projects.find((p) => p.path === projectPath)?.name ?? null);
-  const folder = name ?? projectPath.split(/[\\/]/).pop() ?? projectPath;
+  return (
+    <DetailsSection label="Workspace">
+      {showEnvironment && <EnvironmentRow projectPath={projectPath} workPath={workPath} />}
+      {showOpenIn && <OpenInRow path={workPath} />}
+      <ProjectScriptsRow projectPath={projectPath} cwd={workPath} />
+    </DetailsSection>
+  );
+}
+
+function EnvironmentRow({ projectPath, workPath }: { projectPath: string; workPath: string }) {
   const environment = useSessionEnvironment();
-  const { preferred } = usePreferredEditor();
-  // The system default is the file manager's wording for a folder.
+  const worktree = workPath !== projectPath;
+  const where = worktree ? "Worktree" : "Project checkout";
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger render={<div className="contents" />}>
+        <DetailsRow title={`${environment?.name || "This device"} · ${where}\n${workPath}`}>
+          <span className="flex shrink-0 items-center gap-1">
+            <RowIcon icon={Laptop} />
+            <RowIcon icon={worktree ? FolderGit2 : Folder} />
+          </span>
+          <RowLabel>{environment?.name || "This device"}</RowLabel>
+        </DetailsRow>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onClick={() => void copyProjectPath(workPath)}>
+          <Copy />
+          Copy full path
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
+/** Open `path` where the preferred editor says: an editor, or the file
+ *  manager when that is the preference (or nothing is detected). */
+export function openWithPreference(editorId: string | null, path: string): Promise<void> {
+  return editorId && editorId !== SYSTEM_EDITOR_ID
+    ? openInEditor(editorId, path)
+    : revealProject(path);
+}
+
+function OpenInRow({ path }: { path: string }) {
+  const { editors, preferred } = usePreferredEditor();
+  const shortcut = useActionShortcut("app.openInEditor");
   const editor = preferred && preferred.id !== SYSTEM_EDITOR_ID ? preferred : null;
+  const choices = (editors ?? []).filter((e) => e.id !== SYSTEM_EDITOR_ID);
+  const choose = (id: string) =>
+    useSettingsStore.getState().actions.updateSettings({ preferredEditor: id });
+  const current = editor?.id ?? SYSTEM_EDITOR_ID;
 
   return (
-    <ContextSection title="Workspace" showHeading={false} separated={false}>
-      <ContextRow title={`${environment?.name || "This device"} · ${workPath}`}>
-        <span className="flex shrink-0 items-center gap-1">
-          <RowIcon icon={Laptop} />
-          <Hint label={workPath}>
-            <span className="inline-flex" tabIndex={0} aria-label={`Project folder ${workPath}`}>
-              <RowIcon icon={Folder} />
-            </span>
-          </Hint>
-        </span>
-        <RowLabel>{environment?.name || folder}</RowLabel>
-      </ContextRow>
-      <ContextSplitRow
-        onClick={() => void (editor ? openInEditor(editor.id, workPath) : revealProject(workPath))}
-        menuLabel="Other ways to open the project"
-        menu={
-          <>
-            <OpenInEditorDropdownItems path={workPath} separatorAfter />
-            <DropdownMenuItem onClick={() => void revealProject(workPath)}>
-              <FolderOpen />
-              Reveal in {FILE_MANAGER}
+    <DetailsSplit
+      onClick={() => void openWithPreference(editor?.id ?? null, path)}
+      title={path}
+      menuLabel="Choose an editor"
+      menu={
+        <>
+          {choices.map((e) => (
+            <DropdownMenuItem key={e.id} onClick={() => choose(e.id)}>
+              <EditorIcon id={e.id} />
+              <span className="min-w-0 flex-1 truncate">{e.label}</span>
+              {e.id === current && <Check aria-label="Preferred" />}
+              {e.id === current && shortcut && (
+                <DropdownMenuShortcut>{shortcut.label}</DropdownMenuShortcut>
+              )}
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => void openProjectInTerminal(workPath)}>
-              <SquareTerminal />
-              Open in Terminal
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => void copyProjectPath(workPath)}>
-              <Copy />
-              Copy path
-            </DropdownMenuItem>
-          </>
-        }
-      >
-        {editor ? <EditorIcon id={editor.id} /> : <RowIcon icon={FolderOpen} />}
-        <RowLabel>{editor ? openInLabel(editor) : `Open in ${FILE_MANAGER}`}</RowLabel>
-      </ContextSplitRow>
-      <ProjectScriptsControl projectPath={projectPath} cwd={workPath} />
-    </ContextSection>
+          ))}
+          <DropdownMenuItem onClick={() => choose(SYSTEM_EDITOR_ID)}>
+            <FolderOpen />
+            <span className="min-w-0 flex-1 truncate">{FILE_MANAGER}</span>
+            {current === SYSTEM_EDITOR_ID && <Check aria-label="Preferred" />}
+            {current === SYSTEM_EDITOR_ID && shortcut && (
+              <DropdownMenuShortcut>{shortcut.label}</DropdownMenuShortcut>
+            )}
+          </DropdownMenuItem>
+        </>
+      }
+    >
+      {editor ? <EditorIcon id={editor.id} /> : <RowIcon icon={FolderOpen} />}
+      <RowLabel>{editor ? openInLabel(editor) : `Open in ${FILE_MANAGER}`}</RowLabel>
+    </DetailsSplit>
   );
 }
