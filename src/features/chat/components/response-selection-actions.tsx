@@ -173,7 +173,13 @@ export function ResponseSelectionActions({
       if (element?.closest("a, [data-comment-composer]")) return;
       const anchor = anchorAt(event.target as Node, viewport);
       if (!anchor) return;
-      useChatCommentsStore.getState().actions.startCompose(tabId, chatKeyOf(anchor), null);
+      // Only a row the cloud session can anchor to: a session that is not
+      // shared takes no comments, so a click there starts nothing.
+      const chatKey = chatKeyOf(anchor);
+      const comments = useChatCommentsStore.getState();
+      const tab = comments.byTab[tabId];
+      if (!tab?.actions || !tab.anchors.rowIdByChatKey.has(chatKey)) return;
+      comments.actions.startCompose(tabId, chatKey, null);
     };
     const key = (event: KeyboardEvent) => {
       if (openRef.current) return; // An open popover owns its focus and Escape.

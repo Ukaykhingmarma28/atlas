@@ -145,9 +145,7 @@ export function SessionActions({
             icon={MessageSquareMore}
             label={target ? "Comments" : why}
             disabled={!ready || !comments}
-            // A local session's threads sit under its messages; the panel
-            // (and its badge) is the cloud session's.
-            badge={target ? (commentCount ?? 0) : 0}
+            badge={commentCount ?? 0}
             onClick={(e) => show("comments", e.currentTarget)}
           />
           <RoundButton

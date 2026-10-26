@@ -10,8 +10,8 @@
  * not a popover hung off it.
  *
  * Reads `chat-comments-store` through narrow selectors only, so a row with
- * no thread and no composer costs its selectors and renders nothing. Local
- * and cloud threads are the same shape there; nothing here knows which.
+ * no thread and no composer costs its selectors and renders nothing. A
+ * session that is not shared has no anchors, so nothing here draws for it.
  */
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
