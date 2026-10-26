@@ -1,16 +1,20 @@
-// The sidebar footer's destinations as icon buttons, one component each, so
-// each subscribes to its own slice of the layout store. Each
-// toggles what it opens (back to the session when it is already on screen)
-// and lights while its view is the one showing. Team chat stays visible when
-// it is locked, greyed, saying what unlocks it.
+// The rail's destinations, one component each, so each subscribes to its own
+// slice of the layout store. Each toggles what it opens (back to the session
+// when it is already on screen) and lights while its view is the one showing.
+// Team chat stays visible when it is locked, greyed, saying what unlocks it.
+//
+// One item renders in both of the rail's widths: an icon with a tooltip while
+// the sidebar is closed, the same icon in the same place with its label beside
+// it while it is open. The icon box is the rail's width minus its gutter in
+// both, so opening the sidebar adds words and moves nothing.
 //
 // No motion on any of them: they are pressed many times a day, and the view
 // they open is the feedback. Hover is a colour step only.
 
-import type { ComponentProps } from "react";
-import { BookOpen, GitBranch, MessagesSquare } from "lucide-react";
-import { HintItem } from "@/ui/hint-group";
-import { IconButton } from "@/ui/icon-button";
+import { createContext, useContext, type ComponentProps } from "react";
+import { Bell, BookOpen, GitBranch, MessagesSquare, type LucideIcon } from "lucide-react";
+import { Hint } from "@/ui/tooltip";
+import { cn } from "@/lib/utils";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import {
@@ -26,38 +30,77 @@ import {
 import { unlockHint, useTeamAccess } from "@/features/comms/lib/team-chat-access";
 import { useCommsStore } from "@/features/comms/stores/comms-store";
 import { hasUnreadConversation } from "@/features/comms/lib/derive";
+import {
+  hasUnread,
+  useNotificationsStore,
+} from "@/features/notifications/stores/notifications-store";
+import { useOrgStore } from "@/features/organisations/stores/org-store";
 
-/** One destination: an icon that lights while its view is on screen. Must
- *  sit inside a `HintGroup`. */
+/** Whether the rail is the open sidebar (labels shown) or the icon strip. */
+export const RailExpandedContext = createContext(false);
+
+/** One rail item: an icon that lights while its view is on screen, labelled
+ *  while the sidebar is open. */
 export function DestinationButton({
+  icon: IconGlyph,
   label,
   hint,
   active,
   locked,
+  dot,
+  disabled,
+  className,
   ...props
-}: Omit<ComponentProps<typeof IconButton>, "label" | "size" | "variant"> & {
+}: Omit<ComponentProps<"button">, "children"> & {
+  icon: LucideIcon;
   label: string;
-  /** The tooltip, when it says more than the label (a shortcut). */
+  /** The tooltip, when it says more than the label (why it is disabled). */
   hint?: string;
   active?: boolean;
   /** What unlocks a destination this button cannot open yet. The button stays
    *  clickable (the click is the unlock, where there is one) and greyed. */
   locked?: string;
+  /** A dot on the icon: something unread behind it. */
+  dot?: boolean;
 }) {
+  const expanded = useContext(RailExpandedContext);
+  const tip = locked ?? hint ?? (expanded ? undefined : label);
+  const button = (
+    <button
+      type="button"
+      aria-label={label}
+      aria-current={active ? "page" : undefined}
+      aria-disabled={locked ? true : undefined}
+      data-locked={locked ? "" : undefined}
+      disabled={disabled}
+      className={cn(
+        "flex h-control-lg shrink-0 cursor-pointer items-center rounded-md text-muted-foreground outline-none transition-colors duration-fast",
+        "hover:bg-element-hover hover:text-foreground focus-visible:bg-element-hover",
+        "disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground",
+        "data-locked:opacity-50",
+        expanded && "w-full",
+        active && "bg-element-active text-foreground hover:bg-element-active",
+        className,
+      )}
+      {...props}
+    >
+      <span className="relative flex size-control-lg shrink-0 items-center justify-center">
+        <IconGlyph aria-hidden className="size-4" />
+        {dot && (
+          <span
+            data-testid="rail-dot"
+            className="pointer-events-none absolute right-1.5 top-1.5 size-1.5 rounded-full bg-foreground"
+          />
+        )}
+      </span>
+      {expanded && <span className="min-w-0 truncate pr-2 text-sm">{label}</span>}
+    </button>
+  );
+  if (!tip) return button;
   return (
-    <HintItem label={locked ?? hint ?? label}>
-      <IconButton
-        label={label}
-        aria-label={label}
-        size="sm"
-        variant="ghost"
-        active={active}
-        aria-current={active ? "page" : undefined}
-        aria-disabled={locked ? true : undefined}
-        data-locked={locked ? "" : undefined}
-        {...props}
-      />
-    </HintItem>
+    <Hint label={tip} side="right">
+      {button}
+    </Hint>
   );
 }
 
@@ -72,21 +115,15 @@ export function TeamChatButton() {
   const access = useTeamAccess();
   const unread = useCommsStore((s) => hasUnreadConversation(s.reads, s.conversations));
   return (
-    <span className="relative flex">
-      <DestinationButton
-        icon={MessagesSquare}
-        label="Team chat"
-        active={open}
-        locked={unlockHint(access, "team chat")}
-        onClick={access.locked ? (access.unlock ?? noop) : toggleTeamChatDestination}
-      />
-      {unread && !access.locked && (
-        <span
-          data-testid="team-chat-unread"
-          className="pointer-events-none absolute right-1 top-1 size-1.5 rounded-full bg-foreground"
-        />
-      )}
-    </span>
+    <DestinationButton
+      icon={MessagesSquare}
+      label="Team chat"
+      active={open}
+      locked={unlockHint(access, "team chat")}
+      dot={unread && !access.locked}
+      data-testid={unread && !access.locked ? "team-chat-unread" : undefined}
+      onClick={access.locked ? (access.unlock ?? noop) : toggleTeamChatDestination}
+    />
   );
 }
 
@@ -135,7 +172,8 @@ export function KnowledgeButton() {
   return (
     <DestinationButton
       icon={BookOpen}
-      label={hasProject ? "Knowledge" : "Open a project to open its knowledge base"}
+      label="Knowledge"
+      hint={hasProject ? undefined : "Open a project to open its knowledge base"}
       active={open}
       disabled={!hasProject}
       onClick={() => toggleDestination("knowledge")}
@@ -149,10 +187,26 @@ export function SourceControlButton() {
   return (
     <DestinationButton
       icon={GitBranch}
-      label={hasProject ? "Source control" : "Open a project to see its source control"}
+      label="Source control"
+      hint={hasProject ? undefined : "Open a project to see its source control"}
       active={open}
       disabled={!hasProject}
       onClick={toggleSourceControl}
+    />
+  );
+}
+
+/** Opens the notification drawer; a dot while the active org has unread. */
+export function NotificationsButton() {
+  const activeOrgId = useOrgStore.use.activeOrganisationId();
+  const unread = useNotificationsStore((s) => hasUnread(s.items, activeOrgId));
+  const { toggle } = useNotificationsStore.use.actions();
+  return (
+    <DestinationButton
+      icon={Bell}
+      label="Notifications"
+      dot={unread}
+      onClick={() => toggle(activeOrgId)}
     />
   );
 }

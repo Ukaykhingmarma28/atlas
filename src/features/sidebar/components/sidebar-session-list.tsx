@@ -1,5 +1,4 @@
-// The sidebar's sessions: the project picker (which projects the list shows,
-// the organisation at its foot), the header (search, new session), then one
+// The sidebar's sessions: the header (search, new session), then one
 // scroller holding the pinned block, the active list,
 // the Snoozed shelf and the Settled shelf.
 //
@@ -44,12 +43,12 @@ import { openNewAgentChat } from "@/features/chat/lib/open-agent-session";
 import { registerSettleAndAdvance } from "@/features/chat/lib/settle-and-advance";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { useAppStore } from "@/features/app/stores/app-store";
+import { ImportThreadsModal } from "@/features/chat/components/import-threads-modal";
 import { pickAndAddProject } from "@/features/projects/lib/pick-project";
 import {
   SETTLED_SHELF_FIRST_PAGE,
   SETTLED_SHELF_PAGE,
   searchSidebarSessions,
-  type SidebarProject,
   type SidebarSession,
 } from "../lib/sidebar-sessions";
 import {
@@ -86,9 +85,7 @@ import {
 import { SessionRowMenu, type SessionMenuActions } from "./session-row-menu";
 import { CollapsibleSectionHeader, SidebarSectionLabel } from "./sidebar-section-header";
 import { SEARCH_RESULTS_ID, SidebarSessionHeader, searchResultId } from "./sidebar-session-header";
-import { ProjectPicker } from "./project-picker";
 import { CustomSnoozeDialogHost } from "./custom-snooze-dialog";
-import { ImportThreadsModal } from "@/features/chat/components/import-threads-modal";
 
 /** How far a press must travel before it is a drag rather than a click. */
 const DRAG_THRESHOLD_PX = 4;
@@ -144,6 +141,8 @@ export function SidebarSessions() {
   const settledExpanded = useSidebarStore.use.settledExpanded();
   const settledSearch = useSidebarStore.use.settledSearch();
   const searchFocusRequest = useSidebarStore.use.searchFocusRequest();
+  // The empty list's "Import sessions" (the picker opens its own).
+  const [importOpen, setImportOpen] = useState(false);
   const sidebarActions = useSidebarStore.use.actions();
 
   // ── What the handlers read at call time ─────────────────────────────────
@@ -164,7 +163,6 @@ export function SidebarSessions() {
 
   // ── Drag ────────────────────────────────────────────────────────────────
   const [drag, setDrag] = useState<DragState | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
   const pinnedBlockRef = useRef<HTMLUListElement>(null);
   const suppressClickRef = useRef(false);
   const menuPendingRef = useRef<SidebarSession | null>(null);
@@ -533,13 +531,6 @@ export function SidebarSessions() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-1.5">
-      <ProjectPicker
-        projects={projects}
-        scopeProjectId={scopeProjectId}
-        onScopeChange={sidebarActions.setScopeProjectId}
-        onProjectSettings={(project: SidebarProject) => openProjectSettings(project.path)}
-        onImportSessions={() => setImportOpen(true)}
-      />
       <SidebarSessionHeader
         searchInputRef={searchInputRef}
         searchQuery={search}

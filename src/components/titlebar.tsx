@@ -193,8 +193,9 @@ export function Titlebar() {
  * because the lights do not scale with it. Vertically the lights are centred
  * by `trafficLightPosition.y` = bar height / 2 − 2 (see `--titlebar-height` in
  * `tokens.css`), re-applied after launch and title changes by
- * `commands::window::apply_traffic_light_inset`. It is dropped while the sidebar is open — the sidebar
- * then sits under the lights and carries that gap itself — and in fullscreen,
+ * `commands::window::apply_traffic_light_inset`. While the sidebar is closed its 48px rail sits under
+ * the lights, so the header only pads out the overhang; open, the sidebar
+ * carries the whole gap itself. It is dropped in fullscreen,
  * which hides the lights. Only macOS has them on the left; Windows and Linux get
  * the menu bar here and `WindowControls` at the other end.
  */
@@ -207,7 +208,9 @@ function TopbarLeading({ breadcrumb = true }: { breadcrumb?: boolean }) {
     <div
       className={cn(
         "flex min-w-0 shrink items-center gap-1",
-        inset ? "pl-[calc(78px/var(--ui-zoom,1))]" : "pl-2",
+        // Closed, the sidebar is the 48px rail of destination icons, so the
+        // lights overhang it by the rest of the inset.
+        inset ? "pl-[max(8px,calc(78px/var(--ui-zoom,1)_-_48px))]" : "pl-2",
       )}
     >
       {/* An open sidebar owns the corner then, and carries the badge. */}
