@@ -38,7 +38,7 @@ import { isLinux, isMac, isWindows } from "@/lib/platform";
 import { MenuBar } from "@/features/menu/components/menu-bar";
 import { OrgSwitcher } from "@/features/organisations/components/org-switcher";
 import { BreadcrumbButton } from "./breadcrumb-button";
-import { OPEN_CAPTURE_EVENT } from "@/features/session-context/lib/open-capture";
+import { OPEN_CAPTURE_EVENT } from "@/features/capture/lib/open-capture";
 import { RightPanelToggle } from "@/features/layout/components/right-panel-toggle";
 
 /**
@@ -437,8 +437,7 @@ function ProjectLabel({
     return () => void unlisten.then((stop) => stop());
   }, [captureOpen, readCapture]);
 
-  // ⌘⌥C and the palette open capture in the session's Details card; with no
-  // session in the main column they land here (`openCapture`). Every mounted
+  // ⌘⌥C and the palette open capture here (`openCapture`). Every mounted
   // project draws a label, and the background ones are `display:none`: only
   // the one on screen opens, or a popover would anchor to a hidden button.
   const rootRef = useRef<HTMLDivElement>(null);

@@ -84,7 +84,6 @@ beforeEach(() => {
     hidden: { [sessionScope(TAB, undefined)]: true },
     popoverFor: null,
     instant: false,
-    dockable: {},
   });
   transcriptRenders.count = 0;
 });
@@ -218,7 +217,6 @@ describe("the Details card never moves the transcript or the composer", () => {
 
     act(() => useSessionDetailsStore.getState().actions.toggle(scope));
     expect(await screen.findByTestId("details-card")).toBeTruthy();
-    act(() => useSessionDetailsStore.getState().actions.toggleSection("changes"));
     act(() => useSessionDetailsStore.getState().actions.toggle(scope));
     act(() => useSessionDetailsStore.getState().actions.setPopover(scope, true));
     act(() => useSessionDetailsStore.getState().actions.setPopover(scope, false));

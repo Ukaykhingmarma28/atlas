@@ -7,7 +7,7 @@
 // live ones list first, expanded; finished ones fold under a collapsed
 // "Previous agents (N)" header; each list pages six at a time, then twelve,
 // behind "Show N more". The heading carries the running count
-// ("2 running") and folds the section; its ⋯ menu offers the fork itself,
+// ("2 running"); its ⋯ menu offers the fork itself,
 // gated on the agent advertising it exactly as the chat header's menu is.
 
 import { useMemo, useState, type ReactNode } from "react";
@@ -31,7 +31,7 @@ import {
 } from "@/ui/dropdown-menu";
 
 import { openLineageSession, useSessionLineage, type LineageEdge } from "../lib/session-lineage";
-import { ContextRow, ContextSection, RowIcon, RowLabel, RowMeta } from "./context-rows";
+import { DetailsRow, DetailsSection, RowIcon, RowLabel, RowMeta } from "./details-rows";
 
 /** How many children a list shows first, then how many each "Show N more" adds. */
 const INITIAL_COUNT = 6;
@@ -62,14 +62,11 @@ export function LineageSection({
 
   if (children.length === 0 && edges.length === 0 && !canFork) return null;
   return (
-    <ContextSection
-      title="Lineage"
-      // The child agents' running count while any runs, else how many there
-      // were: the figure that changes while you watch.
-      collapse={{
-        id: "lineage",
-        badge: running > 0 ? `${running} running` : children.length > 0 ? `${children.length}` : "",
-      }}
+    <DetailsSection
+      label="Lineage"
+      // The child agents' running count while any runs: the figure that
+      // changes while you watch.
+      title={running > 0 ? `Lineage · ${running} running` : "Lineage"}
       actions={canFork ? <LineageMenu tabId={tabId} /> : null}
     >
       {edges.map((edge) => (
@@ -85,7 +82,7 @@ export function LineageSection({
           <LineageGroup label="Previous agents" rows={previous} tabId={tabId} />
         </>
       )}
-    </ContextSection>
+    </DetailsSection>
   );
 }
 
@@ -110,14 +107,14 @@ function SessionEdgeRow({ edge, projectPath }: { edge: LineageEdge; projectPath:
   const title = edge.row.title || "Untitled session";
   const parent = edge.relation === "parent";
   return (
-    <ContextRow
+    <DetailsRow
       onClick={() => openLineageSession(edge.row, projectPath)}
       title={parent ? `Branched from ${title}` : `Branched into ${title}`}
     >
       <RowIcon icon={parent ? CornerLeftUp : GitFork} />
       <RowLabel>{title}</RowLabel>
       <RowMeta>{parent ? "Parent" : "Branch"}</RowMeta>
-    </ContextRow>
+    </DetailsRow>
   );
 }
 
@@ -175,13 +172,13 @@ function LineageGroup({
             ))}
           </ul>
           {hidden > 0 && (
-            <ContextRow
+            <DetailsRow
               onClick={() => setVisible((n) => n + PAGE_COUNT)}
               className="text-muted-foreground"
             >
               <Plus size={14} className="shrink-0" aria-hidden />
               <RowLabel>Show {Math.min(hidden, PAGE_COUNT)} more</RowLabel>
-            </ContextRow>
+            </DetailsRow>
           )}
         </>
       )}
@@ -210,7 +207,7 @@ function LineageRow({ tabId, child }: { tabId: string; child: Subagent }) {
   return (
     // Opens the child's own body beside the thread — the same target its
     // transcript row and the overview rail open.
-    <ContextRow
+    <DetailsRow
       onClick={() => openDetail(tabId, { kind: "subagent", toolCallId: child.toolCallId })}
       title={`${displayName(child)} — ${STATUS_LABEL[child.status]}`}
     >
@@ -227,6 +224,6 @@ function LineageRow({ tabId, child }: { tabId: string; child: Subagent }) {
       />
       <RowLabel>{displayName(child)}</RowLabel>
       {trailing}
-    </ContextRow>
+    </DetailsRow>
   );
 }

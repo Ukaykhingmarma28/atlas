@@ -53,6 +53,7 @@ import type {
 import type { CommitSession } from "@/features/git/components/commit-view";
 import type { RawGitStatus } from "@/features/terminal/components/block-terminal";
 import type { GitSummary } from "@/features/projects/stores/project-git-store";
+import type { BranchCompare } from "@/features/session-context/lib/session-git-api";
 import type { TypedHandlers, Unread } from "../types";
 import { ALL_PROJECTS, MOCK_PROJECT } from "../project";
 import {
@@ -1067,6 +1068,7 @@ export interface GitResponses {
   git_watch_stop: Unread;
   git_autofetch_set_active: AutoFetchStatus | null;
   git_workspace_summary: GitSummary;
+  git_branch_compare: BranchCompare;
   git_snapshot: GitSnapshotWire;
   git_status_fresh: RawGitStatus;
   git_inprogress: InProgress;
@@ -1205,6 +1207,21 @@ export const gitHandlers: TypedHandlers<GitResponses> = {
         deletions: 0,
       }
     );
+  },
+  // The branch against `main`: its own work plus a long-lived branch's worth
+  // of lines, so the Details card's Changes row reads like a real one.
+  git_branch_compare: (): BranchCompare => {
+    const branch = currentBranch();
+    const isDefault = branch.name === "main";
+    const { additions, deletions } = treeStats();
+    return {
+      defaultBranch: "main",
+      isDefault,
+      hasRemote: true,
+      aheadOfDefault: isDefault ? 0 : Math.max(branch.ahead, 3),
+      additions: additions + (isDefault ? 0 : 1_284),
+      deletions: deletions + (isDefault ? 0 : 317),
+    };
   },
   git_snapshot: (): GitSnapshotWire => {
     const branch = currentBranch();

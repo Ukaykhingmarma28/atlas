@@ -57,8 +57,6 @@ const reset = () =>
   useSessionDetailsStore.setState({
     hidden: { [SCOPE]: true },
     popoverFor: null,
-    dockable: {},
-    view: "main",
   });
 const COLUMN = 760;
 let WIDTH = 1000;
@@ -164,8 +162,6 @@ describe("the docked Details card in the chat panel", () => {
       reset();
       const { container, unmount } = mount();
       const expected = resolveContextDock(width, COLUMN);
-      const docked = useSessionDetailsStore.getState().dockable[TAB] === true;
-      expect(docked, `docked at ${width}`).toBe(expected.docked);
       branches.add(
         !expected.docked
           ? "popover"
@@ -207,7 +203,6 @@ describe("the docked Details card in the chat panel", () => {
     const { container } = mount();
     const { reserve } = resolveContextDock(WIDTH, Number.POSITIVE_INFINITY);
     expect(reserve).toBeGreaterThan(0);
-    expect(useSessionDetailsStore.getState().dockable[TAB]).toBe(true);
 
     const closed = frame(container);
     // Reserved while closed: the room exists before the card does.

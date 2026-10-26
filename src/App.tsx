@@ -142,7 +142,11 @@ import { useMembersStore } from "@/features/organisations/stores/members-store";
 import { ConnectDialog } from "@/features/auth/components/connect-dialog";
 import { LinkPullRequestDialogHost } from "@/features/pull-requests/components/link-pull-request-dialog";
 import { SessionDetailsDialogs } from "@/features/session-context/components/session-details-dialogs";
-import { openCapture } from "@/features/session-context/lib/open-capture";
+import { openCapture } from "@/features/capture/lib/open-capture";
+import {
+  openSessionInEditor,
+  toggleSessionDetails,
+} from "@/features/session-context/lib/details-commands";
 import { clampScale, SCALE_STEP, DEFAULT_SCALE } from "@/features/settings/lib/ui-scale";
 import { listenModelDone } from "@/features/settings/lib/models-api";
 import { useModelsStore } from "@/features/settings/stores/models-store";
@@ -1332,6 +1336,7 @@ export function App() {
     "panels.right": toggleSourceControl,
     // ⌘⇧C — team chat, a surface tab that follows you between projects.
     "panels.teamChat": toggleTeamChat,
+    "panels.sessionDetails": toggleSessionDetails,
     "panels.terminal": toggleTerminal,
     // ⌥J — Knowledge, a destination: opens it, or goes back to the session
     // when it is the one on screen.
@@ -1441,9 +1446,10 @@ export function App() {
       useSettingsNav.getState().open ? closeSettings() : openSettingsSection(),
     // The org's Usage dashboard, a destination: the same key goes back.
     "usage.open": () => toggleDestination("usage"),
-    // Session Capture: the session's Details card at its capture view, or the
-    // project label's capture popover where no session is in the main column.
+    // Session Capture: the project label's capture popover.
     "app.capture": openCapture,
+    // The session in the main column, in the preferred editor.
+    "app.openInEditor": openSessionInEditor,
     // ── Interface zoom ──
     "view.zoomIn": zoomIn,
     "view.zoomOut": zoomOut,
