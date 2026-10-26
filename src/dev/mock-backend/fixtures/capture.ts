@@ -292,8 +292,7 @@ function healthOf(project: ProjectCapture): CaptureHealth {
     issues.push({
       state: "degraded",
       reason: `${project.flaggedSessions} Session${plural(project.flaggedSessions)} could not be fully recorded.`,
-      nextStep:
-        "Open the Session to see what was flagged. Content that could not be scrubbed was not stored.",
+      nextStep: "Open the Session to see what is missing. Nothing unscrubbed was stored.",
     });
   }
   if (project.failedRows > 0) {
