@@ -25,6 +25,7 @@ import {
   chatCommentsMany,
   chatCommentsOrphan,
   chatCommentsRepliesOnly,
+  chatCommentsUnshared,
   chatCommentsTools,
 } from "./chat-comments";
 import { chatFileChips } from "./chat-file-chips";
@@ -88,6 +89,7 @@ const all: Scenario[] = [
   chatCommentsMany,
   chatCommentsRepliesOnly,
   chatCommentsTools,
+  chatCommentsUnshared,
   chatCommentsError,
   chatLongPrompt,
   chatLongSession,

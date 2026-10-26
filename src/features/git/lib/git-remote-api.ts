@@ -15,15 +15,16 @@ export async function isDiverged(path: string): Promise<boolean> {
   return !!snap?.isRepo && snap.ahead > 0 && snap.behind > 0;
 }
 
-/** What a branch switch in `path` would disturb: the branch it is on, and
- *  whether its working tree has anything uncommitted (untracked files
- *  included). `null` when it is not a repository or cannot be read. */
+/** What a branch switch in `path` would disturb: the branch it is on (and
+ *  whether HEAD is detached, when that name is not a branch), and whether its
+ *  working tree has anything uncommitted (untracked files included). `null`
+ *  when it is not a repository or cannot be read. */
 export async function checkoutState(
   path: string,
-): Promise<{ branch: string; dirty: boolean } | null> {
+): Promise<{ branch: string; detached: boolean; dirty: boolean } | null> {
   const snap = await invoke<GitSnapshotWire | null>("git_snapshot", { path }).catch(() => null);
   if (!snap?.isRepo) return null;
-  return { branch: snap.branch, dirty: snap.files.length > 0 };
+  return { branch: snap.branch, detached: snap.detached, dirty: snap.files.length > 0 };
 }
 
 /** Check out `branch` in `path`. Rejects with git's refusal. */

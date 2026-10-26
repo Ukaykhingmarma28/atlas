@@ -2532,7 +2532,10 @@ html[data-word-wrap="off"] .prose-chat pre {
 
 .atlas-project-rail {
   background: var(--sidebar);
-  border-right-color: var(--atlas-rail-divider);
+  /* Every side, not just the right: closed, the sidebar is a card under the
+     titlebar band with a top edge as well (app-sidebar.tsx). Only the sides
+     given a width draw. */
+  border-color: var(--atlas-rail-divider);
   box-shadow: var(--inset-highlight);
 }
 

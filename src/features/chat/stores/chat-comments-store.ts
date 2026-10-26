@@ -252,8 +252,8 @@ export function useComposeRequest(tabId: string, chatKey: string): ComposeReques
   });
 }
 
-/** Whether the tab's comments live in the cloud (a shared session) rather
- *  than on this machine. What decides whether a cite may "Share with team". */
+/** Whether the tab's session is in the cloud — the only kind that takes
+ *  comments. What decides whether a cite may "Share with team". */
 export function useHasCloudTarget(tabId: string): boolean {
   return useChatCommentsStore((s) => s.byTab[tabId]?.target !== null && !!s.byTab[tabId]?.target);
 }
@@ -277,12 +277,11 @@ export function useKeysCommentCount(tabId: string, chatKeys: readonly string[]):
   });
 }
 
-/** Comment count for the header badge; `null` until the tab has comments
- *  wired (local or cloud). */
+/** Comment count for the header badge; `null` when comments do not apply. */
 export function useCommentCount(tabId: string): number | null {
   return useChatCommentsStore((s) => {
     const tab = s.byTab[tabId];
-    return tab?.actions ? tab.commentCount : null;
+    return tab?.target && tab.actions ? tab.commentCount : null;
   });
 }
 

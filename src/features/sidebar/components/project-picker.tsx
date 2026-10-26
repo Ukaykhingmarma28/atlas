@@ -11,7 +11,7 @@
 // they are unavailable; the id; sync), the same menu the title bar's
 // breadcrumb opens.
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { openPullRequestListTab } from "@/features/pull-requests/lib/open-pull-request-list-tab";
 import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import {
@@ -20,7 +20,7 @@ import {
   ChevronRight,
   Download,
   GitPullRequest,
-  Layers,
+  Boxes,
   Plus,
   Search,
   Settings,
@@ -34,7 +34,11 @@ import {
   OrgAvatar,
   useOrgMenu,
 } from "@/features/organisations/components/org-switcher";
-import type { SidebarProject } from "../lib/sidebar-sessions";
+import { ImportThreadsModal } from "@/features/chat/components/import-threads-modal";
+import { useActiveOrgProjects } from "@/features/projects/lib/org-scope";
+import { resolveScopeProjectId, type SidebarProject } from "../lib/sidebar-sessions";
+import { openProjectSettings } from "../lib/sidebar-actions";
+import { useSidebarStore } from "../stores/sidebar-store";
 import { ProjectBadge } from "./session-row-parts";
 
 /** Past this many projects the menu grows a search field. */
@@ -61,13 +65,45 @@ export function filterPickerProjects(
   return projects.filter((project) => project.name.toLowerCase().includes(needle));
 }
 
+/** The picker wired to the stores: the active organisation's projects, the
+ *  remembered scope, and the session import it opens. It heads the rail in
+ *  both widths, so it reads them itself rather than through the session
+ *  list, which only the open sidebar mounts. */
+export function SidebarProjectPicker({ compact = false }: { compact?: boolean }) {
+  const orgProjects = useActiveOrgProjects();
+  const projects = useMemo<SidebarProject[]>(
+    () => orgProjects.map((p) => ({ id: p.id, name: p.name, path: p.path })),
+    [orgProjects],
+  );
+  const scopeProjectId = resolveScopeProjectId(useSidebarStore.use.scopeProjectId(), projects);
+  const { setScopeProjectId } = useSidebarStore.use.actions();
+  const [importOpen, setImportOpen] = useState(false);
+  return (
+    <>
+      <ProjectPicker
+        compact={compact}
+        projects={projects}
+        scopeProjectId={scopeProjectId}
+        onScopeChange={setScopeProjectId}
+        onProjectSettings={(project) => openProjectSettings(project.path)}
+        onImportSessions={() => setImportOpen(true)}
+      />
+      <ImportThreadsModal open={importOpen} onOpenChange={setImportOpen} />
+    </>
+  );
+}
+
 export function ProjectPicker({
   projects,
   scopeProjectId,
   onScopeChange,
   onProjectSettings,
   onImportSessions,
+  compact = false,
 }: {
+  /** The closed rail's form: the badge alone in an icon-sized box, its name
+   *  in a tooltip, the menu opening to the right. */
+  compact?: boolean;
   projects: readonly SidebarProject[];
   scopeProjectId: string | null;
   onScopeChange: (projectId: string | null) => void;
@@ -90,7 +126,7 @@ export function ProjectPicker({
   const label = scoped?.name ?? "All projects";
 
   return (
-    <div className="flex h-8 shrink-0 items-center px-2">
+    <div className={cn("flex shrink-0 items-center", !compact && "w-full")}>
       <DropdownMenu.Root
         open={open}
         onOpenChange={(next) => {
@@ -106,21 +142,38 @@ export function ProjectPicker({
             <button
               type="button"
               aria-label={`Sessions in: ${label}`}
-              className="flex h-7 min-w-0 cursor-pointer items-center gap-2 rounded-md px-1.5 text-sm font-medium text-foreground outline-none transition-colors hover:bg-element-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              title={compact ? label : undefined}
+              className={cn(
+                "flex h-control-lg min-w-0 cursor-pointer items-center rounded-md text-sm font-medium text-foreground outline-none transition-colors hover:bg-element-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-popup-open:bg-element-hover",
+                !compact && "pr-2",
+              )}
             />
           }
         >
-          {scoped ? (
-            <ProjectBadge name={scoped.name} path={scoped.path} />
-          ) : (
-            <Layers aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+          {/* The rail's icon box, so the badge sits where the destination
+              icons do, open or closed. */}
+          <span className="flex size-control-lg shrink-0 items-center justify-center">
+            {scoped ? (
+              <ProjectBadge name={scoped.name} path={scoped.path} />
+            ) : (
+              <Boxes aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+            )}
+          </span>
+          {!compact && (
+            <>
+              <span className="min-w-0 truncate text-left">{label}</span>
+              <ChevronDown aria-hidden className="ml-1 size-3 shrink-0 text-muted-foreground" />
+            </>
           )}
-          <span className="min-w-0 truncate text-left">{label}</span>
-          <ChevronDown aria-hidden className="size-3 shrink-0 text-muted-foreground" />
         </DropdownMenu.Trigger>
 
         <DropdownMenu.Portal>
-          <DropdownMenu.Positioner className="z-popover" align="start" sideOffset={4}>
+          <DropdownMenu.Positioner
+            className="z-popover"
+            side={compact ? "right" : "bottom"}
+            align="start"
+            sideOffset={4}
+          >
             <DropdownMenu.Popup className={ORG_MENU_POPUP_CLASS}>
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-background shadow-sm ring-1 ring-border">
                 {searchable ? (
@@ -150,7 +203,7 @@ export function ProjectPicker({
                       onClick={() => onScopeChange(null)}
                       className={cn(LIST_ITEM, scoped === null && LIST_ITEM_SELECTED)}
                     >
-                      <Layers aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+                      <Boxes aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
                       <span className="min-w-0 flex-1 truncate">All projects</span>
                       {scoped === null ? <Check aria-hidden className="size-3.5 shrink-0" /> : null}
                     </DropdownMenu.Item>
@@ -268,18 +321,21 @@ export function ProjectPicker({
       </DropdownMenu.Root>
 
       {/* Search everything: the command palette. */}
-      <div className="ml-auto flex shrink-0 items-center">
-        <Hint label="Search" shortcut={paletteHint}>
-          <button
-            type="button"
-            aria-label="Search"
-            onClick={() => window.dispatchEvent(new CustomEvent("atlas:command-palette"))}
-            className="flex size-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-element-hover hover:text-foreground"
-          >
-            <Search aria-hidden className="size-3.5" />
-          </button>
-        </Hint>
-      </div>
+      {/* The closed rail has no room for it; ⌘K is still the palette. */}
+      {!compact && (
+        <div className="ml-auto flex shrink-0 items-center">
+          <Hint label="Search" shortcut={paletteHint}>
+            <button
+              type="button"
+              aria-label="Search"
+              onClick={() => window.dispatchEvent(new CustomEvent("atlas:command-palette"))}
+              className="flex size-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-element-hover hover:text-foreground"
+            >
+              <Search aria-hidden className="size-3.5" />
+            </button>
+          </Hint>
+        </div>
+      )}
       {org.dialogs}
     </div>
   );

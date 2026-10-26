@@ -86,6 +86,7 @@ import { RetryPill } from "./retry-pill";
 import { SleepPill } from "./sleep-pill";
 import { AiGrantBar, useAiGrantBarShown } from "./ai-grant-bar";
 import { RemovedAgentBar } from "./removed-agent-bar";
+import { BranchChangedBar } from "./branch-changed-bar";
 import { ModeRestoreBar, OPEN_MODE_PICKER_EVENT } from "./mode-restore-bar";
 import { LiveElsewhereBar } from "./live-elsewhere-bar";
 import { useSendHeldForTerminal } from "../stores/live-elsewhere-store";
@@ -1936,6 +1937,10 @@ export function MessageInput({
         {/* A resume could not restore the user's mode: nothing sends until
             they pick one. */}
         {!grantBarShown && <ModeRestoreBar tabId={tabId} />}
+
+        {/* The last turn moved the checkout to another branch: the next
+            message would run there. */}
+        {!grantBarShown && <BranchChangedBar tabId={tabId} />}
 
         {/* Another process is writing this session: sending would fork it. */}
         {!grantBarShown && <LiveElsewhereBar tabId={tabId} />}

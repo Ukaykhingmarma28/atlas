@@ -324,7 +324,7 @@ export function useCopy(text: string): { copied: boolean; onCopy: () => void } {
  * Comment and copy. Comment starts a thread about the whole message, under
  * it (`inline-comment-threads.tsx`) — the same place a click on the prose
  * or the selection pill's Comment goes. Drawn once the row is in the anchor
- * map, which every settled prompt and response is.
+ * map: a captured row of a shared session.
  */
 export function CommentAndCopy({
   tabId,

@@ -64,6 +64,7 @@ import {
 } from "@/features/agents/stores/agent-registry-store";
 import { AgentOAuthModalHost } from "@/features/agents/components/agent-oauth-modal";
 import { watchRemovedAgents } from "@/features/chat/lib/removed-agents";
+import { watchTurnBranchChanges } from "@/features/chat/lib/branch-change-watch";
 import { AgentElicitationHost } from "@/features/chat/components/agent-elicitation-host";
 import { UiActionBridge } from "@/features/ui-actions/components/ui-action-bridge";
 import { OrgActionLogBridge } from "@/features/org-actions/components/org-action-log-bridge";
@@ -236,7 +237,14 @@ export function App() {
     startCatalogListener();
     // An uninstall drops the agent's connection with no delta to any tab on
     // it; the catalog shrinking is what settles those tabs.
-    return watchRemovedAgents();
+    const unwatchRemoved = watchRemovedAgents();
+    // A turn that moves its checkout to another branch, for the composer's
+    // "Branch changed" strip.
+    const unwatchBranches = watchTurnBranchChanges();
+    return () => {
+      unwatchRemoved();
+      unwatchBranches();
+    };
   }, []);
 
   // Warm launch with a path: when the binary is started with a folder while

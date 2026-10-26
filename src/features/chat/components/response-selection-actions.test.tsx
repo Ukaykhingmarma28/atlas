@@ -19,7 +19,25 @@ vi.mock("../stores/chat-comments-store", () => ({
   useCommentActions: () => ({ post: state.post, resolve: async () => {}, remove: async () => {} }),
   useCommentDirectory: () => directory,
   useHasCloudTarget: () => state.shared,
-  useChatCommentsStore: { getState: () => ({ actions: { startCompose: state.startCompose } }) },
+  useChatCommentsStore: {
+    getState: () => ({
+      actions: { startCompose: state.startCompose },
+      // A shared session's anchors know both rows; one that is not shared has none.
+      byTab: state.shared
+        ? {
+            "chat-a": {
+              actions: { post: state.post },
+              anchors: {
+                rowIdByChatKey: new Map([
+                  ["wire-prompt", {}],
+                  ["wire-response", {}],
+                ]),
+              },
+            },
+          }
+        : {},
+    }),
+  },
 }));
 
 function Harness({ enabled = true }: { enabled?: boolean }) {
@@ -260,6 +278,14 @@ describe("selected response actions", () => {
     expect(state.startCompose).toHaveBeenCalledWith("chat-a", "wire-response", null);
     click(screen.getByTestId("user"));
     expect(state.startCompose).toHaveBeenLastCalledWith("chat-a", "wire-prompt", null);
+  });
+
+  it("starts nothing on a click in a session that is not shared", () => {
+    state.shared = false;
+    render(<Harness />);
+    click(screen.getByTestId("prose").firstChild as Element);
+    click(screen.getByTestId("user"));
+    expect(state.startCompose).not.toHaveBeenCalled();
   });
 
   it("does not start one on a drag, a link, chrome, or a click that only cleared a selection", async () => {
