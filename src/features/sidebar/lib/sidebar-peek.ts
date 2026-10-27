@@ -58,10 +58,17 @@ export function holdPeek(): void {
 
 /** A menu or popover opened from the panel is still up. Its trigger carries
  *  `data-popup-open` while it is (Base UI), and a context menu has no trigger
- *  to mark, so an open menu anywhere counts too. */
+ *  to mark, so an open menu anywhere counts too — an open one only: some
+ *  dialogs stay mounted while closed (`CommentsMorph` goes `inert`), and
+ *  counting those would hold the peek open for good. */
 function popupOpen(): boolean {
   if (panel?.querySelector("[data-popup-open]")) return true;
-  return document.querySelector("[role='menu'], [role='dialog']") !== null;
+  for (const el of document.querySelectorAll<HTMLElement>("[role='menu'], [role='dialog']")) {
+    if (el.closest("[inert], [hidden]")) continue;
+    if (el.getClientRects().length === 0) continue;
+    return true;
+  }
+  return false;
 }
 
 /** The pointer left the edge, the toggle or the panel: close after a beat,
