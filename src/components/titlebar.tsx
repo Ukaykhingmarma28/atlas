@@ -40,6 +40,7 @@ import { OrgSwitcher } from "@/features/organisations/components/org-switcher";
 import { BreadcrumbButton } from "./breadcrumb-button";
 import { OPEN_CAPTURE_EVENT } from "@/features/capture/lib/open-capture";
 import { RightPanelToggle } from "@/features/layout/components/right-panel-toggle";
+import { endPeek, releasePeek, requestPeek } from "@/features/sidebar/lib/sidebar-peek";
 
 /**
  * The native window, for dragging and zooming. Resolved once per module and
@@ -112,11 +113,11 @@ export function useWindowDrag() {
  * One column's slice of the bar.
  *
  * Atlas has no full-width titlebar. Each column — every split column, the
- * project rail — draws its own header at `h-titlebar` with no bottom rule, so
+ * sidebar — draws its own header at `h-titlebar` with no bottom rule, so
  * side by side they read as one strip, broken only by the full-height column
  * borders running through it. The window's own controls then have to live in
- * whichever column is at the window's edge: `leading` (traffic-light inset,
- * the project rail toggle, the `org / project` label) goes in the leftmost
+ * whichever column is at the window's edge: `leading` (the corner cluster
+ * while the sidebar is closed, the `org / project` label) goes in the leftmost
  * header and `trailing` (update, notifications, account, and the
  * Windows/Linux window buttons) in the rightmost. See `columnChrome` for which
  * column that is.
@@ -166,8 +167,8 @@ export function PaneHeader({
 }
 
 /**
- * The window's top bar: the leading cluster (traffic-light inset, the project
- * rail toggle, `org / project`), and the
+ * The window's top bar: the leading cluster (the corner cluster, then
+ * `org / project`), and the
  * trailing dock (update, notifications, account, and the
  * Windows/Linux window buttons). Every stretch of it drags the window.
  */
@@ -185,43 +186,52 @@ export function Titlebar() {
 }
 
 /**
- * The bar's left end: room for the traffic lights, then the sidebar toggle
- * and the `org / project` label.
+ * The window's top-left corner: room for the traffic lights, the dev badge,
+ * the menus on Windows and Linux, and the sidebar toggle.
+ *
+ * It never moves. Two places draw it — the open sidebar's top band, and the
+ * leftmost column header while the sidebar is closed — and both start at the
+ * window's left edge with nothing before it, so the toggle sits on the same
+ * pixel whether the sidebar is open or not. Anything added here has to keep
+ * the two identical.
  *
  * The 78pt inset is the traffic lights (`trafficLightPosition.x` 16 + three
- * buttons) plus a gap — divided by the interface zoom, like the bar's height,
+ * buttons) plus a gap, divided by the interface zoom like the bar's height,
  * because the lights do not scale with it. Vertically the lights are centred
  * by `trafficLightPosition.y` = bar height / 2 − 2 (see `--titlebar-height` in
  * `tokens.css`), re-applied after launch and title changes by
- * `commands::window::apply_traffic_light_inset`. While the sidebar is closed its 48px rail sits under
- * the lights, so the header only pads out the overhang; open, the sidebar
- * carries the whole gap itself. It is dropped in fullscreen,
- * which hides the lights. Only macOS has them on the left; Windows and Linux get
- * the menu bar here and `WindowControls` at the other end.
+ * `commands::window::apply_traffic_light_inset`. The inset is dropped in
+ * fullscreen, which hides the lights; Windows and Linux have none on the left.
  */
-function TopbarLeading({ breadcrumb = true }: { breadcrumb?: boolean }) {
+export function CornerCluster() {
   const isFullscreen = useFullscreen();
-  const sidebarOpen = useProjectStore.use.sidebarOpen();
-  const inset = isMac && !isFullscreen && !sidebarOpen;
-
+  const inset = isMac && !isFullscreen;
   return (
     <div
       className={cn(
-        "flex min-w-0 shrink items-center gap-1",
-        // Closed, the sidebar is the 48px rail of destination icons, so the
-        // lights overhang it by the rest of the inset.
-        inset ? "pl-[max(8px,calc(78px/var(--ui-zoom,1)_-_48px))]" : "pl-2",
+        "flex shrink-0 items-center gap-1",
+        inset ? "pl-[calc(78px/var(--ui-zoom,1))]" : "pl-2",
       )}
     >
-      {/* An open sidebar owns the corner then, and carries the badge. */}
-      {!sidebarOpen && <DevBadge className="mr-1" />}
+      <DevBadge className="mr-1" />
       {/* Windows and Linux: the menus macOS shows in the system menu bar. */}
       {!isMac && <MenuBar className="mr-1" />}
-      {/* One sidebar toggle: the project rail's. The project tree is the
-          Files surface (⌘B, the View menu, the palette). */}
       <HintGroup>
         <SidebarToggle />
       </HintGroup>
+    </div>
+  );
+}
+
+/**
+ * The leftmost column header's start: the corner cluster while the sidebar is
+ * closed (open, the sidebar's band carries it), then `org / project`.
+ */
+function TopbarLeading({ breadcrumb = true }: { breadcrumb?: boolean }) {
+  const sidebarOpen = useProjectStore.use.sidebarOpen();
+  return (
+    <div className={cn("flex min-w-0 shrink items-center gap-1", sidebarOpen && "pl-2")}>
+      {!sidebarOpen && <CornerCluster />}
       {breadcrumb && <ProjectBreadcrumb />}
     </div>
   );
@@ -452,7 +462,7 @@ function ProjectLabel({
   return (
     <div ref={rootRef} className="relative flex min-w-0 shrink items-center">
       {/* Breadcrumb: `org / project`, two controls. The org opens the org
-          switcher — the same menu as the rail's org row. The project opens
+          switcher — the same menu as the sidebar picker's Organization submenu. The project opens
           capture setup: capture is per project, and this is the one control in
           the app that always names the project it would apply to — which the
           Timeline board, spanning every project, cannot. Each segment carries
@@ -542,12 +552,10 @@ const DEV_PILL_INK = "#1A1A14";
 
 /**
  * The dev-build badge. It sits in flow, right of the macOS traffic lights, in
- * whichever bar owns the window's top-left corner: the project rail's band
- * when the rail is docked, else the workspace bar's leading cluster (and the
- * settings sidebar's band on that screen). It used to float, centred on the
- * session, and so moved every time a column opened, closed or resized, and
- * landed on whatever the bar held there. Here it is always in the same place
- * and the bar makes room for it.
+ * the corner cluster (`CornerCluster`), and so on the same spot whether the
+ * sidebar is open or not (the settings sidebar's band draws it too). It used
+ * to float, centred on the session, and so moved every time a column opened,
+ * closed or resized, and landed on whatever the bar held there.
  */
 export function DevBadge({ className }: { className?: string }) {
   if (!isDev || !isTauri()) return null;
@@ -567,6 +575,8 @@ export function DevBadge({ className }: { className?: string }) {
   );
 }
 
+/** Docks or hides the sidebar. While it is hidden, resting on the toggle
+ *  peeks it (`sidebar-peek.ts`); a click then docks it. */
 function SidebarToggle() {
   const hint = useActionShortcut("workspace.toggleSidebar")?.label;
   const sidebarOpen = useProjectStore.use.sidebarOpen();
@@ -576,7 +586,12 @@ function SidebarToggle() {
   return (
     <HintItem label={hint ? `${label} (${hint})` : label}>
       <button
-        onClick={toggleSidebar}
+        onClick={() => {
+          endPeek();
+          toggleSidebar();
+        }}
+        onPointerEnter={sidebarOpen ? undefined : requestPeek}
+        onPointerLeave={sidebarOpen ? undefined : releasePeek}
         aria-label={label}
         aria-pressed={sidebarOpen}
         className={cn(

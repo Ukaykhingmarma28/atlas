@@ -1,7 +1,6 @@
 import { lazy, Suspense, useState } from "react";
-import { cn } from "@/lib/utils";
 import { useProjectStore } from "@/features/projects/stores/project-store";
-import { AppSidebar } from "@/features/sidebar/components/app-sidebar";
+import { AppSidebar, SidebarPeek } from "@/features/sidebar/components/app-sidebar";
 import { useProjectGitPrefetch } from "@/features/projects/lib/use-project-prefetch";
 import { useSettingsNav } from "@/features/settings/stores/settings-nav-store";
 import { CenterPanel } from "./center-panel";
@@ -26,29 +25,24 @@ export function AppLayout() {
 
   return (
     <div className="relative flex h-screen w-screen max-w-full overflow-hidden">
-      {/* The left sidebar: an in-flow column that pushes the shell right, the
-          same as the right-hand panels. Closed it is still there, as the rail
-          of destination icons; open, it widens to carry their labels and the
-          sessions. Full-height so it sits beside the titlebar; its own top
-          bar dodges the traffic lights.
+      {/* The left sidebar, docked: an in-flow column that pushes the shell
+          right, the same as the right-hand panels, full height with the
+          window's corner as its top row. Closed, it leaves nothing in flow
+          but can be peeked over the shell from the left edge.
 
-          The divider's colour is `--atlas-rail-divider`, set on the rail's
+          The divider's colour is `--atlas-rail-divider`, set on the sidebar's
           own class in `globals.css` — see the note there. This is the one
           edge in the shell with nothing either side of it to read against:
-          the rail sits at `--sidebar` and the content at `--background`,
+          the sidebar sits at `--sidebar` and the content at `--background`,
           which on an AMOLED theme are ten and zero. The hairline tokens meant
           to separate a card from the surface it sits on disappear here. */}
-      <div
-        className={cn(
-          "h-screen shrink-0",
-          // The sidebar draws its own surface, a card below the titlebar band,
-          // so the traffic lights sit on the window's background (see
-          // app-sidebar.tsx). Only the width changes with the toggle.
-          sidebarOpen ? "w-[244px]" : "w-[48px]",
-        )}
-      >
-        <AppSidebar expanded={sidebarOpen} />
-      </div>
+      {sidebarOpen ? (
+        <div className="h-screen w-[244px] shrink-0">
+          <AppSidebar />
+        </div>
+      ) : (
+        <SidebarPeek />
+      )}
 
       {/*
        * NOT keyed by project: keying forced a full unmount/remount of the

@@ -134,6 +134,8 @@
   --animate-card-in: card-in 0.15s var(--ease-out-strong);
   --animate-scale-out: scale-out 0.12s var(--ease-out-strong);
   --animate-slide-in-right: slide-in-right 0.18s var(--ease-drawer);
+  /* The closed sidebar's peek (`SidebarPeek`). */
+  --animate-slide-in-left: slide-in-left 0.18s var(--ease-drawer);
 
   /* Animated icon glyphs (`src/ui/animated-icon.tsx`, decision 33). Only the
      one-shot, click-driven ones need a keyframe: everything hover-driven is a
@@ -208,6 +210,15 @@
   @keyframes slide-in-right {
     from {
       transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes slide-in-left {
+    from {
+      transform: translateX(-100%);
     }
     to {
       transform: translateX(0);
@@ -2548,9 +2559,7 @@ html[data-word-wrap="off"] .prose-chat pre {
 
 .atlas-project-rail {
   background: var(--sidebar);
-  /* Every side, not just the right: closed, the sidebar is a card under the
-     titlebar band with a top edge as well (app-sidebar.tsx). Only the sides
-     given a width draw. */
+  /* Only the sides given a width draw: the right, docked or peeking. */
   border-color: var(--atlas-rail-divider);
   box-shadow: var(--inset-highlight);
 }
