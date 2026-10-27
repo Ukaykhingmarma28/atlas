@@ -1,15 +1,14 @@
-// The app's one left sidebar, at two widths, one shape. It is a card under
-// the titlebar band in both: closed, a rail of icons that never leaves the
-// window; open, the same card widened, the icons labelled and the sessions
-// under them. The project picker heads it (the organisation sits at the foot
-// of its menu), then the destinations, and the notification bell is last.
+// The app's one left sidebar: full height, from the window's top edge to its
+// bottom, with the window's corner — traffic lights, dev badge, the sidebar
+// toggle — as its top row. Under that, the project picker (the organisation
+// sits at the foot of its menu), the destinations, the sessions, and the
+// notification bell last.
 //
-// One shape because the open/closed change should read as the card growing,
-// nothing else. The band above stays the window's background, continuous
-// with the column header beside it, so the traffic lights — wider than the
-// rail — never have a divider running up through them, and the card's top
-// edge and corner do not move when it opens. The icons keep their place too:
-// same box, same x, same y; opening adds words and the session list.
+// Closed, it is gone: no rail of icons stays behind. The corner moves to the
+// leftmost column header at the same pixels (`CornerCluster`), so the toggle
+// never jumps, and resting on the window's left edge or the toggle peeks the
+// sidebar over the session (`SidebarPeek`) for a destination or a session
+// without docking it. ⌘K reaches everything here too.
 //
 // It replaced two columns — the project rail (projects, a recent-sessions
 // list, the module navigation) and the session sidebar beside each chat — so
@@ -18,18 +17,17 @@
 // organisation menu (the picker's Organization submenu, and the title bar's
 // breadcrumb); Agents is in Settings.
 //
-// Opening and closing do not animate: the toggle is a shortcut pressed many
-// times a day.
+// Docking and hiding do not animate: the toggle is a shortcut pressed many
+// times a day. Only the peek slides, because it comes and goes under the
+// pointer and has to read as laid over the session rather than replacing it.
 
-import { DevBadge } from "@/components/titlebar";
-import { useFullscreen } from "@/hooks/use-fullscreen";
-import { isMac } from "@/lib/platform";
+import { useEffect, useRef } from "react";
+import { CornerCluster, useWindowDrag } from "@/components/titlebar";
 import { cn } from "@/lib/utils";
 import {
   KnowledgeButton,
   MemoryButton,
   NotificationsButton,
-  RailExpandedContext,
   SourceControlButton,
   TeamChatButton,
   TimelineButton,
@@ -37,51 +35,38 @@ import {
 } from "./sidebar-destinations";
 import { SidebarProjectPicker } from "./project-picker";
 import { SidebarSessions } from "./sidebar-session-list";
+import {
+  endPeek,
+  holdPeek,
+  releasePeek,
+  requestPeek,
+  setPeekPanel,
+  useSidebarPeek,
+} from "../lib/sidebar-peek";
 
-export function AppSidebar({ expanded }: { expanded: boolean }) {
-  const fullscreen = useFullscreen();
+export function AppSidebar({ className }: { className?: string }) {
+  const drag = useWindowDrag();
   return (
-    <RailExpandedContext.Provider value={expanded}>
-      <aside
-        // Transparent — the rail's surface (`atlas-project-rail`) lives on the
-        // wrapper in app-layout.tsx.
-        className="flex h-screen w-full shrink-0 flex-col bg-transparent"
-        data-tauri-drag-region
-      >
-        {/* Titlebar band: on macOS the traffic lights live here. Open, the
-         *  dev badge clears them (it sits left in fullscreen, where the lights
-         *  are gone, and on other platforms, which never have them); closed,
-         *  the rail is narrower than the lights and the column header beside
-         *  it carries the badge. */}
-        <div
-          className={cn(
-            "flex h-titlebar shrink-0 items-center gap-0.5 px-2",
-            fullscreen || !isMac ? "justify-start" : "justify-end",
-          )}
-          data-tauri-drag-region
-        >
-          {expanded && (
-            <DevBadge
-              className={cn("mr-auto", !fullscreen && isMac && "ml-[calc(70px/var(--ui-zoom,1))]")}
-            />
-          )}
-        </div>
-
-        <div
-          className="atlas-project-rail flex min-h-0 flex-1 flex-col rounded-tr-lg border-r border-t pt-2"
-          data-tauri-drag-region
-        >
-          <div className="px-[8px]">
-            <SidebarProjectPicker compact={!expanded} />
-          </div>
-          <div className="mb-2 mt-1">
-            <Destinations />
-          </div>
-          {expanded ? <SidebarSessions /> : <div className="flex-1" data-tauri-drag-region />}
-          <RailFoot expanded={expanded} />
-        </div>
-      </aside>
-    </RailExpandedContext.Provider>
+    <aside
+      className={cn(
+        // `atlas-project-rail` is the surface and its divider (globals.css).
+        "atlas-project-rail flex h-screen w-full shrink-0 flex-col border-r",
+        className,
+      )}
+    >
+      {/* The window's corner. Every stretch of it drags the window. */}
+      <div {...drag} className="flex h-titlebar shrink-0 select-none items-center">
+        <CornerCluster />
+      </div>
+      <div className="px-[8px]">
+        <SidebarProjectPicker />
+      </div>
+      <div className="mb-2 mt-1">
+        <Destinations />
+      </div>
+      <SidebarSessions />
+      <SidebarFoot />
+    </aside>
   );
 }
 
@@ -102,18 +87,62 @@ function Destinations() {
   );
 }
 
-/** The rail's last item, the notification bell. Open, a short fade from the
- *  rail's colour separates the scrolling session list from it. */
-function RailFoot({ expanded }: { expanded: boolean }) {
+/** The sidebar's last item, the notification bell. A short fade from the
+ *  sidebar's colour separates the scrolling session list from it. */
+function SidebarFoot() {
   return (
-    <div
-      className={cn(
-        "relative flex shrink-0 flex-col items-start px-[8px] pb-2 pt-1",
-        expanded &&
-          "before:pointer-events-none before:absolute before:inset-x-0 before:-top-4 before:h-4 before:bg-gradient-to-t before:from-sidebar before:to-transparent",
-      )}
-    >
+    <div className="relative flex shrink-0 flex-col items-start px-[8px] pb-2 pt-1 before:pointer-events-none before:absolute before:inset-x-0 before:-top-4 before:h-4 before:bg-gradient-to-t before:from-sidebar before:to-transparent">
       <NotificationsButton />
     </div>
+  );
+}
+
+/**
+ * The closed sidebar: a strip along the window's left edge that peeks it,
+ * and the peek itself — the same sidebar, over the session, at the same width
+ * and place it docks to. Timing is `sidebar-peek.ts`'s.
+ */
+export function SidebarPeek() {
+  const open = useSidebarPeek.use.open();
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setPeekPanel(panelRef.current);
+    return () => setPeekPanel(null);
+  }, [open]);
+
+  // Escape closes it; leaving it open behind a docked sidebar would not.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !e.defaultPrevented) endPeek();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  // Gone with the component: docking the sidebar unmounts this.
+  useEffect(() => endPeek, []);
+
+  return (
+    <>
+      {/* Below the title bar, so it never sits on the traffic lights. */}
+      <div
+        aria-hidden
+        className="absolute bottom-0 left-0 top-[var(--titlebar-height)] z-drawer w-2"
+        onPointerEnter={requestPeek}
+        onPointerLeave={releasePeek}
+      />
+      {open && (
+        <div
+          ref={panelRef}
+          className="absolute inset-y-0 left-0 z-drawer w-[244px] shadow-md motion-safe:animate-slide-in-left"
+          onPointerEnter={holdPeek}
+          onPointerLeave={releasePeek}
+        >
+          <AppSidebar />
+        </div>
+      )}
+    </>
   );
 }

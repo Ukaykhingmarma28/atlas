@@ -1,17 +1,13 @@
-// The rail's destinations, one component each, so each subscribes to its own
-// slice of the layout store. Each toggles what it opens (back to the session
-// when it is already on screen) and lights while its view is the one showing.
-// Team chat stays visible when it is locked, greyed, saying what unlocks it.
-//
-// One item renders in both of the rail's widths: an icon with a tooltip while
-// the sidebar is closed, the same icon in the same place with its label beside
-// it while it is open. The icon box is the rail's width minus its gutter in
-// both, so opening the sidebar adds words and moves nothing.
+// The sidebar's destinations, one component each, so each subscribes to its
+// own slice of the layout store. Each toggles what it opens (back to the
+// session when it is already on screen) and lights while its view is the one
+// showing. Team chat stays visible when it is locked, greyed, saying what
+// unlocks it.
 //
 // No motion on any of them: they are pressed many times a day, and the view
 // they open is the feedback. Hover is a colour step only.
 
-import { createContext, useContext, type ComponentProps } from "react";
+import type { ComponentProps } from "react";
 import { Bell, BookOpen, GitBranch, MessagesSquare, type LucideIcon } from "lucide-react";
 import { Hint } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -36,11 +32,7 @@ import {
 } from "@/features/notifications/stores/notifications-store";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
 
-/** Whether the rail is the open sidebar (labels shown) or the icon strip. */
-export const RailExpandedContext = createContext(false);
-
-/** One rail item: an icon that lights while its view is on screen, labelled
- *  while the sidebar is open. */
+/** One destination: an icon and its label, lit while its view is on screen. */
 export function DestinationButton({
   icon: IconGlyph,
   label,
@@ -63,8 +55,7 @@ export function DestinationButton({
   /** A dot on the icon: something unread behind it. */
   dot?: boolean;
 }) {
-  const expanded = useContext(RailExpandedContext);
-  const tip = locked ?? hint ?? (expanded ? undefined : label);
+  const tip = locked ?? hint;
   const button = (
     <button
       type="button"
@@ -77,8 +68,7 @@ export function DestinationButton({
         "flex h-control-lg shrink-0 cursor-pointer items-center rounded-md text-muted-foreground outline-none transition-colors duration-fast",
         "hover:bg-element-hover hover:text-foreground focus-visible:bg-element-hover",
         "disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground",
-        "data-locked:opacity-50",
-        expanded && "w-full",
+        "w-full data-locked:opacity-50",
         active && "bg-element-active text-foreground hover:bg-element-active",
         className,
       )}
@@ -93,7 +83,7 @@ export function DestinationButton({
           />
         )}
       </span>
-      {expanded && <span className="min-w-0 truncate pr-2 text-sm">{label}</span>}
+      <span className="min-w-0 truncate pr-2 text-sm">{label}</span>
     </button>
   );
   if (!tip) return button;
