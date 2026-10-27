@@ -468,14 +468,28 @@ export const ThinkingRowView = memo(function ThinkingRowView({
           lines, bottom-aligned so the words land where the eye already is.
           It folds back to the line above as soon as a tool call or the answer
           follows (`ThinkingRow.live`). */}
-      {row.live && (
-        <div className="atlas-live-thought pb-1 pl-6">
-          <p className="text-sm leading-[19px] text-[var(--muted-foreground)]">{row.live}</p>
-        </div>
-      )}
+      {row.live && <LiveThought text={row.live} />}
     </Column>
   );
 });
+
+/** The live thought's box. The top-edge fade is for older lines cut off
+ *  above, so it is on only while the text overflows: a thought that fits
+ *  shows at full strength. Set on the element, not in state, because the
+ *  text changes with every streamed token. */
+function LiveThought({ text }: { text: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.toggleAttribute("data-clipped", el.scrollHeight > el.clientHeight);
+  }, [text]);
+  return (
+    <div ref={ref} className="atlas-live-thought pb-1 pl-6">
+      <p className="text-sm leading-[19px] text-[var(--muted-foreground)]">{text}</p>
+    </div>
+  );
+}
 
 // ── Marker ─────────────────────────────────────────────────────────────────
 

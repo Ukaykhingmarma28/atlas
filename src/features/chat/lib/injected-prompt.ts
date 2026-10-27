@@ -57,7 +57,7 @@ const WAKE_OPENINGS: Array<[RegExp, string]> = [
 
 /** What a restart continuation tells the agent (`CONTINUE_PROMPT` in
  *  `restart_continuation.rs`), and the row's line for it. */
-const RESTART_PROMPT = "Continue where you left off.";
+const RESTART_PROMPT = "Atlas restarted while you were working. Continue where you left off.";
 export const RESTART_SUMMARY = "Atlas restarted and resumed this turn";
 
 /** The injected prompt a replayed user message's `text` is, or null. The

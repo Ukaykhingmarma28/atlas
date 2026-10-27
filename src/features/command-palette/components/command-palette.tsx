@@ -139,6 +139,9 @@ export function CommandPalette() {
             />
           ) : (
             <OpenCommandPalette
+              // A fresh palette per `OpenView`: its view stack is pushed once,
+              // on mount, so a second ⌘⇧N while open needs a new mount.
+              key={ui.initialViewRequest ?? 0}
               initialContext={ui.restoredSearch}
               initialView={ui.initialView}
               onClose={() => setOpen(false)}

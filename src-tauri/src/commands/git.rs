@@ -490,11 +490,14 @@ pub struct GitBranchCompare {
     /// Commits on HEAD the default branch does not have; `None` without one.
     pub ahead_of_default: Option<u32>,
     /// Lines added and removed since the branch left the default branch,
-    /// uncommitted changes included. On the default branch (or with no
+    /// uncommitted changes and untracked files included. On the default branch (or with no
     /// default branch) the working tree against HEAD.
     pub additions: u32,
     pub deletions: u32,
 }
+
+/// Untracked files larger than this are left out of the branch's line count.
+const UNTRACKED_COUNT_MAX_BYTES: u64 = 1024 * 1024;
 
 /// Sum a `git diff --numstat` listing. Binary files (`-`) count nothing.
 fn sum_numstat(numstat: &str) -> (u32, u32) {
@@ -560,9 +563,28 @@ pub async fn git_branch_compare(path: String) -> Result<GitBranchCompare, String
             _ => None,
         }
         .unwrap_or_else(|| "HEAD".to_string());
-        let (additions, deletions) = git(&["diff", "--numstat", &from])
+        let (mut additions, deletions) = git(&["diff", "--numstat", &from])
             .map(|s| sum_numstat(&s))
             .unwrap_or((0, 0));
+        // `git diff` does not see untracked files, and a turn that only adds
+        // files would read `+0 −0`: count their lines as added. Text only, as
+        // numstat skips binaries, and nothing huge (a stray log or dump that
+        // is not ignored would otherwise be read whole on every refresh).
+        if let Some(list) = git(&["ls-files", "-z", "--others", "--exclude-standard"]) {
+            let root = std::path::Path::new(&path);
+            for rel in list.split('\0').filter(|l| !l.is_empty()) {
+                let file = root.join(rel);
+                let small = std::fs::metadata(&file)
+                    .is_ok_and(|m| m.is_file() && m.len() <= UNTRACKED_COUNT_MAX_BYTES);
+                if !small {
+                    continue;
+                }
+                if let Ok(text) = std::fs::read_to_string(&file) {
+                    let lines = u32::try_from(text.lines().count()).unwrap_or(u32::MAX);
+                    additions = additions.saturating_add(lines);
+                }
+            }
+        }
 
         GitBranchCompare {
             default_branch,

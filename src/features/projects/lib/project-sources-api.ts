@@ -27,10 +27,17 @@ export interface BrowseListing {
   directories: string[];
 }
 
+/** A new project: its folder, and why publishing it failed when it did (the
+ *  folder and its repository stand either way). */
+export interface CreatedProject {
+  path: string;
+  warning: string | null;
+}
+
 export const projectSources = {
   info: () => invoke<ProjectSourcesInfo>("project_sources_info"),
   browse: (path: string) => invoke<BrowseListing>("project_browse", { path }),
   create: (name: string, githubPrivate: boolean) =>
-    invoke<string>("project_create", { name, githubPrivate }),
+    invoke<CreatedProject>("project_create", { name, githubPrivate }),
   clone: (url: string, github: boolean) => invoke<string>("project_clone", { url, github }),
 };

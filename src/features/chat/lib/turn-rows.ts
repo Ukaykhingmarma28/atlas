@@ -564,10 +564,13 @@ export function mcpToolOf(toolName: string): { server: string; tool: string } | 
   const match = /^mcp__(.+?)__(.+)$/.exec(toolName);
   if (!match || match[1].startsWith("atlas_")) return null;
   const [, server, tool] = match;
-  // Every browser-driving server is one thing to the reader.
-  const label = /browser|playwright|puppeteer|chrome|preview/i.test(server + tool)
-    ? "browser"
-    : server.replace(/[_-]+/g, " ").toLowerCase();
+  // Every browser-driving server is one thing to the reader. The server
+  // decides it; a tool name only by a `browser_` prefix, so
+  // `vercel__get_preview_deployment` stays vercel's.
+  const label =
+    /browser|playwright|puppeteer|chrome|preview/i.test(server) || /^browser[_-]/i.test(tool)
+      ? "browser"
+      : server.replace(/[_-]+/g, " ").toLowerCase();
   const words = tool.replace(/[_-]+/g, " ").trim();
   return { server: label, tool: words.charAt(0).toUpperCase() + words.slice(1) };
 }

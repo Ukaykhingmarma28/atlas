@@ -102,7 +102,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useQuitGuard } from "@/features/app/lib/use-quit-guard";
 import { RemoveAgentDialog } from "@/features/agents/components/remove-agent-dialog";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
-import { useActiveOrgProjects } from "@/features/projects/lib/org-scope";
+import { useActiveOrgProjects, activeOrgProjectsSnapshot } from "@/features/projects/lib/org-scope";
 import {
   isOrgReconciled,
   markOrgReconciled,
@@ -213,7 +213,9 @@ export function App() {
           { source: e.source, summary: e.summary },
           e.at,
         );
-      void notifyPullRequestWatch(e);
+      // A restart continuation is a row only; the notification is the
+      // watch's.
+      if (e.source === "pull-request-watch") void notifyPullRequestWatch(e);
     });
     return () => void off.then((f) => f());
   }, []);
@@ -1409,7 +1411,9 @@ export function App() {
     // opening a second chat tab.
     "tabs.newChat": () => openNewAgentChat(),
     "tabs.newChatIn": () => {
-      if (useProjectStore.getState().projects.length > 1) {
+      // The active organisation's projects: the picker lists only those, so
+      // another organisation's would open it empty.
+      if (activeOrgProjectsSnapshot().length > 1) {
         useCommandPaletteStore.getState().actions.openProjectPicker();
       } else {
         void openNewAgentChat();

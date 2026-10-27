@@ -159,7 +159,7 @@ fn a_flag_older_than_the_window_stops_degrading_the_project() {
     rusqlite::Connection::open(dir.path().join(".atlas").join("sessions.db"))
         .unwrap()
         .execute(
-            "UPDATE agent_session SET updated_at = ?1 WHERE id = ?2",
+            "UPDATE agent_session SET flagged_at = ?1 WHERE id = ?2",
             rusqlite::params![weeks_ago, session],
         )
         .unwrap();
@@ -167,6 +167,32 @@ fn a_flag_older_than_the_window_stops_degrading_the_project() {
     let health = health(&store, no_watcher_needed());
     assert_eq!(health.state, HealthState::Ok, "{:?}", health.issues);
     assert_eq!(health.flagged_sessions, 0);
+}
+
+#[test]
+fn work_in_a_long_flagged_session_does_not_make_its_flag_recent_again() {
+    // Every prompt and message moves `updated_at`. Counting by it kept an old
+    // flag on a Session still in use inside the window for as long as anyone
+    // worked in it; the window is the flag's own time.
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = bound(dir.path());
+    let session = record_session(&mut store, "s1");
+    store
+        .flag_needs_attention(&session, "redaction failed on this turn")
+        .unwrap();
+
+    let weeks_ago = (chrono::Utc::now() - chrono::Duration::days(30)).to_rfc3339();
+    let now = chrono::Utc::now().to_rfc3339();
+    rusqlite::Connection::open(dir.path().join(".atlas").join("sessions.db"))
+        .unwrap()
+        .execute(
+            "UPDATE agent_session SET flagged_at = ?1, updated_at = ?2 WHERE id = ?3",
+            rusqlite::params![weeks_ago, now, session],
+        )
+        .unwrap();
+
+    let health = health(&store, no_watcher_needed());
+    assert_eq!(health.flagged_sessions, 0, "{:?}", health.issues);
 }
 
 #[test]

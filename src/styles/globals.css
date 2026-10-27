@@ -3052,12 +3052,16 @@ html:root[data-diff-palette="blue-orange"] {
 }
 
 /* A thinking row's live thought (`ThinkingRowView`): at most four lines, the
-   newest ones, with the older text fading out at the top edge. */
+   newest ones, with the older text fading out at the top edge — only once
+   there is older text cut off there (`data-clipped`, set by `LiveThought`). */
 .atlas-live-thought {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
   max-height: calc(4 * 19px + 4px);
   overflow: hidden;
+}
+
+.atlas-live-thought[data-clipped] {
   mask-image: linear-gradient(to bottom, transparent, black 20px);
 }

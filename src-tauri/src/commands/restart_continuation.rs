@@ -28,7 +28,8 @@ use super::agent_host::{AgentHost, OpenTurn, PendingWake, WakeSource};
 use crate::state::AtlasConfigHandle;
 
 /// What the agent is told.
-pub const CONTINUE_PROMPT: &str = "Continue where you left off.";
+pub const CONTINUE_PROMPT: &str =
+    "Atlas restarted while you were working. Continue where you left off.";
 
 /// The transcript row's headline.
 const SUMMARY: &str = "Atlas restarted and resumed this turn";

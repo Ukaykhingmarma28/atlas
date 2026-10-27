@@ -44,7 +44,7 @@ export const projectSourcesHandlers: MockHandlers = {
       directories: TREE[path] ?? [],
     };
   },
-  project_create: (a) => `${HOME}/.atlas/projects/${String(a.name)}`,
+  project_create: (a) => ({ path: `${HOME}/.atlas/projects/${String(a.name)}`, warning: null }),
   project_clone: (a) =>
     `${HOME}/.atlas/projects/${String(a.url)
       .split("/")

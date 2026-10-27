@@ -28,6 +28,9 @@ export interface CommandPaletteUiState {
   /** A view the palette opens straight onto (⌘⇧O's project list, ⌘⇧N's
    *  "Add project" sources). */
   readonly initialView?: CommandPaletteInitialView;
+  /** Bumped by every `OpenView`, so asking again for a view while the
+   *  palette is already open still opens it (the palette remounts on it). */
+  readonly initialViewRequest?: number;
 }
 
 /** The views the palette can be opened onto from outside it. */
@@ -65,7 +68,12 @@ export function reduceCommandPaletteUiState(
     case "OpenChildSearch":
       return { open: true, mode: action.mode, parentSearch: action.context };
     case "OpenView":
-      return { open: true, mode: "command", initialView: action.view };
+      return {
+        open: true,
+        mode: "command",
+        initialView: action.view,
+        initialViewRequest: (state.initialViewRequest ?? 0) + 1,
+      };
     case "BackToCommand":
       return state.open && state.mode !== "command" && state.parentSearch
         ? { open: true, mode: "command", restoredSearch: state.parentSearch }

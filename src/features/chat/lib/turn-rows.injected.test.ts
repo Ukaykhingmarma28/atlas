@@ -85,18 +85,21 @@ describe("detectInjectedPrompt", () => {
 
 describe("a turn continued after a restart", () => {
   it("replays as the restart row, not the user's bubble", () => {
-    expect(detectInjectedPrompt("Continue where you left off.")).toEqual({
+    expect(
+      detectInjectedPrompt("Atlas restarted while you were working. Continue where you left off."),
+    ).toEqual({
       source: "restart",
       summary: "Atlas restarted and resumed this turn",
     });
-    // Only the exact prompt: the user typing it themselves into a longer
-    // message stays theirs.
+    // Only the exact prompt: the user typing the common phrase themselves,
+    // alone or in a longer message, stays theirs.
+    expect(detectInjectedPrompt("Continue where you left off.")).toBeNull();
     expect(detectInjectedPrompt("Continue where you left off. Then run the tests.")).toBeNull();
     const { rows, turns } = projectRows(
       [
         msg("u1", "user", "refactor the store"),
         msg("a1", "assistant", "working"),
-        msg("u2", "user", "Continue where you left off."),
+        msg("u2", "user", "Atlas restarted while you were working. Continue where you left off."),
         msg("a2", "assistant", "picking it back up"),
       ],
       OPTS,

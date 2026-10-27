@@ -651,7 +651,7 @@ impl Store {
         // the same silence it exists to prevent.
         self.conn.execute(
             "UPDATE agent_session
-                SET needs_attention = 1, attention_reason = ?2, updated_at = ?3
+                SET needs_attention = 1, attention_reason = ?2, updated_at = ?3, flagged_at = ?3
               WHERE id = ?1",
             rusqlite::params![session_id, reason, Utc::now().to_rfc3339()],
         )?;
@@ -2563,17 +2563,19 @@ impl Store {
         Ok(())
     }
 
-    /// Sessions flagged during capture — a redaction or storage failure — whose
-    /// record changed at or after `since`.
+    /// Sessions flagged during capture — a redaction or storage failure — at
+    /// or after `since`.
     ///
     /// Bounded because the flag is permanent: it is a fact about the Session,
     /// and the Session keeps showing it. Unbounded, one lock timeout weeks ago
-    /// would hold the Project's health banner up forever. Flagging bumps
-    /// `updated_at`, so a fresh flag on an old Session still counts.
+    /// would hold the Project's health banner up forever. Bounded by the
+    /// flag's own time (`flagged_at`), not `updated_at`: every prompt and
+    /// message moves `updated_at`, so an old flag on a Session still in use
+    /// would count as new for as long as anyone worked in it.
     pub fn flagged_session_count(&self, workspace_id: &str, since: DateTime<Utc>) -> Result<i64> {
         Ok(self.conn.query_row(
             "SELECT COUNT(*) FROM agent_session
-              WHERE workspace_id = ?1 AND needs_attention = 1 AND updated_at >= ?2",
+              WHERE workspace_id = ?1 AND needs_attention = 1 AND flagged_at >= ?2",
             rusqlite::params![workspace_id, since.to_rfc3339()],
             |row| row.get(0),
         )?)

@@ -192,12 +192,19 @@ export function useAddProjectFlow(input: {
 
   const ghReady = info?.gh === "ready";
 
-  /** Run a step that ends in a folder, then add it as a project. */
-  const finish = (label: string, work: () => Promise<string>) => {
+  /** Run a step that ends in a folder, then add it as a project. A warning
+   *  (the folder stands, a later step failed) is shown, not thrown. */
+  const finish = (
+    label: string,
+    work: () => Promise<string | { path: string; warning: string | null }>,
+  ) => {
     setBusy(label);
     void work()
-      .then(async (path) => {
+      .then(async (result) => {
+        const { path, warning } =
+          typeof result === "string" ? { path: result, warning: null } : result;
         await useProjectStore.getState().actions.addProject(path);
+        if (warning) toast.warning(warning);
         onClose();
       })
       .catch((error: unknown) => {

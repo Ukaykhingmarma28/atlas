@@ -168,4 +168,21 @@ describe("the program a live line names", () => {
     expect(commandProgramName("RUST_LOG=debug sudo /usr/local/bin/node x.js")).toBe("node");
     expect(commandProgramName("bash -lc 'rg foo | head -20'")).toBe("rg");
   });
+
+  it("steps over a launcher's options and their values", () => {
+    expect(commandProgramName("sudo -u root cargo test")).toBe("cargo");
+    expect(commandProgramName("sudo -E -u root cargo test")).toBe("cargo");
+    expect(commandProgramName("sudo -uroot cargo test")).toBe("cargo");
+    expect(commandProgramName("env -i PATH=/bin make")).toBe("make");
+    expect(commandProgramName("nice -n 10 make")).toBe("make");
+    expect(commandProgramName("time -v cargo build")).toBe("cargo");
+    expect(commandProgramName("sudo -- rm -rf x")).toBe("rm");
+  });
+
+  it("ignores shell comments", () => {
+    expect(commandProgramName("# setup\ncargo test")).toBe("cargo");
+    expect(commandProgramName("cargo test # all of it")).toBe("cargo");
+    expect(commandProgramName("echo a#b")).toBe("echo");
+    expect(commandProgramName("rg '#include'")).toBe("rg");
+  });
 });

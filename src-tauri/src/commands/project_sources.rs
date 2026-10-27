@@ -152,7 +152,10 @@ pub struct BrowseListing {
 /// The folders in `path` (`~` expanded), for the palette's folder browser.
 #[tauri::command]
 pub async fn project_browse(path: String) -> Result<BrowseListing, String> {
-    let dir = expand_home(&path)?;
+    // `components()` drops a trailing separator (`~/` and a typed `/a/b/`
+    // both keep one), so the path the palette adds matches the same folder
+    // added without it.
+    let dir: PathBuf = expand_home(&path)?.components().collect();
     tokio::task::spawn_blocking(move || {
         let entries = std::fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
         let mut directories: Vec<String> = entries
@@ -187,19 +190,40 @@ fn git(dir: &Path, args: &[&str]) -> Result<(), String> {
     }
 }
 
+/// A project `project_create` made. `warning` is set when the folder and its
+/// repository stand but publishing to GitHub failed: the project is still
+/// added, and the warning shown.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatedProject {
+    pub path: String,
+    pub warning: Option<String>,
+}
+
 /// Start a new project called `name` in `~/.atlas/projects`: the folder, an
 /// empty Git repository in it, and — with `github_private` — a private
-/// GitHub repository of the same name as its `origin`. Answers the folder.
+/// GitHub repository of the same name as its `origin`.
 #[tauri::command]
-pub async fn project_create(name: String, github_private: bool) -> Result<String, String> {
+pub async fn project_create(name: String, github_private: bool) -> Result<CreatedProject, String> {
     let name = safe_name(&name)?.to_string();
     let dir = projects_root()?.join(&name);
     tokio::task::spawn_blocking(move || {
-        if dir.exists() {
-            return Err(format!("{} already exists", dir.display()));
+        if let Some(parent) = dir.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        git(&dir, &["init", "--quiet"])?;
+        // `create_dir`, not `create_dir_all`: it fails when the folder is
+        // already there, with no window between a check and the create.
+        std::fs::create_dir(&dir).map_err(|e| match e.kind() {
+            std::io::ErrorKind::AlreadyExists => format!("{} already exists", dir.display()),
+            _ => e.to_string(),
+        })?;
+        if let Err(e) = git(&dir, &["init", "--quiet"]) {
+            // Nothing was made but the empty folder; leave no trace, so the
+            // same name can be tried again.
+            let _ = std::fs::remove_dir_all(&dir);
+            return Err(e);
+        }
+        let path = dir.to_string_lossy().into_owned();
         if github_private {
             let out = atlas_process::command("gh")
                 .current_dir(&dir)
@@ -216,17 +240,24 @@ pub async fn project_create(name: String, github_private: bool) -> Result<String
                 ])
                 .env("GH_PROMPT_DISABLED", "1")
                 .output()
-                .map_err(|e| format!("gh: {e}"))?;
-            if !out.status.success() {
+                .map_err(|e| format!("gh: {e}"));
+            let failure = match out {
+                Ok(out) if out.status.success() => None,
+                Ok(out) => Some(String::from_utf8_lossy(&out.stderr).trim().to_string()),
+                Err(e) => Some(e),
+            };
+            if let Some(reason) = failure {
                 // The folder and its repository stand; only publishing failed.
-                return Err(format!(
-                    "Created {}, but the GitHub repository was not: {}",
-                    dir.display(),
-                    String::from_utf8_lossy(&out.stderr).trim()
-                ));
+                return Ok(CreatedProject {
+                    path,
+                    warning: Some(format!("The GitHub repository was not created: {reason}")),
+                });
             }
         }
-        Ok(dir.to_string_lossy().into_owned())
+        Ok(CreatedProject {
+            path,
+            warning: None,
+        })
     })
     .await
     .map_err(|e| e.to_string())?
