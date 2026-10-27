@@ -65,6 +65,9 @@ skills-lock.json
 # the binary at compile time (`commands/skills.rs`), so it has to ship from a
 # fresh clone the same way the vendored Atlas Agent prompts below do.
 !src-tauri/resources/**/*.md
+# Third-party notices that travel with what we took from them (Apache-2.0
+# §4(d)), e.g. the Pierre syntax colours in the Atlas theme.
+!crates/atlas-theme/third-party/**/*.md
 graphify-out/
 # Local-only working folders (plans/specs + helper scripts)
 plans/

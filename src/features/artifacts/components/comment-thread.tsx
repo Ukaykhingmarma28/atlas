@@ -48,6 +48,7 @@ import { toEditable, toWireBody } from "../lib/comment-edit";
 import { COMMENT_BODY_MAX, visibleCount, type AnchorKind, type Comment } from "../lib/comments-api";
 import { selectionCommentBody, splitSelectionComment } from "../lib/selection-comment";
 import { NO_VOTES, nextVote, voteOf } from "../lib/votes";
+import { formatTime } from "@/lib/format-time";
 
 /** Everything the thread needs to talk to the server, supplied by the panel. */
 export interface CommentActions {
@@ -598,8 +599,8 @@ const CommentRow = memo(function CommentRow({
             {actions.link && !busy && (
               <button
                 type="button"
-                aria-label="Reference comment in agent chat"
-                title="Reference in agent chat"
+                aria-label="Reference comment in a session"
+                title="Reference in a session"
                 onClick={() => actions.link?.(comment)}
                 className="flex shrink-0 cursor-pointer items-center rounded p-0.5 text-[var(--muted-foreground)] opacity-0 transition-colors hover:text-[var(--foreground)] focus-visible:opacity-100 group-hover/comment:opacity-100"
               >
@@ -1010,6 +1011,11 @@ function Composer({
             rows={1}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => {
+              // An input method is mid-composition: its Enter confirms a
+              // candidate and its Escape abandons one. Neither is ours.
+              // 229 covers WebKit, which reports the key before
+              // `isComposing` flips.
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
               if (e.key === "Escape" && onCancel) {
                 // Leave the edit without closing the popover around it.
                 e.preventDefault();
@@ -1071,5 +1077,5 @@ function Composer({
 /** `HH:MM:SS`, matching the timestamps the rest of the Session detail uses. */
 function time(iso: string): string {
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? "" : date.toLocaleTimeString();
+  return Number.isNaN(date.getTime()) ? "" : formatTime(date, { timeStyle: "medium" });
 }

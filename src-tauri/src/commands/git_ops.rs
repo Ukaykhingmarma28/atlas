@@ -1,6 +1,6 @@
 //! Extended git operations for the unified Source-Control manager.
 //!
-//! Mirrors the dugite-shaped CLI calls GitHub Desktop uses, executed through
+//! Thin wrappers over the git CLI, executed through
 //! the `atlas-git` chokepoint (real git binary, so hooks run; failures come
 //! back as typed [`GitErrorPayload`]s with friendly messages instead of raw
 //! stderr). `GIT_TERMINAL_PROMPT=0` is set by the executor so a missing
@@ -228,8 +228,8 @@ pub struct MergePreview {
     ///   - uptodate:    nothing to merge (0 commits)
     ///   - invalid:     unrelated histories (no merge base)
     ///   - unsupported: git too old for `merge-tree --write-tree` preview;
-    ///                  the merge can still be attempted, we just can't
-    ///                  predict conflicts ahead of time
+    ///     the merge can still be attempted, we just can't predict
+    ///     conflicts ahead of time
     pub kind: String,
     /// Commits on `branch` not yet on the current branch (what merging brings in).
     pub commit_count: u32,
@@ -342,7 +342,7 @@ pub async fn git_merge_preview(
 //
 // Network ops run `--progress` and stream through `atlas:git:op` when the
 // caller supplies an `op_id` (percent parsed by `atlas_git::progress` with
-// GitHub Desktop's weighted step tables); without one they run buffered,
+// weighted step tables); without one they run buffered,
 // keeping older call sites working.
 
 fn run_remote_op(
@@ -1087,7 +1087,11 @@ pub async fn git_delete_tag(
 // ── Commit detail (history view) ─────────────────────────────────────────
 
 #[tauri::command]
-pub async fn git_show(path: String, sha: String) -> Result<CommitDetail, GitErrorPayload> {
+pub async fn git_show(
+    path: String,
+    sha: String,
+    ignore_whitespace: Option<bool>,
+) -> Result<CommitDetail, GitErrorPayload> {
     tokio::task::spawn_blocking(move || {
         let fmt = format!("%H{US}%h{US}%an{US}%ae{US}%ad{US}%s{US}%b");
         let meta = git_out(
@@ -1105,17 +1109,13 @@ pub async fn git_show(path: String, sha: String) -> Result<CommitDetail, GitErro
         // shows a merge as what it brought into its branch — the default is a
         // combined `diff --cc`, which is empty for a clean merge and not a
         // unified diff the viewer can read. No effect on ordinary commits.
-        let diff = git_out(
-            &path,
-            &[
-                "show",
-                "--no-color",
-                "--format=",
-                "-m",
-                "--first-parent",
-                &sha,
-            ],
-        )?;
+        // `-w`: `diffIgnoreWhitespace`. A commit is only ever read here.
+        let mut args = vec!["show", "--no-color", "--format=", "-m", "--first-parent"];
+        if ignore_whitespace.unwrap_or(false) {
+            args.push("-w");
+        }
+        args.push(&sha);
+        let diff = git_out(&path, &args)?;
         Ok(CommitDetail {
             hash: p.first().copied().unwrap_or("").to_string(),
             short_hash: p.get(1).copied().unwrap_or("").to_string(),
@@ -1338,8 +1338,8 @@ fn commit_hooks_present(path: &str) -> bool {
 /// their stdout/stderr streams to the UI instead of being swallowed.
 ///
 /// `co_authors` ("Name <email>" strings) are merged as `Co-authored-by`
-/// trailers via `git interpret-trailers`, matching GitHub Desktop's
-/// attribution format. Amending with an EMPTY summary keeps the original
+/// trailers via `git interpret-trailers`, in the
+/// conventional attribution format. Amending with an EMPTY summary keeps the original
 /// message (`--amend --no-edit`) — previously amend always demanded a new
 /// one.
 #[tauri::command]

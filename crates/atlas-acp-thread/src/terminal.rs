@@ -1,24 +1,20 @@
-//! Agent-created terminals — ported from
-//! `zed-ref/crates/acp_thread/src/terminal.rs` and the provider-event handling
-//! at `acp_thread.rs:4639-4715`.
+//! Agent-created terminals and the provider-event handling around them.
 //!
-//! The mechanism worth porting is the **out-of-order buffering**. A terminal's
+//! The mechanism worth knowing is the **out-of-order buffering**. A terminal's
 //! `Created` event is not guaranteed to reach the thread before its first
 //! `Output` or even its `Exit`: the agent gets the terminal id back from
 //! `terminal/create` and can reference it in a `session/update` immediately,
-//! which races the client's own bookkeeping. Zed handles this with two
+//! which races the client's own bookkeeping. This is handled with two
 //! side-tables keyed by terminal id (`pending_terminal_output`,
 //! `pending_terminal_exit`) that are drained when `Created` finally lands.
 //! Without them the first chunk of a fast command's output is silently lost —
 //! which is exactly what the agent then reads back as the command's result.
 //!
-//! Divergence from Zed: Zed's `Terminal` wraps a full `terminal::Terminal`
-//! entity (an alacritty grid it renders). Atlas runs agent commands through
+//! Atlas runs agent commands through
 //! [`atlas_terminal::command::CommandTerminal`], which already owns the PTY and
-//! keeps a bounded output buffer, so the port keeps Zed's *event and buffering*
-//! shape and delegates the running to that. Zed's OS-sandbox wrapper
-//! (`SandboxWrap`) is not ported: it depends on Zed's `sandbox` crate and is a
-//! separate feature from the thread model.
+//! keeps a bounded output buffer, so this module owns only the *event and
+//! buffering* shape and delegates the running to that. An OS-sandbox wrapper
+//! is out of scope: it is a separate feature from the thread model.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -45,8 +41,7 @@ const MAX_PENDING_TERMINALS: usize = 64;
 /// buffer by delaying its own announcement than it would get after it.
 const MAX_PENDING_OUTPUT_BYTES: usize = DEFAULT_OUTPUT_BYTE_LIMIT as usize;
 
-/// What the terminal provider tells the thread. Ported from
-/// `TerminalProviderEvent` (`acp_thread.rs:2183-2200`).
+/// What the terminal provider tells the thread.
 #[derive(Debug)]
 pub enum TerminalProviderEvent {
     Created {
@@ -381,8 +376,8 @@ pub fn exit_status_from_command(exit: CommandExit) -> acp::TerminalExitStatus {
 }
 
 /// The thread's terminal side-tables, kept together so the buffering rule has
-/// one owner. Ported from `AcpThread`'s `terminals` /
-/// `pending_terminal_output` / `pending_terminal_exit` fields.
+/// one owner: the live `terminals` plus the `pending_terminal_output` and
+/// `pending_terminal_exit` maps.
 ///
 /// `terminals` itself is deliberately uncapped, unlike the two pending maps.
 /// Every entry in it cost the agent a `terminal/create` that spawned a real
@@ -524,8 +519,6 @@ impl TerminalRegistry {
         }
     }
 
-    /// Ported from `AcpThread::on_terminal_provider_event`
-    /// (`acp_thread.rs:4639-4715`).
     pub fn handle_event(&mut self, event: TerminalProviderEvent) {
         match event {
             TerminalProviderEvent::Created {

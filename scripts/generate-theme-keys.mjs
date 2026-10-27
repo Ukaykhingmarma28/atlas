@@ -9,6 +9,7 @@
  * Outputs:
  *   src/features/theme/theme-key-registry.ts    the TS registry the resolver reads
  *   crates/atlas-theme/theme-keys.txt           key + description, read by Rust
+ *   crates/atlas-theme/base-rules.txt           the `[[base]]` rules, run by Rust
  *   crates/atlas-theme/schema/theme-v1.json     the `keys` property of a variant
  *   docs/reference/theme-keys.md                the generated block only
  *
@@ -21,7 +22,7 @@
  * cargo: it compares the committed schema's key properties against this file.
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,6 +35,7 @@ const COMMAND = "bun run theme:keys";
 export const OUTPUTS = {
   registry: "src/features/theme/theme-key-registry.ts",
   keyList: "crates/atlas-theme/theme-keys.txt",
+  baseRules: "crates/atlas-theme/base-rules.txt",
   schema: "crates/atlas-theme/schema/theme-v1.json",
   docs: "docs/reference/theme-keys.md",
 };
@@ -45,7 +47,9 @@ const PALETTE_KEYS = ["red", "orange", "yellow", "green", "cyan", "blue", "purpl
  * The closed operation vocabulary. The value is how the transform is spelled in
  * the generated TS; `resolve-theme.ts` applies it to whichever source supplied
  * the colour. Adding an entry here means adding one to the registry preamble
- * below and, if it needs new inputs, to `DerivationContext`.
+ * below and, if it needs new inputs, to `DerivationContext` — and, because
+ * base rules run in Rust too, to `crates/atlas-theme/src/derive.rs`.
+ * `amount: false` marks an operation that takes none.
  */
 const OPERATIONS = {
   alpha: { call: "alpha", docs: (n) => `alpha ${n}`, prose: (n) => `alpha ${n}` },
@@ -60,7 +64,39 @@ const OPERATIONS = {
     docs: (n) => `mix ${n} → B:foreground`,
     prose: (n) => `mix ${n} toward base.foreground`,
   },
+  readable: {
+    call: "readableOn",
+    amount: false,
+    docs: () => "readable: B:foreground or B:background",
+    prose: () =>
+      "whichever of base.foreground and base.background reads better on it (white or black while foreground itself is derived)",
+  },
 };
+
+/** `op`/`amount` problems for a key, a derived variable or a base rule. */
+function checkOperation(entry, at, problems, { required = false } = {}) {
+  if (entry.op === undefined) {
+    if (required) problems.push(`${at}: missing \`op\``);
+    if (entry.amount !== undefined) problems.push(`${at}: \`amount\` without an \`op\``);
+    return;
+  }
+  const operation = OPERATIONS[entry.op];
+  if (!operation) {
+    problems.push(
+      `${at}: unknown op \`${entry.op}\`; one of ${Object.keys(OPERATIONS).join(", ")}`,
+    );
+    return;
+  }
+  if (operation.amount === false) {
+    if (entry.amount !== undefined) problems.push(`${at}: \`${entry.op}\` takes no \`amount\``);
+    return;
+  }
+  const amount = Number(entry.amount?.number);
+  if (!(amount > 0 && amount <= 1)) problems.push(`${at}: \`amount\` must be in (0, 1]`);
+}
+
+/** How a transform is spelled in the generated TS. */
+const transformCall = (entry) => `${OPERATIONS[entry.op].call}(${entry.amount ?? ""})`;
 
 const DOCS_BEGIN = "<!-- generated:theme-keys -->";
 const DOCS_END = "<!-- /generated:theme-keys -->";
@@ -170,6 +206,7 @@ export function readSource() {
   const groups = parsed.group ?? [];
   const keys = parsed.key ?? [];
   const derived = parsed.derived ?? [];
+  const baseRules = parsed.base ?? [];
   const tokens = new Set(baseTokens());
   const problems = [];
   const seen = new Set();
@@ -210,17 +247,7 @@ export function readSource() {
     if (key.palette === undefined && key.base === undefined) {
       problems.push(`${at}: needs a \`palette\` or a \`base\` source`);
     }
-    if (key.op !== undefined) {
-      if (!(key.op in OPERATIONS)) {
-        problems.push(
-          `${at}: unknown op \`${key.op}\`; one of ${Object.keys(OPERATIONS).join(", ")}`,
-        );
-      }
-      const amount = Number(key.amount?.number);
-      if (!(amount > 0 && amount <= 1)) problems.push(`${at}: \`amount\` must be in (0, 1]`);
-    } else if (key.amount !== undefined) {
-      problems.push(`${at}: \`amount\` without an \`op\``);
-    }
+    checkOperation(key, at, problems);
     for (const field of ["dark", "light", "note"]) {
       if (key[field] !== undefined && typeof key[field] !== "string") {
         problems.push(`${at}: \`${field}\` must be a string`);
@@ -233,7 +260,7 @@ export function readSource() {
   // dangling `from` fails the build rather than resolving to `undefined`.
   for (const entry of derived) {
     const at = `derived \`${entry.name ?? "?"}\``;
-    for (const field of ["name", "description", "op"]) {
+    for (const field of ["name", "description"]) {
       if (typeof entry[field] !== "string") problems.push(`${at}: missing \`${field}\``);
     }
     if (typeof entry.name !== "string") continue;
@@ -250,11 +277,43 @@ export function readSource() {
     if (entry.base !== undefined && !tokens.has(entry.base)) {
       problems.push(`${at}: unknown base token \`${entry.base}\``);
     }
-    if (entry.op !== undefined && !(entry.op in OPERATIONS)) {
-      problems.push(`${at}: unknown op \`${entry.op}\``);
+    checkOperation(entry, at, problems, { required: true });
+  }
+
+  // Base rules: exactly `BASE_TOKENS`, in its order, each sourcing only an
+  // earlier rule — which is what lets both interpreters resolve in one pass.
+  const tokenOrder = [...tokens];
+  const ruleNames = baseRules.map((rule) => rule.name);
+  if (ruleNames.join(" ") !== tokenOrder.join(" ")) {
+    problems.push(
+      `[[base]] must list exactly BASE_TOKENS (crates/atlas-theme/src/lib.rs), in its order`,
+    );
+  }
+  const earlier = new Set();
+  for (const rule of baseRules) {
+    const at = `base rule \`${rule.name ?? "?"}\``;
+    for (const field of ["name", "description"]) {
+      if (typeof rule[field] !== "string") problems.push(`${at}: missing \`${field}\``);
     }
-    const amount = Number(entry.amount?.number);
-    if (!(amount > 0 && amount <= 1)) problems.push(`${at}: \`amount\` must be in (0, 1]`);
+    if (rule.palette !== undefined && !PALETTE_KEYS.includes(rule.palette)) {
+      problems.push(`${at}: unknown palette hue \`${rule.palette}\``);
+    }
+    if (rule.base !== undefined && !earlier.has(rule.base)) {
+      problems.push(`${at}: \`base\` must name an earlier rule, got \`${rule.base}\``);
+    }
+    if (rule.base === undefined && typeof rule.dark !== "string") {
+      problems.push(`${at}: needs a \`base\` source or a \`dark\` default`);
+    }
+    for (const field of ["dark", "light"]) {
+      if (rule[field] !== undefined && typeof rule[field] !== "string") {
+        problems.push(`${at}: \`${field}\` must be a string`);
+      }
+      if (typeof rule[field] === "string" && /[\t\n]/.test(rule[field])) {
+        problems.push(`${at}: \`${field}\` may not hold a tab or newline`);
+      }
+    }
+    checkOperation(rule, at, problems);
+    earlier.add(rule.name);
   }
 
   // `.` and `_` both become `-`, so `a.b_c` and `a.b.c` would write the same
@@ -276,6 +335,16 @@ export function readSource() {
 
   return {
     groups,
+    baseRules: baseRules.map((rule) => ({
+      name: rule.name,
+      description: rule.description,
+      palette: rule.palette,
+      base: rule.base,
+      op: rule.op,
+      amount: rule.amount?.number,
+      dark: rule.dark,
+      light: rule.light ?? rule.dark,
+    })),
     derived: derived.map((entry) => ({
       name: entry.name,
       description: entry.description,
@@ -341,7 +410,7 @@ function banner(comment) {
 
 const REGISTRY_PREAMBLE = `${banner("//")}
 
-import { withAlpha, lighten, mix } from "./color";
+import { withAlpha, lighten, mix, readable } from "./color";
 
 export const PALETTE_KEYS = [
 ${PALETTE_KEYS.map((hue) => `  "${hue}",`).join("\n")}
@@ -390,6 +459,42 @@ const towardForeground =
   (amount: number): ColorTransform =>
   (color, { base }) =>
     mix(color, base.foreground ?? "#ffffff", amount);
+const readableOn =
+  (): ColorTransform =>
+  (color, { base }) =>
+    // Until \`foreground\` exists — only while deriving it — the choice is
+    // white or black, since \`background\` cannot be read on itself.
+    base.foreground === undefined
+      ? readable(color, "#ffffff", "#000000")
+      : readable(color, base.foreground, base.background ?? "#000000");
+
+export interface BaseRule {
+  token: string;
+  palette?: PaletteKey;
+  /** An earlier base token this one follows. */
+  base?: string;
+  /** Per-appearance default, for when neither source answers. */
+  atlasDefault?: Record<Appearance, string>;
+  transform?: ColorTransform;
+  description: string;
+}
+
+function rule(
+  token: string,
+  definition: Omit<BaseRule, "token" | "atlasDefault"> & { dark?: string; light?: string },
+): BaseRule {
+  const { dark, light = dark, ...rest } = definition;
+  return { token, ...rest, ...(dark ? { atlasDefault: { dark, light: light! } } : {}) };
+}
+
+/**
+ * How each shadcn base token a theme leaves out is derived (ADR-0022), in
+ * \`BASE_TOKENS\` order: a rule's \`base\` is always an earlier rule, so one
+ * pass resolves the set.
+ */
+export const BASE_RULE_REGISTRY: readonly BaseRule[] = [
+BASE_RULES_BODY
+];
 
 function define<const Key extends string>(
   key: Key,
@@ -465,7 +570,22 @@ export function describeDerivation(definition: ThemeKeyDefinition): string {
 }
 `;
 
-function renderRegistry({ keys, derived }) {
+function renderBaseRules(baseRules) {
+  return baseRules
+    .flatMap((entry) => {
+      const fields = [];
+      if (entry.palette) fields.push(`palette: "${entry.palette}"`);
+      if (entry.base) fields.push(`base: "${entry.base}"`);
+      if (entry.op) fields.push(`transform: ${transformCall(entry)}`);
+      if (entry.dark) fields.push(`dark: "${entry.dark}"`);
+      if (entry.dark && entry.light !== entry.dark) fields.push(`light: "${entry.light}"`);
+      fields.push(`description: "${entry.description.replaceAll('"', '\\"')}"`);
+      return [`  rule("${entry.name}", {`, ...fields.map((field) => `    ${field},`), "  }),"];
+    })
+    .join("\n");
+}
+
+function renderRegistry({ keys, derived, baseRules }) {
   const body = [];
   let group = null;
   for (const key of keys) {
@@ -484,7 +604,7 @@ function renderRegistry({ keys, derived }) {
     body.push(`  define("${key.name}", {`);
     if (key.palette) body.push(`    palette: "${key.palette}",`);
     if (key.base) body.push(`    base: "${key.base}",`);
-    if (key.op) body.push(`    transform: ${OPERATIONS[key.op].call}(${key.amount}),`);
+    if (key.op) body.push(`    transform: ${transformCall(key)},`);
     body.push(`    dark: "${key.dark}",`);
     body.push(`    light: "${key.light}",`);
     body.push(`    description: "${key.description.replaceAll('"', '\\"')}",`);
@@ -494,11 +614,11 @@ function renderRegistry({ keys, derived }) {
     `  derive("${entry.name}", {`,
     `    from: ${entry.from ? `"${entry.from}"` : "null"},`,
     `    base: ${entry.base ? `"${entry.base}"` : "null"},`,
-    `    transform: ${OPERATIONS[entry.op].call}(${entry.amount}),`,
+    `    transform: ${transformCall(entry)},`,
     `    description: "${entry.description.replaceAll('"', '\\"')}",`,
     "  }),",
   ]);
-  return `${REGISTRY_PREAMBLE}\n${body.join("\n")}\n${REGISTRY_EPILOGUE.replace(
+  return `${REGISTRY_PREAMBLE.replace("BASE_RULES_BODY", renderBaseRules(baseRules))}\n${body.join("\n")}\n${REGISTRY_EPILOGUE.replace(
     "DERIVED_BODY",
     derivedBody.join("\n"),
   )}`;
@@ -509,7 +629,20 @@ function renderKeyList({ keys }) {
   return `${banner("#")}\n#\n# One key per line: the role name, a tab, and the hover text an author sees.\n${rows.join("\n")}\n`;
 }
 
-function renderDocs({ groups, keys, derived }, current) {
+/**
+ * One rule per line, tab-separated, for `crates/atlas-theme/src/derive.rs`:
+ * token, palette, base, op, amount, dark, light — `-` where a field is absent.
+ */
+function renderBaseRuleList({ baseRules }) {
+  const rows = baseRules.map((entry) =>
+    [entry.name, entry.palette, entry.base, entry.op, entry.amount, entry.dark, entry.light]
+      .map((field) => field ?? "-")
+      .join("\t"),
+  );
+  return `${banner("#")}\n#\n# token, palette, base, op, amount, dark, light; \`-\` where absent.\n${rows.join("\n")}\n`;
+}
+
+function renderDocs({ groups, keys, derived, baseRules }, current) {
   const begin = current.indexOf(DOCS_BEGIN);
   const end = current.indexOf(DOCS_END);
   if (begin === -1 || end === -1 || end < begin) {
@@ -521,6 +654,32 @@ function renderDocs({ groups, keys, derived }, current) {
   const out = [
     DOCS_BEGIN,
     `<!-- Generated from ${SOURCE_REL} by \`${COMMAND}\`. Edit that file, not this block. -->`,
+    "",
+    "## How a missing base token is derived",
+    "",
+    "Every base token is optional. One a theme leaves out comes from its rule:",
+    "`P:x` is `palette.x`, `B:x` is another base token, and `D` is the Atlas",
+    "default (dark / light). `background`, `foreground` and `primary` are the",
+    "seeds; a theme that sets only those still sets every token.",
+    "",
+    "| Token | Source | Transform | D (dark / light) | What it is |",
+    "|---|---|---|---|---|",
+    ...baseRules.map((entry) => {
+      const source = [
+        entry.palette && `P:${entry.palette}`,
+        entry.base && `B:${entry.base}`,
+        entry.dark && "D",
+      ]
+        .filter(Boolean)
+        .join(" → ");
+      const transform = entry.op ? OPERATIONS[entry.op].docs(entry.amount) : "—";
+      const fallback = !entry.dark
+        ? "—"
+        : entry.dark === entry.light
+          ? `\`${entry.dark}\``
+          : `\`${entry.dark}\` / \`${entry.light}\``;
+      return `| \`${entry.name}\` | ${source} | ${transform} | ${fallback} | ${entry.description} |`;
+    }),
     "",
     "## Full key list and derivation sources",
     "",
@@ -623,6 +782,7 @@ export function staleOutputs() {
   };
   compare(OUTPUTS.registry, renderRegistry(source));
   compare(OUTPUTS.keyList, renderKeyList(source));
+  compare(OUTPUTS.baseRules, renderBaseRuleList(source));
   compare(OUTPUTS.docs, renderDocs(source, read(OUTPUTS.docs)));
 
   const committed = JSON.stringify(sortValue(schemaKeysOf(read(OUTPUTS.schema))));
@@ -641,12 +801,13 @@ function write() {
   const written = [];
   const put = (relative, contents) => {
     const full = path.join(REPO_ROOT, relative);
-    if (readFileSync(full, "utf8") === contents) return;
+    if (existsSync(full) && readFileSync(full, "utf8") === contents) return;
     writeFileSync(full, contents);
     written.push(relative);
   };
   put(OUTPUTS.registry, renderRegistry(source));
   put(OUTPUTS.keyList, renderKeyList(source));
+  put(OUTPUTS.baseRules, renderBaseRuleList(source));
   put(OUTPUTS.docs, renderDocs(source, read(OUTPUTS.docs)));
 
   // The schema must be regenerated after `theme-keys.txt`, which it reads.

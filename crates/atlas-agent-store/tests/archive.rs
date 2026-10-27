@@ -1,10 +1,8 @@
 //! Archive resolution: which URLs we accept, where an install lands, what gets
 //! collected, and what happens when the bytes are wrong.
 //!
-//! The pure-function cases are ported from
-//! `zed-ref/crates/project/src/agent_server_store.rs:2000-2130` and kept
-//! case-for-case, including the path-traversal ones — those are the reason the
-//! percent-decode is checked rather than trusted.
+//! The pure-function cases include the path-traversal ones — those are the
+//! reason the percent-decode is checked rather than trusted.
 
 use std::io::Write as _;
 use std::path::Path;

@@ -546,9 +546,11 @@ export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(fu
         // `min-w-0` lets the textarea actually shrink inside the flex row on
         // narrow panes; the nowrap placeholder clips instead of wrapping onto
         // multiple lines (textarea placeholders wrap by default).
-        className="min-w-0 flex-1 resize-none overflow-hidden border-none bg-transparent p-0 text-base leading-[18px] text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)] placeholder:[white-space:nowrap]"
+        className="min-w-0 flex-1 resize-none overflow-hidden border-none bg-transparent p-0 font-terminal text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)] placeholder:[white-space:nowrap]"
         style={{
-          fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)',
+          // `terminalFontSize`; the 18/13 line height scales with it.
+          fontSize: "var(--atlas-terminal-font-size, 13px)",
+          lineHeight: "calc(var(--atlas-terminal-font-size, 13px) * 18 / 13)",
         }}
       />
       <CommandSuggestions

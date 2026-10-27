@@ -1,9 +1,8 @@
 //! The three ways an installed agent resolves to a command line.
 //!
 //! Each implements [`ExternalAgentServer`], the seam
-//! `atlas-agent-servers` left open in stage 1: given extra args and extra env,
-//! produce an [`AgentServerCommand`]. Ported from
-//! `agent_server_store.rs:1130-1500`.
+//! `atlas-agent-servers` defines: given extra args and extra env,
+//! produce an [`AgentServerCommand`].
 //!
 //! - [`LocalCustomAgent`] — the user's own command, run as written.
 //! - [`LocalRegistryArchiveAgent`] — a registry binary distribution: download,
@@ -42,10 +41,11 @@ use crate::node::{
 };
 use crate::npm_tree::{install_state, InstallState, NpmPlatform};
 use crate::registry::{current_platform_key, RegistryTargetConfig};
+use crate::secrets::SecretEnv;
 
 /// The environment an agent inherits from the project it is opened in.
 ///
-/// Zed reads this from its `ProjectEnvironment` entity, which runs the user's
+/// An implementation runs the user's
 /// login shell in the worktree root so an agent sees the same `PATH`,
 /// `NODE_OPTIONS` and direnv-provided variables the user's terminal would. It
 /// is a trait here so this crate stays leaf-level and a test can supply a fixed
@@ -95,16 +95,16 @@ fn layered_env(
 
 // ------------------------------------------------------------ custom entries
 
-/// Divergence from Zed: a custom entry's own `env` is the *settings* layer here
-/// and so beats `extra`, where Zed layers it below `extra`
-/// (`agent_server_store.rs:1489-1494`). Zed's own registry path puts the
-/// settings env on top; a custom entry's env is settings by definition, and
+/// A custom entry's own `env` is the *settings* layer and so beats `extra`,
+/// the same as the registry path puts settings env on top; a custom entry's env
+/// is settings by definition, and
 /// having the launcher's env workarounds silently override something the user
 /// typed for this one agent is the surprising reading of the two.
 pub struct LocalCustomAgent {
     pub(crate) command: AgentServerCommand,
     pub(crate) project_env: Arc<dyn ProjectEnvironment>,
     pub(crate) byok_env: HashMap<String, String>,
+    pub(crate) secret_env: SecretEnv,
 }
 
 impl ExternalAgentServer for LocalCustomAgent {
@@ -116,10 +116,13 @@ impl ExternalAgentServer for LocalCustomAgent {
         let mut command = self.command.clone();
         let project_env = self.project_env.project_env();
         let byok_env = self.byok_env.clone();
+        let secret_env = self.secret_env.clone();
         Box::pin(async move {
             // A custom entry's own env is the "settings" layer — it is the most
             // specific thing the user said about this agent.
-            let settings_env = command.env.take().unwrap_or_default();
+            let settings_env = secret_env
+                .layer_over(command.env.take().unwrap_or_default())
+                .await;
             command.env = Some(layered_env(
                 project_env.await,
                 &HashMap::new(),
@@ -142,7 +145,11 @@ pub struct LocalRegistryArchiveAgent {
     pub(crate) installation_dir: PathBuf,
     pub(crate) version: Arc<str>,
     pub(crate) targets: HashMap<String, RegistryTargetConfig>,
+    /// The user's arguments, after the distribution's own.
+    pub(crate) settings_args: Vec<String>,
     pub(crate) settings_env: HashMap<String, String>,
+    /// Sensitive values, layered over `settings_env` at launch.
+    pub(crate) secret_env: SecretEnv,
     pub(crate) byok_env: HashMap<String, String>,
     pub(crate) loading_status: Option<watch::Sender<Option<String>>>,
 }
@@ -185,7 +192,9 @@ impl ExternalAgentServer for LocalRegistryArchiveAgent {
         let installation_dir = self.installation_dir.clone();
         let version = self.version.clone();
         let targets = self.targets.clone();
+        let settings_args = self.settings_args.clone();
         let settings_env = self.settings_env.clone();
+        let secret_env = self.secret_env.clone();
         let byok_env = self.byok_env.clone();
         let loading_status = self.loading_status.clone();
 
@@ -205,6 +214,7 @@ impl ExternalAgentServer for LocalRegistryArchiveAgent {
                     )
                 })?;
 
+                let settings_env = secret_env.layer_over(settings_env).await;
                 let env = layered_env(
                     project_env.await,
                     &target.env,
@@ -224,7 +234,7 @@ impl ExternalAgentServer for LocalRegistryArchiveAgent {
 
                 let cmd_path = resolve_target_cmd(&node, &target.cmd, &version_dir).await?;
 
-                // Detached, as in Zed: the previous version's directory is dead
+                // Detached: the previous version's directory is dead
                 // weight, not a correctness problem, and removing it should never
                 // delay the agent starting.
                 tokio::spawn({
@@ -243,6 +253,7 @@ impl ExternalAgentServer for LocalRegistryArchiveAgent {
                 });
 
                 let mut args = target.args.clone();
+                args.extend(settings_args);
                 args.extend(extra_args);
 
                 Ok(AgentServerCommand {
@@ -320,8 +331,7 @@ async fn ensure_archive(
     }
 
     // The registry's own checksum wins; failing that, GitHub's recorded digest
-    // for the release asset. Both absent means an unverified install, which is
-    // what Zed does too.
+    // for the release asset. Both absent means an unverified install.
     let sha256 = match &target.sha256 {
         Some(sha256) => Some(sha256.clone()),
         None => match github_release_archive_from_url(archive_url) {
@@ -365,8 +375,6 @@ async fn has_subdirectory(dir: &std::path::Path) -> bool {
     false
 }
 
-/// Ported from `agent_server_store.rs:1282-1302`.
-///
 /// The rule is narrow on purpose: `"node"` means our managed runtime, and
 /// anything else must be a `./relative` path that exists inside the extraction
 /// directory. An absolute path or a `..` would let a registry entry name a
@@ -419,7 +427,11 @@ pub struct LocalRegistryNpxAgent {
     pub(crate) package: String,
     pub(crate) args: Vec<String>,
     pub(crate) distribution_env: HashMap<String, String>,
+    /// The user's arguments, after the distribution's own.
+    pub(crate) settings_args: Vec<String>,
     pub(crate) settings_env: HashMap<String, String>,
+    /// Sensitive values, layered over `settings_env` at launch.
+    pub(crate) secret_env: SecretEnv,
     pub(crate) byok_env: HashMap<String, String>,
     pub(crate) loading_status: Option<watch::Sender<Option<String>>>,
 }
@@ -472,8 +484,10 @@ impl ExternalAgentServer for LocalRegistryNpxAgent {
         let version = self.version.clone();
         let package = self.package.clone();
         let args = self.args.clone();
+        let settings_args = self.settings_args.clone();
         let distribution_env = self.distribution_env.clone();
         let settings_env = self.settings_env.clone();
+        let secret_env = self.secret_env.clone();
         let byok_env = self.byok_env.clone();
         let loading_status = self.loading_status.clone();
 
@@ -512,12 +526,12 @@ impl ExternalAgentServer for LocalRegistryNpxAgent {
                 let executable = read_package_executable(&node_modules, package_name).await?;
 
                 // npm's own env (the managed Node first on `PATH`) layers over the
-                // project's and under the distribution's, exactly as Zed orders it
-                // at `agent_server_store.rs:1405-1411`. It has to beat the project
+                // project's and under the distribution's. It has to beat the project
                 // env specifically: the project almost always has a `PATH` of its
                 // own, and the point of this layer is that ours wins.
                 let mut base = project_env.await;
                 base.extend(npm_command_env(&node_binary));
+                let settings_env = secret_env.layer_over(settings_env).await;
                 let env = layered_env(base, &distribution_env, extra_env, &byok_env, &settings_env);
 
                 // The agent's own Node launch, plain at the boundary like npm's:
@@ -527,6 +541,7 @@ impl ExternalAgentServer for LocalRegistryNpxAgent {
                     .to_string_lossy()
                     .into_owned()];
                 command_args.extend(args);
+                command_args.extend(settings_args);
                 command_args.extend(extra_args);
 
                 Ok(AgentServerCommand {
@@ -554,9 +569,9 @@ impl ExternalAgentServer for LocalRegistryNpxAgent {
 /// Install `package` into `install_dir` unless the copy there already serves
 /// it. `true` when npm ran.
 ///
-/// Install only when the copy on disk cannot serve the spec. Zed runs `npm
-/// install` on every connect; that made each agent start a registry
-/// round-trip, and a registry that does not answer made it a hang. Now it is a
+/// Install only when the copy on disk cannot serve the spec. Running `npm
+/// install` on every connect would make each agent start a registry
+/// round-trip, and a registry that does not answer a hang. It is a
 /// per-version cost — and a per-repair cost: a tree npm left without its
 /// platform package (see `npm_tree`) counts as not serving the spec.
 ///

@@ -1,6 +1,6 @@
-//! Projects the ported thread's events into the `SessionDelta` wire.
+//! Projects the thread's events into the `SessionDelta` wire.
 //!
-//! This is the load-bearing seam of the ACP port. Everything Atlas remembers
+//! This is the load-bearing seam of the ACP stack. Everything Atlas remembers
 //! about what an agent did — the Timeline, the permanent checkpoint record,
 //! analytics, transcripts, memory ingest — is downstream of these deltas, and
 //! all of it pattern-matches concrete variants and fields. The wire is
@@ -9,7 +9,7 @@
 //!
 //! # Where the two models differ, and how the gap is closed
 //!
-//! The ported thread and the wire disagree about what a "message" is, and the
+//! The thread and the wire disagree about what a "message" is, and the
 //! projection exists to reconcile that:
 //!
 //! - The thread keeps **one entry per assistant message**, with interleaved

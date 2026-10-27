@@ -1,7 +1,7 @@
 // Modified by Atlas from upstream OpenAI Codex (Apache-2.0). See CONTEXT.md.
 //! The Chat Completions request body, built for the Atlas gateway (spec D3).
 //!
-//! Added by Atlas. Upstream deleted its Chat Completions dialect deliberately —
+//! Added by Atlas. The original engine deleted its Chat Completions dialect deliberately —
 //! `wire_api = "chat"` fails to deserialize with an error pointing at the
 //! removal discussion — so there was nothing to resurrect and this is authored
 //! from scratch against the gateway contract (`docs/reference/atlas-ai-api.md`).
@@ -220,7 +220,7 @@ pub struct ChatRequestInput<'a> {
 /// A built request, plus the one thing the stream parser needs to know about it.
 pub struct BuiltChatRequest {
     pub request: ChatCompletionsRequest,
-    /// Names of tools that were freeform upstream and had to be flattened into
+    /// Names of tools that were freeform in the original tool shape and had to be flattened into
     /// functions to cross this wire.
     ///
     /// The reply has to be turned back, or the engine's router sends a

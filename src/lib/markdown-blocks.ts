@@ -3,8 +3,7 @@
 // it into its top-level blocks by source offset. A completed block's slice is
 // byte-identical every frame, so rendering each block through the source-keyed
 // `CachedMarkdown` cache makes completed blocks pure cache hits — only the
-// trailing (still-streaming) block re-parses. Mirrors Zed's `root_block_starts`
-// and Open WebUI's per-block-token rendering.
+// trailing (still-streaming) block re-parses.
 
 import { unified } from "unified";
 import remarkParse from "remark-parse";

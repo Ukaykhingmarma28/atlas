@@ -1,9 +1,11 @@
 # Theme keys
 
-Schema-1 themes have required shadcn **base tokens**, optional eight-colour
-**palette** entries, and optional Atlas **theme keys**. A theme key always
-resolves in this order: explicit `keys` value, palette source, base-token
-source, then the Atlas default for the active appearance.
+Schema-1 themes have optional shadcn **base tokens**, optional eight-colour
+**palette** entries, and optional Atlas **theme keys**. Nothing is required
+(ADR-0022): `background`, `foreground` and `primary` are the seeds, and every
+base token a theme leaves out is derived from them (the first table below). A
+theme key always resolves in this order: explicit `keys` value, palette
+source, base-token source, then the Atlas default for the active appearance.
 
 Every key, its description, its sources and its transform are declared once, in
 **`crates/atlas-theme/keys.toml`**. The TS registry the resolver reads, the key
@@ -82,6 +84,58 @@ registry preamble it emits — the transform itself is one line of `color.ts`.
 
 <!-- generated:theme-keys -->
 <!-- Generated from crates/atlas-theme/keys.toml by `bun run theme:keys`. Edit that file, not this block. -->
+
+## How a missing base token is derived
+
+Every base token is optional. One a theme leaves out comes from its rule:
+`P:x` is `palette.x`, `B:x` is another base token, and `D` is the Atlas
+default (dark / light). `background`, `foreground` and `primary` are the
+seeds; a theme that sets only those still sets every token.
+
+| Token | Source | Transform | D (dark / light) | What it is |
+|---|---|---|---|---|
+| `background` | D | — | `#000000` / `#ffffff` | The app's ground. A seed. |
+| `foreground` | B:background | readable: B:foreground or B:background | — | Body text. A seed; left out, the ink that reads on the background. |
+| `card` | B:background | mix 0.05 → B:foreground | — | Raised surfaces: cards, composer, tiles. |
+| `card-foreground` | B:foreground | — | — | Text on a card. |
+| `popover` | B:background | mix 0.12 → B:foreground | — | Menus, popovers, tooltips. |
+| `popover-foreground` | B:foreground | — | — | Text in a popover. |
+| `primary` | B:foreground | — | — | Brand colour for buttons, focus and selection. A seed; monochrome if unset. |
+| `primary-foreground` | B:primary | readable: B:foreground or B:background | — | Text on a primary fill. |
+| `secondary` | B:background | mix 0.05 → B:foreground | — | Secondary button fill. |
+| `secondary-foreground` | B:foreground | mix 0.28 → B:background | — | Secondary text and secondary button labels. |
+| `muted` | B:background | mix 0.05 → B:foreground | — | Quiet fills: wells, inactive tracks. |
+| `muted-foreground` | B:foreground | mix 0.32 → B:background | — | Hints, captions, placeholders. |
+| `accent` | B:muted | — | — | Hover and selected rows (shadcn's meaning, not the brand colour). |
+| `accent-foreground` | B:foreground | — | — | Text on an accent row. |
+| `destructive` | P:red → D | — | `#f44747` / `#c62828` | Destructive actions and errors. |
+| `destructive-foreground` | B:destructive | readable: B:foreground or B:background | — | Text on a destructive fill. |
+| `border` | B:background | mix 0.16 → B:foreground | — | Separators and outlines. |
+| `input` | B:border | — | — | Input outlines. |
+| `ring` | B:primary | — | — | Focus rings. |
+| `chart-1` | B:primary | — | — | The first chart series: the theme's ink. |
+| `chart-2` | P:green → D | — | `#9ecf8a` / `#3f7f2f` | Chart series 2. |
+| `chart-3` | P:yellow → D | — | `#e0b070` / `#b06000` | Chart series 3. |
+| `chart-4` | P:purple → D | — | `#c9a2f5` / `#7b3fb5` | Chart series 4. |
+| `chart-5` | P:cyan → D | — | `#7fd1e8` / `#1f7f99` | Chart series 5. |
+| `sidebar` | B:background | — | — | The sidebars' ground. |
+| `sidebar-foreground` | B:foreground | — | — | Sidebar text. |
+| `sidebar-primary` | B:primary | — | — | Primary fills in a sidebar. |
+| `sidebar-primary-foreground` | B:primary-foreground | — | — | Text on a sidebar primary fill. |
+| `sidebar-accent` | B:accent | — | — | Hover and selected rows in a sidebar. |
+| `sidebar-accent-foreground` | B:accent-foreground | — | — | Text on a sidebar accent row. |
+| `sidebar-border` | B:background | mix 0.08 → B:foreground | — | Sidebar separators, quieter than `border`. |
+| `sidebar-ring` | B:ring | — | — | Focus rings in a sidebar. |
+| `radius` | D | — | `8px` | Corner radius. |
+| `tracking-normal` | D | — | `0em` | Letter spacing. |
+| `spacing` | D | — | `0.25rem` | The spacing unit. |
+| `shadow-2xs` | D | — | `0 1px 2px rgba(0, 0, 0, 0.35)` / `0 1px 2px rgba(0, 0, 0, 0.04)` | Shadow ramp. |
+| `shadow-xs` | D | — | `0 1px 2px rgba(0, 0, 0, 0.45)` / `0 1px 2px rgba(0, 0, 0, 0.06)` | Shadow ramp. |
+| `shadow-sm` | D | — | `0 1px 3px rgba(0, 0, 0, 0.55)` / `0 1px 3px rgba(0, 0, 0, 0.08)` | Shadow ramp. |
+| `shadow-md` | D | — | `0 4px 12px rgba(0, 0, 0, 0.65)` / `0 4px 12px rgba(0, 0, 0, 0.11)` | Shadow ramp. |
+| `shadow-lg` | D | — | `0 8px 24px rgba(0, 0, 0, 0.75)` / `0 8px 24px rgba(0, 0, 0, 0.14)` | Shadow ramp. |
+| `shadow-xl` | D | — | `0 12px 36px rgba(0, 0, 0, 0.82)` / `0 12px 36px rgba(0, 0, 0, 0.18)` | Shadow ramp. |
+| `shadow-2xl` | D | — | `0 16px 48px rgba(0, 0, 0, 0.9)` / `0 16px 48px rgba(0, 0, 0, 0.22)` | Shadow ramp. |
 
 ## Full key list and derivation sources
 
@@ -172,21 +226,21 @@ CodeMirror and Markdown highlighting.
 
 | Key | Source | Transform | D (dark / light) | What it colours |
 |---|---|---|---|---|
-| `syntax.comment` | B:muted-foreground → D | — | `#8f8f8f` / `#9893a5` | Comments and prose quotes. |
-| `syntax.keyword` | P:purple → D | — | `#c9a2f5` / `#286983` | Keywords and control flow. |
-| `syntax.string` | P:green → D | — | `#9ecf8a` / `#ea9d34` | Strings. |
-| `syntax.number` | P:orange → D | — | `#e0b070` / `#ea9d34` | Numbers. |
-| `syntax.type` | P:cyan → D | — | `#7fd1e8` / `#56949f` | Types, classes, and namespaces. |
-| `syntax.function` | P:blue → B:primary → D | — | `#61afef` / `#286983` | Functions and headings. |
-| `syntax.variable` | B:foreground → D | — | `#eaeaea` / `#575279` | Variables. |
-| `syntax.operator` | P:cyan → D | — | `#9a9a9a` / `#797593` | Operators. |
-| `syntax.tag` | P:red → D | — | `#f44747` / `#b4637a` | Markup tags. |
-| `syntax.attribute` | P:yellow → D | — | `#d9b47a` / `#ea9d34` | Markup attributes. |
-| `syntax.constant` | P:orange → D | — | `#e0b070` / `#d7827e` | Constants and atoms. |
-| `syntax.regexp` | P:red → D | — | `#e59a72` / `#b4637a` | Regular expressions. |
-| `syntax.escape` | P:pink → D | — | `#e59a72` / `#d7827e` | Escape sequences. |
-| `syntax.definition` | B:foreground → D | — | `#ffffff` / `#464261` | Definitions and strong prose. |
-| `syntax.property` | P:cyan → D | — | `#c8c8c8` / `#56949f` | Properties and object keys. |
+| `syntax.comment` | B:muted-foreground → D | — | `#737373` | Comments and prose quotes. |
+| `syntax.keyword` | P:purple → D | — | `#ff678d` / `#d32a61` | Keywords and control flow. |
+| `syntax.string` | P:green → D | — | `#5ecc71` / `#199f43` | Strings. |
+| `syntax.number` | P:orange → D | — | `#68cdf2` / `#1ca1c7` | Numbers. |
+| `syntax.type` | P:cyan → D | — | `#d568ea` / `#a631be` | Types, classes, and namespaces. |
+| `syntax.function` | P:blue → B:primary → D | — | `#9d6afb` / `#693acf` | Functions and headings. |
+| `syntax.variable` | B:foreground → D | — | `#a3a3a3` / `#636363` | Variables. |
+| `syntax.operator` | P:cyan → D | — | `#636363` | Operators. |
+| `syntax.tag` | P:red → D | — | `#ff855e` / `#d5512f` | Markup tags. |
+| `syntax.attribute` | P:yellow → D | — | `#60d199` / `#18a46c` | Markup attributes. |
+| `syntax.constant` | P:orange → D | — | `#08c0ef` | Constants and atoms. |
+| `syntax.regexp` | P:red → D | — | `#64d1db` / `#17a5af` | Regular expressions. |
+| `syntax.escape` | P:pink → D | — | `#61d5c0` / `#16a994` | Escape sequences. |
+| `syntax.definition` | B:foreground → D | — | `#9d6afb` / `#693acf` | Definitions and strong prose. |
+| `syntax.property` | P:cyan → D | — | `#ffa359` / `#d47628` | Properties and object keys. |
 
 ### Editor
 

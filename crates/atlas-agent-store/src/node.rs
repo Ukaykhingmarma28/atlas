@@ -1,14 +1,11 @@
 //! The managed Node runtime.
 //!
-//! Ported from `zed-ref/crates/node_runtime/src/node_runtime.rs` (its
-//! `ManagedNodeRuntime`, `read_package_executable`, `npm_command_env`) and used
-//! for exactly the two things Zed uses it for: running an npx-distributed agent,
-//! and satisfying a binary target whose `cmd` is `"node"`.
+//! Used for exactly two things: running an npx-distributed agent, and
+//! satisfying a binary target whose `cmd` is `"node"`.
 //!
-//! DECIDED, research §D12-8: managed only. Zed can fall back to a system Node;
-//! Atlas does not, and this is what retires `node_setup.rs`'s nvm flow. The
-//! reason is the one Zed gives implicitly by requiring `cmd == "node"` and
-//! supplying its own runtime — an agent that works on the developer's machine
+//! DECIDED, research §D12-8: managed only. There is no fallback to a system Node,
+//! and this is what retires `node_setup.rs`'s nvm flow. The reason is that an
+//! agent that works on the developer's machine
 //! and not on the user's because their Node is three majors old is a support
 //! burden with no upside.
 //!
@@ -172,8 +169,7 @@ impl NodeRuntime {
         }))
     }
 
-    /// A runtime that fails with `reason` when anything asks for it. Zed's
-    /// `NodeRuntime::unavailable()`; here it is how a test builds a store whose
+    /// A runtime that fails with `reason` when anything asks for it. It is how a test builds a store whose
     /// agents never need Node.
     pub fn unavailable(reason: impl Into<String>) -> Self {
         Self(Arc::new(Inner::Unavailable(reason.into())))
@@ -197,7 +193,7 @@ impl NodeRuntime {
 
     /// Run `npm <subcommand> <args>`, retrying once.
     ///
-    /// The retry is Zed's (`node_runtime.rs:764-800`) and is not superstition:
+    /// The retry is not superstition:
     /// npm's first run after an install can fail while it populates its cache.
     pub async fn run_npm_subcommand(
         &self,
@@ -436,8 +432,7 @@ impl std::error::Error for NpmTimedOut {}
 
 /// Whether the Node at `node_dir` actually runs.
 ///
-/// Zed checks by running npm rather than by checking the file exists
-/// (`node_runtime.rs:641-676`): a half-extracted or wrong-architecture install
+/// This checks by running npm rather than by checking the file exists: a half-extracted or wrong-architecture install
 /// has the file and fails at the worst possible moment otherwise.
 async fn node_install_works(node_dir: &Path) -> bool {
     let node_binary = node_dir.join(NODE_PATH);
@@ -534,8 +529,8 @@ fn inherited_npm_config_keys(
         .collect()
 }
 
-/// The fetch policy every managed npm run gets. Zed's
-/// (`node_runtime.rs:1124-1158`) plus bounded network waits: the Codex
+/// The fetch policy every managed npm run gets: a
+/// base policy plus bounded network waits: the Codex
 /// platform tarball alone is 220 MB. Note `fetch-timeout` is npm's per-socket
 /// *idle* timeout (`@npmcli/agent` maps it to `timeouts.idle`), not a transfer
 /// cap — it ends a stalled socket, never a slow download; the whole-invocation
@@ -559,7 +554,7 @@ const NPM_FETCH_ARGS: &[&str] = &[
     "10000",
 ];
 
-/// Ported from `build_npm_command_args` (`node_runtime.rs:1124-1158`). Every
+/// Every
 /// path is pinned at the managed install so npm never reads the user's npmrc or
 /// writes their global cache, and every path goes out in its plain spelling
 /// ([`plain_process_path`]) whatever the caller resolved it to.
@@ -666,7 +661,6 @@ pub(crate) fn plain_process_path(path: &Path) -> PathBuf {
 }
 
 /// The executable an npm package declares, resolved out of its `package.json`.
-/// Ported from `node_runtime.rs:1019-1064`.
 pub async fn read_package_executable(node_modules_dir: &Path, name: &str) -> Result<PathBuf> {
     #[derive(serde::Deserialize)]
     #[serde(untagged)]
@@ -711,22 +705,19 @@ pub async fn read_package_executable(node_modules_dir: &Path, name: &str) -> Res
 /// Turn `pkg@1.2.3` into `("pkg", "pkg@0.0.0 - 1.2.3")` — a version *ceiling*,
 /// not a pin.
 ///
-/// Ported verbatim, comment and all, from `agent_server_store.rs:1436-1477`:
+/// People are using npm's min-release-age more frequently, which means a fresh
+/// registry will likely list package versions the user cannot install. So the
+/// version is a ceiling and not an exact pin: npm resolves the latest version
+/// it can find that satisfies the constraint. This is a best-effort attempt to
+/// install a version that works without overriding the user's security
+/// settings.
 ///
-/// > People are using min-release-age more frequently. Which means a fresh
-/// > registry will likely have new package versions than the user can install.
-/// > We set the version to now be a ceiling and not an exact pin instead. This
-/// > allows npm to resolve the latest version it can find that satisfies the
-/// > constraint. […] This is a best-effort attempt to install a version that
-/// > works without overriding the user's security settings.
-/// >
-/// > We use npm's hyphen-range syntax (`0.0.0 - <version>`, equivalent to
-/// > `<=<version>`) instead of the more compact `<=<version>` form because on
-/// > Windows, `npm` is `npm.cmd` (a batch file run by cmd.exe), and the quotes
-/// > our shell builder emits are PowerShell string-literal syntax that PS strips
-/// > during parsing. […] so `package@<=0.25.3` reaches cmd.exe bare and the
-/// > unquoted `<` is interpreted as input redirection. See
-/// > zed-industries/zed#55921.
+/// The spec uses npm's hyphen-range syntax (`0.0.0 - <version>`, equivalent to
+/// `<=<version>`) instead of the more compact `<=<version>` form because on
+/// Windows, `npm` is `npm.cmd` (a batch file run by cmd.exe), and the quotes a
+/// PowerShell-targeted shell builder emits are stripped during parsing, so
+/// `package@<=0.25.3` would reach cmd.exe bare and the unquoted `<` would be
+/// interpreted as input redirection. See zed-industries/zed#55921.
 pub fn bounded_npm_package_spec(package_spec: &str) -> (&str, String) {
     let Some((package_name, version)) = package_spec.rsplit_once('@') else {
         return (package_spec, package_spec.to_string());

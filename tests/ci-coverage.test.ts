@@ -207,8 +207,8 @@ describe("CI's Rust jobs", () => {
     expect(header).not.toMatch(/^\s*RUSTC_WRAPPER:/m);
   });
 
-  it("keeps scripts/test-rust.sh testing the same vendored crates as the engine dialect job", () => {
-    // `bun run test:rust` is the local subset of CI; its vendored `-p` list is
+  it("keeps scripts/test-rust.sh testing the same engine crates as the engine dialect job", () => {
+    // `bun run test:rust` is the local subset of CI; its engine `-p` list is
     // a copy of the job's, and a copy drifts unless something compares them.
     const packages = (text: string) =>
       [...text.matchAll(/-p (atlas-engine-[a-z0-9-]+)/g)].map((m) => m[1]).sort();

@@ -119,7 +119,12 @@ export const BlockTerminal = memo(function BlockTerminal({
     () =>
       terminalSessions.acquire(terminalKey, {
         tabId,
-        cwd: useAppStore.getState().currentProject?.path ?? "~",
+        // A tab with its own directory (a session's terminal drawer) starts
+        // there; a terminal tab follows the project.
+        cwd:
+          useTerminalStore.getState().cwds[tabId] ??
+          useAppStore.getState().currentProject?.path ??
+          "~",
       }),
     [terminalKey, tabId],
   );
@@ -503,8 +508,7 @@ function BlockPasswordInput({ onSubmit }: { onSubmit: (pw: string) => void }) {
         autoComplete="off"
         spellCheck={false}
         placeholder="Enter password, then press Enter…"
-        className="flex-1 bg-transparent text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
-        style={{ fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)' }}
+        className="flex-1 bg-transparent font-terminal text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
       />
     </div>
   );
@@ -804,7 +808,8 @@ const LineList = memo(function LineList({
     // and back on only for inputs, `pre`, `code` and this class. This surface
     // used to be a `<pre>` and got selection for free; the line emulator
     // rework made it a `<div>` and selection silently died with the tag.
-    <div className="select-text whitespace-pre-wrap break-words px-3 py-2 font-mono text-sm leading-[1.45] text-[var(--secondary-foreground)]">
+    // `atlas-terminal-output`: `terminalFontSize` less a pixel (globals.css).
+    <div className="atlas-terminal-output select-text whitespace-pre-wrap break-words px-3 py-2 font-terminal leading-[1.4] text-[var(--secondary-foreground)]">
       {lines.map((line) => (
         <OutputLine
           key={line.id}

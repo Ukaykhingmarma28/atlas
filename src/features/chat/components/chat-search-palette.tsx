@@ -5,6 +5,7 @@ import { Search, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Kbd, KbdGroup } from "@/ui/kbd";
 import type { ChatMessage } from "@/types/agent";
+import { formatTime } from "@/lib/format-time";
 
 interface ChatSearchPaletteProps {
   open: boolean;
@@ -103,10 +104,7 @@ export function ChatSearchPalette({
               filtered.slice(0, 200).map(({ m, i }, idx) => {
                 const active = idx === selected;
                 const preview = m.content.replace(/\s+/g, " ").slice(0, 160);
-                const ts = new Date(m.timestamp).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                });
+                const ts = formatTime(m.timestamp, { hour: "2-digit", minute: "2-digit" });
                 return (
                   <button
                     key={m.id}

@@ -6,6 +6,7 @@ import type { GroupBy } from "../types";
 import { fmtRange } from "./date-range";
 import { agentDisplay, modelDisplay, projectLabel, rankBy, tokensOf } from "./derive";
 import type { UsageView } from "./use-usage-view";
+import { formatDateTime } from "@/lib/format-time";
 
 /**
  * Exports for the Usage tab: the rendered dashboard as PDF/JPEG, and the
@@ -159,7 +160,7 @@ export function buildMarkdown(view: UsageView): string {
   lines.push("");
   const facetsLine = facetLine(view);
   lines.push(`_${fmtRange(resolved)}${facetsLine ? ` · ${facetsLine}` : ""}_`);
-  lines.push(`_Generated ${new Date().toLocaleString()}_`);
+  lines.push(`_Generated ${formatDateTime(new Date())}_`);
   lines.push("");
   lines.push(`## Totals`);
   lines.push("");

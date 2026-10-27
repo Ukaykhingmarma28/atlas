@@ -3,9 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import builtinThemes from "@/dev/mock-backend/fixtures/builtin-themes.json";
+import { BUILTIN_THEMES } from "@/dev/mock-backend/fixtures/builtin-themes";
 import { applyTheme, appearanceForMode, resolvedThemeCss } from "./apply-theme";
-import type { Theme } from "./lib/theme-api";
 
 /** Pretend the OS is asking for a light appearance. */
 function osPrefersLight(light: boolean): void {
@@ -69,7 +68,7 @@ describe("appearanceForMode", () => {
  * appearance the user had already switched away from.
  */
 describe("applyTheme and the boot variables", () => {
-  const themes = builtinThemes as Theme[];
+  const themes = BUILTIN_THEMES;
   const rosePine = themes.find((t) => t.id === "rose-pine")!;
   const boot = () => document.documentElement.style;
 
@@ -110,7 +109,7 @@ describe("applyTheme and the boot variables", () => {
  * run that inline script for real, against what `applyTheme` cached.
  */
 describe("the launch replay in index.html", () => {
-  const themes = builtinThemes as Theme[];
+  const themes = BUILTIN_THEMES;
   const rosePine = themes.find((t) => t.id === "rose-pine")!;
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
   const html = readFileSync(path.join(repoRoot, "index.html"), "utf8");

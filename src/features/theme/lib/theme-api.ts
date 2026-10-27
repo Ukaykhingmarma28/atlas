@@ -21,6 +21,9 @@ export interface Theme {
   name: string;
   author: string;
   license: string;
+  /** Base tokens both variants share (shadcn's `cssVars.theme`). Already
+   *  merged into each variant's `base` by Rust; omitted when empty. */
+  base?: Record<string, string>;
   dark?: ThemeVariant;
   light?: ThemeVariant;
   /** Omitted by Rust when there are no forward-compatibility warnings. */
@@ -59,6 +62,19 @@ export function listThemes(): Promise<ThemeCatalogSummary> {
 
 export function getTheme(id: string): Promise<Theme> {
   return invoke("get_theme", { id });
+}
+
+/** Where `saveTheme` wrote. */
+export interface SavedTheme {
+  /** The id it was saved under, slugged: what `themeDark`/`themeLight` name. */
+  id: string;
+  path: string;
+}
+
+/** Write a theme from the theme editor to `~/.config/atlas/themes/<id>.toml`.
+ *  It carries only what the author set; the rest derives (ADR-0022). */
+export function saveTheme(theme: Theme): Promise<SavedTheme> {
+  return invoke("save_theme", { theme });
 }
 
 export function onThemesChanged(callback: () => void): Promise<UnlistenFn> {

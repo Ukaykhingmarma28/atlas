@@ -36,6 +36,7 @@ import { timeAgo } from "@/lib/time-ago";
 import { useLogStore, type LogEntry, type LogSource } from "../stores/log-store";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { useOrgStore } from "@/features/organisations/stores/org-store";
+import { formatDateTime } from "@/lib/format-time";
 
 const SOURCES: LogSource[] = [
   "atlas",
@@ -238,7 +239,7 @@ export function LogPanel() {
         header: "Time",
         cell: ({ row }) => (
           <span
-            title={new Date(row.original.timestamp).toLocaleString()}
+            title={formatDateTime(row.original.timestamp)}
             className="text-2xs font-mono text-[var(--muted-foreground)]"
           >
             {timeAgo(row.original.timestamp, { suffix: true, seconds: true })}

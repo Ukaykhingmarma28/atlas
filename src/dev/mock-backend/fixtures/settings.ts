@@ -140,7 +140,7 @@ export interface SettingsResponses {
   keybindings_load: KeybindingsLoadResult;
   keybindings_save: KeybindingsFile;
   keybindings_open: Unit;
-  keybindings_set_close_tab_accelerator: Unit;
+  menu_set_accelerators: Unit;
 }
 
 export const settingsHandlers: TypedHandlers<SettingsResponses> = {
@@ -156,7 +156,7 @@ export const settingsHandlers: TypedHandlers<SettingsResponses> = {
   keybindings_save: ({ file }): KeybindingsFile =>
     (file as KeybindingsFile) ?? DEFAULT_KEYBINDINGS_FILE,
   keybindings_open: () => null,
-  keybindings_set_close_tab_accelerator: () => null,
+  menu_set_accelerators: () => null,
 
   models_pricing_get: (): Record<string, ModelPrice> => PRICING,
   models_pricing_refresh: () => null,

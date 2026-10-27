@@ -645,7 +645,7 @@ mod tests {
         Ok(())
     }
 
-    // Upstream's `statsig_disabled_metrics_are_not_exported` test lived here.
+    // The original `statsig_disabled_metrics_are_not_exported` test lived here.
     // It asserted the Statsig exporter's metric allowlist; both the exporter and
     // the allowlist were removed for Atlas (#43, spec D2), so the test went with
     // them rather than being adapted to assert nothing.

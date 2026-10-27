@@ -16,6 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 import { parseDiff, buildRows, type DiffFile, type DiffHunk } from "../lib/diff";
+import { useCollapsedFiles } from "../lib/use-collapsed-files";
 import { highlightDiffLine } from "../lib/diff-highlight";
 
 type SortMode = "default" | "most-changes";
@@ -54,7 +55,6 @@ export function DiffView({
   /** Invoked with the DISPLAYED hunk (+ selected line indices, if any). */
   onHunkAction?: (action: HunkAction, file: string, hunk: DiffHunk, selected?: number[]) => void;
 }) {
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("default");
   const [langFilter, setLangFilter] = useState<string | null>(null);
@@ -99,6 +99,8 @@ export function DiffView({
   };
 
   const allFiles = useMemo(() => parseDiff(diff), [diff]);
+  const allPaths = useMemo(() => allFiles.map((f) => f.path), [allFiles]);
+  const [collapsed, setCollapsed] = useCollapsedFiles(allPaths);
 
   const languages = useMemo(() => {
     return Array.from(new Set(allFiles.map((f) => f.language))).sort();

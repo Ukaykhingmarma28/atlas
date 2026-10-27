@@ -1,5 +1,5 @@
 //! The single git spawn chokepoint — every git subprocess in Atlas should go
-//! through [`GitCommand`]. Ported from GitHub Desktop's `git()` (core.ts):
+//! through [`GitCommand`]. It provides:
 //! per-call success-exit-code contracts, stderr→typed-error parsing on
 //! failure, and a streaming variant that feeds hook/progress output line by
 //! line while retaining a bounded tail for error context.

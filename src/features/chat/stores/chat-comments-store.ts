@@ -72,15 +72,32 @@ export interface ThreadFocus {
   n: number;
 }
 
+/** "Start a comment here": the chat key of the row to compose under, the
+ *  passage it is about (null for the whole row), and a number that moves on
+ *  every request so asking twice focuses twice. What a click on the prose,
+ *  the selection pill's Comment and the footer's Comment all raise; the
+ *  row's inline composer answers it (`inline-comment-threads.tsx`). */
+export interface ComposeRequest {
+  chatKey: string;
+  selection: string | null;
+  n: number;
+}
+
 interface ChatCommentsState {
   byTab: Record<string, TabComments>;
   /** Per tab, the thread the comments popup last asked to open — the chat's
    *  half of the Timeline's `FocusThreadContext`. */
   focus: Record<string, ThreadFocus | undefined>;
+  /** Per tab, the row a comment is being started under. */
+  compose: Record<string, ComposeRequest | undefined>;
   actions: {
     /** Ask the row carrying `rowId`'s thread to open its popover. */
     focusThread: (tabId: string, rowId: string) => void;
     clearFocus: (tabId: string) => void;
+    startCompose: (tabId: string, chatKey: string, selection: string | null) => void;
+    /** Only the row that was asked may end it: a stale cancel from a row
+     *  that lost the request must not close the one that has it. */
+    endCompose: (tabId: string, chatKey: string) => void;
     setTarget: (tabId: string, target: CommentTargetIds | null, entries: AnchorEntry[]) => void;
     setAnchors: (tabId: string, anchors: AnchorMap) => void;
     setComments: (tabId: string, comments: RowComments | null) => void;
@@ -111,7 +128,22 @@ export const useChatCommentsStore = createSelectors(
   create<ChatCommentsState>()((set) => ({
     byTab: {},
     focus: {},
+    compose: {},
     actions: {
+      startCompose: (tabId, chatKey, selection) =>
+        set((s) => ({
+          compose: {
+            ...s.compose,
+            [tabId]: { chatKey, selection, n: (s.compose[tabId]?.n ?? 0) + 1 },
+          },
+        })),
+      endCompose: (tabId, chatKey) =>
+        set((s) => {
+          if (s.compose[tabId]?.chatKey !== chatKey) return s;
+          const compose = { ...s.compose };
+          delete compose[tabId];
+          return { compose };
+        }),
       focusThread: (tabId, rowId) =>
         set((s) => ({
           focus: { ...s.focus, [tabId]: { rowId, n: (s.focus[tabId]?.n ?? 0) + 1 } },
@@ -209,6 +241,21 @@ export function useThreadOpenSignal(tabId: string, rowId: string | undefined): n
 /** The thread on this chat key, by reference. */
 export function useCommentBucket(tabId: string, chatKey: string): Comment[] | undefined {
   return useChatCommentsStore((s) => s.byTab[tabId]?.byChatKey[chatKey]);
+}
+
+/** The compose request aimed at this row, or `undefined`. By reference: a
+ *  request for another row is not a re-render. */
+export function useComposeRequest(tabId: string, chatKey: string): ComposeRequest | undefined {
+  return useChatCommentsStore((s) => {
+    const c = s.compose[tabId];
+    return c?.chatKey === chatKey ? c : undefined;
+  });
+}
+
+/** Whether the tab's session is in the cloud — the only kind that takes
+ *  comments. What decides whether a cite may "Share with team". */
+export function useHasCloudTarget(tabId: string): boolean {
+  return useChatCommentsStore((s) => s.byTab[tabId]?.target !== null && !!s.byTab[tabId]?.target);
 }
 
 /**

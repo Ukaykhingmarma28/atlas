@@ -2,10 +2,9 @@ import { describe, expect, it } from "vitest";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import builtinThemes from "@/dev/mock-backend/fixtures/builtin-themes.json";
+import { BUILTIN_THEMES } from "@/dev/mock-backend/fixtures/builtin-themes";
 import { resolveTheme } from "./resolve-theme";
 import { DERIVED_VAR_REGISTRY, THEME_KEY_REGISTRY } from "./theme-key-registry";
-import type { Theme } from "./lib/theme-api";
 
 /**
  * `tokens.css` carries every `--atlas-*` variable at its Atlas-dark value, as
@@ -33,7 +32,7 @@ const BEGIN = "/* generated:atlas-dark-fallback";
 const END = "/* /generated:atlas-dark-fallback */";
 
 function expectedBlock(): string {
-  const atlas = (builtinThemes as Theme[]).find((theme) => theme.id === "atlas")!;
+  const atlas = BUILTIN_THEMES.find((theme) => theme.id === "atlas")!;
   const resolved = resolveTheme(atlas, "dark");
   const lines = Object.entries(resolved.cssVars)
     .filter(([name]) => name.startsWith("--atlas-"))

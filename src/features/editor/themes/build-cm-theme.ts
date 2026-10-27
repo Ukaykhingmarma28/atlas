@@ -37,8 +37,10 @@ const KEY_DEFAULTS = Object.fromEntries(
  * stylesheet fallback in `styles/globals.css` (`.cm-editor`) mirrors these two
  * values for the case where the runtime theme injection loses its race.
  */
-const EDITOR_FONT_SIZE = "13px";
-const EDITOR_LINE_HEIGHT = "20px";
+// `editorFontSize`, set on <html> by `display-settings.ts`; the 20/13 line
+// height scales with it, and CodeMirror re-measures when the variable changes.
+const EDITOR_FONT_SIZE = "var(--atlas-editor-font-size, 13px)";
+const EDITOR_LINE_HEIGHT = "calc(var(--atlas-editor-font-size, 13px) * 20 / 13)";
 // The fold-gutter label sits a step down from the editor body — text-sm (12px)
 // is the exact step the previous literal `12px` already rendered at.
 const FOLD_GUTTER_FONT_SIZE = "var(--text-sm)";

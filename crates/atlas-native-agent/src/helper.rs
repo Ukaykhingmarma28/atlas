@@ -14,12 +14,12 @@
 //! - **`--atlas-engine-run-as-arg0-exec-helper`**, on Unix, for a sandboxed
 //!   command that asked for a specific `argv[0]`.
 //!
-//! Upstream's binaries all start through `atlas-engine-arg0`, which does this
+//! The engine's binaries all start through `atlas-engine-arg0`, which does this
 //! dispatch. Atlas embeds the engine instead, and for a long time handled
 //! none of these flags: the re-exec booted a second copy of the app, nothing
 //! ever answered the engine on stdout, and every native `apply_patch` hung
 //! until the turn was abandoned. Zed (`--askpass`, `--crash-handler`) and
-//! upstream (`arg0_dispatch`) both settle it the same way, which is the way
+//! the engine (`arg0_dispatch`) both settle it the same way, which is the way
 //! here: branch on argv before the GUI exists.
 //!
 //! `arg0_dispatch` itself is not reused. On the way past it loads

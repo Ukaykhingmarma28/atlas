@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import type { Theme, ThemeAppearance } from "./lib/theme-api";
 import { resolveTheme } from "./resolve-theme";
-import type { Appearance, ThemeKey } from "./theme-key-registry";
+import type { Appearance } from "./theme-key-registry";
 
 /**
  * A theme resolved for a PREVIEW rather than for the app.
@@ -35,46 +35,17 @@ export interface ThemePreview {
   appearance: Appearance;
   /** Every resolved custom property, ready for one element's `style`. */
   vars: ThemeVars;
-  /** The three colours a swatch needs, already through `FALLBACKS`. */
+  /** The three colours a swatch needs. */
   swatch: { background: string; foreground: string; primary: string };
 }
-
-/**
- * Base tokens the preview draws with, and the resolved KEY to borrow when a
- * theme omits one.
- *
- * Every `--atlas-*` key is guaranteed — the registry ends each derivation in a
- * per-appearance Atlas default — but a base token is only whatever the theme's
- * `[<variant>.base]` table happens to list, and `base` is the one table the
- * schema requires without requiring anything IN it. In the app a missing base
- * token falls through to `tokens.css`; inside a preview it would instead
- * inherit from `:root`, i.e. from the ACTIVE theme, which is the one thing a
- * preview must never show.
- *
- * Each substitute is the key whose own rule reads that same base token, so a
- * complete theme never reaches this table and an incomplete one gets the value
- * its own derivation chain already computed. `primary` is the single
- * approximation: no theme key is the brand colour itself, and `primary.hover`
- * is it nudged 15% toward the foreground.
- */
-const FALLBACKS: Record<string, ThemeKey> = {
-  background: "editor.background",
-  foreground: "editor.foreground",
-  "muted-foreground": "editor.gutter.foreground",
-  sidebar: "panel.background",
-  primary: "primary.hover",
-  "primary-foreground": "editor.background",
-};
 
 const cache = new WeakMap<Theme, Partial<Record<Appearance, ThemePreview>>>();
 
 function build(theme: Theme, requested: ThemeAppearance): ThemePreview {
+  // Every base token is in `cssVars`, written or derived (ADR-0022), so
+  // nothing inside a preview can inherit the active theme's value from `:root`.
   const resolved = resolveTheme(theme, requested);
   const vars = { ...resolved.cssVars } as ThemeVars;
-  for (const [token, key] of Object.entries(FALLBACKS)) {
-    const name = `--${token}` as const;
-    vars[name] ??= resolved.keys[key];
-  }
   return {
     appearance: resolved.appearance,
     vars,

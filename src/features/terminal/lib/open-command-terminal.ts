@@ -1,8 +1,7 @@
 // Open a terminal tab that runs a command.
 //
-// Zed hands an agent's terminal-auth command to the workspace terminal
-// (`SpawnInTerminal`, `use_new_terminal: true`) rather than spawning it itself,
-// and that is the mechanism ported here. The reason is stdin: a login CLI that
+// An agent's terminal-auth command goes to the workspace terminal rather than
+// being spawned directly. The reason is stdin: a login CLI that
 // asks a question — a provider picker, a device-code confirmation, a y/n —
 // cannot be answered by a process spawned with pipes, and Atlas spawns auth
 // runs with stdin closed outright. A real PTY can be typed into.

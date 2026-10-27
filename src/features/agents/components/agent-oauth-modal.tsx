@@ -223,8 +223,7 @@ function AgentOAuthModal({
    *  The headless run pipes stdio, so a login that ASKS something — a provider
    *  picker, a device code, a y/n — can never be answered and simply hangs
    *  (#24). Atlas used to run it headlessly first and let the user discover the
-   *  hang, then offer a terminal; now the terminal IS the flow. Zed does not
-   *  spawn these itself either: it hands them to the project terminal.
+   *  hang, then offer a terminal; now the terminal IS the flow.
    *
    *  Keyed on the method's OWN advertised command, never on which agent it is:
    *  whether a login is interactive is not something ACP says, so every agent
@@ -495,7 +494,7 @@ function AgentOAuthModal({
       }}
     >
       <Dialog.Portal>
-        {!docked && <DialogOverlay className="backdrop-blur-sm" />}
+        {!docked && <DialogOverlay blur />}
         {docked ? (
           <Dialog.Popup
             // Never take the keyboard: the terminal behind this is what the

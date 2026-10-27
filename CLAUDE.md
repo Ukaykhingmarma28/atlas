@@ -111,6 +111,14 @@ in the comment block above it — and the reason must be a real argument of 20+
 characters, which the suite also checks. A violation type-checks, lints and renders
 perfectly; this suite is the only thing in the toolchain that can see it.
 
+**`bun run lint` also runs `@shadcn/lint`**, whose rules are errors. `no-unknown-classes`
+catches a class Tailwind can't generate — a typo, or a plugin utility Atlas doesn't ship —
+which otherwise renders as nothing. `no-restyle` stops `className` from overriding a
+`src/ui` primitive's look: when it fires, use the variant its message names, or add one
+to the primitive; don't restyle at the call site. Plain stylesheet classes are
+allowlisted by exact name in `.oxlintrc.json` (`shadcn-lint-allowlist.test.ts` keeps
+that list honest — never add a wildcard).
+
 **Anything reading a _resolved_ colour needs a theme subscription**
 (`theme-subscription-contract.test.ts`). CSS naming `var(--atlas-…)` recolours for
 free; xterm, pixi, recharts and friends cannot, so they must hear the change.
@@ -131,8 +139,8 @@ restates `opt-level = 1`.
 LICENSE/NOTICE travel with the code (`vendor-licensing.test.ts`, needs `fetch-depth: 0`),
 and the stripped telemetry paths must stay stripped (`engine-no-phone-home.test.ts`).
 Per ADR-0003 the port is first-party code — editing it, manifests included, is ordinary
-work, not a fork edit. `clippy.toml` at the repo root is upstream's, restored; without
-it the `atlas-native-agent` Clippy job fails on ~500 vendored sites.
+work, not a fork edit. `clippy.toml` at the repo root is the engine's own lint config, kept at the root; without
+it the `atlas-native-agent` Clippy job fails on ~500 engine sites.
 
 **Node singletons and the Vite `dedupe` list are load-bearing.** Two copies of
 `@codemirror/*` or `pdfjs-dist` break editor theming and PDF rendering _in production
@@ -182,9 +190,10 @@ Each of these is a multi-file edit where missing one compiles fine.
   `[profile.dev.package.<name>]` stanza, and an entry in `.github/ci-crates.json`.
   If it reads a file outside its own directory, that file also goes in
   `EXTRA_INPUTS` in `scripts/ci-affected.mjs` (`ci-affected.test.ts` checks).
-- **A tab/panel type** — `TAB_TYPES` in `src/lib/constants.ts`, plus the lazy import,
-  the render branch and `NEW_TAB_OPTIONS` in
-  `src/features/layout/components/center-panel.tsx`. If it stays mounted across tab
+- **A tab/panel type** — first decide its placement (session, surface or destination;
+  the test is in ADR-0024) and add it to `TAB_PLACEMENT`. Then `TAB_TYPES` in `src/lib/constants.ts`, plus the lazy import
+  and the render branch in `src/features/layout/components/center-panel.tsx`, and
+  (if ⌘T should offer it) an entry in `SURFACES` in `src/features/layout/lib/surfaces.ts`. If it stays mounted across tab
   switches it also joins `PERSISTENT_TYPES`, guarded by
   `persistent-tab-render-contract.test.ts`.
 - **A mock** — an unmocked command resolves `null`, so an empty panel in `bun run dev`

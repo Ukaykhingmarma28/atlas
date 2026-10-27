@@ -60,8 +60,7 @@ interface PermissionModalProps {
 /**
  * Renders the head of the pending-permission queue for whichever ACP session
  * is bound to this tab. The standard case is an inline card (numbered options,
- * keyboard-selectable, with a free-text fallback) pinned above the composer,
- * à la Claude Code / VSCode. Plan reviews keep the richer two-panel modal.
+ * keyboard-selectable, with a free-text fallback) pinned above the composer. Plan reviews keep the richer two-panel modal.
  * Cancelled requests (ESC / click outside) resolve as `cancelled` on the wire
  * so the agent backs off correctly.
  */
@@ -258,7 +257,7 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
     return (
       <Dialog.Root open onOpenChange={(open) => !open && cancel()}>
         <Dialog.Portal>
-          <DialogOverlay className="backdrop-blur-sm" />
+          <DialogOverlay blur />
           <Dialog.Popup
             className={cn(
               // Anchor near the top (not vertically centered) with a viewport
@@ -451,11 +450,7 @@ function PermissionOption({
       )}
       <Icon className="size-3.5 shrink-0" />
       <span className="min-w-0 flex-1 font-medium break-words">{label}</span>
-      {isPrimary && (
-        <Kbd className="border-[var(--background)]/20 bg-[var(--background)]/10 text-[var(--background)]">
-          ↵
-        </Kbd>
-      )}
+      {isPrimary && <Kbd variant="inverse">↵</Kbd>}
     </button>
   );
 }

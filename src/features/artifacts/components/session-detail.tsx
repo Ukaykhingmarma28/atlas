@@ -78,6 +78,7 @@ import { avatarUser, CommentButton, type CommentActions } from "./comment-thread
 import { filterKeyForKind } from "../lib/comment-threads";
 import { JUMP_EVENT, type JumpDetail } from "./session-chat-message";
 import { AgentGlyph } from "./agent-glyph";
+import { formatDateTime, formatTime } from "@/lib/format-time";
 
 /**
  * One Session, as the ordered record of what happened.
@@ -2104,7 +2105,7 @@ function FilterDrawer({
               <Meta label="Model" value={prettyModel(s.model) ?? "—"} />
               <Meta label="Agent" value={s.agent ? agentLabel(s.agent) : "—"} />
               <Meta label="Branch" value={s.branches[0] ?? "—"} />
-              <Meta label="Started" value={new Date(s.startedAt).toLocaleString()} />
+              <Meta label="Started" value={formatDateTime(s.startedAt)} />
               <Meta label="Messages" value={String(s.messageCount)} />
               <Meta
                 label="Changes"
@@ -2804,20 +2805,12 @@ function matches(entry: TimelineEntry, needle: string): boolean {
  * invites reading it as the other.
  */
 function clock(s: Detail["summary"]): string {
-  const fmt = (iso: string) =>
-    new Date(iso).toLocaleTimeString(undefined, {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+  const fmt = (iso: string) => formatTime(iso, { hour: "2-digit", minute: "2-digit" });
   return `${fmt(s.startedAt)} → ${fmt(s.lastActivityAt)} · ${formatDuration(s.wallSeconds)} span`;
 }
 
 function time(iso: string): string {
-  return new Date(iso).toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
+  return formatTime(iso, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 function compact(n: number): string {

@@ -75,7 +75,7 @@ impl EngineHome {
 ///
 /// Both arms exist now. `Responses` is the engine's own dialect, which the
 /// Phase 2 dev provider uses; `Chat` is the Atlas gateway dialect authored in
-/// Phase 3 (D3), reinstated in the engine as `WireApi::Chat` after upstream
+/// Phase 3 (D3), reinstated in the engine as `WireApi::Chat` after the original
 /// removed it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WireDialect {
@@ -348,7 +348,7 @@ impl EngineSettings {
             // the engine never presents a login screen, and auth comes from
             // whatever the seam installed.
             (key("requires_openai_auth"), TomlValue::Boolean(false)),
-            // D2. The analytics client's upload paths are gone from the fork
+            // D2. The analytics client's upload paths are gone from the engine
             // outright, so this is belt-and-braces rather than the mechanism —
             // but a config that says "off" is what makes the intent legible to
             // the next person reading it.
@@ -361,11 +361,11 @@ impl EngineSettings {
                 TomlValue::Integer(self.stream_max_retries as i64),
             ),
             // ADR-0013: the model may ask the user a clarifying question
-            // mid-turn, in every permission mode. Upstream gates its question
+            // mid-turn, in every permission mode. The engine gates its question
             // tool to the Plan collaboration mode; Atlas's four modes are
             // approval/sandbox pairs that all run in the engine's `Default`
             // collaboration mode, and this is the engine's own switch for
-            // opening `Default` — so nothing under the vendored engine
+            // opening `Default` — so nothing under the engine
             // changes. Reversed by deleting this row; the seam's handler for
             // the question can stay.
             //
@@ -376,7 +376,7 @@ impl EngineSettings {
                 "features.default_mode_request_user_input".to_string(),
                 TomlValue::Boolean(true),
             ),
-            // The feature is marked under development upstream, and the
+            // The feature is marked under development in the engine, and the
             // engine posts a warning naming it into every new thread unless
             // told not to. Turning it on is Atlas's decision, not something
             // the user did or can act on.
@@ -581,7 +581,7 @@ mod tests {
     #[test]
     fn the_engines_own_memories_pipeline_stays_off() {
         // Decision 5 (memory research, 2026-10-03): Atlas memory is the
-        // atlas_memory tool server, for every agent. The vendored engine's
+        // atlas_memory tool server, for every agent. The engine's
         // memories pipeline would be a second store and a second write
         // protocol in the native prompt; a repo config must not turn it on.
         let tmp = std::env::temp_dir();
@@ -877,7 +877,7 @@ mod tests {
                 .contains(&ModeKind::Default),
             "every Atlas permission mode runs in the engine's Default collaboration mode",
         );
-        // Upstream marks the feature under development, which would post an
+        // The engine marks the feature under development, which would post an
         // "Under-development features enabled" warning into every new chat.
         // Turning it on is Atlas's decision (ADR-0013), not the user's.
         assert!(config.suppress_unstable_features_warning);
@@ -927,7 +927,7 @@ mod tests {
             Some(TomlValue::Integer(0)),
         );
 
-        // And not on the dev provider, which classifies errors upstream's way.
+        // And not on the dev provider, which classifies errors the way the original did.
         let dev = EngineSettings::from_env(Path::new("/tmp/atlas"), PathBuf::from("/tmp"));
         assert!(!dev
             .cli_overrides()

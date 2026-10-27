@@ -222,7 +222,7 @@ export function ComposerAddMenu({
               onPickProject={onPickProject}
             />
 
-            {/* Zed-style registry entry point: opens Settings → Agents. Agent
+            {/* Registry entry point: opens Settings → Agents. Agent
                 SWITCHING lives on the agent pill, not here — this menu is about
                 what you attach to a message, and the pill's picker now offers
                 one-click installs of its own (see FeaturedAgentOffers). */}

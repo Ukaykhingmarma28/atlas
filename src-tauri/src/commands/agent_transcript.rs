@@ -7,7 +7,7 @@
 //!
 //! For most agents this record is the fast first paint and the agent's own
 //! `session/load` replay is the authoritative one. For the **native agent** it
-//! is the only one: the ported engine resumes without history (D6) and its
+//! is the only one: the engine resumes without history (D6) and its
 //! rollout format has no Atlas reader (spec OQ8), so what this module recorded
 //! is exactly what a reopened session shows.
 //!

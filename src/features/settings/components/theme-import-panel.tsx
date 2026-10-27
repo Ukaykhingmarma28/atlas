@@ -1,11 +1,13 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { CopyGlyph } from "@/ui/animated-icon";
-import { AlertTriangle, ArrowLeft, Check, FileJson, Link2, Upload } from "lucide-react";
+import { AlertTriangle, Check, FileJson, Link2, Loader2, Search, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
+import { DialogTitle } from "@/ui/dialog";
+import { IconButton } from "@/ui/icon-button";
 import { Icon } from "@/ui/icon";
 import { Input } from "@/ui/input";
 import { ScrollArea } from "@/ui/scroll-area";
@@ -14,17 +16,21 @@ import {
   commitThemeImport,
   exportThemeShadcn,
   previewThemeImport,
+  searchColorThemes,
   themeIdSlug,
   type ShadcnExport,
   type ThemeImportCandidate,
   type ThemeOrigin,
   type ThemeImportPreview,
+  type ThemeImportInput,
   type ThemeImportReport,
 } from "@/features/theme/lib/theme-import-api";
+import type { OpenVsxExtension } from "@/lib/open-vsx";
 import type { ThemeSummary } from "@/features/theme/lib/theme-api";
 
 /**
- * Import a foreign theme, and export an Atlas one.
+ * Import a foreign theme, and export an Atlas one. Shown in a dialog over the
+ * Appearance page (`appearance/themes-section.tsx`).
  *
  * The panel is built around one claim: **the report is the product**. Anyone
  * can paste a VS Code theme and get colours out; what stops the result being
@@ -33,12 +39,15 @@ import type { ThemeSummary } from "@/features/theme/lib/theme-api";
  * preview is a required step rather than a convenience, and the three counts
  * (mapped / derived / ignored) sit above the fold with the fidelity verdict.
  *
+ * The first source is Open VSX: search the registry for a colour-theme
+ * extension and convert every theme it carries, with no file to find first.
+ *
  * Failure is treated as ordinary: bad JSON, an unknown schema and a theme with
  * no usable colours all come back from Rust as a sentence, and that sentence is
  * what the panel shows. There is no "import failed" state beyond it.
  */
 
-type Source = "paste" | "url" | "file";
+type Source = "open-vsx" | "paste" | "url" | "file";
 
 interface Props {
   themes: ThemeSummary[];
@@ -49,6 +58,7 @@ interface Props {
 }
 
 const SOURCES: { id: Source; label: string; icon: typeof Upload }[] = [
+  { id: "open-vsx", label: "Open VSX", icon: Search },
   { id: "paste", label: "Paste", icon: FileJson },
   { id: "url", label: "URL", icon: Link2 },
   { id: "file", label: "File", icon: Upload },
@@ -63,11 +73,8 @@ export function ThemeImportPanel({ themes, onClose, onImported }: Props) {
   const [mode, setMode] = useState<"import" | "export">("import");
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-tab-strip shrink-0 items-center gap-1 border-b border-border bg-background px-2">
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          <Icon icon={ArrowLeft} size="sm" />
-          Themes
-        </Button>
+      <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border px-3">
+        <DialogTitle>{mode === "import" ? "Import a theme" : "Export a theme"}</DialogTitle>
         <div className="ml-auto flex items-center gap-1">
           {(["import", "export"] as const).map((value) => (
             <Button
@@ -80,6 +87,7 @@ export function ThemeImportPanel({ themes, onClose, onImported }: Props) {
               {value}
             </Button>
           ))}
+          <IconButton icon={X} size="sm" label="Close" onClick={onClose} />
         </div>
       </div>
       {mode === "import" ? (
@@ -98,7 +106,7 @@ function ImportView({
   themes: ThemeSummary[];
   onImported: (id: string) => void;
 }) {
-  const [source, setSource] = useState<Source>("paste");
+  const [source, setSource] = useState<Source>("open-vsx");
   const [text, setText] = useState("");
   const [url, setUrl] = useState("");
   const [path, setPath] = useState("");
@@ -106,7 +114,7 @@ function ImportView({
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<ThemeImportPreview | null>(null);
 
-  const run = useCallback(async (input: { text?: string; url?: string; path?: string }) => {
+  const run = useCallback(async (input: ThemeImportInput) => {
     setBusy(true);
     setError(null);
     try {
@@ -162,6 +170,16 @@ function ImportView({
           ))}
         </div>
 
+        {source === "open-vsx" && (
+          <OpenVsxSearch
+            busy={busy}
+            onSearch={() => {
+              setPreview(null);
+              setError(null);
+            }}
+            onConvert={(hit) => void run({ openVsx: { namespace: hit.namespace, name: hit.name } })}
+          />
+        )}
         {source === "paste" && (
           <textarea
             value={text}
@@ -207,15 +225,30 @@ function ImportView({
         )}
 
         <div className="flex items-center gap-2">
-          <Button size="sm" onClick={submit} disabled={busy || !ready}>
-            {busy ? "Converting…" : "Convert"}
-          </Button>
+          {source !== "open-vsx" && (
+            <Button size="sm" onClick={submit} disabled={busy || !ready}>
+              {busy ? "Converting…" : "Convert"}
+            </Button>
+          )}
           {preview && (
             <span className="caption">
               {preview.format} · {preview.origin}
             </span>
           )}
         </div>
+        {preview && preview.skipped.length > 0 && (
+          <Details
+            summary={`${preview.skipped.length} ${preview.skipped.length === 1 ? "theme" : "themes"} could not be converted`}
+          >
+            <ul className="space-y-1">
+              {preview.skipped.map((line) => (
+                <li key={line} className="caption">
+                  {line}
+                </li>
+              ))}
+            </ul>
+          </Details>
+        )}
 
         {error && (
           <div className="flex items-start gap-2 rounded-md border border-destructive bg-error-muted p-2">
@@ -234,6 +267,133 @@ function ImportView({
         ))}
       </div>
     </ScrollArea>
+  );
+}
+
+type SearchState =
+  | { phase: "idle" }
+  | { phase: "searching" }
+  | { phase: "done"; results: OpenVsxExtension[] }
+  | { phase: "failed"; message: string };
+
+/**
+ * Open VSX, searched for extensions that contribute a colour theme. Converting
+ * one downloads it and previews every theme it carries; nothing is kept but
+ * what the user then adds. The pattern is the icon-theme installer's
+ * (`appearance/icon-themes-section.tsx`).
+ */
+function OpenVsxSearch({
+  busy,
+  onSearch,
+  onConvert,
+}: {
+  /** A conversion is running; the row last picked is the one it is for. */
+  busy: boolean;
+  /** A new search makes the last conversion's result or error stale. */
+  onSearch: () => void;
+  onConvert: (hit: OpenVsxExtension) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [state, setState] = useState<SearchState>({ phase: "idle" });
+  const [picked, setPicked] = useState<string | null>(null);
+
+  // Each search is numbered, and only the latest may land: a slow answer to
+  // an earlier query must not replace the results of the one after it.
+  const latest = useRef(0);
+
+  const search = () => {
+    const trimmed = query.trim();
+    const request = ++latest.current;
+    if (!trimmed) {
+      setState({ phase: "idle" });
+      return;
+    }
+    onSearch();
+    setState({ phase: "searching" });
+    void searchColorThemes(trimmed)
+      .then((results) => {
+        if (request === latest.current) setState({ phase: "done", results });
+      })
+      .catch((reason: unknown) => {
+        if (request === latest.current) setState({ phase: "failed", message: String(reason) });
+      });
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Input
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") search();
+        }}
+        placeholder="Search VS Code colour themes, then press Enter…"
+        aria-label="Search Open VSX for colour themes"
+        spellCheck={false}
+        size="lg"
+      />
+      {state.phase === "idle" && (
+        <p className="caption">
+          Searches open-vsx.org for extensions that carry a colour theme. Converting one downloads
+          it once and previews every theme inside; only what you add is kept.
+        </p>
+      )}
+      {state.phase === "searching" && (
+        <p className="caption flex items-center gap-2">
+          <Icon icon={Loader2} size="sm" className="animate-spin" />
+          Searching Open VSX…
+        </p>
+      )}
+      {state.phase === "failed" && (
+        <div className="flex items-start gap-2 rounded-md border border-destructive bg-error-muted p-2">
+          <Icon icon={AlertTriangle} size="sm" className="mt-px text-error" />
+          <p className="flex-1 text-xs break-words text-foreground">{state.message}</p>
+          <Button size="xs" variant="outline" onClick={search}>
+            Try again
+          </Button>
+        </div>
+      )}
+      {state.phase === "done" && state.results.length === 0 && (
+        <p className="caption">No colour themes on Open VSX match “{query.trim()}”.</p>
+      )}
+      {state.phase === "done" && state.results.length > 0 && (
+        <div className="flex flex-col gap-1">
+          {state.results.map((hit) => {
+            const converting = busy && picked === hit.id;
+            return (
+              <div
+                key={hit.id}
+                className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="truncate text-xs font-medium text-foreground">
+                      {hit.displayName}
+                    </span>
+                    <span className="shrink-0 text-2xs text-muted-foreground">
+                      {hit.namespace} · {hit.license}
+                    </span>
+                  </div>
+                  <p className="truncate text-2xs text-muted-foreground">{hit.description}</p>
+                </div>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => {
+                    setPicked(hit.id);
+                    onConvert(hit);
+                  }}
+                >
+                  {converting && <Icon icon={Loader2} size="xs" className="animate-spin" />}
+                  Convert
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 

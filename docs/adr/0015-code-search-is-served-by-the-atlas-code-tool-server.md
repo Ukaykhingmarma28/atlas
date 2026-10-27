@@ -21,7 +21,7 @@ offered them could search code either: `memory_search` returns whole-file summar
 numbers. The research behind this decision is `docs/research/codeindex-search/` (README and
 report 05).
 
-Two seams could carry a search tool. The vendored engine has a `ToolContributor` seam for
+Two seams could carry a search tool. The engine has a `ToolContributor` seam for
 extension tools. It is native-only, it would put Atlas code on the engine side of the ADR-0004
 boundary, and whether its tools reach `code_mode_only` models is unverified. The in-process MCP
 tool server is the route ADR-0010 established and ADR-0012 and ADR-0014 extended: a loopback HTTP

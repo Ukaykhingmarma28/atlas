@@ -193,7 +193,7 @@ mod tests {
     use serde_json::json;
 
     /// Items and turns are built from JSON rather than struct literals: the
-    /// protocol types gain fields upstream, and a test that spells every one
+    /// protocol types gain fields over time, and a test that spells every one
     /// of them out breaks on changes it has no opinion about.
     fn turn(status: &str, items: serde_json::Value) -> v2::Turn {
         serde_json::from_value(json!({

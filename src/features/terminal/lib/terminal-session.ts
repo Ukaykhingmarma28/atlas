@@ -42,6 +42,11 @@ import { createTerminalEventSink } from "./terminal-notifier";
 import { createTerminalKeymap } from "./terminal-keymap";
 import { createPathLinkProvider } from "./path-link-provider";
 import { resolveTerminalFont } from "../utils/resolve-font";
+import {
+  appliedTerminalFont,
+  appliedTerminalFontSize,
+  DISPLAY_SETTINGS_APPLIED,
+} from "@/features/settings/lib/display-settings";
 import { perfBegin, perfBlockDone, perfBytes } from "./term-perf";
 import { collectPanes, useTerminalStore } from "../stores/terminal-store";
 
@@ -100,7 +105,8 @@ const SUDO_SHELL_RE = /^sudo\s+(?:-s|-i|su(?:\s+-l?|\s+-)?)\s*$/;
  *  shells keep LF, which the line discipline already reads as end-of-line. */
 const ENTER = isWindows ? "\r" : "\n";
 
-const FONT_SIZE = 13;
+/** `terminalFontSize`, as `display-settings.ts` last applied it. */
+const fontSize = () => appliedTerminalFontSize();
 const LINE_HEIGHT = 1.4;
 
 /** Which terminal state a forwarded mode sequence sets, so a later one for the
@@ -170,6 +176,16 @@ function startGlobalListeners(): void {
   onThemeApplied(() => {
     for (const session of reg.sessions.values()) session.retheme();
   });
+  // The same for `terminalFontSize` and the terminal font: the cached cell is
+  // measured again, and each live xterm takes the new font and refits.
+  let applied = `${fontSize()}|${appliedTerminalFont()}`;
+  window.addEventListener(DISPLAY_SETTINGS_APPLIED, () => {
+    const next = `${fontSize()}|${appliedTerminalFont()}`;
+    if (next === applied) return;
+    applied = next;
+    reg.cell = null;
+    for (const session of reg.sessions.values()) void session.refont();
+  });
   void invoke<string | null>("terminal_zsh_dir")
     .then((d) => {
       reg.zshDir = d;
@@ -186,15 +202,16 @@ function startGlobalListeners(): void {
  */
 async function cellSize(): Promise<{ w: number; h: number }> {
   if (reg.cell) return reg.cell;
-  const fontFamily = await resolveTerminalFont(FONT_SIZE);
+  const size = fontSize();
+  const fontFamily = await resolveTerminalFont(size, appliedTerminalFont());
   const span = document.createElement("span");
   span.textContent = "W".repeat(20);
-  span.style.cssText = `position:absolute;visibility:hidden;white-space:pre;font:${FONT_SIZE}px ${fontFamily};line-height:${LINE_HEIGHT}`;
+  span.style.cssText = `position:absolute;visibility:hidden;white-space:pre;font:${size}px ${fontFamily};line-height:${LINE_HEIGHT}`;
   document.body.appendChild(span);
   const rect = span.getBoundingClientRect();
   span.remove();
-  const w = rect.width > 0 ? rect.width / 20 : FONT_SIZE * 0.6;
-  const h = Math.ceil(FONT_SIZE * LINE_HEIGHT);
+  const w = rect.width > 0 ? rect.width / 20 : size * 0.6;
+  const h = Math.ceil(size * LINE_HEIGHT);
   reg.cell = { w, h };
   return reg.cell;
 }
@@ -563,6 +580,19 @@ export class TerminalSession {
     this.xterm.options.theme = terminalTheme();
   }
 
+  /** Take the current `terminalFontSize` and code font, then refit: the
+   *  PTY's columns follow the cell size, with or without an xterm. */
+  async refont(): Promise<void> {
+    if (this.xterm) {
+      const size = fontSize();
+      const fontFamily = await resolveTerminalFont(size, appliedTerminalFont());
+      if (!this.xterm || this.closed) return;
+      this.xterm.options.fontSize = size;
+      this.xterm.options.fontFamily = fontFamily;
+    }
+    this.requestFit();
+  }
+
   private async ensureXterm(): Promise<void> {
     if (this.xterm || this.xtermCreating || this.closed) return;
     this.xtermCreating = true;
@@ -572,11 +602,12 @@ export class TerminalSession {
         import("@xterm/addon-fit"),
         import("@xterm/xterm/css/xterm.css"),
       ]);
-      const fontFamily = await resolveTerminalFont(FONT_SIZE);
+      const size = fontSize();
+      const fontFamily = await resolveTerminalFont(size, appliedTerminalFont());
       if (this.closed || !this.host) return;
       const term = new Terminal({
         fontFamily,
-        fontSize: FONT_SIZE,
+        fontSize: size,
         lineHeight: LINE_HEIGHT,
         // The alt screen has no scrollback — the block list owns history.
         scrollback: 0,

@@ -4,16 +4,40 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { ResponseSelectionActions } from "./response-selection-actions";
 import { selectionCommentBody } from "@/features/artifacts/lib/selection-comment";
-import { COMMENT_BODY_MAX } from "@/features/artifacts/lib/comments-api";
 import { CommentBody } from "@/features/artifacts/components/comment-thread";
+import { COMMENT_LINK_EVENT, type CommentLinkDetail } from "../lib/comment-mentions";
 
-const state = vi.hoisted(() => ({ shared: true, post: vi.fn(async () => {}) }));
+const state = vi.hoisted(() => ({
+  shared: true,
+  post: vi.fn(async () => {}),
+  startCompose: vi.fn(),
+}));
 const directory = { byId: new Map(), currentUserId: null };
 vi.mock("../stores/chat-comments-store", () => ({
   useAnchorHit: () => (state.shared ? { anchorKind: "message", rowId: "cloud-response" } : null),
   useCommentBucket: () => [],
   useCommentActions: () => ({ post: state.post, resolve: async () => {}, remove: async () => {} }),
   useCommentDirectory: () => directory,
+  useHasCloudTarget: () => state.shared,
+  useChatCommentsStore: {
+    getState: () => ({
+      actions: { startCompose: state.startCompose },
+      // A shared session's anchors know both rows; one that is not shared has none.
+      byTab: state.shared
+        ? {
+            "chat-a": {
+              actions: { post: state.post },
+              anchors: {
+                rowIdByChatKey: new Map([
+                  ["wire-prompt", {}],
+                  ["wire-response", {}],
+                ]),
+              },
+            },
+          }
+        : {},
+    }),
+  },
 }));
 
 function Harness({ enabled = true }: { enabled?: boolean }) {
@@ -21,9 +45,14 @@ function Harness({ enabled = true }: { enabled?: boolean }) {
   return (
     <div>
       <div ref={viewportRef} data-testid="viewport">
-        <p data-testid="user">User prompt</p>
-        <div data-agent-response="wire-response">
+        <div data-comment-anchor="wire-prompt">
+          <p data-testid="user">User prompt</p>
+        </div>
+        <div data-agent-response="wire-response" data-comment-anchor="wire-response">
           <p data-testid="prose">Scope it to the usage page.</p>
+          <p>
+            See the <a href="https://example.test">usage docs</a>.
+          </p>
           <pre data-testid="code">{"const onFocus = () => {\n  refreshUsage();\n};"}</pre>
         </div>
         <p data-testid="streaming">Still arriving</p>
@@ -46,6 +75,7 @@ function select(testId: string) {
 
 beforeEach(() => {
   state.shared = true;
+  state.startCompose.mockReset();
   state.post.mockReset();
   state.post.mockResolvedValue(undefined);
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
@@ -61,33 +91,64 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function passageComment() {
+/** A press and release that did not travel: a click, as the browser fires it. */
+function click(node: Element, at = { clientX: 100, clientY: 200 }) {
+  fireEvent.pointerDown(node, { button: 0, ...at });
+  fireEvent.pointerUp(node, at);
+  fireEvent.click(node, at);
+}
+
+/** Every chip the cite popover links into a composer, by detail. */
+function linked() {
+  const details: CommentLinkDetail[] = [];
+  // A composer marks the event handled; the popover closes only on that.
+  const listener = (e: Event) => {
+    details.push((e as CustomEvent<CommentLinkDetail>).detail);
+    e.preventDefault();
+  };
+  window.addEventListener(COMMENT_LINK_EVENT, listener);
+  return { details, stop: () => window.removeEventListener(COMMENT_LINK_EVENT, listener) };
+}
+
+/** Select `testId`'s text and open Cite's popover; its note field. */
+async function openCite(testId = "prose") {
   render(<Harness />);
-  select("prose");
+  select(testId);
   const toolbar = await screen.findByRole("group", { name: "Selected response actions" });
-  fireEvent.click(within(toolbar).getByRole("button", { name: "Comment" }));
-  return screen.findByPlaceholderText("Comment on this passage…");
+  fireEvent.click(within(toolbar).getByRole("button", { name: "Cite" }));
+  return (await screen.findByRole("textbox", {
+    name: "Note for the agent",
+  })) as HTMLTextAreaElement;
 }
 
 describe("selected response actions", () => {
-  it("offers Cite and Comment and routes a multiline quote only to its source chat", async () => {
-    const insert = vi.fn();
-    window.addEventListener("atlas:chat-insert", insert);
+  it("cites a multiline passage with its note as a chip, only into its source session", async () => {
+    const links = linked();
     try {
-      render(<Harness />);
-      select("code");
-      const toolbar = await screen.findByRole("group", { name: "Selected response actions" });
-      expect(within(toolbar).getByRole("button", { name: "Comment" })).toBeTruthy();
-      fireEvent.click(within(toolbar).getByRole("button", { name: "Cite" }));
-      expect(insert.mock.calls[0][0].detail).toEqual({
-        text: "> const onFocus = () => {\n>   refreshUsage();\n> };",
-        tabId: "chat-a",
-        append: true,
+      const note = await openCite("code");
+      expect(screen.getByRole("blockquote", { name: "Cited passage" }).textContent).toBe(
+        "const onFocus = () => {\n  refreshUsage();\n};",
+      );
+      fireEvent.change(note, { target: { value: "  Why on focus?  " } });
+      fireEvent.keyDown(note, { key: "Enter" });
+      await waitFor(() => expect(links.details).toHaveLength(1));
+      const [{ tabId, mention }] = links.details;
+      expect(tabId).toBe("chat-a");
+      expect(mention).toMatchObject({
+        kind: "cited_text",
+        messageId: "wire-response",
+        rowId: "cloud-response",
+        text: "const onFocus = () => {\n  refreshUsage();\n};",
+        note: "Why on focus?",
       });
-      expect(screen.queryByRole("group", { name: "Selected response actions" })).toBeNull();
+      // Private to the agent unless shared: no comment was posted.
+      expect(state.post).not.toHaveBeenCalled();
+      await waitFor(() =>
+        expect(screen.queryByRole("group", { name: "Selected response actions" })).toBeNull(),
+      );
       expect(window.getSelection()?.isCollapsed).toBe(true);
     } finally {
-      window.removeEventListener("atlas:chat-insert", insert);
+      links.stop();
     }
   });
 
@@ -103,26 +164,60 @@ describe("selected response actions", () => {
     await screen.findByRole("group", { name: "Selected response actions" });
   });
 
-  it.each(["user", "streaming"])("does not offer selection actions for %s text", async (testId) => {
+  it("does not offer selection actions for streaming text", async () => {
     render(<Harness />);
-    select(testId);
+    select("streaming");
     await act(async () => {
       await new Promise((resolve) => requestAnimationFrame(resolve));
     });
     expect(screen.queryByRole("group", { name: "Selected response actions" })).toBeNull();
   });
 
-  it("keeps Cite available when the chat cannot be commented on", async () => {
+  it("offers Comment but not Cite on a prompt: a cite points the agent at its own words", async () => {
+    render(<Harness />);
+    select("user");
+    const toolbar = await screen.findByRole("group", { name: "Selected response actions" });
+    expect(
+      within(toolbar)
+        .getAllByRole("button")
+        .map((b) => b.textContent),
+    ).toEqual(["Comment"]);
+    fireEvent.click(within(toolbar).getByRole("button", { name: "Comment" }));
+    expect(state.startCompose).toHaveBeenCalledWith("chat-a", "wire-prompt", "User prompt");
+  });
+
+  it("is Cite alone on a session that cannot be commented on", async () => {
     state.shared = false;
     render(<Harness />);
     select("prose");
     const toolbar = await screen.findByRole("group", { name: "Selected response actions" });
+    expect(within(toolbar).queryByRole("button", { name: "Comment" })).toBeNull();
     expect(
-      (within(toolbar).getByRole("button", { name: "Comment" }) as HTMLButtonElement).disabled,
-    ).toBe(true);
+      within(toolbar)
+        .getAllByRole("button")
+        .map((b) => b.textContent),
+    ).toEqual(["Cite"]);
+  });
+
+  it("keeps Comment beside Cite, and Comment starts a thread about the passage under the row", async () => {
+    render(<Harness />);
+    select("prose");
+    const toolbar = await screen.findByRole("group", { name: "Selected response actions" });
     expect(
-      (within(toolbar).getByRole("button", { name: "Cite" }) as HTMLButtonElement).disabled,
-    ).toBe(false);
+      within(toolbar)
+        .getAllByRole("button")
+        .map((b) => b.textContent),
+    ).toEqual(["Cite", "Comment"]);
+    fireEvent.click(within(toolbar).getByRole("button", { name: "Comment" }));
+    expect(state.startCompose).toHaveBeenCalledWith(
+      "chat-a",
+      "wire-response",
+      "Scope it to the usage page.",
+    );
+    expect(window.getSelection()?.isCollapsed).toBe(true);
+    await waitFor(() =>
+      expect(screen.queryByRole("group", { name: "Selected response actions" })).toBeNull(),
+    );
   });
 
   it("supports Tab focus and dismisses on Escape, outside click and panel scroll", async () => {
@@ -168,18 +263,49 @@ describe("selected response actions", () => {
     expect(screen.queryByRole("group", { name: "Selected response actions" })).toBeNull();
   });
 
-  it("offers whole-message Comment near hovered prose without adding an excerpt", async () => {
+  it("shows nothing for a pointer over prose — only a selection brings the pill", async () => {
     render(<Harness />);
     fireEvent.pointerMove(screen.getByTestId("prose"), { clientX: 100, clientY: 200 });
-    const toolbar = await screen.findByRole("group", { name: "Response actions" });
-    expect(within(toolbar).queryByRole("button", { name: "Cite" })).toBeNull();
-    fireEvent.click(within(toolbar).getByRole("button", { name: "Comment" }));
-    const composer = await screen.findByPlaceholderText("Start a discussion");
-    fireEvent.change(composer, { target: { value: "Whole response" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send comment" }));
-    await waitFor(() =>
-      expect(state.post).toHaveBeenCalledWith("message", "cloud-response", "Whole response", null),
-    );
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+    expect(screen.queryByRole("group")).toBeNull();
+  });
+
+  it("starts a whole-row thread on a click in the prose, on prompts and responses alike", () => {
+    render(<Harness />);
+    click(screen.getByTestId("prose").firstChild as Element);
+    expect(state.startCompose).toHaveBeenCalledWith("chat-a", "wire-response", null);
+    click(screen.getByTestId("user"));
+    expect(state.startCompose).toHaveBeenLastCalledWith("chat-a", "wire-prompt", null);
+  });
+
+  it("starts nothing on a click in a session that is not shared", () => {
+    state.shared = false;
+    render(<Harness />);
+    click(screen.getByTestId("prose").firstChild as Element);
+    click(screen.getByTestId("user"));
+    expect(state.startCompose).not.toHaveBeenCalled();
+  });
+
+  it("does not start one on a drag, a link, chrome, or a click that only cleared a selection", async () => {
+    render(<Harness />);
+    const prose = screen.getByTestId("prose");
+    // A press that travelled is a selection being made.
+    fireEvent.pointerDown(prose, { button: 0, clientX: 100, clientY: 200 });
+    fireEvent.pointerUp(prose, { clientX: 160, clientY: 200 });
+    fireEvent.click(prose, { clientX: 160, clientY: 200 });
+    // A link is a link.
+    click(screen.getByRole("link"));
+    // Chrome outside any row.
+    click(screen.getByText("Outside"));
+    // A selection stood when the press began: the click clears it, no more.
+    select("prose");
+    fireEvent.pointerDown(prose, { button: 0, clientX: 100, clientY: 200 });
+    window.getSelection()?.removeAllRanges();
+    fireEvent.pointerUp(prose, { clientX: 100, clientY: 200 });
+    fireEvent.click(prose, { clientX: 100, clientY: 200 });
+    expect(state.startCompose).not.toHaveBeenCalled();
   });
 
   it("removes selection actions when the panel is hidden or the response disappears", async () => {
@@ -195,38 +321,115 @@ describe("selected response actions", () => {
   });
 });
 
-describe("passage comments", () => {
-  it("posts the selected passage with its response anchor and keeps the draft on failure", async () => {
-    state.post.mockRejectedValueOnce(new Error("offline"));
-    const composer = await passageComment();
-    expect(screen.getByRole("blockquote", { name: "Selected passage" }).textContent).toBe(
-      "Scope it to the usage page.",
-    );
-    fireEvent.change(composer, { target: { value: "Should billing refresh too?" } });
-    fireEvent.keyDown(composer, { key: "Enter" });
-    await screen.findByText("Error: offline");
-    expect((composer as HTMLTextAreaElement).value).toBe("Should billing refresh too?");
-    fireEvent.click(screen.getByRole("button", { name: "Send comment" }));
-    await waitFor(() => expect((composer as HTMLTextAreaElement).value).toBe(""));
-    expect(state.post).toHaveBeenLastCalledWith(
-      "message",
-      "cloud-response",
-      selectionCommentBody("Scope it to the usage page.", "Should billing refresh too?"),
-      null,
-    );
+describe("when no composer takes the cite", () => {
+  it("stays open with the note and says so", async () => {
+    const note = await openCite();
+    fireEvent.change(note, { target: { value: "keep me" } });
+    fireEvent.keyDown(note, { key: "Enter" });
+    await screen.findByText(/composer could not take the cite/);
+    expect(note.value).toBe("keep me");
+    expect(screen.getByRole("group", { name: "Selected response actions" })).toBeTruthy();
   });
 
-  it("counts the persisted quote toward the server cap, including Enter sends", async () => {
-    const composer = await passageComment();
-    fireEvent.change(composer, { target: { value: "x".repeat(COMMENT_BODY_MAX) } });
+  it("does not post twice when the comment went out but the cite did not", async () => {
+    const note = await openCite();
+    fireEvent.click(screen.getByRole("switch", { name: "Share with team" }));
+    fireEvent.change(note, { target: { value: "Ask the team" } });
+    fireEvent.keyDown(note, { key: "Enter" });
+    await screen.findByText(/Shared with the team, but/);
+    expect(state.post).toHaveBeenCalledTimes(1);
     expect(
-      (screen.getByRole("button", { name: "Send comment" }) as HTMLButtonElement).disabled,
-    ).toBe(true);
-    fireEvent.keyDown(composer, { key: "Enter" });
-    expect(state.post).not.toHaveBeenCalled();
-    expect(screen.getByText(/including the selected passage/)).toBeTruthy();
+      screen.getByRole("switch", { name: "Share with team" }).getAttribute("aria-checked"),
+    ).toBe("false");
+  });
+});
+
+describe("the note field", () => {
+  it("ignores Enter while an IME is composing", async () => {
+    const links = linked();
+    try {
+      const note = await openCite();
+      fireEvent.change(note, { target: { value: "にほん" } });
+      fireEvent.keyDown(note, { key: "Enter", isComposing: true });
+      fireEvent.keyDown(note, { key: "Enter", keyCode: 229 });
+      expect(links.details).toHaveLength(0);
+      fireEvent.keyDown(note, { key: "Enter" });
+      await waitFor(() => expect(links.details).toHaveLength(1));
+    } finally {
+      links.stop();
+    }
+  });
+});
+
+describe("a layout change while the popover is open", () => {
+  it("keeps the popover and its note on scroll, resize and window blur", async () => {
+    const note = await openCite();
+    fireEvent.change(note, { target: { value: "draft" } });
+    fireEvent.scroll(screen.getByTestId("viewport"));
+    fireEvent(window, new Event("resize"));
+    fireEvent(window, new Event("blur"));
+    expect(screen.getByRole("textbox", { name: "Note for the agent" })).toBe(note);
+    expect(note.value).toBe("draft");
+  });
+});
+
+describe("sharing a cite with the team", () => {
+  it("draws the switch only when the session passes the comment gate", async () => {
+    state.shared = false;
+    await openCite();
+    expect(screen.queryByRole("switch", { name: "Share with team" })).toBeNull();
+    cleanup();
+    state.shared = true;
+    await openCite();
+    const toggle = screen.getByRole("switch", { name: "Share with team" });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
   });
 
+  it("posts today's passage comment as well as citing, and needs a note to", async () => {
+    const links = linked();
+    try {
+      const note = await openCite();
+      fireEvent.click(screen.getByRole("switch", { name: "Share with team" }));
+      const submit = screen.getByRole("button", { name: "Cite and share" }) as HTMLButtonElement;
+      expect(submit.disabled).toBe(true);
+      expect(screen.getByText("A shared cite needs a note.")).toBeTruthy();
+      fireEvent.change(note, { target: { value: "Should billing refresh too?" } });
+      expect(submit.disabled).toBe(false);
+      fireEvent.click(submit);
+      await waitFor(() => expect(links.details).toHaveLength(1));
+      expect(state.post).toHaveBeenCalledWith(
+        "message",
+        "cloud-response",
+        selectionCommentBody("Scope it to the usage page.", "Should billing refresh too?"),
+        null,
+      );
+      expect(links.details[0].mention).toMatchObject({
+        kind: "cited_text",
+        note: "Should billing refresh too?",
+      });
+    } finally {
+      links.stop();
+    }
+  });
+
+  it("cites nothing when the comment fails, and keeps the note", async () => {
+    state.post.mockRejectedValueOnce(new Error("offline"));
+    const links = linked();
+    try {
+      const note = await openCite();
+      fireEvent.click(screen.getByRole("switch", { name: "Share with team" }));
+      fireEvent.change(note, { target: { value: "Ask the team" } });
+      fireEvent.keyDown(note, { key: "Enter" });
+      await screen.findByText("Error: offline");
+      expect(links.details).toHaveLength(0);
+      expect(note.value).toBe("Ask the team");
+    } finally {
+      links.stop();
+    }
+  });
+});
+
+describe("passage comments", () => {
   it("renders a saved passage literally and renders actual comment mentions separately", () => {
     const text = "<script>literal</script>\n  <@someone> &lt;";
     render(

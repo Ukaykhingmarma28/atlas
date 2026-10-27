@@ -1,7 +1,6 @@
 //! A canned HTTP client, so no test in this crate touches the network.
 //!
-//! Zed's equivalent is `FakeHttpClient` (`http_client::FakeHttpClient`). Same
-//! job: answer a known URL with known bytes, 404 everything else, and count
+//! It answers a known URL with known bytes, 404s everything else, and counts
 //! requests so a throttle can be asserted.
 
 #![allow(dead_code)]

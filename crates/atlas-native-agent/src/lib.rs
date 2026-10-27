@@ -1,17 +1,16 @@
 //! Atlas Agent — the native agent — on the `AgentConnection` seam.
 //!
-//! This is Atlas's answer to Zed's `NativeAgentServer` / `NativeAgentConnection`:
-//! the native agent occupies the same slot an external ACP agent does, so the
+//! The native agent occupies the same slot an external ACP agent does, so the
 //! manager, the thread model and the UI treat it identically. Everything
 //! specific to it — reasoning effort, its own model list — hangs off
-//! native-only sub-traits, which is Zed's pattern too.
+//! native-only sub-traits.
 //!
 //! # One engine, no switch
 //!
-//! The previous native runtime that used to back this seam is gone (#54). The ported
-//! vendored engine in [`engine`] is the only implementation, and it is no longer
+//! The previous native runtime that used to back this seam is gone (#54). The
+//! engine in [`engine`] is the only implementation, and it is no longer
 //! behind a cargo feature — the development-time switch existed so the previous
-//! native path could keep shipping while the port was proved, and there is no
+//! native path could keep shipping while the engine was proved, and there is no
 //! longer a second path for it to select.
 //!
 //! What survived the deletion, deliberately:

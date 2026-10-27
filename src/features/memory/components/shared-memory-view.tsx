@@ -61,6 +61,7 @@ import type {
   MemoryEvent,
   Provenance,
 } from "../lib/shared-memory-api";
+import { formatDateTime } from "@/lib/format-time";
 
 interface Props {
   projectPath: string;
@@ -141,7 +142,7 @@ function eventTime(ts: number): string {
 
 function fmtDateTime(ts: number): string {
   if (!ts) return "—";
-  return new Date(ts).toLocaleString(undefined, {
+  return formatDateTime(ts, {
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -989,7 +990,7 @@ function ExportAgentsModal({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <DialogOverlay className="backdrop-blur-sm" />
+        <DialogOverlay blur />
         <Dialog.Popup
           aria-describedby={undefined}
           className={cn(
@@ -1120,7 +1121,7 @@ function ImportRepoModal({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <DialogOverlay className="backdrop-blur-sm" />
+        <DialogOverlay blur />
         <Dialog.Popup
           aria-describedby={undefined}
           className={cn(
@@ -1270,7 +1271,7 @@ function ImportClaudeMemoryModal({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <DialogOverlay className="backdrop-blur-sm" />
+        <DialogOverlay blur />
         <Dialog.Popup
           aria-describedby={undefined}
           className={cn(

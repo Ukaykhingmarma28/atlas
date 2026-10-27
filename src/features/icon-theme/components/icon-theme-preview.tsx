@@ -12,7 +12,7 @@ import type { IconAppearance, IconKind } from "../lib/icon-theme-api";
 /**
  * One icon theme's file row, drawn without the theme being applied.
  *
- * The counterpart to `ThemeMiniature` on the colour-theme card: the same
+ * The counterpart to `previewTheme` on the colour-theme card: the same
  * "show it, do not apply it" move, done with the commands' own `themeId`
  * argument instead of with CSS variables. `null` — a theme with nothing for
  * that path, a fetch that failed, or "Minimal", which is no theme at all —

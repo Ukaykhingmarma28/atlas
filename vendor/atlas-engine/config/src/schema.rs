@@ -227,7 +227,7 @@ pub fn canonicalize(value: &Value) -> Value {
 /// fixture is *generated*: a header typed into the file would be silently
 /// dropped by the next `write_config_schema`, and `config_schema_matches_fixture`
 /// would then fail for a reason that looks nothing like its cause. `$comment` is
-/// a draft-07 keyword that validators ignore. See CONTEXT.md, "Vendored engine
+/// a draft-07 keyword that validators ignore. See CONTEXT.md, "Engine
 /// licensing".
 const ATLAS_CHANGE_NOTICE: &str =
     "Modified by Atlas from upstream OpenAI Codex (Apache-2.0). See CONTEXT.md.";

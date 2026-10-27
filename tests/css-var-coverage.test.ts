@@ -2,9 +2,8 @@ import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import builtinThemes from "@/dev/mock-backend/fixtures/builtin-themes.json";
+import { BUILTIN_THEMES } from "@/dev/mock-backend/fixtures/builtin-themes";
 import { resolveTheme } from "@/features/theme/resolve-theme";
-import type { Theme } from "@/features/theme/lib/theme-api";
 
 /**
  * Every CSS custom property `src/` reads must be one something defines.
@@ -20,7 +19,7 @@ import type { Theme } from "@/features/theme/lib/theme-api";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = path.join(REPO_ROOT, "src");
-const themes = builtinThemes as Theme[];
+const themes = BUILTIN_THEMES;
 
 function walk(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -43,6 +42,18 @@ const CSS_VAR_ALLOWLIST: Record<string, string> = {
   "--atlas-pulse-color": "component-local animation colour",
   "--atlas-ants-color": "component-local animation colour",
   "--atlas-beam-travel": "component-local animation distance",
+  "--pr-label": "component-local pull request label colour, from the host",
+  // Set on <html> by `features/settings/lib/display-settings.ts` from the
+  // user's settings; the two fonts only when set, so every reader carries its
+  // own fallback.
+  "--atlas-ui-font": "the user's uiFontFamily, set at runtime",
+  "--atlas-code-font": "the user's codeFontFamily, set at runtime",
+  "--atlas-composer-font": "the user's composerFontFamily, set at runtime",
+  "--atlas-terminal-font": "the user's terminalFontFamily, set at runtime",
+  "--atlas-editor-font-size": "the user's editorFontSize, set at runtime",
+  "--atlas-terminal-font-size": "the user's terminalFontSize, set at runtime",
+  "--ui-zoom": "the user's uiScale, set at runtime by applyUiScale",
+  "--diffs-grid-number-column-width": "set by the diff viewer inside its shadow root",
 };
 
 describe("CSS custom properties", () => {

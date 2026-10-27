@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { createSelectors } from "@/lib/create-selectors";
-import { applyTheme } from "../apply-theme";
+import { appearanceForMode, applyTheme } from "../apply-theme";
 import {
   getTheme,
   listThemes,
@@ -163,7 +163,9 @@ let systemQuery: MediaQueryList | null = null;
  *  the file did not change, only which of its variants is wanted. */
 function onSystemAppearanceChange(): void {
   if (!lastRequest || lastRequest.mode !== "system") return;
-  const { id, mode, themeOverrides } = lastRequest;
+  const { mode, themeOverrides } = lastRequest;
+  // The OS flipping can change which theme is wanted, not just its variant.
+  const id = configured ? themeIdFor(configured, mode) : lastRequest.id;
   void baseStore.getState().actions.apply(id, mode, themeOverrides);
 }
 
@@ -212,11 +214,35 @@ export function startThemeCatalogListener(): void {
   });
 }
 
+/** The two themes `config.toml` names: one for light, one for dark. */
+export interface ThemePair {
+  light: string;
+  dark: string;
+}
+
+/** The pair the settings last asked for, so an OS appearance change can swap
+ *  to the other theme of it, not only to the other variant of this one. */
+let configured: ThemePair | null = null;
+
+/** Which of the pair `mode` shows right now. */
+export function themeIdFor(pair: ThemePair, mode: ThemeMode): string {
+  return appearanceForMode(mode) === "light" ? pair.light : pair.dark;
+}
+
 export function applyConfiguredTheme(
-  id: string,
+  pair: ThemePair,
   mode: ThemeMode,
   themeOverrides: ThemeOverride,
 ): void {
+  configured = pair;
   startThemeCatalogListener();
+  void baseStore.getState().actions.apply(themeIdFor(pair, mode), mode, themeOverrides);
+}
+
+/** Paint the last applied theme again from the cache — for a setting that
+ *  changes how it resolves (contrast), not which file it is. */
+export function repaintTheme(): void {
+  if (!lastRequest) return;
+  const { id, mode, themeOverrides } = lastRequest;
   void baseStore.getState().actions.apply(id, mode, themeOverrides);
 }

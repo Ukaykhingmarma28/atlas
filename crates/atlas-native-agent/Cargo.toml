@@ -2,7 +2,7 @@
 name = "atlas-native-agent"
 version = "0.1.0"
 edition = "2021"
-description = "Atlas Agent — the native agent — on the ported AgentConnection seam."
+description = "Atlas Agent — the native agent — on the AgentConnection seam."
 
 # Integration tests are declared, not auto-discovered. Cargo builds every
 # `tests/*.rs` it finds, which means a stale file left behind by a deletion is a
@@ -22,8 +22,7 @@ path = "tests/engine_gateway_turn.rs"
 
 [dependencies]
 atlas-process = { path = "../atlas-process" }
-# The seam. Same exact pin as every other crate in the ported stack
-# (`zed-ref/Cargo.toml:518`).
+# The seam. Same exact pin as every other ACP crate in the workspace.
 agent-client-protocol = { version = "=2.0.0", features = ["unstable"] }
 atlas-acp-thread = { path = "../atlas-acp-thread" }
 # `strip_injected_context`: the engine's rollout stores the WIRE prompt, and
@@ -31,7 +30,7 @@ atlas-acp-thread = { path = "../atlas-acp-thread" }
 # as if the user typed them.
 atlas-agent-transcript = { path = "../atlas-agent-transcript" }
 # For the `AgentServer` trait: the native agent occupies the same slot an
-# external one does, exactly as Zed's `NativeAgentServer` does.
+# external one does.
 atlas-agent-servers = { path = "../atlas-agent-servers" }
 anyhow = "1"
 futures = "0.3"
@@ -43,9 +42,9 @@ serde_json = "1"
 tokio = { version = "1", features = ["fs", "macros", "rt", "sync", "time"] }
 tracing = "0.1"
 
-# --- The ported engine (#45, ADR-0004) --------------------------------------
+# --- The engine (#45, ADR-0004) --------------------------------------
 # No longer optional. These sat behind the `ported-engine` feature so the previous native
-# path could keep shipping while the port was proved; that path is gone (#54),
+# path could keep shipping while the engine was proved; that path is gone (#54),
 # so gating them would gate the whole crate.
 base64 = { version = "0.22" }
 serde = { version = "1", features = ["derive"] }
@@ -82,7 +81,7 @@ async-trait = "0.1"
 # transform and the tool call never spawns, which is why the three
 # sandboxed-command tests in `engine_turn.rs` passed on macOS seatbelt and
 # failed on Linux CI having run nothing. These three crates let the *test
-# binary* be that helper, exactly as upstream's own suites do
+# binary* be that helper, exactly as the engine's own suites do
 # (`vendor/atlas-engine/core/tests/suite/mod.rs`): `ctor` runs
 # `configure_test_binary_dispatch` before any test, which installs the arg0
 # aliases and hands back the helper's path.

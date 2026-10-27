@@ -154,12 +154,23 @@ export function appearanceForMode(mode: ThemeMode): "dark" | "light" {
   return matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
 }
 
+/** `interfaceContrast`, held here because every apply resolves through it;
+ *  the settings store sets it before re-applying. */
+let interfaceContrast = 100;
+
+export function setInterfaceContrast(contrast: number): void {
+  interfaceContrast = contrast;
+}
+
 export function applyTheme(
   theme: Theme,
   mode: ThemeMode,
   themeOverride: ThemeOverride = {},
+  /** A preview (the theme editor's draft) paints the app but is not cached
+   *  for the next launch, so quitting mid-edit never boots into a draft. */
+  { preview = false }: { preview?: boolean } = {},
 ): ResolvedTheme {
-  const resolved = resolveTheme(theme, appearanceForMode(mode), themeOverride);
+  const resolved = resolveTheme(theme, appearanceForMode(mode), themeOverride, interfaceContrast);
   activeTheme = resolved;
   if (typeof document === "undefined") return resolved;
 
@@ -179,11 +190,12 @@ export function applyTheme(
     theme,
     resolved.appearance === "dark" ? "light" : "dark",
     themeOverride,
+    interfaceContrast,
   );
   style.textContent = resolvedThemeCss(resolved.cssVars) + invertedThemeCss(inverted.cssVars);
   const cache = launchCache(resolved);
   applyBootVars(root, cache);
-  cacheLaunchTheme(cache);
+  if (!preview) cacheLaunchTheme(cache);
   window.dispatchEvent(new CustomEvent("atlas:theme-applied"));
   return resolved;
 }

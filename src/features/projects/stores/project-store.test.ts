@@ -33,7 +33,7 @@ vi.mock("@/features/chat/stores/chat-store", () => ({
   useChatStore: { getState: () => ({ actions: { removeSessions: () => {} } }) },
 }));
 vi.mock("@/features/terminal/stores/terminal-store", () => ({
-  useTerminalStore: { getState: () => ({ actions: { removeTabs: () => {} } }) },
+  useTerminalStore: { getState: () => ({ owners: {}, actions: { removeTabs: () => {} } }) },
 }));
 const org = { activeOrganisationId: "personal", organisations: [{ id: "personal" }] };
 vi.mock("@/features/organisations/stores/org-store", () => ({
@@ -59,7 +59,6 @@ const project = (id: string, orgId: string, lastActiveAt: string): Project => ({
   id,
   name: id,
   path: `/p/${id}`,
-  groupId: null,
   orgId,
   lastActiveAt,
 });

@@ -11,10 +11,9 @@ import {
 } from "@/ui/tooltip-timing";
 
 /**
- * Border-arrow tooltip (user-supplied Skiper design, adapted to Atlas):
- * shadcn-style token classes swapped for house tokens, `animate-in` (a
- * tailwindcss-animate utility this repo does not ship) swapped for the house
- * `animate-scale-in`, and the arrow SVG's `--color-*` vars bound inline so
+ * Border-arrow tooltip: house token classes, the house `animate-scale-in`
+ * (`animate-in` is a tailwindcss-animate utility this repo does not ship),
+ * and the arrow SVG's `--color-*` vars bound inline so
  * the notch matches the panel fill and hairline exactly.
  *
  * Built on `@base-ui/react/tooltip`. Shaped like shadcn's base-style tooltip —

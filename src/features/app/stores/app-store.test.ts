@@ -15,7 +15,7 @@ vi.mock("@/features/layout/stores/layout-store", () => ({
 // the boot-restore test reads what the org store was handed and watches
 // which project the project store is told to switch to.
 const switchTo = vi.fn(async (_id: string) => {});
-const projectState = { projects: [], groups: [], activeProjectId: null, actions: { switchTo } };
+const projectState = { projects: [], activeProjectId: null, actions: { switchTo } };
 vi.mock("@/features/projects/stores/project-store", () => ({
   useProjectStore: {
     getState: () => ({

@@ -13,12 +13,12 @@
 //!
 //! One thing *does* have to be arranged, and it is not obvious: **stack size.**
 //!
-//! The engine's futures are enormous. Upstream knows it — `atlas-engine-core` boxes
+//! The engine's futures are enormous. It was written knowing that — `atlas-engine-core` boxes
 //! its config load with the note "Keep the large config-loading future off
-//! small runtime thread stacks", and `atlas-engine-arg0`, which is how every upstream
+//! small runtime thread stacks", and `atlas-engine-arg0`, which is how every engine
 //! binary starts, builds its Tokio runtime with
 //! `TOKIO_WORKER_STACK_SIZE_BYTES = 16 MiB` instead of the 2 MiB default. Every
-//! upstream's shipped frontends therefore ran on 16 MiB workers without ever saying
+//! one of the engine's original frontends therefore ran on 16 MiB workers without ever saying
 //! so out loud.
 //!
 //! Atlas does not use `arg0` (that is the point of the embedding), and ADR-0004
@@ -32,7 +32,7 @@
 //! `thread/start` to its own `MessageProcessor` task, so the frame that runs
 //! out of room belongs to a task Atlas never awaits.
 //!
-//! So the seam owns a Tokio runtime for the engine, built with upstream's own
+//! So the seam owns a Tokio runtime for the engine, built with the engine's own
 //! 16 MiB figure. Engine work is spawned onto it, which is what makes every
 //! task the engine spawns from inside inherit it. The app's own runtime is
 //! untouched, and requests cross between the two over channels, which are
@@ -67,11 +67,11 @@ pub const ATLAS_CLIENT_NAME: &str = "atlas";
 /// `external_auth` is the D10 token provider. It is installed *before* the
 /// initialize handshake, so the very first request already resolves through it
 /// — which is why this goes through the `start_with_external_auth` entry point
-/// Atlas added to the fork rather than through `start`.
+/// Atlas added to the engine rather than through `start`.
 /// Worker stack size for the engine's runtime.
 ///
-/// Upstream's own number, from `atlas-engine-arg0`. Not tuned by us and not a guess:
-/// it is what every frontend upstream shipped ran on.
+/// The engine's own number, from `atlas-engine-arg0`. Not tuned by us and not a guess:
+/// it is what every frontend the engine shipped with ran on.
 const ENGINE_WORKER_STACK_BYTES: usize = 16 * 1024 * 1024;
 
 /// The Tokio runtime the engine runs on. See the module docs for why it exists.
@@ -235,9 +235,9 @@ async fn start_engine_inner(
         // `thread/settings/update` is the only per-thread lever for permission
         // modes and reasoning effort, and it refuses outright without this.
         //
-        // "Experimental" upstream means "may change upstream", which is a risk
-        // Atlas does not carry: ADR-0003 makes this a hard fork with no
-        // upstream tracking, so nothing changes under us. Upstream's own
+        // "Experimental" in the engine means "may change", which is a risk
+        // Atlas does not carry: ADR-0003 makes the engine ours, with no
+        // upstream tracking, so nothing changes under us. The engine's own
         // client tests set it too.
         experimental_api: true,
         mcp_server_openai_form_elicitation: false,

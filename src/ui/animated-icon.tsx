@@ -10,20 +10,19 @@ import { ICON_SIZES, ICON_STROKE_WIDTH, type IconSize } from "@/ui/icon";
  * tips, the send arrow that leaves. Those need per-path control, so they are
  * hand-written SVG here rather than Lucide components.
  *
- * Ported from Skiper UI's `skiper42` set, with framer-motion removed. Atlas has
- * no JS animation runtime and does not want one: every animation below is CSS,
- * so it runs on the compositor thread rather than competing with React and the
- * IPC channel on the main thread. Three changes came out of that port:
+ * Atlas has no JS animation runtime and does not want one: every animation
+ * below is CSS, so it runs on the compositor thread rather than competing with
+ * React and the IPC channel on the main thread. Three decisions follow:
  *
- *  - **`scaleX`, not `width`.** The original animates the width of the sidebar
- *    rail and the menu bars. Width is a layout property — it reflows the
+ *  - **`scaleX`, not `width`.** Animating the width of the sidebar
+ *    rail and the menu bars would Width is a layout property — it reflows the
  *    subtree on every frame. `scaleX` against a `transform-origin` is
  *    composited, and these are bare bars with no content to squash; the only
  *    thing it distorts is a cap or corner radius under a pixel wide.
  *  - **No `AnimatePresence`.** The copy→check swap keeps both glyphs mounted and
  *    crossfades them. Two 14px SVGs cost less than an exit-animation runtime,
- *    and it removes the unmount race the original has if you click twice fast.
- *  - **`pathLength="1"`.** framer-motion's `pathLength` is reimplemented as
+ *    and it removes the unmount race you would get if you click twice fast.
+ *  - **`pathLength="1"`.** A path-length animation is done with
  *    `stroke-dasharray`/`stroke-dashoffset` in normalised units, so the keyframe
  *    never has to know the real path length.
  *
@@ -37,10 +36,10 @@ import { ICON_SIZES, ICON_STROKE_WIDTH, type IconSize } from "@/ui/icon";
  * caller already has it (`copied`, `expanded`, `open`), and a glyph that kept
  * its own copy would drift from the button it sits in.
  *
- * Nothing here is positioned in CSS pixels. The original overlays a `<span>` on
- * the SVG for the rail, the menu bars and the mute slash, which fixes their
- * geometry in px while the glyph around them scales with `size` — so they line
- * up at exactly one size and are wrong at the other four. Every moving part is
+ * Nothing here is positioned in CSS pixels. Overlaying a `<span>` on the SVG
+ * for the rail, the menu bars and the mute slash would fix their geometry in px
+ * while the glyph around them scales with `size` — they would line up at
+ * exactly one size and be wrong at the other four. Every moving part is
  * drawn in viewBox units instead.
  */
 
@@ -238,11 +237,11 @@ export function MenuGlyph({ active, size = "md", className }: GlyphProps & { act
  * Plus ↔ minus, rotating through each other.
  *
  * Two bars, not two Lucide glyphs: one horizontal bar stays put and a second
- * rotates 90° down onto it, so the plus *becomes* the minus. The first port
+ * rotates 90° down onto it, so the plus *becomes* the minus. An earlier version
  * crossfaded Lucide's `Plus` and `Minus` and rotated the plus 90° — but a plus
  * has four-fold symmetry, so that rotation is a visual no-op and the effect
- * degraded to a plain crossfade. Rotating one arm is the gesture the original
- * actually makes.
+ * degraded to a plain crossfade. Rotating one arm is the gesture that
+ * reads correctly.
  *
  * `transform-origin` is left at the default `view-box` here, unlike the other
  * glyphs. It resolves `origin-center` to (12, 12), which is already the bar's

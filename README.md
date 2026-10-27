@@ -81,7 +81,7 @@ You don't have to read the raw transcript to get the context back: select a chec
 
 Atlas runs your agents as they are, and enriches what they see.
 
-Claude Code and Codex run as external subprocesses over [ACP](https://github.com/zed-industries/agent-client-protocol), the most-used, most-tested path. Atlas Agent, the native agent, runs in-process on its own engine, a hard fork of an Apache-2.0 upstream (see `CONTEXT.md`, ADR-0003 and ADR-0011).
+Claude Code and Codex run as external subprocesses over [ACP](https://github.com/zed-industries/agent-client-protocol), the most-used, most-tested path. Atlas Agent, the native agent, runs in-process on its own engine, ported once from an Apache-2.0 project and maintained by Atlas (see `CONTEXT.md`, ADR-0003 and ADR-0011).
 
 Beyond those, Atlas can spawn any agent in the ACP registry (Cursor, OpenCode, Kilo Code, and more), pulling in each one's official binary automatically. All of them go through the same send path, so everything below applies whichever one you pick.
 

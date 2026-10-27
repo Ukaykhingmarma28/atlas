@@ -41,7 +41,9 @@ pub const CODE_PATH: &str = "/code";
 /// Whether the user lets agents use the code tools (Settings → General →
 /// "Let agents search code with Atlas"). Checked when a session is offered
 /// the server and on every call, so switching it off stops them at once.
-pub type CodeToolsGate = Arc<dyn Fn() -> bool + Send + Sync>;
+/// Given the session's launch directory: the setting can be overridden per
+/// project.
+pub type CodeToolsGate = Arc<dyn Fn(&str) -> bool + Send + Sync>;
 
 /// One matching line, for the project search overlay.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

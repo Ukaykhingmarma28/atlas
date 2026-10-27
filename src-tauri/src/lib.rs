@@ -1,11 +1,16 @@
 mod app_icon;
+#[cfg(target_os = "macos")]
+mod arrow_keys;
 mod auth;
 mod commands;
 mod keep_awake;
 mod logging;
 #[cfg(target_os = "macos")]
 mod menu;
+mod nav_guard;
 mod notifier;
+mod open_vsx;
+mod sleep_watch;
 mod state;
 mod telemetry;
 mod window_background;
@@ -105,9 +110,9 @@ pub fn run() {
     // connection.
     //
     // rustls 0.23 refuses to guess when more than one provider is compiled in,
-    // and this graph has two: `ring` (via sqlx, through the vendored engine
+    // and this graph has two: `ring` (via sqlx, through the engine
     // state store) and `aws-lc-rs` (via rama-tls / aws-smithy, through the
-    // vendored network proxy). Neither is removable, and cargo's feature
+    // engine's network proxy). Neither is removable, and cargo's feature
     // unification turns "two dependencies each chose one" into "rustls sees
     // both and panics at the first handshake" — on a background worker, far
     // from anything that looks related.
@@ -142,7 +147,8 @@ pub fn run() {
     // so the webview boot path can read it via `cli_take_initial_project_path`.
     let initial_project = commands::cli::parse_initial_project();
 
-    let builder = tauri::Builder::default();
+    // The main window may only navigate within the app; see `nav_guard.rs`.
+    let builder = tauri::Builder::default().plugin(nav_guard::init());
 
     // Single-instance — RELEASE ONLY. When a launcher starts the binary with a
     // project path while Atlas is already open, this plugin forwards that
@@ -169,18 +175,18 @@ pub fn run() {
         }
     }));
 
-    // Custom menu: replaces the default Window ▸ Close (Cmd+W) with a
-    // "Close Tab" item so Cmd+W in a focused embedded browser webview closes
-    // the tab instead of tearing down the window. See `menu.rs`.
+    // The app menu bar, built from `menu.json`; every custom item hands its
+    // id to the renderer, which runs it. See `menu.rs`.
     //
-    // macOS only. Elsewhere a menu is a Win32/GTK menu bar drawn inside the
-    // window under Atlas's own titlebar, and the key-equivalent fallthrough it
-    // exists to catch is AppKit behaviour.
+    // macOS only. Elsewhere a native menu is a Win32/GTK bar drawn inside the
+    // window under Atlas's own titlebar, so the frontend draws the same model
+    // in that titlebar instead (`src/features/menu/`).
     #[cfg(target_os = "macos")]
     let builder = builder.menu(menu::build).on_menu_event(|app, event| {
-        if event.id() == menu::CLOSE_TAB_ID {
+        let id = event.id().as_ref();
+        if menu::is_custom(app, id) {
             use tauri::Emitter;
-            let _ = app.emit("atlas:close-active-tab", ());
+            let _ = app.emit(menu::MENU_EVENT, id);
         }
     });
 
@@ -188,12 +194,8 @@ pub fn run() {
         .setup(|app| {
             // Pre-load the Rust-owned `AppState` (currentProject + recents)
             // before the webview starts loading — paid in parallel with the
-            // WebView framework init, ~1ms on warm cache. `legacy_settings_raw`
-            // is the old `settings` object exactly as it appeared in a
-            // pre-#64 `state.json`, if any — `AppState` no longer has that
-            // field, so it's carried separately for the one-time migration
-            // below rather than being silently dropped by serde.
-            let (mut loaded, legacy_settings_raw) = AppState::load(app.handle());
+            // WebView framework init, ~1ms on warm cache.
+            let mut loaded = AppState::load(app.handle());
             // Device-stable telemetry identity, owned by Rust in its own file.
             // It used to live in `state.json` as `telemetry_anon_id`, where every
             // settings save wiped it (the frontend payload omitted the field and
@@ -212,26 +214,14 @@ pub fn run() {
                 loaded.telemetry_anon_id = Some(device_id.clone());
             }
 
-            // `config.toml` (issue #64): user preferences move out of
-            // `state.json.settings` into their own validated, human-editable
-            // file. `bootstrap` imports the legacy settings exactly once,
-            // guarded by `settings_config_migrated` so a user who later
-            // deletes `config.toml` on purpose never gets it silently
-            // resurrected from stale `state.json` data.
-            let migration = state::atlas_config::bootstrap(
-                loaded.settings_config_migrated,
-                legacy_settings_raw,
-            );
-            let migration_marker_changed =
-                migration.mark_migrated && !loaded.settings_config_migrated;
-            if migration_marker_changed {
-                loaded.settings_config_migrated = true;
-            }
-            let telemetry_enabled = migration.manager.effective().share_telemetry;
+            // User preferences live in their own validated, human-editable
+            // `config.toml`; a first run writes the documented defaults.
+            let config = state::atlas_config::bootstrap();
+            let telemetry_enabled = config.effective().share_telemetry;
             // The engine reads this gate on its first connect, which happens
             // after setup — so it must be in the environment before then.
             commands::atlas_config::apply_curated_plugin_sync_gate(
-                migration.manager.effective().curated_plugin_sync,
+                config.effective().curated_plugin_sync,
             );
             // Opaque window background, in the theme the user actually chose.
             // Fills the brief gap between window-shown and first React paint
@@ -253,28 +243,35 @@ pub fn run() {
             // Atlas was the focused window. An opaque window can be snapshotted
             // as a flat texture, so the OS animation stays smooth.
             if let Some(window) = app.get_webview_window("main") {
-                let settings = migration.manager.effective();
+                let settings = config.effective();
                 let system_is_light = matches!(window.theme(), Ok(tauri::Theme::Light));
                 let color = window_background::window_background(
-                    &settings.theme,
+                    &settings.theme_light,
+                    &settings.theme_dark,
                     settings.theme_mode,
                     system_is_light,
                 );
                 let _ = window.set_background_color(Some(color));
+                // tao leaves `trafficLightPosition` unapplied until the first
+                // resize; see the function.
+                commands::window::apply_traffic_light_inset(&window);
             }
+            // Arrow keys the webview leaves unhandled are not typed into the
+            // focused field; see the module.
+            #[cfg(target_os = "macos")]
+            arrow_keys::install();
             // The app icon, before the window shows. Later changes arrive
             // through `notify_settings_changed`.
-            app_icon::apply(app.handle(), &migration.manager.effective().app_icon);
+            app_icon::apply(app.handle(), &config.effective().app_icon);
             // Whether `instructionSync` is on as Atlas starts, so switching it
             // off before any project opens still takes the mirrored blocks out.
             app.state::<commands::instruction_sync::InstructionSyncState>()
-                .init(migration.manager.effective().instruction_sync);
+                .init(config.effective().instruction_sync);
             // Whether agents start with their own memory off (M4).
-            atlas_agent_servers::set_atlas_only_memory(
-                migration.manager.effective().atlas_only_memory,
-            );
-            let atlas_config: state::AtlasConfigHandle = Arc::new(Mutex::new(migration.manager));
+            atlas_agent_servers::set_atlas_only_memory(config.effective().atlas_only_memory);
+            let atlas_config: state::AtlasConfigHandle = Arc::new(Mutex::new(config));
             app.manage(atlas_config.clone());
+            app.manage(state::project_config::ProjectConfigs::default());
             let keep_awake = Arc::new(keep_awake::KeepAwakeManager::new(
                 atlas_config.lock().effective().keep_awake_while_running,
             ));
@@ -283,10 +280,10 @@ pub fn run() {
             commands::themes::start_watcher(app.handle());
             commands::git_autofetch::start(app.handle());
 
-            // Mirror the (possibly updated) telemetry id + migration marker
-            // back into `state.json` so both agree and a downgrade still
-            // finds them. `AppStatePatch` stops the frontend wiping either.
-            if telemetry_id_changed || migration_marker_changed {
+            // Mirror the (possibly updated) telemetry id back into
+            // `state.json` so both agree. `AppStatePatch` stops the frontend
+            // wiping it.
+            if telemetry_id_changed {
                 let _ = AppState::save(app.handle(), &loaded);
             }
             let app_state: AppStateHandle = Arc::new(Mutex::new(loaded));
@@ -464,6 +461,7 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .manage(commands::browser::BrowserState::new())
+        .manage(commands::quit_guard::QuitGuardState::default())
         .manage(TerminalState::new())
         .manage(commands::modelchat::ModelChatState::new())
         .manage(FileIndexState::new())
@@ -497,6 +495,14 @@ pub fn run() {
                     window
                         .state::<commands::instruction_sync::InstructionSyncState>()
                         .drop_window(label);
+                }
+                // Closing the main window ends Atlas, so it asks the same
+                // question a quit does (`confirmQuitWhileRunning`).
+                tauri::WindowEvent::CloseRequested { api, .. }
+                    if window.label() == "main"
+                        && commands::quit_guard::hold_quit(window.app_handle()) =>
+                {
+                    api.prevent_close();
                 }
                 // Coming back to Atlas is when a stale Pull badge misleads.
                 tauri::WindowEvent::Focused(true) => {
@@ -584,6 +590,7 @@ pub fn run() {
             commands::clipboard::clipboard_file_paths,
             commands::clipboard::clipboard_write_text,
             commands::clipboard::scratch_write_bytes,
+            commands::fonts::list_font_families,
             commands::window::set_window_title,
             commands::browser::browser_open_window,
             commands::browser::browser_embed_create,
@@ -606,7 +613,7 @@ pub fn run() {
             commands::terminal::resolve_path,
             commands::terminal::terminal_path_complete,
             commands::terminal::terminal_list_commands,
-            commands::fs::read_directory,
+            commands::fs_entries::read_directories,
             commands::fs::read_file_content,
             commands::fs::read_file_base64,
             commands::fs::capture_screenshot,
@@ -623,25 +630,66 @@ pub fn run() {
             commands::fs::fs_copy,
             commands::fs::fs_duplicate,
             commands::fs::fs_open_in_terminal,
+            commands::external_editor::external_editors_detect,
+            commands::external_editor::external_editor_open,
             commands::fs::fs_add_to_gitignore,
             commands::git::git_status_fresh,
             commands::git::git_log,
             commands::git::git_diff_all,
             commands::git::git_workspace_summary,
+            commands::git::git_branch_compare,
             commands::usage_dashboard::usage_dashboard,
             commands::capture::capture_session_summary,
             commands::capture::capture_session_files,
             commands::usage_dashboard::usage_export_markdown,
             commands::usage_dashboard::usage_write_file,
             commands::git::git_diff_file,
-            commands::git::git_diff_paths,
             commands::git::git_stage,
             commands::git::git_unstage,
             commands::git::git_list_branches,
             commands::git::git_checkout,
+            commands::git::git_switch_if_clean,
             commands::git::git_create_branch,
             commands::git::git_blame_file,
-            commands::git_pr::git_repo_pull_requests,
+            commands::pull_requests::pr_provider,
+            commands::pull_requests::pr_list,
+            commands::pull_requests::pr_detail,
+            commands::pull_requests::pr_activity,
+            commands::pull_requests::pr_thread_comments,
+            commands::pull_requests::pr_timeline,
+            commands::pull_requests::pr_commits,
+            commands::pull_requests::pr_diff,
+            commands::pull_requests::pr_diff_file_contents,
+            commands::pull_requests::pr_files_viewed,
+            commands::pull_requests::pr_reviewer_candidates,
+            commands::pull_requests::pr_label_candidates,
+            commands::pull_requests::pr_set_files_viewed,
+            commands::pull_requests::pr_comment,
+            commands::pull_requests::pr_reply_to_thread,
+            commands::pull_requests::pr_resolve_thread,
+            commands::pull_requests::pr_react,
+            commands::pull_requests::pr_submit_review,
+            commands::pull_requests::pr_action,
+            commands::pull_requests::pr_update,
+            commands::pull_requests::pr_request_reviewers,
+            commands::pull_requests::pr_set_labels,
+            commands::pull_requests::pr_image,
+            commands::pull_requests::list_stats::pr_list_stats,
+            commands::pull_requests::pr_edit_comment,
+            commands::pull_requests::pr_delete_comment,
+            commands::pull_requests::pr_revert,
+            commands::pull_requests::pr_check_log,
+            commands::pull_requests::create::pr_create_draft,
+            commands::pull_requests::create::pr_create,
+            commands::pull_requests::checkout::pr_prepare_checkout,
+            commands::pull_requests::guide::pr_guide_read,
+            commands::pull_requests::guide::pr_guide_write,
+            commands::pull_requests::guide::pr_guide_prepare,
+            commands::pull_requests::guide::pr_guide_finish,
+            commands::project_scripts::project_scripts_list,
+            commands::project_scripts::project_scripts_save,
+            commands::project_scripts::project_scripts_approve,
+            commands::session_context::session_environment,
             commands::git_avatars::git_repo_avatars,
             commands::git::git_graph_signature,
             commands::git_graph::git_graph_build,
@@ -750,10 +798,11 @@ pub fn run() {
             commands::github::fetch_cloned_repo_meta,
             // Legacy Claude-CLI subprocess commands (claude_run/stream/stop/check/version)
             // were replaced by ACP. Session-history readers below are still in use.
-            commands::gitdiff::git_diff_structured,
-            commands::gitdiff::diff_structured_text,
-            commands::gitdiff::git_commit_changed_files,
             commands::gitdiff::git_diff_line_status,
+            commands::diff_preview::git_diff_preview,
+            commands::diff_preview::git_diff_file_contents,
+            commands::diff_preview::git_diff_file_patch,
+            commands::diff_preview::diff_texts_patch,
             commands::code_server::code_grep,
             commands::project_session::save_project_session,
             commands::project_session::load_project_session,
@@ -766,6 +815,7 @@ pub fn run() {
             commands::knowledge::save_editor_state,
             commands::knowledge::load_editor_state,
             commands::knowledge::fetch_readable,
+            commands::markdown_preview::markdown_preview_image,
             commands::knowledge::knowledge_cover_upload,
             commands::knowledge::knowledge_cover_data_url,
             commands::knowledge_meta::knowledge_meta_load,
@@ -799,10 +849,19 @@ pub fn run() {
             commands::atlas_config::get_atlas_config_info,
             commands::atlas_config::update_atlas_settings,
             commands::atlas_config::reset_atlas_config,
+            commands::project_icon::project_icon,
+            commands::project_sources::project_sources_info,
+            commands::project_sources::project_browse,
+            commands::project_sources::project_create,
+            commands::project_sources::project_clone,
+            commands::project_settings::get_project_settings,
+            commands::project_settings::update_project_settings,
             commands::atlas_config::open_atlas_config,
             commands::themes::list_themes,
             commands::themes::get_theme,
+            commands::themes::save_theme,
             commands::theme_import::preview_theme_import,
+            commands::theme_import::search_color_themes,
             commands::theme_import::commit_theme_import,
             commands::theme_import::export_theme_shadcn,
             commands::icon_themes::list_icon_themes,
@@ -833,6 +892,8 @@ pub fn run() {
             // release so a stale frontend keeps working.
             commands::catalog::agents_catalog,
             commands::catalog::agents_catalog_refresh,
+            commands::agent_config::agents_configure,
+            commands::agent_config::agents_open_config_file,
             commands::agents::agents_list_running,
             commands::agents::agents_spawn,
             commands::agents::agents_kill,
@@ -850,7 +911,25 @@ pub fn run() {
             commands::agents::threads_sync_project,
             commands::agents::threads_projects,
             commands::agents::threads_history,
-            commands::agents::threads_archive,
+            commands::agents::threads_settle,
+            commands::agents::threads_unsettle,
+            commands::agents::threads_pin,
+            commands::agents::threads_unpin,
+            commands::agents::threads_reorder_pin,
+            commands::agents::threads_snooze,
+            commands::agents::threads_wake,
+            commands::agents::threads_unsnooze,
+            commands::agents::threads_rename,
+            commands::agents::threads_mark_viewed,
+            commands::session_projects::session_projects_list,
+            commands::session_projects::session_projects_attach,
+            commands::session_projects::session_projects_detach,
+            commands::session_projects::session_projects_set_access,
+            commands::session_pull_requests::session_pull_requests_link,
+            commands::session_pull_requests::session_pull_requests_unlink,
+            commands::session_pull_requests::session_pull_requests_sync,
+            commands::session_pull_requests::session_pull_requests_watch,
+            commands::agents::threads_mark_unread,
             commands::agents::agents_snapshot,
             commands::agents::agents_snapshot_meta,
             commands::agents::agents_send,
@@ -891,7 +970,7 @@ pub fn run() {
             commands::keybindings::keybindings_load,
             commands::keybindings::keybindings_save,
             commands::keybindings::keybindings_open,
-            commands::keybindings::keybindings_set_close_tab_accelerator,
+            commands::keybindings::menu_set_accelerators,
             commands::memory_graph::memory_embed_status,
             commands::memory_graph::memory_embed_download,
             commands::memory_graph::memory_index_build,
@@ -972,6 +1051,8 @@ pub fn run() {
             commands::skills::pack_uninstall,
             commands::skills::pack_projections,
             commands::skills::pack_components_list,
+            commands::quit_guard::quit_guard_ready,
+            commands::quit_guard::quit_guard_answer,
         ])
         .build(context)
         .expect("error while building Atlas")
@@ -979,7 +1060,13 @@ pub fn run() {
             // Apply-on-quit: if the user chose "Later" for a staged update, swap
             // it in on the way out so the next launch is the new version.
             match event {
-                tauri::RunEvent::ExitRequested { .. } => {
+                tauri::RunEvent::ExitRequested { code, api, .. } => {
+                    // A user quit (no code) with an agent mid-turn asks first;
+                    // the frontend answers through `quit_guard_answer`.
+                    if code.is_none() && commands::quit_guard::hold_quit(app_handle) {
+                        api.prevent_exit();
+                        return;
+                    }
                     // Quit sweep (M7): stop native turns (cancel tokens kill
                     // tool process groups) and tear down every ACP subprocess
                     // (dropping each driver's shutdown channel closes the

@@ -1,36 +1,59 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Quote, MessageSquare } from "lucide-react";
-import { Hint } from "@/ui/tooltip";
-import { CommentButton } from "@/features/artifacts/components/comment-thread";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { MessageSquare, Quote } from "lucide-react";
+import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
+import { Popover, PopoverContent } from "@/ui/popover";
 import { cn } from "@/lib/utils";
-import { quoteLines } from "@/features/artifacts/lib/selection-comment";
+import { CiteForm, citeShareTarget } from "./cite-popover";
 import {
   useAnchorHit,
+  useChatCommentsStore,
   useCommentActions,
-  useCommentBucket,
   useCommentDirectory,
+  useHasCloudTarget,
 } from "../stores/chat-comments-store";
 import {
   actionPosition,
-  responseAt,
-  selectedResponse,
-  type ChatInsertDetail,
+  anchorAt,
+  chatKeyOf,
+  isCitable,
+  selectedAnchor,
 } from "../lib/response-selection";
 
-/** One pill for both actions — the CommentButton takes it as its className,
- *  so its height, padding and radius cannot drift from Cite's. */
+/** One pill for both actions, so their height, padding and radius cannot
+ *  drift apart. The design system's pill: control-xs tall, 2xs type,
+ *  secondary ink that comes up to the foreground on hover, a 12px glyph. */
 const PILL_BUTTON =
-  "flex h-6 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] [&_svg]:shrink-0";
+  "flex h-control-xs shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2 text-2xs font-medium text-secondary-foreground transition-colors hover:bg-accent hover:text-foreground [&_svg]:size-3 [&_svg]:shrink-0";
+
+/** How far a press may travel and still be a click rather than a drag. */
+const CLICK_SLOP_PX = 4;
 
 interface Target {
-  response: HTMLElement;
-  messageId: string;
-  text: string | null;
-  anchor: { x: number; top: number; bottom: number };
+  anchor: HTMLElement;
+  chatKey: string;
+  /** The selection, as selected. */
+  text: string;
+  citable: boolean;
+  position: { x: number; top: number; bottom: number };
 }
 
-/** One delegated controller per visible transcript, rather than document
- * listeners or pointer-driven React renders on every response row. */
+/**
+ * One delegated controller per visible transcript, rather than document
+ * listeners or pointer-driven React renders on every row.
+ *
+ * Two gestures on a prompt or a response, both answered here:
+ *
+ * - **A selection** brings the pill: Cite (a response only — it points the
+ *   agent at its own words) and Comment, which starts a thread about the
+ *   passage under the row (`inline-comment-threads.tsx`).
+ * - **A click** on the prose starts a thread about the row, in the same
+ *   place. A click, not a press that travelled (that is a selection being
+ *   made) and not one that merely cleared a selection; never on a link, a
+ *   button, a field, or a thread already under the row.
+ *
+ * The pill answers a selection and nothing else. It used to follow the
+ * pointer over prose as well; that read as chrome chasing the cursor.
+ */
 export function ResponseSelectionActions({
   viewportRef,
   tabId,
@@ -58,10 +81,19 @@ export function ResponseSelectionActions({
     // intact, so the next pointerup would read it and bring the toolbar back.
     // A dismissed selection stays dismissed until the selection changes.
     let dismissed = false;
+    // Where the press started, and whether a selection stood at the time:
+    // what tells a click from a drag and from a click that only cleared one.
+    let press: { x: number; y: number; hadSelection: boolean } | null = null;
     const dismiss = () => {
       openRef.current = false;
       dismissed = true;
       setTarget(null);
+    };
+    // Layout moved under the pill (a scroll, a resize, the window losing
+    // focus). With a popover open, its draft matters more than the pill's
+    // position: the popover stays, anchored to the pill, and owns its close.
+    const layoutDismiss = () => {
+      if (!openRef.current) dismiss();
     };
     const readSelection = () => {
       if (
@@ -71,7 +103,7 @@ export function ResponseSelectionActions({
         toolbarRef.current?.contains(document.activeElement)
       )
         return;
-      const selected = selectedResponse(window.getSelection(), viewport);
+      const selected = selectedAnchor(window.getSelection(), viewport);
       if (!selected) {
         setTarget(null);
         return;
@@ -85,10 +117,11 @@ export function ResponseSelectionActions({
         return;
       }
       setTarget({
-        response: selected.response,
-        messageId: selected.response.dataset.agentResponse!,
+        anchor: selected.anchor,
+        chatKey: chatKeyOf(selected.anchor),
         text: selected.text,
-        anchor: { x: rect.left, top: rect.top, bottom: rect.bottom },
+        citable: isCitable(selected.anchor),
+        position: { x: rect.left, top: rect.top, bottom: rect.bottom },
       });
     };
     const schedule = () => {
@@ -99,45 +132,20 @@ export function ResponseSelectionActions({
       dismissed = false;
       schedule();
     };
-    const move = (event: PointerEvent) => {
-      if (
-        event.pointerType === "touch" ||
-        event.buttons ||
-        openRef.current ||
-        (targetRef.current?.text !== null && targetRef.current?.text !== undefined)
-      )
-        return;
-      if (toolbarRef.current?.contains(event.target as Node)) return;
-      const response = responseAt(event.target as Node, viewport);
-      if (!response) {
-        setTarget(null);
-        return;
-      }
-      // A stationary button is easier to hit than one chasing every pointer
-      // pixel. Move it only after the reader moves to another line/response.
-      const prev = targetRef.current;
-      if (prev?.response === response && Math.abs(event.clientY - prev.anchor.top) < 32) return;
-      setTarget({
-        response,
-        messageId: response.dataset.agentResponse!,
-        text: null,
-        anchor: { x: event.clientX + 12, top: event.clientY, bottom: event.clientY + 4 },
-      });
-    };
-    const leave = (event: PointerEvent) => {
-      if (toolbarRef.current?.contains(event.relatedTarget as Node)) return;
-      if (
-        !targetRef.current?.text &&
-        !openRef.current &&
-        !toolbarRef.current?.contains(document.activeElement)
-      )
-        setTarget(null);
-    };
     const focus = (event: FocusEvent) => {
       if (!openRef.current && !toolbarRef.current?.contains(event.target as Node)) dismiss();
     };
     const pointerDown = (event: PointerEvent) => {
       selecting = viewport.contains(event.target as Node);
+      const selection = window.getSelection();
+      press =
+        event.button === 0 && selecting
+          ? {
+              x: event.clientX,
+              y: event.clientY,
+              hadSelection: !!selection && !selection.isCollapsed,
+            }
+          : null;
       if (!openRef.current && !toolbarRef.current?.contains(event.target as Node)) dismiss();
     };
     const pointerUp = () => {
@@ -146,17 +154,42 @@ export function ResponseSelectionActions({
     };
     const pointerCancel = () => {
       selecting = false;
+      press = null;
       dismiss();
     };
+    const click = (event: MouseEvent) => {
+      const p = press;
+      press = null;
+      if (!p || p.hadSelection || openRef.current) return;
+      if (
+        Math.abs(event.clientX - p.x) > CLICK_SLOP_PX ||
+        Math.abs(event.clientY - p.y) > CLICK_SLOP_PX
+      )
+        return;
+      const selection = window.getSelection();
+      if (selection && !selection.isCollapsed) return;
+      const node = event.target as Node | null;
+      const element = node instanceof Element ? node : (node?.parentElement ?? null);
+      if (element?.closest("a, [data-comment-composer]")) return;
+      const anchor = anchorAt(event.target as Node, viewport);
+      if (!anchor) return;
+      // Only a row the cloud session can anchor to: a session that is not
+      // shared takes no comments, so a click there starts nothing.
+      const chatKey = chatKeyOf(anchor);
+      const comments = useChatCommentsStore.getState();
+      const tab = comments.byTab[tabId];
+      if (!tab?.actions || !tab.anchors.rowIdByChatKey.has(chatKey)) return;
+      comments.actions.startCompose(tabId, chatKey, null);
+    };
     const key = (event: KeyboardEvent) => {
-      if (openRef.current) return; // The comment popover owns its focus and Escape.
+      if (openRef.current) return; // An open popover owns its focus and Escape.
       if (event.key === "Escape" && targetRef.current) {
         event.preventDefault();
         dismiss();
       } else if (
         event.key === "Tab" &&
         !event.shiftKey &&
-        targetRef.current?.text &&
+        targetRef.current &&
         !toolbarRef.current?.contains(document.activeElement)
       ) {
         event.preventDefault();
@@ -166,8 +199,8 @@ export function ResponseSelectionActions({
     const observer = new MutationObserver(() => {
       if (
         targetRef.current &&
-        (!viewport.contains(targetRef.current.response) ||
-          targetRef.current.response.dataset.agentResponse !== targetRef.current.messageId)
+        (!viewport.contains(targetRef.current.anchor) ||
+          targetRef.current.anchor.dataset.commentAnchor !== targetRef.current.chatKey)
       )
         dismiss();
     });
@@ -175,7 +208,7 @@ export function ResponseSelectionActions({
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ["data-agent-response"],
+      attributeFilter: ["data-comment-anchor"],
     });
     // Split-pane and sidebar resizes need not resize the window itself.
     // Ignore ResizeObserver's initial delivery so a new selection survives.
@@ -185,7 +218,7 @@ export function ResponseSelectionActions({
       if (viewport.clientWidth !== width || viewport.clientHeight !== height) {
         width = viewport.clientWidth;
         height = viewport.clientHeight;
-        dismiss();
+        layoutDismiss();
       }
     });
     resizeObserver.observe(viewport);
@@ -195,11 +228,10 @@ export function ResponseSelectionActions({
     document.addEventListener("pointerdown", pointerDown);
     document.addEventListener("focusin", focus);
     document.addEventListener("keydown", key);
-    viewport.addEventListener("pointermove", move);
-    viewport.addEventListener("pointerleave", leave);
-    viewport.addEventListener("scroll", dismiss, true);
-    window.addEventListener("resize", dismiss);
-    window.addEventListener("blur", dismiss);
+    viewport.addEventListener("click", click);
+    viewport.addEventListener("scroll", layoutDismiss, true);
+    window.addEventListener("resize", layoutDismiss);
+    window.addEventListener("blur", layoutDismiss);
     return () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
@@ -210,19 +242,18 @@ export function ResponseSelectionActions({
       document.removeEventListener("pointerdown", pointerDown);
       document.removeEventListener("focusin", focus);
       document.removeEventListener("keydown", key);
-      viewport.removeEventListener("pointermove", move);
-      viewport.removeEventListener("pointerleave", leave);
-      viewport.removeEventListener("scroll", dismiss, true);
-      window.removeEventListener("resize", dismiss);
-      window.removeEventListener("blur", dismiss);
+      viewport.removeEventListener("click", click);
+      viewport.removeEventListener("scroll", layoutDismiss, true);
+      window.removeEventListener("resize", layoutDismiss);
+      window.removeEventListener("blur", layoutDismiss);
       openRef.current = false;
     };
-  }, [enabled, viewportRef]);
+  }, [enabled, viewportRef, tabId]);
 
   if (!enabled || !target) return null;
   return (
     <SelectionToolbar
-      key={`${tabId}:${target.messageId}:${target.text ?? ""}`}
+      key={`${tabId}:${target.chatKey}:${target.text}`}
       target={target}
       tabId={tabId}
       viewportRef={viewportRef}
@@ -231,14 +262,9 @@ export function ResponseSelectionActions({
         openRef.current = open;
         if (!open) setTarget(null);
       }}
-      onDismiss={() => setTarget(null)}
-      onPointerLeave={(event) => {
-        if (
-          !openRef.current &&
-          targetRef.current?.text === null &&
-          !viewportRef.current?.contains(event.relatedTarget as Node)
-        )
-          setTarget(null);
+      onDismiss={() => {
+        openRef.current = false;
+        setTarget(null);
       }}
     />
   );
@@ -251,7 +277,6 @@ function SelectionToolbar({
   toolbarRef,
   onOpenChange,
   onDismiss,
-  onPointerLeave,
 }: {
   target: Target;
   tabId: string;
@@ -259,13 +284,25 @@ function SelectionToolbar({
   toolbarRef: React.RefObject<HTMLDivElement | null>;
   onOpenChange: (open: boolean) => void;
   onDismiss: () => void;
-  onPointerLeave: React.PointerEventHandler<HTMLDivElement>;
 }) {
-  const hit = useAnchorHit(tabId, target.messageId);
-  const comments = useCommentBucket(tabId, target.messageId);
+  const hit = useAnchorHit(tabId, target.chatKey);
   const actions = useCommentActions(tabId);
   const directory = useCommentDirectory(tabId);
-  const canComment = !!(hit && actions && directory);
+  const cloud = useHasCloudTarget(tabId);
+  const canComment = !!(hit && actions);
+  const [citing, setCiting] = useState(false);
+  const changeCiting = (open: boolean) => {
+    setCiting(open);
+    onOpenChange(open);
+  };
+  // The note field, focused without scrolling: the popup is portalled to the
+  // end of `body` and gets focus before it is positioned.
+  const focusNote = useCallback((openType: string) => {
+    if (openType === "touch") return true;
+    const field = document.querySelector<HTMLTextAreaElement>("[data-cite-note] textarea");
+    field?.focus({ preventScroll: true });
+    return false;
+  }, []);
   const [position, setPosition] = useState({ left: 0, top: 0 });
   useLayoutEffect(() => {
     const viewport = viewportRef.current,
@@ -281,76 +318,76 @@ function SelectionToolbar({
           offsetWidth: viewport.offsetWidth,
           offsetHeight: viewport.offsetHeight,
         },
-        target.anchor,
+        target.position,
         { width: toolbar.offsetWidth, height: toolbar.offsetHeight },
       ),
     );
   }, [target, viewportRef, toolbarRef, canComment]);
-  if (!target.text && !canComment) return null;
+  if (!target.citable && !canComment) return null;
   return (
     <div
       ref={toolbarRef}
       role="group"
-      aria-label={target.text ? "Selected response actions" : "Response actions"}
-      // The house floating pill: the background fill under the menu-rung
-      // shadow and the inset top highlight. Fully round, and the two buttons
+      aria-label="Selected response actions"
+      // The design system's floating pill: a card surface on a hairline
+      // border, the menu-rung shadow for lift, fully round. The buttons
       // inside are the same round pill at the same height with the same 12px
-      // icon, so neither reads as the odd one out.
+      // glyph, so neither reads as the odd one out.
       className={cn(
-        "absolute z-popover flex max-w-full items-center gap-0.5 rounded-full p-1",
+        "absolute z-popover flex max-w-full items-center gap-0.5 rounded-full p-0.5",
         // Opaque, no blur: a live backdrop blur under a pill that follows the
         // selection repaints on every move, and the surface reads fine solid.
-        "border border-[var(--atlas-element-active)] bg-[var(--background)]",
-        "inset-highlight shadow-md text-foreground atlas-pill-in",
+        "border border-border bg-card shadow-md text-foreground atlas-pill-in",
       )}
       style={position}
-      onPointerLeave={onPointerLeave}
-      onMouseDown={(event) => event.preventDefault()}
+      // Keep the selection while the pill is pressed. Only the pill's own
+      // DOM: React bubbles a portalled popover's events through here too, and
+      // preventing those would stop a click placing the caret in its field.
+      onMouseDown={(event) => {
+        if (event.currentTarget.contains(event.target as Node)) event.preventDefault();
+      }}
     >
-      {target.text !== null && (
+      {target.citable && (
+        <Popover open={citing} onOpenChange={changeCiting}>
+          <PopoverPrimitive.Trigger className={PILL_BUTTON}>
+            <Quote size={12} strokeWidth={1.7} />
+            Cite
+          </PopoverPrimitive.Trigger>
+          {/* Mounted only while open: a selection that is never cited costs
+              nothing past the pill, and the transcript never re-renders for
+              any of it (this toolbar owns its own state). */}
+          {citing && (
+            <PopoverContent side="bottom" align="start" sideOffset={6} initialFocus={focusNote}>
+              <div data-cite-note>
+                <CiteForm
+                  text={target.text}
+                  messageId={target.chatKey}
+                  rowId={hit?.rowId ?? null}
+                  tabId={tabId}
+                  // "Share with team" is for a session the team can see.
+                  share={cloud ? citeShareTarget(hit, actions, directory) : null}
+                  onDone={() => changeCiting(false)}
+                />
+              </div>
+            </PopoverContent>
+          )}
+        </Popover>
+      )}
+      {canComment && (
         <button
           type="button"
           className={PILL_BUTTON}
           onClick={() => {
-            window.dispatchEvent(
-              new CustomEvent<ChatInsertDetail>("atlas:chat-insert", {
-                detail: { text: quoteLines(target.text!), tabId, append: true },
-              }),
-            );
+            useChatCommentsStore
+              .getState()
+              .actions.startCompose(tabId, target.chatKey, target.text);
             window.getSelection()?.removeAllRanges();
             onDismiss();
           }}
         >
-          <Quote size={12} strokeWidth={1.7} />
-          Cite
+          <MessageSquare size={12} strokeWidth={1.7} />
+          Comment
         </button>
-      )}
-      {canComment ? (
-        <CommentButton
-          bare
-          showLabel
-          className={cn(PILL_BUTTON, "opacity-100 transition-none")}
-          anchorKind={hit!.anchorKind}
-          anchorId={hit!.rowId}
-          comments={comments}
-          actions={actions!}
-          directory={directory!}
-          selectedText={target.text ?? undefined}
-          onOpenChange={onOpenChange}
-          collisionBoundary={viewportRef.current ?? undefined}
-        />
-      ) : (
-        <Hint label="Share this chat to comment on a response">
-          <button
-            type="button"
-            aria-label="Comment"
-            disabled
-            className={cn(PILL_BUTTON, "cursor-not-allowed opacity-50 hover:bg-transparent")}
-          >
-            <MessageSquare size={12} strokeWidth={1.7} />
-            Comment
-          </button>
-        </Hint>
       )}
     </div>
   );

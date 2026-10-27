@@ -1,8 +1,5 @@
-//! Terminal buffering tests, adapted from Zed's
-//! `test_terminal_output_buffered_before_created_renders`,
-//! `test_terminal_output_and_exit_buffered_before_created`, and
-//! `test_terminal_kill_allows_wait_for_exit_to_complete`
-//! (`~/Codes/zed-ref/crates/acp_thread/src/acp_thread.rs`).
+//! Terminal buffering tests: output and exit arriving before `Created`, and a
+//! killed terminal still resolving its exit waiter.
 //!
 //! The race these cover is real and not hypothetical: the agent is handed a
 //! terminal id by `terminal/create` and can reference it in a `session/update`
@@ -53,8 +50,6 @@ fn exit_status(code: u32) -> acp::TerminalExitStatus {
     status.exit_code = Some(code);
     status
 }
-
-/// Adapted from `test_terminal_output_buffered_before_created_renders`.
 #[test]
 fn output_arriving_before_created_is_replayed_not_dropped() {
     let mut registry = TerminalRegistry::new();
@@ -89,8 +84,6 @@ fn output_arriving_before_created_is_replayed_not_dropped() {
         output.output
     );
 }
-
-/// Adapted from `test_terminal_output_and_exit_buffered_before_created`.
 #[test]
 fn an_exit_arriving_before_created_is_applied_on_creation() {
     let mut registry = TerminalRegistry::new();
@@ -184,7 +177,7 @@ fn a_title_change_renames_the_command_label() {
     );
 }
 
-/// Adapted from `test_terminal_kill_allows_wait_for_exit_to_complete`: a killed
+/// A killed
 /// terminal must still resolve its exit waiter, or `terminal/wait_for_exit`
 /// hangs forever.
 #[tokio::test]

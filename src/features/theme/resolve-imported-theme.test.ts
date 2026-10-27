@@ -24,7 +24,8 @@ import type { Theme } from "./lib/theme-api";
  * members of a Zed family, and a VS Code theme with an `include`.
  */
 
-const themes = importedThemes as Theme[];
+// Through `unknown`: see the same cast in `fixtures/theme-import.ts`.
+const themes = importedThemes as unknown as Theme[];
 
 describe("an imported theme resolves like any other", () => {
   it("covers all three importers", () => {

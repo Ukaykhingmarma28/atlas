@@ -51,10 +51,10 @@ export function MemoryUpdatedCard({
 
   return (
     // The same centred column every transcript row uses
-    // (`transcript-rows.tsx`'s `Column`): `max-w-[760px]` AND `px-6`. Without
+    // (`transcript-rows.tsx`'s `Column`): `max-w-(--atlas-chat-column)` AND `px-6`. Without
     // the padding this block was 760px against every neighbour's 712px, so it
     // hung 24px past the turn above it on both sides.
-    <div className={cn("mx-auto w-full max-w-[760px] px-6 py-1", className)}>
+    <div className={cn("mx-auto w-full max-w-(--atlas-chat-column) px-6 py-1", className)}>
       <button
         type="button"
         aria-expanded={open}

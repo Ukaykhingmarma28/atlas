@@ -149,7 +149,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           # Full history, not the depth-1 default: vendor-licensing.test.ts
-          # derives its fork point as the oldest commit touching the path the engine was vendored under,
+          # derives its fork point as the oldest commit touching the path the engine was first imported under,
           # and on a shallow clone that resolves to HEAD — the modification
           # set comes back empty and the suite fails (#58).
           fetch-depth: 0
@@ -288,16 +288,16 @@ jobs:
     # evidence for the dialect's correctness, and until #64 they ran in no CI
     # job at all.
     #
-    # Alongside it, the eight vendored crates Atlas has edited since the port
+    # Alongside it, the eight engine crates Atlas has edited since the port
     # — for the dialect wiring (#50, #52), the phone-home removals (#43), the
     # rename (#55) and Windows process spawning — whose own suites are green:
     # 915 tests. Changing ported code is ordinary work (ADR-0003), and this is
     # where a change to it gets checked.
     #
-    # Deliberately not the whole vendored engine: its other ~100 members are
-    # upstream's code with upstream's suites, unchanged by Atlas, so running
+    # Deliberately not the whole engine: its other ~100 members are
+    # code and suites carried over unchanged from the fork point, so running
     # them would buy a much longer job for no new evidence. When Atlas edits
-    # another vendored crate, add its `-p` here.
+    # another engine crate, add its `-p` here.
     name: engine dialect (atlas-engine-api)
     needs: changes
     if: needs.changes.outputs.engine-dialect == 'true'
@@ -314,7 +314,7 @@ jobs:
         with:
           workspaces: .
           save-if: ${{ needs.changes.outputs.cache-write == 'true' }}
-      # Some of the vendored suites build scratch git repositories; same reason
+      # Some of the engine suites build scratch git repositories; same reason
       # as in `crates`.
       - name: Configure git identity for test repos
         run: |

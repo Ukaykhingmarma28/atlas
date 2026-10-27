@@ -17,6 +17,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 
 import { agentLabel, formatDuration, prettyModel, tokenLabel } from "./board";
 import type { SessionDetail, TimelineEntry } from "../types";
+import { formatDateTime, formatTime } from "@/lib/format-time";
 
 export type ExportFormat = "json" | "md";
 
@@ -72,7 +73,7 @@ function toMarkdown(detail: SessionDetail): string {
   lines.push(`- **Agent** — ${s.agent ? agentLabel(s.agent) : "unknown"}`);
   if (s.model) lines.push(`- **Model** — ${prettyModel(s.model)}`);
   if (s.branches[0]) lines.push(`- **Branch** — \`${s.branches[0]}\``);
-  lines.push(`- **Started** — ${new Date(s.startedAt).toLocaleString()}`);
+  lines.push(`- **Started** — ${formatDateTime(s.startedAt)}`);
   lines.push(`- **Duration** — ${formatDuration(s.activeSeconds)}`);
   const tokens = tokenLabel(s);
   if (tokens) lines.push(`- **Tokens** — ${tokens}`);
@@ -87,7 +88,7 @@ function toMarkdown(detail: SessionDetail): string {
 }
 
 function entryMarkdown(entry: TimelineEntry): string[] {
-  const at = new Date(entry.at).toLocaleTimeString();
+  const at = formatTime(entry.at, { timeStyle: "medium" });
   switch (entry.kind) {
     case "prompt":
       return [`## Prompt · ${at}`, "", fence(entry.text ?? "")];

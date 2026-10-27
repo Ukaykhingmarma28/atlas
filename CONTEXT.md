@@ -7,11 +7,15 @@ Glossary of domain terms as this project uses them. Decisions with lasting conse
 - **Thread** — one conversation as Atlas tracks it, keyed by an app-minted thread id. A thread exists independently of any agent process.
 - **Draft** — a thread before its first sent message. Its ACP session id is never recorded, because the session is re-created whenever the chat is reopened and the id would be stale. A draft is visible while its chat is open and is removed when the chat closes unsent, so abandoned chats leave no history. *(Divergence from Zed, and from this ADR's original wording "drafts never create agent sessions": Atlas's chat panel opens an agent session when the tab mounts, so a draft usually does have a live session — just not a recorded one. Making that lazy is a chat-panel change, not a history one.)*
 - **Session** — the agent-side conversation, identified by an ACP session id. A thread references at most one session.
-- **Thread-metadata store** — the app-level SQLite store that is the *only* source for the session sidebar and history. Holds metadata only (ids, agent, titles, timestamps, worktree paths, archived flag) — never transcript content. See ADR-0001.
-- **Archive** — a first-class thread state: out of the active sidebar, kept in history. Opening an archived thread unarchives it, and so does new activity on its session inside the 7-day window. Manually imported and backfilled threads land archived.
+- **Thread-metadata store** — the app-level SQLite store that is the *only* source for the session sidebar and history. Holds metadata only (ids, agent, titles, timestamps, worktree paths, lifecycle state) — never transcript content. See ADR-0001.
+- **Settled** — a session state: out of the active list, still listed on the sidebar's Settled shelf and resumable. Set by hand or by the idle sweep (`autoSettleAfterDays`); sending to the session brings it back. Settling clears a pin and a snooze. Settled replaced *archive*: archived rows were migrated to settled, and manually imported, backfilled and older synced sessions land settled. Delete is the only way a session leaves history.
+- **Pinned** — a session kept in the sidebar's Pinned section, in an order the user sets (a fractional order key per row). Never auto-settled; pinning a settled or snoozed session brings it back.
+- **Snoozed** — a session hidden until a chosen time. It wakes at that time, or early when it raises its hand (a permission request, a question, or a failure); a finished turn does not wake it. A woken session reads **Woke** until the user views it. A session waiting on the user cannot be snoozed, and sending to a snoozed session un-snoozes it.
+- **Attached project** — a folder a session may use besides its own, at an access level: **read-only** (the default) or **read and write**. A property of the session, not of one message: kept on the session's row (`attached_projects`), restored on resume, listed on the row for the sidebar and a project filter. Attached by an `@` project or repo mention, a repo cloned from the composer, or the agent asking (`request_project_access`) and the user approving. Never the filesystem root, the home folder or above it, a system folder, or a home settings folder (`~/Library`, `~/.x`). Distinct from the session's own folder, which is always writable in a writing mode.
+- **Unread** — a session whose latest turn finished after the user last viewed it. *Mark unread* moves the last-viewed time to just before that turn finished.
 - **Live thread feed** — the path that keeps a thread's store row current from the running conversation's own events (`ThreadRecorder`). The only writer besides import and project sync. Distinct from the *capture recorder* (`atlas-checkpoint`), which records the transcript and the usage.
-- **Import** — the user-initiated (manual) pull of an agent's sessions into the store via ACP `session/list`; metadata only; capability-gated; deduped by session id. Imported rows land archived.
-- **Project sync / discovery** — the ongoing, automatic counterpart of import, scoped to the open project: `session/list` from the agents Atlas already has history with, plus an on-disk provider (a watcher on Claude's transcript directory) that learns a session exists and when it was last active. Metadata only — it never reads message content; replay and resume still go through the agent. Rows active in the last 7 days land unarchived; a deleted session is never brought back. Attribution is by the agent's own `session/list`, never by agent id. See ADR-0001, *Discovery*.
+- **Import** — the user-initiated (manual) pull of an agent's sessions into the store via ACP `session/list`; metadata only; capability-gated; deduped by session id. Imported rows land settled.
+- **Project sync / discovery** — the ongoing, automatic counterpart of import, scoped to the open project: `session/list` from the agents Atlas already has history with, plus an on-disk provider (a watcher on Claude's transcript directory) that learns a session exists and when it was last active. Metadata only — it never reads message content; replay and resume still go through the agent. Rows active in the last 7 days land active, older ones settled; a deleted session is never brought back. Attribution is by the agent's own `session/list`, never by agent id. See ADR-0001, *Discovery*.
 - **Backfill** — the one-time automatic import pass per installed agent on first launch after the history model shipped.
 - **Resume** — turning a history row into a live session through the protocol: `session/load` (replays transcript) or `session/resume` (no replay, user notified), selected by advertised capability.
 - **Live elsewhere** — a session whose transcript was written in the last ~90s by something other than Atlas's own turn (none in flight, and the write not within 5s of one ending). Having the session open in Atlas does not count. Atlas must not silently fork it: every send is held behind an explicit confirmation, and it cannot be deleted. See ADR-0001, *Liveness*.
@@ -26,11 +30,20 @@ Glossary of domain terms as this project uses them. Decisions with lasting conse
 ## Adjacent subsystems
 
 - **Project** — a folder opened in Atlas, tagged to an organisation and shown in the sidebar. The unit almost everything else is scoped to: the editor state, the file index, the git watcher, the knowledge base, the capture store. *Avoid: workspace.* The stored names still say `workspace` — `state.json`'s `workspaces` / `activeWorkspaceId`, the `workspace_id` columns in `sessions.db`, the `workspaceId` argument of the fileindex / recent-files / git-watch / mention commands and the events that carry it, the `"workspace"` mention tag, and the `workspace.*` keybinding action ids. Those are **storage keys**, not the concept: renaming one is a data migration that breaks existing installs, not a rename. Every such site carries a comment saying so.
-- **Atlas Agent** — the native agent: the single first-party agent that ships with Atlas rather than being installed from the Marketplace. Its engine is a one-time hard fork of an Apache-2.0 upstream that lives in this repo under `vendor/atlas-engine` and is maintained by us (ADR-0003, ADR-0011). Exactly one native agent exists at a time; every other agent is an ACP agent. "Native agent" and "Atlas Agent" are synonyms. Its threads live in the same thread-metadata store as external agents', distinguished only by agent id, and that stored agent id is the literal string `"atlas-agent"` (`ATLAS_AGENT_ID` in Rust, `NATIVE_AGENT_ID` in TypeScript): a **storage key** every recorded thread resolves through. It was renamed once (ADR-0011) and the rows under the retired id were dropped rather than aliased; changing it again is a data migration, not a rename.
+- **Atlas Agent** — the native agent: the single first-party agent that ships with Atlas rather than being installed from the Marketplace. Its engine was ported once from an Apache-2.0 project; it lives in this repo under `vendor/atlas-engine`, is Atlas's own, and is maintained by us (ADR-0003, ADR-0011). Exactly one native agent exists at a time; every other agent is an ACP agent. "Native agent" and "Atlas Agent" are synonyms. Its threads live in the same thread-metadata store as external agents', distinguished only by agent id, and that stored agent id is the literal string `"atlas-agent"` (`ATLAS_AGENT_ID` in Rust, `NATIVE_AGENT_ID` in TypeScript): a **storage key** every recorded thread resolves through. It was renamed once (ADR-0011) and the rows under the retired id were dropped rather than aliased; changing it again is a data migration, not a rename.
 - **Timeline / checkpoint** — the per-project observational record (`atlas-checkpoint`). Separate from the thread-metadata store; its importer may read CLIs' transcript files under its own contract, which the history model explicitly preserves.
 - **Marketplace / registry** — where agents are installed from; the installed-agents map is what import enumerates.
 - **Installed-agents map** — the one record of which ACP agents exist. Installing writes an entry, uninstalling removes it, and nothing else makes an agent runnable. A fresh install has an empty map and offers only the native agent. See ADR-0002.
 - **Detection** — an agent found on the user's `PATH` that Atlas has *not* installed. An offer, never a spawn candidate: **accepting a detection** is a user action that writes an installed-agents-map entry pointing at their own binary, downloading nothing. Finding a binary installs nothing by itself.
+
+## Window layout
+
+- **Session column** — the main column, left of the surfaces pane. It holds sessions only and shows no tab strip; the session's title is the breadcrumb's last segment. *Avoid: chat column, main pane.*
+- **Surface** — a tool used beside the session, opened as a tab in the **surfaces pane** (the columns right of the session column): the editor, a terminal, the browser, a diff, source control, team chat. Built to work at column width, and declares the minimum width it needs. See ADR-0024.
+- **Destination** — a full-page view that takes the area right of the rail, one at a time, while the session keeps running underneath: Timeline, Usage, Knowledge, the knowledge graph, Memory, Spaces. Esc or the back arrow returns to the session. *Avoid: page, screen, for this concept.* Settings is similar but separate: it takes the whole window and is not a tab type. See ADR-0024.
+- **Peek** — a compact view of a destination, designed for a column, that can sit beside the session. Added for a destination only when someone needs it; none exists yet.
+- **Placement** — which of session, surface or destination a tab type is (`TAB_PLACEMENT`). Every tab type has exactly one, and one of them, `surface-or-destination`, is both: team chat opens as a surface tab or as a destination by how it was opened, and is still one per window. See ADR-0024's 2026-10-24 amendment.
+- **Details** — the session's one card of facts and actions: where it runs and how to open it, its project scripts, version control (branch, pull requests, the git action, changes), attached projects and lineage. The title bar's first session control opens it, docked at the session's top-right where there is room, else as a popover under the button. *Avoid: overview, session context, for this card.*
 
 ## Shared memory domain
 
@@ -134,10 +147,10 @@ The **injected-context envelope** — `<atlas-memory>` … `</atlas-memory>` —
 - **Clarifying question** — a structured question Atlas Agent puts to the user mid-turn, with options, when a request is ambiguous ("four comments match; which?"). Blocks the turn; rendered on the same question card ACP agents already use. A capability of Atlas Agent in every mode, not of the organisation tools alone.
 - **Member activity** — what an admin can ask for about a member: the recorded sessions, checkpoints, insertions, deletions and Atlas-recorded tokens attributed to that member over a window. Folded on the client from the recorded sessions; the server has no per-member metric. *Avoid: performance, productivity, code shipped* — it counts what was recorded through Atlas and nothing else.
 
-## Vendored engine licensing (Apache-2.0)
+## Engine licensing (Apache-2.0)
 
-`vendor/atlas-engine/` is a hard fork of an upstream engine under **Apache-2.0** (ADR-0003;
-renamed in ADR-0011 — the upstream's name appears in this tree only where the licence
+`vendor/atlas-engine/` is Atlas's own engine, ported once from an **Apache-2.0** project (ADR-0003;
+renamed in ADR-0011 — the original project's name appears in this tree only where the licence
 requires it). Atlas's own code is **MIT** (`LICENSE`). The two do not merge: Apache-2.0 code
 stays Apache-2.0 however it is bundled, so its obligations travel with every build rather than
 being absorbed by Atlas's licence. `tests/vendor-licensing.test.ts` enforces what follows; the
@@ -148,9 +161,9 @@ attribution work landed first (D11) so that the rename sweep was trivially compl
   Atlas's own. The obligation runs to *recipients*, so a file that only exists in the repo does
   not discharge it. The NOTICE keeps its Ratatui lines even though the TUI is dropped — §4(d)
   would permit removing them, simplicity favours leaving them — and travels **verbatim**,
-  including the U+00A0 non-breaking spaces upstream put in it.
+  including the U+00A0 non-breaking spaces its original authors put in it.
 
-- **Mark what you changed (§4(b)).** Every vendored file Atlas modifies carries this line, first
+- **Mark what you changed (§4(b)).** Every engine file Atlas modifies carries this line, first
   line of the file, before any module docs:
 
   ```
@@ -166,16 +179,16 @@ attribution work landed first (D11) so that the rename sweep was trivially compl
   *(Caveat: `core/config.schema.json` is generated by schemars, and regenerating it drops the
   `$comment`. Re-add it if that ever happens.)*
 
-- **Never strip attribution (§4(c)).** Copyright and attribution notices inside vendored sources
+- **Never strip attribution (§4(c)).** Copyright and attribution notices inside engine sources
   are **not** touched by rename sweeps. The rule is: rename product branding, keep attribution.
   The ADR-0011 sweep was exactly the operation that could have violated this, which is why the
   rule was written down before it ran; it protected the LICENSE, the NOTICE, the §4(b) notice
-  line, every URL and every upstream model id.
+  line, every URL and every OpenAI model id.
 
 - **Trademarks are a removal, not a preference (§6).** Apache-2.0 grants no trademark licence, so
-  the rebrand *must* drop the upstream's product name and "OpenAI" as product-facing names —
+  the rebrand *must* drop the original product's name and "OpenAI" as product-facing names —
   including the baked system prompt and the catalog `instructions_template` strings that
-  self-identified as the upstream product.
+  self-identified as the original product.
   Required by the licence, not merely by taste. **Done (#55).** Two prompts reach a shipped
   turn — `models-manager/prompt.md` and `protocol/src/prompts/base_instructions/default.md` —
   and both now say Atlas Agent. Their §4(b) notices are HTML comments on line 1, **stripped when
@@ -185,15 +198,16 @@ attribution work landed first (D11) so that the rename sweep was trivially compl
   to change.
 
 - **Atlas may claim its own modifications (§4).** Permitted, and it is not the same act as
-  stripping upstream's — an added Atlas copyright line sits beside upstream's, never replacing
+  stripping the original authors' — an added Atlas copyright line sits beside theirs, never replacing
   it.
 ## Theming
 
 - **Theme** — one named, shareable description of how Atlas looks, covering the whole app: chrome, editor, terminal, diffs and syntax. Holds a dark and/or light **variant**. There is exactly one active theme; there is no separate editor theme. *Avoid*: interface theme, editor theme, colour scheme.
 - **Variant** — the dark or light half of a theme. A theme may ship only one.
-- **Base tokens** — the required colours of a variant, named exactly as shadcn/ui names them, so any shadcn or tweakcn theme is a valid set of base tokens. *Avoid*: shadcn tokens.
+- **Base tokens** — a variant's shadcn/ui-named colours and sizes, so any shadcn or tweakcn theme is a valid set of them. All optional: one a theme leaves out is derived from the **seeds** by its rule in `keys.toml`. *Avoid*: shadcn tokens.
+- **Seeds** — `background`, `foreground` and `primary`: the three base tokens every other one derives from, and all a theme needs to set. Not a separate table; they are ordinary base tokens. *Avoid*: seed tokens, base colours.
 - **Palette** — an optional small set of named hues (red, orange, yellow, green, cyan, blue, purple, pink) in a variant, from which syntax, terminal and status colours are derived when not set explicitly.
-- **Theme keys** — optional, Atlas-specific colours in a variant, named by role in Zed's dotted style (`element.hover`, `terminal.ansi.red`, `syntax.keyword`). Any key a theme omits is derived from the palette, then the base tokens, then Atlas's defaults.
+- **Theme keys** — optional, Atlas-specific colours in a variant, named by role in a dotted style (`element.hover`, `terminal.ansi.red`, `syntax.keyword`). Any key a theme omits is derived from the palette, then the base tokens, then Atlas's defaults.
 - **Theme override** — a user's settings-level patch of keys on top of the active theme. Changes that user's Atlas only; it is not a theme.
 - **Theme import** — a one-time conversion of a shadcn/tweakcn, Zed or VS Code theme into an Atlas theme. The result is an ordinary Atlas theme; the source is not read again.
 - **Icon theme** — a named mapping from files and folders (by name, extension or language) to icons, in VS Code's icon-theme format so VS Code icon themes can be used as-is. Chosen independently of the colour theme. *Avoid*: file icon pack, icon set.
